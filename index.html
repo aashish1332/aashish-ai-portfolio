@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "troika-three-text": "https://cdn.jsdelivr.net/npm/troika-three-text@0.52.0/dist/troika-three-text.esm.js"
+  }
+}
+</script>
+<title>AASHISH KUMAR — The Film · Full-Stack Developer</title>
+<meta name="description" content="Aashish Kumar — Full-Stack Developer. A portfolio presented as a film: scroll is the timeline, you are the projectionist." />
+<meta name="theme-color" content="#0a0a0b" />
+<meta property="og:title" content="AASHISH KUMAR — The Film" />
+<meta property="og:description" content="Scroll is the timeline. You are the projectionist. A WebGL city where the buildings are the architecture: gateway, services, streams, database." />
+<meta property="og:type" content="website" />
+<meta name="twitter:card" content="summary_large_image" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/style.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%230a0a0b'/><text x='50' y='68' font-size='52' text-anchor='middle' fill='%23ff4d00' font-family='monospace' font-weight='bold'>AK</text></svg>" />
+</head>
+<body>
+
+<!-- ══════════════════ BOOT / COUNTDOWN LEADER ══════════════════ -->
+<div id="boot" aria-hidden="true">
+  <div class="boot__inner">
+    <div class="boot__brand">AK·47 PICTURES <span>PRESENTS</span></div>
+    <div class="boot__counter"><span id="bootNumber">3</span></div>
+    <div class="boot__crosshair"></div>
+    <div class="boot__bar"><div id="bootFill"></div></div>
+    <div class="boot__meta">
+      <span id="bootStatus">LOADING REEL …</span>
+      <span id="bootPct">0%</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ FIXED FURNITURE ══════════════════ -->
+<div class="vignette" aria-hidden="true"></div>
+<div id="filmflash" aria-hidden="true"></div>
+
+<div class="cursor" aria-hidden="true">
+  <div class="cursor__dot"></div>
+  <div class="cursor__ring"></div>
+</div>
+
+<header class="hud hud--top">
+  <a class="hud__brand" href="#scene-hero" data-magnetic>AK·47 <span>PICTURES</span></a>
+  <div class="hud__right">
+    <span class="hud__rec"><i></i>REC</span>
+    <span class="hud__tc" id="timecode">00:00:00:00</span>
+  </div>
+</header>
+
+<footer class="hud hud--bottom">
+  <div class="hud__scene"><span class="hud__sceneLabel">SCENE</span><span id="sceneName">01 — OPENING</span></div>
+  <div class="hud__track"><div class="hud__trackFill" id="reelFill"></div></div>
+  <div class="hud__pct"><span id="reelPct">0</span>%</div>
+</footer>
+
+<aside class="chapters" aria-hidden="true">
+  <div class="chapters__dot is-active" data-chapter="0" title="Opening"></div>
+  <div class="chapters__dot" data-chapter="1" title="The Story"></div>
+  <div class="chapters__dot" data-chapter="2" title="The Work"></div>
+  <div class="chapters__dot" data-chapter="3" title="The Co-Director"></div>
+  <div class="chapters__dot" data-chapter="4" title="Interlude"></div>
+  <div class="chapters__dot" data-chapter="5" title="Credits"></div>
+  <div class="chapters__dot" data-chapter="6" title="Post-Credits"></div>
+</aside>
+
+<button id="soundToggle" class="sound" data-magnetic aria-label="Toggle sound">
+  <span class="sound__bars"><i></i><i></i><i></i><i></i></span>
+  <span class="sound__label">SOUND OFF</span>
+</button>
+
+<button id="perfChip" class="perfchip" title="Render engine telemetry (P)">
+  <span class="perfchip__fps"><span id="perfFps">60</span> FPS</span>
+  <span class="perfchip__tier" id="perfTier">0·CINEMATIC</span>
+</button>
+<!-- touch-only: opens the terminal (no Ctrl+K on phones/tablets) -->
+<button id="touchTerm" class="touch-term" aria-label="Open terminal">❯_</button>
+
+<main id="film">
+
+  <!-- WebGL film: one fixed full-page canvas behind all scenes -->
+  <canvas id="filmgl" aria-hidden="true"></canvas>
+
+  <!-- ══════════════════ SCENE 01 · HERO / OPENING SHOT ══════════════════ -->
+  <section class="scene scene--hero" id="scene-hero" data-scene="hero">
+    <div class="pinwrap">
+      <div class="hero__frame">
+        <p class="hero__kicker">A FILM BY AASHISH KUMAR</p>
+        <h1 class="hero__title">
+          <span class="hero__line"><span>AASHISH</span></span>
+          <span class="hero__line hero__line--stroke"><span>KUMAR</span></span>
+        </h1>
+        <p class="hero__sub">FULL-STACK DEVELOPER&nbsp;&nbsp;·&nbsp;&nbsp;CLASS OF 2028&nbsp;&nbsp;·&nbsp;&nbsp;LPU</p>
+        <p class="hero__scrollcue">
+          <span class="hero__scrollcue-text">SCROLL TO START THE REEL</span>
+          <span class="hero__scrollcue-bar"></span>
+        </p>
+      </div>
+      <div class="hero__sprockets" aria-hidden="true"></div>
+    </div>
+  </section>
+
+  <!-- marquee strip -->
+  <div class="marquee" aria-hidden="true">
+    <div class="marquee__inner">
+      <span>SHOT ON WEBGL&nbsp;&nbsp;✦&nbsp;&nbsp;EDITED IN GSAP&nbsp;&nbsp;✦&nbsp;&nbsp;90+ API ENDPOINTS&nbsp;&nbsp;✦&nbsp;&nbsp;40+ TABLES MODELED&nbsp;&nbsp;✦&nbsp;&nbsp;AI-ASSISTED · HUMAN-DIRECTED&nbsp;&nbsp;✦&nbsp;&nbsp;NO TEMPLATES WERE HARMED&nbsp;&nbsp;✦&nbsp;&nbsp;</span>
+      <span>SHOT ON WEBGL&nbsp;&nbsp;✦&nbsp;&nbsp;EDITED IN GSAP&nbsp;&nbsp;✦&nbsp;&nbsp;90+ API ENDPOINTS&nbsp;&nbsp;✦&nbsp;&nbsp;40+ TABLES MODELED&nbsp;&nbsp;✦&nbsp;&nbsp;AI-ASSISTED · HUMAN-DIRECTED&nbsp;&nbsp;✦&nbsp;&nbsp;NO TEMPLATES WERE HARMED&nbsp;&nbsp;✦&nbsp;&nbsp;</span>
+    </div>
+  </div>
+
+  <!-- ══════════════════ SCENE 02 · THE STORY ══════════════════ -->
+  <section class="scene scene--story" id="scene-story" data-scene="story">
+    <div class="pinwrap">
+      <div class="story__content">
+        <div class="story__header">
+          <span class="story__act">ACT I</span>
+          <h2 class="story__title" data-split>Every film needs an origin story.</h2>
+        </div>
+
+        <div class="story__actgrid">
+          <article class="story__beats">
+            <p class="story__beat" data-split>B.Tech CSE (Full Stack) @ Lovely Professional University — CGPA 8.28. Class 12 CBSE at Kendriya Vidyalaya RCF — 87.6%.</p>
+            <p class="story__beat" data-split>I don't just write code with AI — I architect with it: I define the product, systems and UI, then direct AI to build to spec.</p>
+            <p class="story__beat" data-split>Full stack means full stack: JWT &amp; Argon2 auth, rate-limited APIs, 40+ modeled tables, real-time dashboards, deployment.</p>
+          </article>
+
+          <div class="story__stats">
+            <div class="stats">
+              <div class="stat" data-count="90"   data-suffix="+"><span class="stat__num">0</span><span class="stat__label">API ENDPOINTS</span></div>
+              <div class="stat" data-count="40"   data-suffix="+"><span class="stat__num">0</span><span class="stat__label">DB TABLES</span></div>
+              <div class="stat" data-count="35"   data-suffix=""><span class="stat__num">0</span><span class="stat__label">PAGE FILES</span></div>
+              <div class="stat" data-count="828"  data-suffix="" data-divide="100" data-decimals="2"><span class="stat__num">0.00</span><span class="stat__label">CGPA</span></div>
+            </div>
+            <p class="stats__note">The three counts above were AI-written to my spec — <b>SHOT 04</b> has the split.</p>
+          </div>
+        </div>
+
+        <div class="story__polaroids" aria-hidden="false">
+          <figure class="polaroid" data-tilt="-4"><span class="polaroid__img polaroid__img--a"></span><figcaption>MINOR IN AI · MASAI × IIT ROPAR · 6.93</figcaption></figure>
+          <figure class="polaroid" data-tilt="3"><span class="polaroid__img polaroid__img--b"></span><figcaption>MERN BOOTCAMP · GRADE A · JUN–JUL 2026</figcaption></figure>
+          <figure class="polaroid" data-tilt="-2"><span class="polaroid__img polaroid__img--c"></span><figcaption>INFOSYS DBMS · CERTIFIED · JUL 2026</figcaption></figure>
+          <figure class="polaroid" data-tilt="2"><span class="polaroid__img polaroid__img--d"></span><figcaption>C++ · INFOSYS · CERTIFIED · JUL 2025</figcaption></figure>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════ SCENE 03 · THE WORK (THREE TAKES) ══════════════════ -->
+  <section class="scene scene--work" id="scene-work" data-scene="work">
+    <div class="pinwrap">
+      <div class="takes">
+        <!-- TAKE 1 -->
+        <article class="take" id="take-1" data-take="1">
+          <header class="slate">
+            <div class="slate__row slate__row--top">
+              <span class="slate__prod">PROD: <b>VOLUNTEER OS</b></span>
+              <span class="slate__roll">ROLL A</span>
+            </div>
+            <div class="slate__row">
+              <span>SCENE <b>01</b></span><span>TAKE <b>03</b></span><span>DIRECTOR <b>A.KUMAR</b></span>
+            </div>
+            <div class="slate__row slate__row--stack">
+              <span>React 18 · Vite · Node.js · MySQL · Drizzle ORM</span>
+            </div>
+            <div class="slate__clapper"><i></i><i></i></div>
+          </header>
+          <h3 class="take__title" data-split>Community Volunteer Management</h3>
+          <ul class="take__facts">
+            <li><b>90+</b> backend endpoints across 16 route groups</li>
+            <li><b>40+</b> database tables modeled in Drizzle ORM</li>
+            <li>JWT access/refresh · Argon2+bcrypt · RBAC</li>
+            <li>4 live Recharts dashboards · monorepo w/ npm workspaces</li>
+          </ul>
+          <div class="take__cta"><a class="btn" data-magnetic href="https://github.com/" target="_blank" rel="noopener">VIEW THE CUT ↗</a></div>
+        </article>
+
+        <!-- TAKE 2 -->
+        <article class="take" id="take-2" data-take="2">
+          <header class="slate">
+            <div class="slate__row slate__row--top">
+              <span class="slate__prod">PROD: <b>GROCERY.AI</b></span>
+              <span class="slate__roll">ROLL B</span>
+            </div>
+            <div class="slate__row">
+              <span>SCENE <b>02</b></span><span>TAKE <b>01</b></span><span>DIRECTOR <b>A.KUMAR</b></span>
+            </div>
+            <div class="slate__row slate__row--stack">
+              <span>React 19 · Express · MongoDB · Gemini AI</span>
+            </div>
+            <div class="slate__clapper"><i></i><i></i></div>
+          </header>
+          <h3 class="take__title" data-split>Smart Grocery List Generator</h3>
+          <ul class="take__facts">
+            <li>Gemini AI suggests groceries, meals &amp; chats across 24 items</li>
+            <li>JWT auth · cart · order history · CSV export · restock alerts</li>
+            <li>Shader backgrounds + 3D + glassmorphism, 20+ animations</li>
+            <li>Order-based product-affinity analytics dashboard</li>
+          </ul>
+          <div class="take__cta"><a class="btn" data-magnetic href="https://github.com/" target="_blank" rel="noopener">VIEW THE CUT ↗</a></div>
+        </article>
+
+        <!-- TAKE 3 -->
+        <article class="take" id="take-3" data-take="3">
+          <header class="slate">
+            <div class="slate__row slate__row--top">
+              <span class="slate__prod">PROD: <b>GOAL TRACKER SaaS</b></span>
+              <span class="slate__roll">ROLL C</span>
+            </div>
+            <div class="slate__row">
+              <span>SCENE <b>03</b></span><span>TAKE <b>02</b></span><span>DIRECTOR <b>A.KUMAR</b></span>
+            </div>
+            <div class="slate__row slate__row--stack">
+              <span>Node.js · MongoDB · Groq Llama 3.3 70B · Chart.js</span>
+            </div>
+            <div class="slate__clapper"><i></i><i></i></div>
+          </header>
+          <h3 class="take__title" data-split>Goal Tracker SaaS</h3>
+          <ul class="take__facts">
+            <li>Goals CRUD · subtasks · drag &amp; drop · offline sync · public share links</li>
+            <li>Groq Llama 3.3 70B chat + per-goal tips (rate-limited)</li>
+            <li>3 Chart.js analytics views · 8-level XP · streaks</li>
+            <li>Deployed on Vercel</li>
+          </ul>
+          <div class="take__cta"><a class="btn" data-magnetic href="https://github.com/" target="_blank" rel="noopener">VIEW THE CUT ↗</a></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════ SCENE 04 · THE CO-DIRECTOR (AI LEDGER) ══════════════════
+       The honesty shot. The CV attributes AI on every project bullet, so the
+       reel does it too — one ledger per film, split into what was directed
+       (spec, architecture, security, review) and what was machine-written to
+       that spec. Sourced verbatim from the CV's own wording. -->
+  <section class="scene scene--codir" id="scene-codir" data-scene="codir">
+    <div class="pinwrap">
+      <div class="codir__content">
+        <div class="codir__header">
+          <span class="codir__kicker">SHOT 04 · BEHIND THE CAMERA</span>
+          <h2 class="codir__title" data-split>I direct. AI crews. I review every frame.</h2>
+          <p class="codir__sub">Every project on this reel had AI in the crew. I define the product, the systems and the UI; AI writes to that spec; then I audit the output and fix what fails. Here is that split, project by project — a portfolio that hides it is lying to you.</p>
+        </div>
+
+        <div class="codir__ledgers">
+          <!-- LEDGER 1 -->
+          <article class="ledger" data-ledger="1">
+            <header class="ledger__head">
+              <span class="ledger__prod">VOLUNTEER OS</span>
+              <span class="ledger__stack">React 18 · Node · MySQL · Drizzle ORM</span>
+            </header>
+            <div class="ledger__cols">
+              <div class="ledger__col ledger__col--mine">
+                <span class="ledger__label">DIRECTED BY ME</span>
+                <ul>
+                  <li>Product spec, UI &amp; feature requirements</li>
+                  <li>Monorepo architecture — npm workspaces</li>
+                  <li>Auth &amp; security design: JWT access/refresh, Argon2 + bcrypt, email verification, password reset, sessions, RBAC</li>
+                  <li>Hardening policy: Helmet, CORS, rate limiting, Zod</li>
+                </ul>
+              </div>
+              <div class="ledger__col ledger__col--ai">
+                <span class="ledger__label">WRITTEN BY AI</span>
+                <ul>
+                  <li><b>35</b> page files across <b>15</b> sections</li>
+                  <li><b>90+</b> backend endpoints in <b>16</b> route groups</li>
+                  <li>Drizzle schema for <b>40+</b> database tables</li>
+                  <li><b>4</b> Recharts dashboards · visual effects</li>
+                </ul>
+              </div>
+            </div>
+            <footer class="ledger__foot">PRE-BUILT COMPONENTS — 21ST.DEV + SPLINE.DESIGN · Globe, GlassSurface, FlowingMenu, SocialCards, ClickSpark</footer>
+          </article>
+
+          <!-- LEDGER 2 -->
+          <article class="ledger" data-ledger="2">
+            <header class="ledger__head">
+              <span class="ledger__prod">GROCERY.AI</span>
+              <span class="ledger__stack">React 19 · Express · MongoDB · Gemini AI</span>
+            </header>
+            <div class="ledger__cols">
+              <div class="ledger__col ledger__col--mine">
+                <span class="ledger__label">DIRECTED BY ME</span>
+                <ul>
+                  <li>3-page product flow &amp; UI requirements</li>
+                  <li>Gemini AI integration: suggestion, meal-plan and chat prompts across 24 items</li>
+                  <li>Cart, order history, CSV export, replenishment alerts</li>
+                  <li>Dark/light system &amp; responsive layout</li>
+                </ul>
+              </div>
+              <div class="ledger__col ledger__col--ai">
+                <span class="ledger__label">WRITTEN BY AI</span>
+                <ul>
+                  <li>The React 19 + Express codebase, built to that spec</li>
+                  <li>Shader backgrounds, 3D elements, glassmorphism, <b>20+</b> animations</li>
+                  <li><b>2</b> Recharts dashboards incl. product-affinity analytics</li>
+                </ul>
+              </div>
+            </div>
+            <footer class="ledger__foot">PRE-BUILT COMPONENTS — 21ST.DEV + SPLINE.DESIGN</footer>
+          </article>
+
+          <!-- LEDGER 3 -->
+          <article class="ledger" data-ledger="3">
+            <header class="ledger__head">
+              <span class="ledger__prod">GOAL TRACKER SaaS</span>
+              <span class="ledger__stack">Node · Express · MongoDB · Groq Llama 3.3 70B</span>
+            </header>
+            <div class="ledger__cols">
+              <div class="ledger__col ledger__col--mine">
+                <span class="ledger__label">DIRECTED BY ME</span>
+                <ul>
+                  <li>6-page architecture &amp; data model — MongoDB/Mongoose</li>
+                  <li>Groq Llama 3.3 70B integration + rate policy: 20 chats/day, 5 tips per goal</li>
+                  <li>XP/streak system design, share-token model</li>
+                  <li>Vercel deployment</li>
+                </ul>
+              </div>
+              <div class="ledger__col ledger__col--ai">
+                <span class="ledger__label">WRITTEN BY AI</span>
+                <ul>
+                  <li>Goal CRUD, subtasks, progress tracking, drag-drop reordering</li>
+                  <li>Tags, search/filter, offline sync, public share links</li>
+                  <li><b>3</b> Chart.js analytics views</li>
+                </ul>
+              </div>
+            </div>
+            <footer class="ledger__foot">PRE-BUILT UI / 3D — 21ST.DEV + SPLINE.DESIGN</footer>
+          </article>
+        </div>
+
+        <p class="codir__note">NOTHING SHIPPED THAT I HADN'T SPECIFIED, REVIEWED, OR FIXED MYSELF.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════ SCENE 05 · INTERLUDE (THE TESSERACT) ══════════════════ -->
+  <section class="scene scene--interlude" id="scene-interlude" data-scene="interlude">
+    <div class="pinwrap">
+      <div class="interlude__content">
+        <span class="interlude__kicker">INTERMISSION</span>
+        <h2 class="interlude__title" data-split>The film stops. The engineering starts.</h2>
+        <p class="interlude__sub">Everything behind this text is pre-lit WebGL — the sun, the fog, the grade, all following your scroll. <b>This</b> is live math: a real 4D tesseract, projected and rotated in your browser — <b>grab it</b>. Press <b>P</b> for the render engine's telemetry.</p>
+        <div class="interlude__code" id="projectionMath">
+<span class="c-cm">// 4D → 3D → 2D, live in your browser</span>
+<span class="c-fn">rotate4d</span>(v, θ<sub>xw</sub>, θ<sub>yz</sub>) → <span class="c-fn">perspective</span>(d=2.6) → <span class="c-fn">orthographic</span>()
+<span class="c-cm">16 vertices · 32 edges · 60fps · zero libraries</span>
+        </div>
+        <p class="interlude__hint">DRAG TO ROTATE IN THE 4TH DIMENSION</p>
+      </div>
+      <canvas class="tesseract-canvas" id="canvas-interlude" aria-hidden="true"></canvas>
+    </div>
+  </section>
+
+  <!-- ══════════════════ SCENE 06 · CREDITS ROLL ══════════════════ -->
+  <section class="scene scene--credits" id="scene-credits" data-scene="credits">
+    <div class="pinwrap">
+      <div class="credits__overflow">
+        <div class="credits__roll" id="creditsRoll">
+          <p class="credits__heading">CREDITS</p>
+
+          <div class="credits__block">
+            <span class="credits__role">DIRECTED BY</span><span class="credits__name">AASHISH KUMAR</span>
+          </div>
+          <div class="credits__block">
+            <span class="credits__role">DIRECTOR OF PHOTOGRAPHY</span><span class="credits__name">REACT.JS · NEXT.JS · TAILWIND</span>
+          </div>
+          <div class="credits__block">
+            <span class="credits__role">SCORE</span><span class="credits__name">NODE.JS · EXPRESS.JS</span>
+          </div>
+          <div class="credits__block">
+            <span class="credits__role">PRODUCTION DESIGN</span><span class="credits__name">MONGODB · MYSQL · POSTGRESQL</span>
+          </div>
+          <div class="credits__block">
+            <span class="credits__role">VISUAL EFFECTS</span><span class="credits__name">THREE.JS · GSAP · WEBAUDIO</span>
+          </div>
+          <div class="credits__block">
+            <span class="credits__role">STUNTS</span><span class="credits__name">JWT · ARGON2 · RATE LIMITING · ZOD</span>
+          </div>
+          <div class="credits__block">
+            <span class="credits__role">CO-DIRECTOR · AI</span><span class="credits__name">GEMINI · GROQ LLAMA 3.3 70B</span>
+          </div>
+          <div class="credits__block">
+            <span class="credits__role">SECOND UNIT</span><span class="credits__name">21ST.DEV · SPLINE.DESIGN</span>
+          </div>
+          <div class="credits__block">
+            <span class="credits__role">STUNTS COORDINATOR</span><span class="credits__name">DRIZZLE ORM · MONGOOSE</span>
+          </div>
+          <div class="credits__block">
+            <span class="credits__role">CASTING</span><span class="credits__name">PYTHON · C · C++ · JAVA</span>
+          </div>
+          <div class="credits__block">
+            <span class="credits__role">LOCATION MANAGER</span><span class="credits__name">VERCEL · GITHUB</span>
+          </div>
+          <div class="credits__block">
+            <span class="credits__role">SPECIAL THANKS</span><span class="credits__name">EVERY STACK OVERFLOW ANSWER, EVER</span>
+          </div>
+          <div class="credits__block credits__block--small">
+            <span class="credits__role">NO TEMPLATES WERE HARMED IN THE MAKING OF THIS PORTFOLIO</span>
+          </div>
+
+          <p class="credits__fin"><span>AASHISH KUMAR</span> WILL RETURN</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════ SCENE 07 · POST-CREDITS ══════════════════ -->
+  <section class="scene scene--end" id="scene-end" data-scene="end">
+    <div class="pinwrap">
+      <div class="end__content">
+        <span class="end__postcredit">POST-CREDIT SCENE</span>
+        <h2 class="end__title" data-split>Roll credits on your next project —<br/>with me in it.</h2>
+
+        <form class="end__form" id="contactForm" novalidate>
+          <div class="field">
+            <input type="text" name="name" id="cfName" placeholder=" " required autocomplete="name" />
+            <label for="cfName">YOUR NAME</label>
+          </div>
+          <div class="field">
+            <input type="email" name="email" id="cfEmail" placeholder=" " required autocomplete="email" />
+            <label for="cfEmail">YOUR EMAIL</label>
+          </div>
+          <div class="field field--wide">
+            <textarea name="message" id="cfMsg" rows="3" placeholder=" " required></textarea>
+            <label for="cfMsg">THE PITCH</label>
+          </div>
+          <button class="btn btn--primary" type="submit" data-magnetic>SEND THE PITCH →</button>
+          <p class="end__formStatus" id="formStatus" role="status"></p>
+        </form>
+
+        <div class="end__links">
+          <a class="end__link" data-magnetic href="mailto:aashishkumarrajut1345@gmail.com">EMAIL ↗</a>
+          <a class="end__link" data-magnetic href="https://github.com/" target="_blank" rel="noopener">GITHUB ↗</a>
+          <a class="end__link" data-magnetic href="https://linkedin.com/" target="_blank" rel="noopener">LINKEDIN ↗</a>
+        </div>
+
+        <p class="end__phone">+91 62802 87425 · PHAGWARA, PUNJAB · OPEN TO INTERNSHIPS &amp; ROLES</p>
+      </div>
+
+      <!-- secret terminal -->
+      <div class="terminal" id="terminal" hidden>
+        <div class="terminal__bar"><span class="terminal__title">ak@portfolio:~ — the post-credit terminal</span><button class="terminal__close" id="terminalClose">✕</button></div>
+        <div class="terminal__body" id="terminalBody">
+          <p class="t-sys">AASHISH_TERMINAL v2.0 — type <b>help</b></p>
+        </div>
+        <div class="terminal__inputrow">
+          <span class="terminal__prompt">➜</span>
+          <input class="terminal__input" id="terminalInput" autocomplete="off" spellcheck="false" aria-label="terminal input" />
+        </div>
+      </div>
+
+      <footer class="end__footer">
+        <span>© 2026 AASHISH KUMAR</span>
+        <span>SHOT ON WEBGL · EDITED IN GSAP</span>
+        <button class="end__secret" id="terminalOpen" title="…there is a terminal">* press here</button>
+      </footer>
+    </div>
+  </section>
+
+</main>
+
+<!-- classic scripts: UI + director -->
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/Observer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lenis@1.1.14/dist/lenis.min.js"></script>
+
+<script src="js/util.js"></script>
+<script type="module" src="js/film-details.js"></script>
+<script src="js/sound.js"></script>
+<script src="js/glass.js"></script>
+<script src="js/terminal.js"></script>
+<script src="js/tesseract.js"></script>
+<script src="js/director.js"></script>
+
+<!-- WebGL film as ES module (imports three via importmap) -->
+<script type="module" src="js/film3d.js"></script>
+<script type="module" src="js/fluidlens.js"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,88 @@
+{
+  "label": "baseline",
+  "measuredAt": "2026-09-19T15:42:22.165Z",
+  "url": "http://localhost:5577/",
+  "cpuThrottleRate": null,
+  "device": {
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+    "hardwareConcurrency": 4,
+    "deviceMemory": 8,
+    "devicePixelRatio": 1,
+    "hoverNone": false,
+    "reducedMotion": true,
+    "saveData": null,
+    "effectiveType": "4g",
+    "worker": true,
+    "webgpu": true,
+    "gpuRenderer": "ANGLE (Intel, Intel(R) HD Graphics 520 (0x00001916) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+  },
+  "load": {
+    "requestCount": 51,
+    "totalBytes": 621445,
+    "jsBytes": 483484,
+    "thirdPartyRequests": 39,
+    "byType": {
+      "Document": {
+        "count": 1,
+        "bytes": 26984
+      },
+      "Stylesheet": {
+        "count": 2,
+        "bytes": 36541
+      },
+      "Script": {
+        "count": 28,
+        "bytes": 483484
+      },
+      "Font": {
+        "count": 4,
+        "bytes": 74436
+      },
+      "Image": {
+        "count": 16,
+        "bytes": 0
+      }
+    }
+  },
+  "paint": {
+    "lcpMs": 972,
+    "tbtProxyMs": 2391,
+    "longTaskCount": 3,
+    "maxLongTaskMs": 1847,
+    "domContentLoadedMs": 1274,
+    "loadEventMs": 1279
+  },
+  "scroll30s": {
+    "frames": 930,
+    "avgFps": 31,
+    "medianMs": 30.4,
+    "medianFps": 32.9,
+    "p95Ms": 49.5,
+    "droppedOver20ms": 900,
+    "droppedPct": 96.8,
+    "longTaskMs": 502,
+    "longTaskCount": 6,
+    "mainThreadBusyPct": 1.67,
+    "filmP": {
+      "before": 0,
+      "after": 0.985
+    },
+    "governor": {
+      "tier": 4,
+      "label": "SURVIVAL",
+      "scale": "50%",
+      "mirror": "192px"
+    }
+  },
+  "pageErrors": [],
+  "metricProvenance": {
+    "load.requestCount": "MEASURED (CDP Network, encodedDataLength)",
+    "load.totalBytes": "MEASURED (CDP Network, encodedDataLength, all resource types)",
+    "paint.lcpMs": "MEASURED (PerformanceObserver largest-contentful-paint)",
+    "paint.tbtProxyMs": "ESTIMATED (sum of longtask entries >= 50 ms in the load window; NOT Lighthouse TBT)",
+    "scroll.medianMs/p95Ms/avgFps": "MEASURED (GSAP ticker deltas during a scripted 30 s scroll)",
+    "scroll.droppedPct": "MEASURED (frames with delta > 20 ms / total frames)",
+    "scroll.mainThreadBusyPct": "ESTIMATED (longtask ms / wall ms; excludes sub-50 ms tasks)",
+    "lighthouseTBT": "NOT TESTED (requires the lighthouse CLI; see docs/MANUAL_TEST_CHECKLIST.md)"
+  }
+}

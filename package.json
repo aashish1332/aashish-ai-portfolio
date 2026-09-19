@@ -1,0 +1,25 @@
+{
+  "name": "aashish-kumar-the-film",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cinematic scroll-driven WebGL portfolio — scroll is the timeline, the visitor is the projectionist. The city is the system diagram.",
+  "scripts": {
+    "dev": "node dev-server.mjs",
+    "start": "node server.js",
+    "probe": "node dev-error-probe.js",
+    "probe:mobile": "set MOBILE=1&& node dev-error-probe.js",
+    "fps": "node dev-fps-probe.js",
+    "baseline": "node dev-baseline-probe.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.11.0"
+  },
+  "dependencies": {
+    "dotenv": "^18.0.0",
+    "express": "^5.2.1",
+    "mongoose": "^9.10.1"
+  }
+}

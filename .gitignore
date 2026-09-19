@@ -1,0 +1,52 @@
+# ── Aashish AI + portfolio · git-ignore ──────────────────────────────
+# PII / data hygiene (Aashish_AI_Agent_Prompt_v2.md §17)
+.cv-raw.txt
+*.docx
+data/raw/
+data/processed/
+training/checkpoints/
+training/datasets/
+experiments/**/*.safetensors
+*.pt
+*.pth
+*.onnx
+*.gguf
+
+# Secrets / env
+.env
+.env.*
+!.env.example
+
+# Dependencies / build output
+node_modules/
+dist/
+build/
+
+# ── Dev-only probe artefacts (never shipped to the browser) ──────────
+# probes themselves are dev tooling; their OUTPUT is noise
+probe-*.txt
+shots-*.txt
+baseline-run.txt
+baseline-fps*
+pacing.log
+pacing.txt
+*-fps.txt
+fps-*.txt
+*.log
+docs/BASELINE-*.json
+shots/
+dev-fps-last.png
+probe.out.txt
+probe.err.txt
+.tmp-body.json
+
+# ── One-off recovery leftovers from the corrupt freebuff session ─────
+film3d_recovered_0.js
+film3d_firsthalf_f_001ac2.txt
+
+# OS / editor
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/

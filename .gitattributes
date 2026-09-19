@@ -1,0 +1,14 @@
+# Normalize line endings so diffs stay clean on Windows and CI
+* text=auto eol=lf
+
+# Binary assets
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.gguf binary
+*.onnx binary
+*.wasm binary
