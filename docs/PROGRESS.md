@@ -54,7 +54,54 @@ portfolio already sits at its last quality tier, so the AI has *no* frame budget
 
 ## Phase 1 — Knowledge (§16)
 
-**Status:**  **NOT STARTED** — starts when Phase 0's blocking decisions are answered.
-Planned deliverable: `knowledge/knowledge.json` (§8.1), retrieval index (BM25 + aliases + char
-n-grams, §8.2), deterministic language detector (§8.3, ≥100 tests), Quick Answers templates in
-EN / HI / Hinglish, and the PII review list for approval. No model, no GPU, no download.
+**Status:** 🟡 **IN PROGRESS** — data + retrieval inputs + language detection done and tested;
+retrieval index and Quick Answers engine still to build. Gate needs your PII sign-off.
+
+### Done
+1. **`knowledge/knowledge.json`** — the §8.1 schema, built **only** from the authoritative CV plus
+   `index.html`. 54 fact objects: 1 person, 4 contact fields, 2 links, 2 education, 38 skills,
+   3 projects, 1 experience (training only), 3 certifications, 5 achievements, 1 workflow.
+   Every fact carries `id` · `source` ∈ {cv, portfolio} · `public` · `aliases` (Devanagari +
+   Hinglish spellings for §8.2 retrieval).
+2. **`knowledge/CONFLICTS.md`** — all 10 conflicts found, classified:
+   C1 90+/40+ figures are project-scoped (reworded, not deleted); C2 Three.js/GSAP are
+   portfolio-only, not CV skills; C3 attribution framing bounded; C4 bootcamp provider **excluded**
+   (not stated anywhere); C5 two divergent CV files **open**; C7 **no employment history exists**
+   → the top hallucination-bait area; C8 placeholder social links (real URLs recovered);
+   C10 live project URLs retained.
+3. **`knowledge/PII_REVIEW.md`** — the §1 print-out for your approval, plus two decisions.
+   Corrected mid-Phase-1: the phone number and Phagwara/Punjab are **already published by the
+   portfolio** (`index.html:447`), so my Phase 0 assumption was wrong and the audit is amended.
+4. **`ai/language/detect.mjs`** — §8.3, no selector, no ML: Devanagari ratio + a Roman-Hinglish
+   function-word lexicon + an English stop-word negative signal + turn smoothing where a *weak*
+   signal defers and a *strong* one always switches. Includes `voiceHint()` for the §11.4 TTS tier.
+5. **`tests/`** — **127 tests, all passing** via `npm test`:
+   - `language.test.mjs`: **106 frozen classifier cases** (≥100 required by §8.3) + smoothing,
+     tokenizer, diagnostics and voice-hint contracts.
+   - `knowledge.test.mjs`: §8.1 schema, unique ids, provenance, project/skill shapes,
+     secret-shaped-value scan, CV-file-never-ships, working `publicView` gate, and regression
+     guards for C1/C2/C7.
+
+### Measured
+| Metric | Value |
+|---|---|
+| Test suite | **127 pass / 0 fail** in ~0.4 s (`npm test`) |
+| Classifier cases | 106 (10 Hindi · 5 Hindi+Latin code-mix · 35 Hinglish · 35 English · 8 no-function-word · 5 empty · 8 English-collision traps) |
+| Facts in the knowledge base | 54 |
+| Detection cost | pure regex + Set lookups, no allocations per turn beyond the token array — well inside the §4 "≤ 2 ms per-frame AI work" and "no task > 50 ms" budgets (**ESTIMATED** from code shape; not yet instrumented) |
+
+### Still open
+- **BLOCKED (2 PII decisions):** phone `public:true` vs `false`; project live URLs `public:true`
+  vs `false`. See `knowledge/PII_REVIEW.md`. §16's P1 gate requires *"PII list approved"*.
+- **Remaining Phase 1 work:** §8.2 retrieval index (BM25 + alias map + char-n-gram fuzzy + entity
+  index + focus entity, top-k ≤ 3, ≤ ~300 tokens) and the Quick Answers engine with EN/HI/Hinglish
+  templates, plus its `evaluation/portfolio_tests.json`.
+- **C4 open:** bootcamp provider — excluded from answers until you supply it.
+- **C5 open:** which of the two CV files is current.
+- **Non-AI bug found:** 5 placeholder social links in `index.html` (4 × `https://github.com/`,
+  1 × `https://linkedin.com/`) should point to `github.com/aashish1332` and
+  `linkedin.com/in/aashishkumar13/`.
+
+### Evidence
+`knowledge/knowledge.json` · `knowledge/CONFLICTS.md` · `knowledge/PII_REVIEW.md` ·
+`ai/language/detect.mjs` · `tests/*.test.mjs` · `npm test`

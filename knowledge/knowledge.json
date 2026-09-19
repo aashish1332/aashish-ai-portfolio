@@ -1,0 +1,305 @@
+{
+  "meta": {
+    "version": "1.0.0",
+    "schema": "Aashish_AI_Agent_Prompt_v2.md §8.1",
+    "built_from": {
+      "cv": "Aashish_Kumar_CV_ATS_Optimized_FINAL_v3.docx",
+      "cv_hyperlink_part": "word/_rels/document.xml.rels",
+      "portfolio": "index.html"
+    },
+    "built_at": "2026-09-19",
+    "language_notes": "aliases[] carry Hindi (Devanagari) and Roman-Hinglish spellings for §8.2 retrieval and §8.3 detection.",
+    "public_rule": "public:true only where the CV or the live portfolio already publishes the fact (§1). Everything else defaults to public:false and is excluded from the shipped bundle."
+  },
+
+  "person": {
+    "id": "person.name",
+    "name": "Aashish Kumar",
+    "headline": "Full-Stack Developer",
+    "class_year": "Class of 2028",
+    "source": "portfolio",
+    "source_ref": "index.html:100-103",
+    "public": true,
+    "aliases": ["आशीष कुमार", "Aashish", "Ashish Kumar", "aashish kumar", "AK Kumar"]
+  },
+
+  "contact": {
+    "email": {
+      "id": "contact.email",
+      "value": "aashishkumarrajut1345@gmail.com",
+      "source": "cv",
+      "source_ref": "index.html:442 (mailto:) and js/main.js:26",
+      "public": true,
+      "aliases": ["email", "mail", "gmail", "contact email", "ईमेल"]
+    },
+    "phone": {
+      "id": "contact.phone",
+      "value": "+91 6280287425",
+      "source": "cv",
+      "source_ref": "index.html:447 (already published by the portfolio as '+91 62802 87425')",
+      "public": true,
+      "public_confirmation_required": true,
+      "aliases": ["phone", "mobile", "number", "contact number", "फोन", "मोबाइल"],
+      "note": "§1 defaults phone to public:false. It is set true here ONLY because the live portfolio already publishes it verbatim at index.html:447. Confirm before shipping."
+    },
+    "location": {
+      "id": "contact.location",
+      "value": "Phagwara, Punjab, India",
+      "source": "portfolio",
+      "source_ref": "index.html:447",
+      "public": true,
+      "aliases": ["location", "city", "where does he live", "पता", "कहाँ रहता है"]
+    },
+    "availability": {
+      "id": "contact.availability",
+      "value": "Open to internships and full-time roles",
+      "source": "portfolio",
+      "source_ref": "index.html:447 ('OPEN TO INTERNSHIPS & ROLES')",
+      "public": true,
+      "aliases": ["available", "hiring", "internship", "open to work", "नौकरी"]
+    }
+  },
+
+  "links": [
+    {
+      "id": "link.github",
+      "label": "GitHub",
+      "url": "https://github.com/aashish1332",
+      "source": "cv",
+      "source_ref": "word/_rels/document.xml.rels rId7",
+      "public": true,
+      "aliases": ["github", "gh", "repos", "code profile", "गिटहब"],
+      "portfolio_bug": "index.html:184,209,234,443 all ship href=\"https://github.com/\" (placeholder, no username) — needs correcting"
+    },
+    {
+      "id": "link.linkedin",
+      "label": "LinkedIn",
+      "url": "https://www.linkedin.com/in/aashishkumar13/",
+      "source": "cv",
+      "source_ref": "word/_rels/document.xml.rels rId6",
+      "public": true,
+      "aliases": ["linkedin", "li", "professional profile", "लिंक्डइन"],
+      "portfolio_bug": "index.html:444 ships href=\"https://linkedin.com/\" (placeholder, no username) — needs correcting"
+    }
+  ],
+
+  "education": [
+    {
+      "id": "edu.lpu",
+      "institution": "Lovely Professional University",
+      "short_name": "LPU",
+      "location": "Phagwara, Punjab",
+      "degree": "Bachelor of Technology (B.Tech)",
+      "field": "Computer Science and Engineering (Full Stack)",
+      "start": "Aug 2024",
+      "end": "present",
+      "expected_graduation": "2028",
+      "score": { "type": "CGPA", "value": 8.28, "scale": 10 },
+      "source": "cv",
+      "source_ref": "index.html:132,142",
+      "public": true,
+      "aliases": ["lpu", "lovely professional university", "b.tech", "college", "university", "graduation", "पढ़ाई", "कॉलेज"]
+    },
+    {
+      "id": "edu.kv2",
+      "institution": "Kendriya Vidyalaya No. 2, RCF, Hussainpur",
+      "location": "Punjab",
+      "degree": "Senior Secondary (Class 12)",
+      "field": "CBSE",
+      "start": "2023",
+      "end": "2024",
+      "score": { "type": "percentage", "value": 87.6 },
+      "source": "cv",
+      "source_ref": "index.html:132",
+      "public": true,
+      "aliases": ["kendriya vidyalaya", "kv", "class 12", "12th", "senior secondary", "school", "cbse", "स्कूल"]
+    }
+  ],
+
+  "skills": [
+    { "id": "skill.python", "name": "Python", "category": "language", "source": "cv", "public": true, "aliases": ["python", "पाइथन"] },
+    { "id": "skill.c", "name": "C", "category": "language", "source": "cv", "public": true },
+    { "id": "skill.cpp", "name": "C++", "category": "language", "source": "cv", "public": true, "aliases": ["cpp", "c plus plus", "सी प्लस प्लस"] },
+    { "id": "skill.java", "name": "Java", "category": "language", "source": "cv", "public": true, "aliases": ["java", "जावा"] },
+    { "id": "skill.javascript", "name": "JavaScript", "category": "language", "source": "cv", "public": true, "aliases": ["javascript", "js", "vanilla js", "जावास्क्रिप्ट"] },
+    { "id": "skill.html5", "name": "HTML5", "category": "language", "source": "cv", "public": true, "aliases": ["html", "html5"] },
+    { "id": "skill.css3", "name": "CSS3", "category": "language", "source": "cv", "public": true, "aliases": ["css", "css3"] },
+
+    { "id": "skill.react", "name": "React.js", "category": "frontend", "source": "cv", "public": true, "aliases": ["react", "reactjs", "react.js", "रिएक्ट"] },
+    { "id": "skill.next", "name": "Next.js", "category": "frontend", "source": "cv", "public": true, "aliases": ["next", "nextjs", "next.js"] },
+    { "id": "skill.tailwind", "name": "Tailwind CSS", "category": "frontend", "source": "cv", "public": true, "aliases": ["tailwind", "tailwindcss"] },
+    { "id": "skill.vite", "name": "Vite", "category": "frontend", "source": "cv", "public": true, "aliases": ["vite"] },
+
+    { "id": "skill.node", "name": "Node.js", "category": "backend", "source": "cv", "public": true, "aliases": ["node", "nodejs", "node.js", "नोड"] },
+    { "id": "skill.express", "name": "Express.js", "category": "backend", "source": "cv", "public": true, "aliases": ["express", "expressjs", "express.js"] },
+    { "id": "skill.rest", "name": "REST APIs", "category": "backend", "source": "cv", "public": true, "aliases": ["rest", "rest api", "api", "apis", "endpoints", "एपीआई"] },
+
+    { "id": "skill.mongodb", "name": "MongoDB", "category": "database", "source": "cv", "public": true, "aliases": ["mongo", "mongodb", "मोंगो"] },
+    { "id": "skill.mysql", "name": "MySQL", "category": "database", "source": "cv", "public": true, "aliases": ["mysql", "sql"] },
+    { "id": "skill.postgresql", "name": "PostgreSQL", "category": "database", "source": "cv", "public": true, "aliases": ["postgres", "postgresql", "pg"] },
+    { "id": "skill.mongoose", "name": "Mongoose", "category": "database", "source": "cv", "public": true, "aliases": ["mongoose", "odm"] },
+    { "id": "skill.drizzle", "name": "Drizzle ORM", "category": "database", "source": "cv", "public": true, "aliases": ["drizzle", "drizzle orm", "orm"] },
+
+    { "id": "skill.gemini", "name": "Google Gemini AI", "category": "ai-ml", "source": "cv", "public": true, "aliases": ["gemini", "google gemini", "gemini ai", "जेमिनी"] },
+    { "id": "skill.groq", "name": "Groq AI (Llama 3.3 70B)", "category": "ai-ml", "source": "cv", "public": true, "aliases": ["groq", "llama", "llama 3.3", "llama 70b"] },
+
+    { "id": "skill.jwt", "name": "JWT", "category": "security", "source": "cv", "public": true, "aliases": ["jwt", "json web token", "token auth"] },
+    { "id": "skill.bcrypt", "name": "bcrypt", "category": "security", "source": "cv", "public": true, "aliases": ["bcrypt", "argon2", "hashing", "password hashing"] },
+    { "id": "skill.cors", "name": "CORS", "category": "security", "source": "cv", "public": true, "aliases": ["cors"] },
+    { "id": "skill.ratelimit", "name": "Rate limiting", "category": "security", "source": "cv", "public": true, "aliases": ["rate limiting", "rate limit", "throttling"] },
+
+    { "id": "skill.git", "name": "Git", "category": "tooling", "source": "cv", "public": true, "aliases": ["git"] },
+    { "id": "skill.github", "name": "GitHub", "category": "tooling", "source": "cv", "public": true, "aliases": ["github"] },
+    { "id": "skill.vscode", "name": "VS Code", "category": "tooling", "source": "cv", "public": true, "aliases": ["vs code", "vscode"] },
+    { "id": "skill.npm", "name": "npm", "category": "tooling", "source": "cv", "public": true, "aliases": ["npm"] },
+    { "id": "skill.postman", "name": "Postman", "category": "tooling", "source": "cv", "public": true, "aliases": ["postman"] },
+    { "id": "skill.vercel", "name": "Vercel", "category": "tooling", "source": "cv", "public": true, "aliases": ["vercel", "deployment"] },
+
+    { "id": "skill.teamwork", "name": "Teamwork", "category": "soft", "source": "cv", "public": true, "aliases": ["teamwork", "team work"] },
+    { "id": "skill.adaptability", "name": "Adaptability", "category": "soft", "source": "cv", "public": true, "aliases": ["adaptability", "adaptable"] },
+    { "id": "skill.collaboration", "name": "Collaboration", "category": "soft", "source": "cv", "public": true, "aliases": ["collaboration"] },
+    { "id": "skill.communication", "name": "Communication", "category": "soft", "source": "cv", "public": true, "aliases": ["communication"] },
+    { "id": "skill.timemanagement", "name": "Time Management", "category": "soft", "source": "cv", "public": true, "aliases": ["time management"] },
+
+    { "id": "skill.threejs", "name": "Three.js / WebGL", "category": "extras", "source": "portfolio", "source_ref": "index.html:384 credits + this portfolio's own build", "public": true, "aliases": ["three", "threejs", "three.js", "webgl", "3d"], "note": "Evidenced by THIS portfolio, not by the CV's skills list. §8.4: must not be described as a CV-listed skill." },
+    { "id": "skill.gsap", "name": "GSAP", "category": "extras", "source": "portfolio", "source_ref": "index.html:384", "public": true, "aliases": ["gsap", "animation"], "note": "Evidenced by this portfolio, not the CV." }
+  ],
+
+  "projects": [
+    {
+      "id": "project.volunteer",
+      "name": "Community Volunteer Management",
+      "portfolio_codename": "VOLUNTEER OS",
+      "is_latest": true,
+      "summary": "Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.",
+      "role": "Self-defined product spec, UI/feature requirements and monorepo architecture; AI wrote to that spec; author reviewed and fixed the output.",
+      "tech": ["React 18", "Vite", "Tailwind CSS", "Node.js", "MySQL", "Drizzle ORM", "JWT", "Argon2", "bcrypt", "Helmet", "Zod", "Recharts", "npm workspaces"],
+      "links": [{ "label": "Live", "url": "https://atlascommunity-one.vercel.app/" }],
+      "status": "completed",
+      "date": "July 2026",
+      "highlights": [
+        "35 page files across 15 sections; 16 mounted API route groups; 90+ unique backend endpoints",
+        "JWT access/refresh tokens, Argon2 + bcrypt auth, email verification, password reset, session management, role-based access control",
+        "Hardened with Helmet, CORS, rate limiting and Zod validation; 40+ database tables modeled in Drizzle ORM",
+        "4 real-data Recharts dashboards; visual effects via 21st.dev + Spline.design components (Globe, GlassSurface, FlowingMenu, SocialCards, ClickSpark)"
+      ],
+      "ai_attribution": "AI-generated code guided by the author's self-defined UI and feature requirements.",
+      "source": "cv",
+      "source_ref": "index.html:163-185, 256-282",
+      "public": true,
+      "aliases": ["volunteer", "volunteer os", "community volunteer management", "volunteer management", "atlas", "atlas community", "ngo project", "monorepo project", "सबसे बड़ा प्रोजेक्ट"]
+    },
+    {
+      "id": "project.grocery",
+      "name": "Smart Grocery List Generator",
+      "portfolio_codename": "GROCERY.AI",
+      "summary": "3-page full-stack grocery planning app with Gemini AI for suggestions, meal planning and chat across 24 grocery items.",
+      "role": "Self-defined product features and UI requirements; AI wrote the React 19 + Express codebase to that spec.",
+      "tech": ["React 19", "Vite", "Node.js", "Express", "MongoDB", "Gemini AI", "JWT", "bcrypt", "Recharts"],
+      "links": [{ "label": "Live", "url": "https://smart-grocery-lemon.vercel.app/" }],
+      "status": "completed",
+      "date": "May 2026",
+      "highlights": [
+        "Gemini AI for grocery suggestions, meal planning and chat assistance across 24 grocery items",
+        "Cart, order history, CSV export and replenishment alerts",
+        "Shader-based backgrounds, 3D elements, glassmorphism and 20+ animations",
+        "2 Recharts dashboards including dynamic order-based product-affinity analytics; dark/light mode with responsive layouts"
+      ],
+      "ai_attribution": "AI-generated code guided by the author's self-defined product features and UI requirements; visual work also used pre-built 21st.dev and Spline.design components.",
+      "source": "cv",
+      "source_ref": "index.html:188-210, 285-310",
+      "public": true,
+      "aliases": ["grocery", "grocery ai", "smart grocery", "grocery list generator", "smart grocery list", "किराना", "grocery project"]
+    },
+    {
+      "id": "project.goaltracker",
+      "name": "Goal Tracker SaaS",
+      "portfolio_codename": "GOAL TRACKER SaaS",
+      "summary": "Full-stack SaaS goal-tracking platform with Groq Llama 3.3 70B AI chat, an 8-level XP/streak system and Chart.js analytics, deployed on Vercel.",
+      "role": "Goal CRUD, subtasks, progress tracking, drag-and-drop, tags, search/filter, offline sync and public share links across 6 pages",
+      "tech": ["Node.js", "Express", "MongoDB", "Mongoose", "Groq AI", "Llama 3.3 70B", "Chart.js", "JWT", "bcrypt", "Vercel"],
+      "links": [{ "label": "Live", "url": "https://personal-goal-tracker-five.vercel.app/" }],
+      "status": "completed",
+      "date": "March 2026",
+      "highlights": [
+        "Goal CRUD, subtasks, progress tracking, drag-and-drop reordering, tags, search/filter, offline sync and token-based public sharing across 6 pages",
+        "Groq Llama 3.3 70B for AI chat and per-goal tips, rate-limited to 20 chat messages/day and up to 5 tips per goal",
+        "3 Chart.js analytics views and an 8-level XP system with streak tracking",
+        "Deployed on Vercel; pre-built UI/3D components from 21st.dev and Spline.design"
+      ],
+      "ai_attribution": "AI-generated code to the author's spec; pre-built UI/3D components from 21st.dev and Spline.design.",
+      "source": "cv",
+      "source_ref": "index.html:213-235, 313-338",
+      "public": true,
+      "aliases": ["goal tracker", "goal tracker saas", "goal tracking", "saas project", "xp system", "streaks", "गोल ट्रैकर", "habit tracker"]
+    }
+  ],
+
+  "experience": [
+    {
+      "id": "exp.mern-bootcamp",
+      "type": "training",
+      "title": "AI-Driven MERN Stack Bootcamp — Full Stack Development with DevOps & Real-World Projects",
+      "organization": "Bootcamp (see CONFLICTS.md — provider not stated in the CV)",
+      "start": "2026-06-11",
+      "end": "2026-07-15",
+      "grade": "A",
+      "source": "cv",
+      "source_ref": "index.html:150 ('MERN BOOTCAMP · GRADE A · JUN–JUL 2026')",
+      "public": true,
+      "aliases": ["bootcamp", "mern bootcamp", "training", "devops", "course", "बूटकैंप", "ट्रेनिंग"]
+    }
+  ],
+
+  "certifications": [
+    {
+      "id": "cert.dbms",
+      "name": "Database Management System",
+      "issuer": "Infosys Springboard",
+      "date": "2026-07-04",
+      "source": "cv",
+      "source_ref": "index.html:151 ('INFOSYS DBMS · CERTIFIED · JUL 2026')",
+      "public": true,
+      "aliases": ["dbms", "infosys", "database certificate", "डीबीएमएस"]
+    },
+    {
+      "id": "cert.cpp",
+      "name": "Programming Using C++",
+      "issuer": "Infosys Springboard",
+      "date": "2025-07-26",
+      "source": "cv",
+      "source_ref": "index.html:152 ('C++ · INFOSYS · CERTIFIED · JUL 2025')",
+      "public": true,
+      "aliases": ["c++ certificate", "programming using c++", "सी प्लस प्लस सर्टिफिकेट"]
+    },
+    {
+      "id": "cert.minor-ai",
+      "name": "Minor in Artificial Intelligence",
+      "issuer": "Masai School × IIT Ropar",
+      "start": "2025-01",
+      "end": "2025-11",
+      "score": { "type": "CGPA", "value": 6.93, "scale": 10 },
+      "source": "cv",
+      "source_ref": "index.html:149 ('MINOR IN AI · MASAI × IIT ROPAR · 6.93')",
+      "public": true,
+      "aliases": ["minor in ai", "artificial intelligence minor", "masai", "iit ropar", "एआई माइनर"]
+    }
+  ],
+
+  "achievements": [
+    { "id": "ach.lpu-cgpa", "text": "CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University", "metric": { "type": "CGPA", "value": 8.28, "scale": 10 }, "source": "cv", "source_ref": "index.html:132,142", "public": true, "aliases": ["cgpa", "gpa", "marks", "8.28", "सीजीपीए"] },
+    { "id": "ach.class12", "text": "87.6 % in Senior Secondary (CBSE), Kendriya Vidyalaya No. 2 RCF Hussainpur", "metric": { "type": "percentage", "value": 87.6 }, "source": "cv", "source_ref": "index.html:132", "public": true, "aliases": ["12th percentage", "class 12 marks", "87.6"] },
+    { "id": "ach.bootcamp-grade", "text": "Grade A in the AI-Driven MERN Stack Bootcamp", "metric": { "type": "grade", "value": "A" }, "source": "cv", "source_ref": "index.html:150", "public": true, "aliases": ["grade a", "bootcamp grade", "grade"] },
+    { "id": "ach.minor-ai-cgpa", "text": "CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar)", "metric": { "type": "CGPA", "value": 6.93, "scale": 10 }, "source": "cv", "source_ref": "index.html:149", "public": true, "aliases": ["minor cgpa", "6.93"] },
+    { "id": "ach.portfolio-scale", "text": "Three shipped full-stack products live on Vercel, including one enterprise monorepo with 90+ backend endpoints and 40+ database tables", "source": "portfolio", "source_ref": "index.html:139-141,179-180", "public": true, "aliases": ["what has he built", "biggest project", "portfolio strength", "achievement"] }
+  ],
+
+  "workflow": {
+    "id": "workflow.how-he-builds",
+    "text": "Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.",
+    "source": "portfolio",
+    "source_ref": "index.html:133, 245-251, 341",
+    "public": true,
+    "aliases": ["how does he use ai", "ai assisted", "did he use ai", "chatgpt se banaya", "what kind of developer", "workflow", "कैसे बनाता है"]
+  }
+}
