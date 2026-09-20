@@ -5,6 +5,86 @@ is labelled ESTIMATED or NOT TESTED — never rounded up into a pass.
 
 ---
 
+## P3 — tokenizer + model code (2026-09-20)
+
+**Device:** R1 (Intel HD 520, 4 threads, 8 GB, Windows). **Method:**
+`python inference/count_parameters.py --config all`, `python -m ai.tokenizer.train`,
+`python -m ai.tokenizer.fertility`, `python -m training.scripts.prepare_data`,
+`python -m training.scripts.train_smoke --pipeline-only` — all on the committed
+fixture. Timings are wall-clock on this machine, not a benchmark rig.
+
+### Model arithmetic (§7.1) — analytic, and the reason why
+
+| Config | Params | §7.1 band | Verdict |
+|---|---|---|---|
+| **A** | **37,890,560** | 30–50M (~40M preferred) | ✅ met |
+| lite (contingency) | 17,701,248 | ~17M | ✅ met |
+| smoke (§7.5) | 1,820,352 | 1–3M | ✅ met |
+
+§7.1's own estimate is "~37.9M"; the exact integer is 37,890,560. The gap is
+that the spec's hand arithmetic does not itemise the two RMSNorms per layer
+(10 × 2 × 512) plus the final norm. Pinned in `test_model_schema.py`.
+
+**`torch: NOT INSTALLED`** — so the *materialised* cross-check (build the
+module, compare `sum(p.numel())` and every state-dict shape) did not run
+here. The analytic count stands on its own, but it is one derivation, not
+two, on this machine. Recorded as UNVERIFIED rather than reported as a pass.
+
+| Quantity | Measured (analytic) | §7.1 claim | Verdict |
+|---|---|---|---|
+| KV cache per token, config A, fp16 | **10.00 KB** | ~10 KB/token | ✅ met |
+| KV cache at ctx 1024 | 10.0 MB | ~10 MB | ✅ met |
+| Prefill FLOPs at ctx 1024 | 39.8 GFLOP | — | estimate, no kernel overhead |
+| Decode FLOPs/token at ctx 1024 | 0.08 GFLOP | — | estimate |
+| State-dict keys, config A | 93 | HF `LlamaForCausalLM` layout | ✅ key set asserted in tests |
+
+### Tokenizer (§7.2)
+
+| Metric | Value |
+|---|---|
+| Vocab (dev fixture) | **1,024** (6 special tokens + 63 placeholder tokens + 256 bytes + merges) |
+| Max learnable vocab on this fixture | 1,935 — **bounded by distinct word forms, not corpus size** |
+| Artifact size | `tokenizer.json` 66,667 B raw / **10,291 B gz** (`meta.json` 1,993 B / 968 B gz) |
+| Contract checks | 6 special tokens present · **63/63 placeholders atomic** · 7/7 exact round-trips (EN/HI/Hinglish/SQL/URL/emoji) |
+
+| Fertility (vocab 1,024) | tok/word | chars/tok |
+|---|---|---|
+| en | 2.46 | 2.52 |
+| hi | **4.71** | 1.18 |
+| hinglish | 2.69 | 2.24 |
+| tech | 4.35 | 1.69 |
+| url_email | 15.50 | 1.39 |
+
+All but English are over the 2.5 tok/word budget at this vocab size. That is
+expected at 1k and is the input to the P4 decision — it is **not** evidence
+against 16k, because the fixture's Hindi share is synthetic and too small to
+merge.
+
+### Corpus pipeline (§7.3)
+
+| Metric | Value |
+|---|---|
+| Fixture | 17,402 lines / 3.2 MB, generated (seed 20260920) |
+| Kept after filters | 17,265 (137 dropped: near-duplicate) |
+| Language mix | en 8,901 · hi 4,191 · hinglish 4,173 |
+| Placeholders applied | 6 public facts; 1 withheld fact excluded from the masking set |
+| Leakage | clean — 0 exact, 0 near, across a 2 % val split |
+| Shards | train 749,590 tokens / 68 files · val 16,801 tokens / 2 files · `uint16` |
+| End-to-end `prepare_data` | 20.2 s (clean → dedupe → tag → tokenise 17k lines → 70 shard files) |
+| Tokenizer training (3.2 MB, 1024 vocab) | 3.6 s |
+
+### What P3 changed about the plan
+
+* **Vocab ceiling is lexical, not volumetric.** Measured: the same 80-line
+  corpus tops out at 802 merges whether repeated ×4 or ×16; 44 lines with
+  348 distinct word forms reach 1,228. Repetition buys nothing, so P4's
+  12–16k must come from *distinct vocabulary*, and the trainer now fails
+  loudly instead of emitting a smaller vocab than requested.
+* **Hindi needs real corpus volume to merge at all** — the seed fixture
+  cannot settle the §7.2 vocab question, and now says so.
+
+---
+
 ## P2 — chat shell + governor (2026-09-20)
 
 **Device:** the only reference profile available so far is **R1** (Intel HD 520, 4 threads, 8 GB,

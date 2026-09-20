@@ -110,3 +110,35 @@ Full-stack: `MONGODB_URI=... node server.js` (Railway/Render) or convert `server
 ## ✍️ Before you publish
 - Replace `github.com/` and `linkedin.com/` placeholder links in `index.html` with your real profiles.
 - Terminal `contact` command has your real email already.
+
+---
+
+## 🤖 The AI assistant (`ASK AASHISH AI`)
+
+A scratch-built assistant that answers questions about this portfolio in
+**English, Hindi or Roman Hinglish** — automatically, with no language
+selector, **no backend, no LLM API and no API key**.
+
+Click the chip bottom-right to open it. Today every answer is produced by a
+deterministic engine over a verified knowledge base, and the panel says so
+per answer: *"Quick answer — no AI model on this device"*. A scratch model
+(37.9M params, config A) has its tokenizer, architecture, parameter schema
+and training pipeline built and tested; the browser runtime arrives in
+P6–P7, and Stage A training runs on Kaggle in P4.
+
+Nothing AI-related loads until you click: the launcher is **958 B gz** and
+the page makes **zero** AI requests before that.
+
+| Doc | What it covers |
+|---|---|
+| [docs/AI_ARCHITECTURE.md](docs/AI_ARCHITECTURE.md) | how the pieces fit, and what is verified vs not |
+| [docs/TRAINING.md](docs/TRAINING.md) | corpus pipeline, tokenizer, model, checkpoints, resume, Kaggle plan |
+| [docs/DATA_LICENSES.md](docs/DATA_LICENSES.md) | what is in the corpus and what may enter it |
+| [docs/BENCHMARKS.md](docs/BENCHMARKS.md) | every measured number, with device and method |
+| [docs/PROGRESS.md](docs/PROGRESS.md) | phase-by-phase log, including what is unfinished |
+
+```bash
+npm run test:all     # 213 JS + 92 Python tests
+npm run params       # parameter count + §7.1 band gate
+npm run smoke        # tokenizer contract, shards, data cursor, checkpoints
+```

@@ -1,0 +1,32 @@
+{
+  "_comment": "Single source of truth for the §8.3 deterministic detector lexicons. The JS runtime (ai/language/detect.mjs) and the Python data pipeline (ai/data/langid.py) must agree exactly; tests/lexicons-parity.test.mjs and tests/py/test_langid_parity.py both enforce it against tests/fixtures/langid_cases.json.",
+  "hinglish": [
+    "mai", "mein", "hum", "tum", "aap", "yeh", "ye", "wo", "voh", "uska", "uski", "uske",
+    "unka", "unki", "mera", "meri", "mere", "tumhara", "aapka", "apna", "apni", "khud",
+    "kya", "kyaa", "kaun", "kaunsa", "kaunsi", "kaise", "kaisa", "kaisi", "kyun", "kyon",
+    "kab", "kahan", "kahaan", "kitna", "kitni", "kitne",
+    "ka", "ke", "ki", "ko", "se", "ne", "bhi", "aur", "toh", "phir", "abhi", "sirf", "bas",
+    "hai", "hain", "ho", "hun", "tha", "thi", "hoga", "hogi", "honge",
+    "raha", "rahi", "rahe", "karo", "kar", "karta", "karti", "karte", "karna", "kiya",
+    "sakta", "sakte", "sakti", "chahiye", "lagta", "lagti", "milega", "mila",
+    "batao", "bata", "bataiye", "batana", "dikhao", "dikha", "sunao", "likho", "kholo",
+    "bahut", "bohot", "thoda", "zyada", "accha", "acha", "achha", "theek", "tik", "sab",
+    "kuch", "koi", "jaisa", "jaise", "matlab", "wala", "wali", "wale", "saare", "poora",
+    "kaam", "padhai", "zindagi", "dost", "bhai", "yaar", "baat", "jankari", "jaankari",
+    "sawal", "jawab", "madad", "kripya", "dhanyavad", "namaste", "shukriya"
+  ],
+  "english": [
+    "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "am",
+    "do", "does", "did", "done", "have", "has", "had", "will", "would", "shall",
+    "should", "can", "could", "may", "might", "must", "to", "of", "in", "on",
+    "at", "by", "for", "with", "from", "about", "into", "over", "after",
+    "and", "or", "but", "if", "then", "than", "so", "because", "as",
+    "what", "who", "whom", "whose", "which", "when", "where", "why", "how",
+    "he", "she", "it", "they", "him", "her", "them", "his", "their", "its",
+    "i", "you", "your", "we", "our", "my", "me", "us",
+    "this", "that", "these", "those", "there", "here",
+    "tell", "show", "list", "give", "explain", "describe", "summarize", "share",
+    "know", "want", "need", "like", "get", "got", "make", "made", "use", "used",
+    "yes", "no", "not", "please", "thanks", "thank", "hello", "hey"
+  ]
+}

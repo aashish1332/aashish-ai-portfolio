@@ -12,6 +12,20 @@ experiments/**/*.safetensors
 *.onnx
 *.gguf
 
+# ── Trained tokenizer artifacts ──────────────────────────────────────
+# The small dev fixture artifact is committed on purpose: the Python test
+# suite and `train_smoke.py` read it, so a fresh clone can verify the
+# tokenizer contract without retraining. Real P4+ artifacts (12–16k vocab,
+# larger corpora) are build outputs and stay out.
+ai/tokenizer/artifacts/*
+!ai/tokenizer/artifacts/seed-1k/
+
+# ── Python (training + inference side) ───────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
 # Secrets / env
 .env
 .env.*

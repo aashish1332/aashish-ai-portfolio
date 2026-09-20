@@ -1,0 +1,40 @@
+{
+  "_comment": "Fertility probes for §7.2 (tokens-per-word for EN / HI / Hinglish / tech terms). Kept as data so the report and the tests use exactly the same sentences.",
+  "categories": {
+    "en": [
+      "Hello! I am Aashish's AI portfolio assistant. I answer questions about his verified portfolio only.",
+      "Aashish is a full-stack developer who builds web applications and directs AI tools to implement the product spec he writes.",
+      "Would you like me to show you the projects, the technology stack, or the education section first?",
+      "I do not have that information in Aashish's portfolio yet.",
+      "During his internship he worked on the backend services that powered the analytics dashboards."
+    ],
+    "hi": [
+      "नमस्ते! मैं आशीष का एआई पोर्टफोलियो सहायक हूँ। मैं केवल सत्यापित जानकारी के आधार पर उत्तर देता हूँ।",
+      "आशीष ने अपनी बी.टेक की पढ़ाई लवली प्रोफेशनल यूनिवर्सिटी से पूरी की और उसका सीजीपीए 8.28 है।",
+      "क्या आप उसके प्रोजेक्ट, तकनीकी कौशल या शिक्षा के बारे में जानना चाहेंगे?",
+      "यह जानकारी अभी आशीष के पोर्टफोलियो में उपलब्ध नहीं है।",
+      "उसने सामुदायिक स्वयंसेवा प्रबंधन प्रणाली पर काम किया और नब्बे से अधिक एपीआई एंडपॉइंट बनाए।"
+    ],
+    "hinglish": [
+      "Namaste! Main Aashish ka AI portfolio assistant hun, uska verified data se hi jawab deta hun.",
+      "Uska CGPA 8.28 hai aur usne B.Tech Computer Science Lovely Professional University se kiya hai.",
+      "Kya aap uske projects, tech skills ya education ke baare mein jaanna chahenge?",
+      "Ye information abhi Aashish ke portfolio mein available nahi hai.",
+      "Bhai usne grocery wale project mein MongoDB aur Express use kiya, batao aur kya jaanna hai?"
+    ],
+    "tech": [
+      "React, Vite, Tailwind CSS, Node.js, Express, MySQL, Drizzle ORM, JWT, Argon2, Zod, Recharts",
+      "SELECT id, created_at FROM users WHERE role = 'admin' ORDER BY created_at DESC LIMIT 20;",
+      "npm run build && node --experimental-modules dist/index.mjs --port=5173",
+      "The transformer uses RMSNorm, rotary position embeddings, SwiGLU feed-forward layers and grouped-query attention with four KV heads.",
+      "docker compose up -d --build && kubectl rollout restart deployment/portfolio-api"
+    ],
+    "url_email": [
+      "https://atlascommunity-one.vercel.app/",
+      "https://github.com/aashishkumar",
+      "someone@example.com",
+      "+91 00000 00000",
+      "2026-09-20T07:35:31Z · https://www.linkedin.com/in/example-profile"
+    ]
+  }
+}

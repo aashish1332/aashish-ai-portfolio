@@ -1,0 +1,52 @@
+{
+  "tokenizer_version": "portfolio-bpe-1k-45395d2ebc83",
+  "name": "portfolio-bpe",
+  "vocab_size": 1024,
+  "model_type": "byte-level BPE (our own, trained from scratch)",
+  "normalizer": "NFC",
+  "byte_fallback": true,
+  "unknown_token": null,
+  "special_tokens": [
+    "<|sys|>",
+    "<|ctx|>",
+    "<|user|>",
+    "<|asst|>",
+    "<|end|>",
+    "<|abstain|>"
+  ],
+  "placeholder_count": 63,
+  "spec_hash": "45395d2ebc83",
+  "min_frequency": 2,
+  "corpus": {
+    "files": [
+      "data/raw/seed/conv_en.txt",
+      "data/raw/seed/conv_hi.txt",
+      "data/raw/seed/conv_hinglish.txt",
+      "data/raw/seed/copy_from_context.txt",
+      "data/raw/seed/portfolio_refs.txt",
+      "data/raw/seed/synth_en.txt",
+      "data/raw/seed/synth_hi.txt",
+      "data/raw/seed/synth_hinglish.txt",
+      "data/raw/seed/tech_code.txt"
+    ],
+    "bytes": 3272860,
+    "sha256": {
+      "conv_en.txt": "48c14fd81ddd84b08ce555b7d2a694f3bb9aabf2df3fc1fe284e5291c86fda5d",
+      "conv_hi.txt": "b449aeba54f66ddfeb413b2ccd0649bfd6d6fcbb286c69c61ca7530ccfa869c9",
+      "conv_hinglish.txt": "beafb1d6263494049967788f7ed4b2a5886990ac9b4492ddc542df072a8d2007",
+      "copy_from_context.txt": "f17ff765ce8f9d5464816f47f29b7748fc85319a7276a3c7b37dc00e61dab497",
+      "portfolio_refs.txt": "fd4e31c6c27f311ba8f0540b299a3eeb70b49ddc05a47edd33838f2f4b8fb7a5",
+      "synth_en.txt": "dd8d6d33ab885594aafb57d39be7e61b33125089616213e6a9c77f4a97818014",
+      "synth_hi.txt": "7c93699ec1420455b8db8c0bbfa2420e2b9c9b3fb64de7251edf6fbb17a5360b",
+      "synth_hinglish.txt": "0b0eaac2ee60129cca95c7cb7d995f9004df9a8f42bdad0dd41d4235a4735b2b",
+      "tech_code.txt": "5db93602fe729e190e9290b2e489a91e86a0f218a67daa507760dbf2ffbfca88"
+    }
+  },
+  "artifact": {
+    "file": "tokenizer.json",
+    "sha256": "90353b2a722f557e80973e3b7e1e1ebea4619a7ec903197eb86f28733bb55d31"
+  },
+  "built_at": "2026-09-20T06:03:06+00:00",
+  "git_commit": "dae940a",
+  "python": "3.13.14"
+}

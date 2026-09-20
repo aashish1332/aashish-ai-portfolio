@@ -27,6 +27,7 @@ import {
   MIN_TOP_SCORE, FUZZY_MIN,
 } from '../retrieval/index.mjs';
 import { viewOf, withheldContactFields } from '../knowledge/view.mjs';
+import { replacePlaceholders } from '../knowledge/placeholders.mjs';
 
 /** Pick the language variant. English is the fallback, never a placeholder. */
 export const tri = (lang, en, hi, hinglish) =>
@@ -163,9 +164,9 @@ export function renderFact(kb, id, lang = 'en') {
  */
 export function resolveFacts(kb, text, lang = 'en') {
   const unresolved = [];
-  const out = String(text || '').replace(/<\|\s*fact:([^|]+?)\s*\|>/g, (_m, id) => {
-    const v = renderFact(kb, id.trim(), lang);
-    if (!v) { unresolved.push(id.trim()); return ''; }
+  const out = replacePlaceholders(text, (id) => {
+    const v = renderFact(kb, id, lang);
+    if (!v) { unresolved.push(id); return ''; }
     return v;
   });
   return { text: out, unresolved };

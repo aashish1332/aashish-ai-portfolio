@@ -289,3 +289,113 @@ Full detail in `docs/BENCHMARKS.md`. Headlines:
 `js/ai/launcher.js` · `ai/ui/chat.mjs` · `ai/ui/styles.mjs` · `ai/governor/index.mjs` ·
 `js/film3d.js` (`setQuality`/`pause`/`resume`) · `js/director.js` (`window.Director`) ·
 `dev-ai-probe.js` · `docs/BENCHMARKS.md` · `tests/governor.test.mjs` · `npm test`
+
+---
+
+## Phase 3 — Tokenizer + model code (§16)
+
+**Gate:** *tokenizer, model, `count_parameters.py`, local smoke train + resume
+test → loss decreases; resume verified; param count printed.*
+
+**Verdict: the code is complete and the param count is printed; two of the
+three gate items are UNVERIFIED on this machine because PyTorch is not
+installed (owner's call: no install, run the training gates on Kaggle in
+P4).** They are not claimed. `docs/TRAINING.md` carries the same verdict at
+item level.
+
+### Done
+
+* **Tokenizer (§7.2)** — `ai/tokenizer/`: our own byte-level BPE trained from
+  scratch (never a pretrained vocab), NFC normalisation, automatic byte
+  fallback so no `<unk>` exists, the six spec special tokens, and **one
+  atomic token per fact id (63 placeholders)** so the model emits
+  `<|fact:contact.email|>` and the app substitutes the verified value.
+  Versioned `portfolio-bpe-<size>-<hash>`, where the hash covers the special
+  tokens, the placeholder set and the grammar.
+* **Placeholder grammar in one place per runtime, pinned by one fixture.**
+  The browser resolver moved into `ai/knowledge/placeholders.mjs`; the
+  tokenizer mirrors it in Python; both are asserted against
+  `tests/fixtures/placeholder_cases.json` (16 hand-written cases).
+* **Model (§7.1)** — `ai/model/`: RMSNorm, RoPE, SwiGLU, GQA, tied
+  embeddings, causal SDPA (never FlashAttention — a T4 has none), KV cache,
+  cached generation. Tensor names are the HF `LlamaForCausalLM` names, and
+  `plan.param_table` is the schema both the counter and the module answer to.
+* **`inference/count_parameters.py`** — per-component breakdown, §7.1 band
+  gate, KV cache, FLOPs estimate, and an exact name/shape comparison against
+  the materialised module **when torch is importable** (it prints
+  `NOT INSTALLED` rather than pretending).
+* **Data pipeline (§7.3)** — `training/scripts/make_seed_corpus.py`,
+  `ai/data/`: clean → NFC → PII-to-placeholder → dedupe → language-ID →
+  filters → tokenise → `uint16` memmap shards → deterministic split with
+  exact **and** near-duplicate leakage checks that fail the run.
+* **Checkpoints + resume (§7.5)** — `training/scripts/checkpoint.py`:
+  `latest`/`best`/`step_N`, atomic writes, pruning, **required state keys
+  enforced on save and load**, python/numpy/torch RNG capture, run manifest.
+* **`training/scripts/train_smoke.py`** — 1.82M-param config, ~50 steps,
+  fp16 AMP (CUDA), grad accumulation/clipping, cosine+warmup, eval, best-by-val,
+  `--gate` (non-zero if loss did not decrease) and `--resume auto`.
+  `--pipeline-only` is the torch-free path this machine can actually run.
+* **Tests** — **+92 Python tests in a new second runner** (`npm run test:py`,
+  the project has two runtimes now) and **+11 JS tests**: tokenizer contract,
+  corpus pipeline, checkpoint/resume, model schema/arithmetic, language
+  parity, placeholder parity. 5 Python tests skip with a printed reason when
+  torch is absent — a green run must not be mistaken for a verified training
+  loop.
+
+### Measured
+
+Full detail in `docs/BENCHMARKS.md`.
+
+| Metric | Value |
+|---|---|
+| Config A parameters | **37,890,560** (37.89M) — §7.1 band 30–50M ✅ |
+| Config lite / smoke | 17,701,248 ✅ · 1,820,352 (1–3M) ✅ |
+| KV cache, config A, fp16 | **10.00 KB/token** → 10.0 MB at ctx 1024 (§7.1 claim ✅) |
+| State-dict keys, config A | 93, matching the HF Llama layout |
+| Tokenizer artifact | 1,024 vocab · 66,667 B raw / **10,291 B gz** · 63/63 placeholders atomic · 7/7 exact round-trips |
+| Fertility (1,024 vocab) | en 2.46 · hi **4.71** · hinglish 2.69 · tech 4.35 · url_email 15.50 tok/word |
+| Seed fixture | 17,402 lines / 3.2 MB → kept 17,265 (137 near-dup) · leakage **clean** · 749,590 train tokens |
+| `prepare_data` / tokenizer training | 20.2 s / 3.6 s (this machine) |
+| Test suite | **213 JS + 92 Python**, 0 failures (5 Python skips: torch) |
+
+### What P3 found, and what it changed
+
+| # | Finding | Consequence |
+|---|---|---|
+| **TOK-1** | The trainer **silently accepted a vocabulary the corpus could not support** — 4,096 requested, 1,935 returned | The embedding layer is sized from the *config*, so every parameter count, export and parity check downstream would inherit the mismatch. Now a hard failure with the reason |
+| **TOK-2** | A BPE's vocab ceiling is set by **distinct word forms, not corpus volume** — measured at 802 merges for a 44-line corpus whether repeated ×4 or ×16 | P4's 12–16k must come from lexical diversity. It also makes the seed fixture's role explicit: pipeline verification, never a vocab decision |
+| **DAT-1** | Corpus lines were written with embedded newlines, so a `Q:`/`A:` pair arrived as **two unrelated training records** | Frames are now collapsed to one line per example; the shard builder asserts `<|end|>` separates documents exactly |
+| **DAT-2** | The near-duplicate threshold was a guess | Measured instead: exact 1.00, appended clause 0.88, one slot changed 0.68, parallel construction 0.17 → threshold set to 0.8 with the numbers recorded in code and tests |
+| **CKP-1** | `os.fsync` failed on Windows (`Errno 9`) because the temp file was re-opened read-only | Durability step is `rb+` and non-fatal; the *atomicity* guarantee is `os.replace` and is unaffected |
+| **CKP-2** | A checkpoint written by an older trainer could be resumed with a **fresh GradScaler**, silently changing the effective loss scale | `REQUIRED_STATE_KEYS` enforced on save **and** load; a legacy/partial file is refused with the missing keys named |
+| **TST-1** | My own test claimed `उसकी` contains a u-matra | It contains the i-matra `ी`. Fixed the test — the matra/nukta coverage is exactly the Devanagari-class bug class that P1 already lost once |
+
+### Still open (P3)
+
+* **`loss decreases` — UNVERIFIED.** No torch on this machine; owner chose to
+  run it on Kaggle. `train_smoke.py --gate` is written and prints a PASS/FAIL
+  verdict on equal-size loss windows; it has not been executed.
+* **`resume verified` — UNVERIFIED for the training loop.** Everything the
+  resume depends on *is* verified without torch: atomic writes, key
+  validation, latest/best selection, pruning, RNG round-trip, and the exact
+  data-stream continuation (`test_checkpoint.py`, 17 tests). What is missing
+  is one integration run showing a torch optimizer/scheduler/GradScaler
+  surviving the trip.
+* **Parameter count is one derivation here, not two.** The analytic count is
+  exact and test-pinned; the materialised cross-check prints `NOT INSTALLED`.
+* **The seed corpus is synthetic.** Hindi fertility at 1k overstates the
+  problem for a real 16k vocab; no quality claim may rest on it.
+* **Vocab size is not frozen.** §7.2's 12–16k is decided in P4 from the
+  fertility table on the licensed corpus.
+
+### Evidence
+`ai/tokenizer/` (`spec.py`, `train.py`, `fertility.py`, `samples.json`,
+`artifacts/seed-1k/`) · `ai/model/` (`config.py`, `plan.py`, `model.py`) ·
+`ai/data/` (`pipeline.py`, `dataset.py`, `langid.py`, `facts.py`) ·
+`ai/language/lexicons.json` · `ai/knowledge/placeholders.mjs` ·
+`inference/count_parameters.py` · `training/scripts/` (`make_seed_corpus.py`,
+`prepare_data.py`, `checkpoint.py`, `train_smoke.py`) · `tests/py/` (6 files,
+92 tests) · `tests/placeholders.test.mjs` · `tests/lexicons.test.mjs` ·
+`tests/langid-fixture.test.mjs` · `tests/fixtures/` · `docs/AI_ARCHITECTURE.md` ·
+`docs/TRAINING.md` · `docs/DATA_LICENSES.md` · `docs/BENCHMARKS.md` ·
+`npm run test:all` · `npm run params` · `npm run smoke`
