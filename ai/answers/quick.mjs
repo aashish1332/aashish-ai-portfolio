@@ -561,10 +561,11 @@ function indexFor(kb) {
  * @param {object} [opts]
  * @param {string} [opts.lang] language already smoothed by the caller's
  *                             tracker (§8.3) — otherwise detected per message
- * @param {string} [opts.project] carried focus entity (§8.2)
+ * @param {string|null} [opts.focus] the conversation's carried focus entity (§8.2)
  * @returns {{handled:boolean, extractive:boolean, abstained:boolean,
  *            injection:boolean, intent:string, project:string|null,
- *            lang:string, text:string, sources:string[], followups:string[]}}
+ *            focus:string|null, lang:string, text:string, sources:string[],
+ *            followups:string[]}}
  */
 export function quickAnswer(kb, query, opts = {}) {
   const question = String(query || '');
@@ -580,6 +581,9 @@ export function quickAnswer(kb, query, opts = {}) {
   const withheld = withheldContactFields(base0);
   const base = {
     handled: false, extractive: false, abstained: false, injection: false,
+    /* the focus entity carries between turns: a caller passes back what this
+       returned, and a pronoun follow-up resolves against it (§8.2) */
+    focus: opts.focus || null,
     intent: det.intent, project: det.project, lang, text: '', sources: [],
     followups: [],
   };
@@ -612,12 +616,16 @@ export function quickAnswer(kb, query, opts = {}) {
       : { sources: built.sources };
     return {
       ...base, handled: true, text: built.text,
+      /* naming a project moves the focus; every other template carries it */
+      focus: det.project || base.focus,
       ...shape, followups: followupsFor(det.intent, lang),
     };
   }
 
   /* one retrieval pass, shared by the prose path and the fact path */
-  const hits = search(indexFor(kb), question).hits;
+  const searchRes = search(indexFor(kb), question, { focus: opts.focus || null });
+  const hits = searchRes.hits;
+  base.focus = searchRes.focus || base.focus;
 
   /* 4. prose intents: verbatim text now, model later if one exists */
   const ex = extractive(kb, lang, det.intent, { project: det.project, hits, question });

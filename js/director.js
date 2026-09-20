@@ -307,3 +307,10 @@ const Director = (() => {
 
   return { init, setReelUI, scrollTo, getLenis };
 })();
+
+/* A top-level `const` in a classic script does NOT attach to `window`, so
+   every `window.Director && Director.getLenis()` guard in this project
+   (fluidlens, terminal, the AI panel) was silently reading undefined and
+   skipping its scroll lock — the guard made a dead path look defensive.
+   Exposed explicitly, exactly as js/terminal.js already does for Terminal. */
+window.Director = Director;

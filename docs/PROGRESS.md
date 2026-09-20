@@ -213,3 +213,79 @@ load at all:
 `ai/language/detect.mjs` · `ai/retrieval/index.mjs` · `ai/intent/rules.mjs` ·
 `ai/answers/quick.mjs` · `evaluation/portfolio_tests.json` · `evaluation/README.md` ·
 `tests/*.test.mjs` · `npm test`
+
+---
+
+## Phase 2 — Chat shell + Resource Governor (§16)
+
+**Status:** 🟢 **P2 CODE COMPLETE** — the assistant is now a feature a visitor can use.
+The gate is measured, not asserted: **+0 AI assets before the click**, the panel works with
+**no model loaded**, and the film's own probes still come back clean.
+
+### Done
+1. **`js/ai/launcher.js`** — the only AI code on the initial page: **958 B gz**. It answers one
+   question ("did the visitor click?") and dynamic-imports the shell. Hover-prefetch warms the
+   UI chunk only, on a fine pointer, after 120 ms — never a model, never on touch. A failed
+   import says so on the button instead of spinning forever.
+2. **`ai/ui/chat.mjs`** — the lazy shell (§10). Panel, message log, starter/follow-up chips,
+   **Sources** chips, badge per answer, Enter/Shift+Enter, Clear, autoscroll that stops when the
+   visitor scrolls up, Esc to close, focus moved into the panel and returned to the button,
+   `role="dialog"` + `role="log"` with `aria-live` on **completed** messages only. Rendering is
+   `textContent` throughout — no `innerHTML`, no markup path at all.
+3. **`ai/governor/index.mjs`** — §6 in one module: feature-detect-only probing (§6.1), the tier
+   table (§6.2), the frame-health monitor (§6.3) and the four-rung degrade ladder, plus the
+   worker micro-benchmark and a real SIMD compile check. `env` is injected, so the whole thing
+   is unit-tested in Node with no browser.
+4. **`ai/ui/styles.mjs`** — the panel's CSS, **injected by the chunk on first open** so the
+   pre-click load pays nothing for it. No `backdrop-filter` over the canvas, `contain: layout
+   paint style`, transform/opacity transitions only, safe-area padding, phone = full-screen sheet.
+5. **§12 integration** — reuses the **existing GSAP ticker** for frame sampling (no new rAF),
+   stops/starts **Lenis** on open/close, pauses the **film** when the phone sheet covers it and
+   resumes on close, and asks the scene for temporary low quality via the new
+   `Film3D.setQuality('low'|'normal')` / `pause()` / `resume()` hooks.
+6. **Testing** — `tests/governor.test.mjs` (13 tests) and **`dev-ai-probe.js`**, an end-to-end
+   probe that watches every request the page makes and drives the real panel on desktop and
+   phone. `npm test` is now **202 tests**.
+
+### Measured
+Full detail in `docs/BENCHMARKS.md`. Headlines:
+
+| Metric | Value |
+|---|---|
+| AI assets requested before the click | **0** (only the 958 B launcher) |
+| Launcher | **958 B gz** (budget ~2 KB) |
+| Whole chat chunk (8 modules + `knowledge.json`) | **43 KB gz**, 9 requests, all after the click (budget ≤150 KB) |
+| Tier chosen, desktop headless (4 threads, SIMD ✓) | **T2 · STANDARD** |
+| Tier chosen, phone (390×844, coarse pointer) | **T1 · LITE** |
+| Phone behaviour | film **paused** while the sheet covers it, **resumed** on close, no horizontal overflow (390 vs 390) |
+| Scroll lock | `lenis.isStopped === true` while open (§12) |
+| Frame-health A/B | **INCONCLUSIVE** — headless software GL runs the film at 0.6–1.8 fps, so the ratio proves nothing. Printed as inconclusive rather than as a pass; needs the §15 reference profile on real hardware |
+| Film regression after the change | desktop probe **clean** (no console/page errors, no failed requests); mobile equally clean |
+
+### Bugs found and fixed in P2 (both would have shipped)
+
+| # | Bug | Consequence |
+|---|---|---|
+| **GOV-1** | `SIMD_PROBE_BYTES` was a malformed wasm module (`v128.const` with five immediates instead of sixteen) | `hasSimd()` returned false on **every** engine, so `chooseTier()` forced **every device to T0** — the model could never have run anywhere, on any hardware. Found by reading the probe's own tier output, fixed, and now guarded by a test that validates the bytes against V8 |
+| **UI-1** | `window.Director` was **never assigned** — only a script-scoped `const` | Every `window.Director && Director.getLenis()` guard in the project read `undefined` and silently skipped its scroll lock: the AI panel's, **lens mode's**, and the terminal's. The guard made a dead path look defensive. Exposed like `window.Terminal` already was; the probe now asserts `lenis.isStopped === true` rather than trusting the call |
+| **GOV-2** | The ladder's minimum-sample gate was a hardcoded `30`, so a caller who tuned `sampleWindow` downward could never trigger it | The tunables were a lie in the direction that matters most (a device that needs help the soonest). Now `minSamples`, clamped to the window |
+| **DEV-1** | The dev server's MIME map had no `.mjs` entry | Every AI module would have been served as `application/octet-stream` and refused by the browser as a module — the whole chunk fails to load locally. (`server.js` via Express was already correct.) |
+
+### Still open
+- **Frame-health measurement on real hardware** is the one P2 gate item not closed: the ladder's
+  logic is unit-tested, its cost is not measured (§15 reference profiles R1/R2/R3, and a real
+  phone under R4 — NOT TESTED).
+- **Accessibility is verified only mechanically** (focus moves in and returns, Esc closes, roles
+  and labels are present, no overflow). **No screen-reader pass** has been done — that needs a
+  human on a real device, and it is on the manual checklist rather than claimed here.
+- **No model exists yet**, so the panel is honest about it: every answer is labelled
+  *"Quick answer — no AI model on this device"*. The download UI (§6.5) renders only when a
+  `modelPlan` is supplied, which is P6/P7 work.
+- **The shipped `knowledge.json` must still be reduced to `publicView()` at build time** so the
+  withheld phone number never leaves the repository (§9.3/§17 data hygiene) — the remaining half
+  of the PII decision.
+
+### Evidence
+`js/ai/launcher.js` · `ai/ui/chat.mjs` · `ai/ui/styles.mjs` · `ai/governor/index.mjs` ·
+`js/film3d.js` (`setQuality`/`pause`/`resume`) · `js/director.js` (`window.Director`) ·
+`dev-ai-probe.js` · `docs/BENCHMARKS.md` · `tests/governor.test.mjs` · `npm test`

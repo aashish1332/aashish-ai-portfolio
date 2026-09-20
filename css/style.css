@@ -162,6 +162,34 @@ html.no-webgl #filmflash, html.no-gsap #filmflash { display: none; }
 @keyframes eq { from { transform: scaleY(.3) } to { transform: scaleY(1.4) } }
 .sound__label { font-size: 9px; }
 
+/* ══════════════════ AI LAUNCHER ══════════════════
+   Part of the initial page (the ≤2 KB budget includes this rule), because a
+   button that appears late is worse than one that costs 200 bytes.
+   z-index 945 sits under the panel (980) and the HUD (950) so the full-screen
+   mobile sheet covers it, and above the film. */
+.askai {
+  position: fixed; right: var(--pad); bottom: clamp(58px, 9vh, 98px); z-index: 945;
+  display: inline-flex; align-items: center; gap: 9px;
+  background: none; border: 1px solid var(--line-strong); color: var(--paper);
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: .16em;
+  padding: 9px 13px; cursor: pointer;
+  transition: color .25s, border-color .25s, transform .25s;
+}
+.askai:hover, .askai:focus-visible { color: var(--accent); border-color: var(--accent); transform: translateY(-1px); }
+.askai__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: none; }
+.askai.is-loading .askai__dot { animation: askaiPulse .9s ease-in-out infinite alternate; }
+.askai.is-failed { color: var(--paper-faint); border-color: var(--line); cursor: default; }
+.askai.is-failed .askai__dot { background: var(--paper-faint); }
+@keyframes askaiPulse { from { opacity: .2 } to { opacity: 1 } }
+/* clear of the terminal's touch button on phones/tablets */
+@media (hover: none) and (pointer: coarse) {
+  .askai { bottom: calc(148px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .askai { transition: none; }
+  .askai.is-loading .askai__dot { animation: none; }
+}
+
 /* ══════════════════ WEBGL FILM (fixed behind everything) ══════════════════ */
 #filmgl {
   position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100svh;

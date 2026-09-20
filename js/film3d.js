@@ -77,21 +77,35 @@ const Film3D = (() => {
   let mirrorObj = null;
   let mirrorRTNow = 0;
 
+  /* ── §12 temporary quality override ─────────────────────────────
+     The AI panel (or the governor's degrade ladder) can ask the scene to
+     drop to 'low' while it needs the frame budget: pixel-ratio cap, mirror
+     target and post-processing off. It NEVER touches GOV.tier — that is the
+     adaptive ladder's own state — and 'normal' restores exactly what was
+     there. The portfolio's visual identity is restored, always. */
+  const QUALITY_LOW_MIRROR = 192;
+  let lowQuality = false;
+  let paused = false;
+  let timeOffset = 0;
+  let pausedAt = 0;
+
   function govApply() {
     const t = GOV.tiers[GOV.tier];
     GOV.scale = t.scale;
-    if (mirrorObj && t.mirrorRT !== mirrorRTNow) {
-      mirrorRTNow = t.mirrorRT;
+    const rt = lowQuality ? QUALITY_LOW_MIRROR : t.mirrorRT;
+    if (mirrorObj && rt !== mirrorRTNow) {
+      mirrorRTNow = rt;
       try { mirrorObj.getRenderTarget().setSize(mirrorRTNow, mirrorRTNow); } catch (e) { /* noop */ }
     }
     /* fxaa survives to tier 1 — it is the edge-quality keeper at full res */
-    if (fxaaPass) fxaaPass.enabled = !!t.fxaa;
+    if (fxaaPass) fxaaPass.enabled = !lowQuality && !!t.fxaa;
     applySize();
   }
 
   function applySize() {
     if (!renderer) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, GOV.dprCap) * GOV.scale;
+    const cap = lowQuality ? Math.min(1, GOV.dprCap) : GOV.dprCap;
+    const dpr = Math.min(window.devicePixelRatio || 1, cap) * GOV.scale;
     renderer.setPixelRatio(dpr);
     composer && composer.setPixelRatio(dpr);
     /* keep FXAA's resolution uniform in sync (else it smears) */
@@ -1095,7 +1109,8 @@ const Film3D = (() => {
     raf = requestAnimationFrame(tick);
     govSample(now);
     GOV.display += (GOV.fps - GOV.display) * 0.05;
-    const t = clock.getElapsedTime();
+    /* timeOffset absorbs a pause so animation does not jump forward on resume */
+    const t = clock.getElapsedTime() - timeOffset;
 
     /* smooth scrub */
     current += (target - current) * 0.075;
@@ -1179,7 +1194,9 @@ const Film3D = (() => {
     /* small-details layer — one shared call, same rAF, zero extra loops */
     if (detailsLive) window.FilmDetails.perFrame(t, pe);
 
-    composer ? composer.render() : renderer.render(scene, camera);
+    /* post-processing is skipped entirely in low quality (§12): the composer's
+       bloom pass is the single biggest per-frame cost after the mirror */
+    (lowQuality || !composer) ? renderer.render(scene, camera) : composer.render();
   }
 
   return {
@@ -1192,6 +1209,32 @@ const Film3D = (() => {
       govApply();
       GOV.warmit = 40; GOV.cooldown = 240; GOV.samples.length = 0; GOV.sum = 0;
     },
+
+    /* ── §12 hooks for the AI panel and the governor ─────────────
+       setQuality('low'|'normal') and pause()/resume() are deliberately dumb:
+       they change only what they promise, and 'normal'/resume always restore. */
+    setQuality: (mode) => {
+      const want = mode === 'low';
+      if (want === lowQuality) return;
+      lowQuality = want;
+      govApply();
+    },
+    quality: () => (lowQuality ? 'low' : 'normal'),
+    pause: () => {
+      if (paused || !ready) return;
+      paused = true;
+      pausedAt = clock.getElapsedTime();
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    },
+    resume: () => {
+      if (!paused) return;
+      paused = false;
+      /* skip the paused span so the city does not teleport */
+      timeOffset += clock.getElapsedTime() - pausedAt;
+      GOV.last = 0;          /* first frame after resume must not read as a hitch */
+      animate();
+    },
+    isPaused: () => paused,
   };
 })();
 

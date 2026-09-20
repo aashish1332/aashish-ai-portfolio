@@ -7,7 +7,12 @@ const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css',
   '.js': 'text/javascript',
+  /* .mjs MUST be JavaScript: served as application/octet-stream the browser
+     refuses to execute it as a module, so the whole lazy AI chunk fails to
+     load. (Express's static handler in server.js already maps it correctly.) */
+  '.mjs': 'text/javascript',
   '.json': 'application/json',
+  '.wasm': 'application/wasm',
   '.webp': 'image/webp',
   '.png': 'image/png',
   '.svg': 'image/svg+xml',

@@ -86,6 +86,13 @@
 <!-- touch-only: opens the terminal (no Ctrl+K on phones/tablets) -->
 <button id="touchTerm" class="touch-term" aria-label="Open terminal">❯_</button>
 
+<!-- AI entry point (§10). A semantic button and nothing more: the whole
+     assistant is behind the dynamic import in js/ai/launcher.js -->
+<button id="askAI" class="askai" data-magnetic aria-haspopup="dialog" aria-expanded="false">
+  <span class="askai__dot" aria-hidden="true"></span>
+  <span class="askai__label">ASK AASHISH AI</span>
+</button>
+
 <main id="film">
 
   <!-- WebGL film: one fixed full-page canvas behind all scenes -->
@@ -487,5 +494,7 @@
 <script type="module" src="js/film3d.js"></script>
 <script type="module" src="js/fluidlens.js"></script>
 <script type="module" src="js/main.js"></script>
+<!-- the AI launcher: ≤2 KB, no AI asset is requested until it is clicked -->
+<script defer src="js/ai/launcher.js"></script>
 </body>
 </html>
