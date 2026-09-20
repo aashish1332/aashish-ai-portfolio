@@ -12,9 +12,10 @@
    the index from this view, and `tests/quick-answers.test.mjs` (QA-9)
    proves a private value cannot appear in any answer, in any language.
 
-   Build-time note: the *shipped* knowledge.json must also be reduced to
-   this view (§9.3/§17 data hygiene, the P2 dev/prod step) so the private
-   value never leaves the repository either.
+   Build-time note: the *shipped* knowledge.json is reduced to this view by
+   `tools/build.mjs` (§9.3/§17 data hygiene), which also fails the build if a
+   withheld value appears anywhere else in the bundle. See `withheldFacts()`
+   for how a refusal survives the strip.
    ═══════════════════════════════════════════════════════════════ */
 
 const keep = (f) => !!f && f.public !== false;
@@ -51,6 +52,26 @@ export function publicView(kb) {
 export function withheldContactFields(kb) {
   return Object.values(kb?.contact || {})
     .filter((f) => f && f.public === false)
+    .map((f) => ({ id: f.id, aliases: f.aliases || [] }));
+}
+
+/**
+ * The same list, from whichever source still has it.
+ *
+ * In development the full knowledge base is loaded, so the facts themselves
+ * are the evidence. In production `tools/build.mjs` removes them from the
+ * shipped file (§17) and leaves `meta.withheld_facts` — ids and aliases, never
+ * a value — so a phone question still gets the *specific* decline rather than
+ * a generic abstention. Without this fallback, building the bundle would
+ * quietly downgrade a correct refusal into a vague one.
+ */
+export function withheldFacts(kb) {
+  const derived = withheldContactFields(kb);
+  if (derived.length) return derived;
+  const recorded = kb?.meta?.withheld_facts;
+  if (!Array.isArray(recorded)) return [];
+  return recorded
+    .filter((f) => f && typeof f.id === 'string')
     .map((f) => ({ id: f.id, aliases: f.aliases || [] }));
 }
 

@@ -281,9 +281,9 @@ Full detail in `docs/BENCHMARKS.md`. Headlines:
 - **No model exists yet**, so the panel is honest about it: every answer is labelled
   *"Quick answer — no AI model on this device"*. The download UI (§6.5) renders only when a
   `modelPlan` is supplied, which is P6/P7 work.
-- **The shipped `knowledge.json` must still be reduced to `publicView()` at build time** so the
-  withheld phone number never leaves the repository (§9.3/§17 data hygiene) — the remaining half
-  of the PII decision.
+- ~~The shipped `knowledge.json` must still be reduced to `publicView()` at build time~~ —
+  **closed** by `tools/build.mjs` (see *Production build* below), which also fails the build if a
+  withheld value appears anywhere else in the bundle.
 
 ### Evidence
 `js/ai/launcher.js` · `ai/ui/chat.mjs` · `ai/ui/styles.mjs` · `ai/governor/index.mjs` ·
@@ -399,3 +399,44 @@ Full detail in `docs/BENCHMARKS.md`.
 `tests/langid-fixture.test.mjs` · `tests/fixtures/` · `docs/AI_ARCHITECTURE.md` ·
 `docs/TRAINING.md` · `docs/DATA_LICENSES.md` · `docs/BENCHMARKS.md` ·
 `npm run test:all` · `npm run params` · `npm run smoke`
+
+---
+
+## Production build — dev/prod split + §17 closure
+
+**Gate (from P2's open list):** the withheld phone number must not leave the
+repository in anything a visitor downloads.
+
+`npm run build` → `dist/` (26 files, **354,105 B**), `npm run preview` serves
+it on `:5580`. Two properties, both tested:
+
+* `knowledge.json` ships as `publicView()` plus `meta.withheld_facts` — **ids
+  and aliases only, never a value**. The metadata is what keeps the *specific*
+  decline: without it, stripping the fact would have quietly downgraded a
+  correct refusal ("that contact detail isn't published — the best way to
+  reach Aashish is by email") into a vague abstention. Verified in three
+  languages against the full knowledge base: byte-identical answers.
+* **The build fails if a withheld value appears anywhere in the bundle**, so a
+  new file that starts publishing the number is a refusal, not a discovery.
+* The bundle also carries no training-side code. The allow-list is per-path:
+  an earlier version shipped all of `ai/` (including the tokenizer artifact,
+  whose metadata embeds corpus paths) and all of `knowledge/` (including
+  `PII_REVIEW.md`). The leak scan is what caught it.
+
+Measured: bundle 26 files / 354,105 B · `knowledge.json` 24,326 B · the
+withheld number appears in **no** shipped file, and the two files that
+publish it deliberately (`index.html`, `js/terminal.js`) are allow-listed
+entries with a reason, reported as notes on every build.
+
+### Bugs found
+
+| # | Bug | Consequence |
+|---|---|---|
+| **BLD-1** | The allow-list shipped all of `ai/` and all of `knowledge/` | The tokenizer artifact (with corpus paths) and the PII review document would have been downloadable. Caught by the leak scan on the first run |
+| **BLD-2** | The dev-reference check used a line heuristic, so the second line of a block comment looked like code | False failures; replaced with a real comment/string masker that preserves line numbers
+| **BLD-3** | Stripping the private fact removed the *evidence* the runtime uses to answer a phone question | The refusal would have degraded to a generic abstention in production only — the kind of difference no dev-mode test sees |
+
+### Evidence
+`tools/build.mjs` · `tools/preview.mjs` · `ai/knowledge/view.mjs`
+(`withheldFacts`) · `dev-server.mjs` (`ROOT`/`PORT`) · `package.json`
+(`build`/`preview`) · `tests/build-bundle.test.mjs` (13 tests) · `npm run build`

@@ -5,6 +5,25 @@ is labelled ESTIMATED or NOT TESTED — never rounded up into a pass.
 
 ---
 
+## Production build — dev/prod split (2026-09-20)
+
+**Method:** `npm run build` (node v24.13.0), sizes by byte count on disk.
+
+| Metric | Value |
+|---|---|
+| Shipped files | **26** |
+| Bundle size | **354,105 B** total |
+| `knowledge.json` (stripped) | 24,326 B, sha256 `e6efeabf4c9ee4bc…` |
+| Withheld values in the bundle | **0** — id kept as metadata, value gone |
+| Files publishing the value deliberately | 2 (`index.html`, `js/terminal.js`) — allow-listed, reported per build |
+| Dev tooling in the bundle | **0** |
+| Relative imports that do not resolve | **0** |
+
+For comparison (§4 budgets): the AI chunk itself is 43 KB gz, so the
+production bundle is dominated by the film's JS/CSS, not by the assistant.
+
+---
+
 ## P3 — tokenizer + model code (2026-09-20)
 
 **Device:** R1 (Intel HD 520, 4 threads, 8 GB, Windows). **Method:**

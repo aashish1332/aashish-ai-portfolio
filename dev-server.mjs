@@ -1,7 +1,7 @@
 /* tiny static dev server — no dependencies */
 import http from 'http';
 import { readFile } from 'fs/promises';
-import { extname, join, normalize } from 'path';
+import { extname, join, normalize, resolve } from 'path';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -19,8 +19,13 @@ const MIME = {
   '.ico': 'image/x-icon',
 };
 
-const root = process.cwd();
+/* `ROOT` lets the same server preview the production bundle:
+     npm run build && ROOT=dist PORT=5580 node dev-server.mjs
+   Previewing what actually ships (stripped knowledge.json included) is the
+   only way to notice that a build step changed behaviour. */
+const root = resolve(process.env.ROOT || process.cwd());
 const port = +(process.env.PORT || 5577);
+const label = process.env.ROOT ? `preview (${process.env.ROOT})` : 'dev server';
 
 /* ── POST /api/contact ──
    Mirrors server.js's contract (validate, accept, log) so the post-credit
@@ -69,4 +74,4 @@ http.createServer(async (req, res) => {
   } catch {
     res.writeHead(404); res.end('not found');
   }
-}).listen(port, () => console.log(`🎬 dev server → http://localhost:${port}`));
+}).listen(port, () => console.log(`🎬 ${label} → http://localhost:${port}`));

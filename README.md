@@ -138,7 +138,14 @@ the page makes **zero** AI requests before that.
 | [docs/PROGRESS.md](docs/PROGRESS.md) | phase-by-phase log, including what is unfinished |
 
 ```bash
-npm run test:all     # 213 JS + 92 Python tests
+npm run test:all     # 225 JS + 92 Python tests
 npm run params       # parameter count + §7.1 band gate
 npm run smoke        # tokenizer contract, shards, data cursor, checkpoints
+npm run build        # production bundle → dist/ (stripped knowledge base, no dev tooling)
+npm run preview      # build + serve dist/ on :5580 to see exactly what ships
 ```
+
+**Deploy `dist/`, not the repository root.** `npm run build` reduces
+`knowledge.json` to its public view (the withheld phone number is removed from
+the file that ships, and the build *fails* if it appears anywhere else in the
+bundle) and leaves the dev tooling behind.

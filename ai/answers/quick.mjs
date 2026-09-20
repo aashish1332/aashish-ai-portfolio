@@ -26,7 +26,7 @@ import {
   buildIndex, search, normalize, contentTokens, similarity,
   MIN_TOP_SCORE, FUZZY_MIN,
 } from '../retrieval/index.mjs';
-import { viewOf, withheldContactFields } from '../knowledge/view.mjs';
+import { viewOf, withheldFacts } from '../knowledge/view.mjs';
 import { replacePlaceholders } from '../knowledge/placeholders.mjs';
 
 /** Pick the language variant. English is the fallback, never a placeholder. */
@@ -579,7 +579,7 @@ export function quickAnswer(kb, query, opts = {}) {
      can be declined with a useful answer rather than silence. */
   const base0 = kb;
   kb = viewOf(kb);
-  const withheld = withheldContactFields(base0);
+  const withheld = withheldFacts(base0);
   const base = {
     handled: false, extractive: false, abstained: false, injection: false,
     /* the focus entity carries between turns: a caller passes back what this

@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "node dev-server.mjs",
     "start": "node server.js",
+    "build": "node tools/build.mjs",
+    "preview": "node tools/preview.mjs",
     "probe": "node dev-error-probe.js",
     "probe:mobile": "set MOBILE=1&& node dev-error-probe.js",
     "fps": "node dev-fps-probe.js",

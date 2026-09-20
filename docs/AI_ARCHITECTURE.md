@@ -178,7 +178,25 @@ Sizes will be measured, never estimated in prose.
 
 ---
 
-## 6. What is deliberately not claimed
+## 6. Dev vs prod — the build (§9.3/§17)
+
+`npm run build` → `dist/` (26 files, **354,105 B**); `npm run preview` serves
+it on `:5580` through the same dev server with `ROOT=dist`.
+
+| Rule | How |
+|---|---|
+| `knowledge.json` ships as `publicView()` only | `tools/build.mjs` strips every `public:false` fact and keeps **ids + aliases only** in `meta.withheld_facts`, so a phone question still gets the specific decline |
+| A withheld value must not appear anywhere in the bundle | the build scans every shipped file, comparing numbers digit-wise (`+91 62802875` in any format); a hit fails the build unless the file is an allow-listed *decision* |
+| No dev tooling ships | executable references to `dev-*.js`, `shots/`, `training/checkpoints`, `data/raw|processed`, `localhost:5577` fail the build; a mention inside a comment is reported as a note instead |
+| Every module in the bundle resolves | relative imports and `<script src>` targets are checked against the file list |
+| Nothing training-side ships | the allow-list is per-path: no `ai/tokenizer`, `ai/model`, `ai/data`, no `knowledge/*.md`, no `tests/`, `data/`, `docs/` |
+
+Known, deliberate, and reported on every build: `index.html` and
+`js/terminal.js` publish the phone number because the *portfolio* publishes it
+(§1 decided the assistant must not state it, not that the site must hide it).
+That is an allow-list entry with a reason, not a default.
+
+## 7. What is deliberately not claimed
 
 | Claim | Status |
 |---|---|
