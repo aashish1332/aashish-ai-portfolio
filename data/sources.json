@@ -6,6 +6,7 @@
     "licence_classes": "A verified licence can still be one we may not use. NC (NonCommercial) and ND (NoDerivatives) are refused by default because a distributed model in a professional portfolio is not a personal, non-commercial use. Matching is token-wise, so NCSA is not NC.",
     "allow_noncommercial": false,
     "allow_no_derivatives": false,
+    "provenance": "docs/DATA_LICENSES.md rule 1: no third-party LLM-generated dataset may be used unless its provenance is recorded and disclosed. Every source states `provenance.origin` (human | web | synthetic | own-work), and a `synthetic` source cannot be fetched without a `disclosure` string explaining where it must be admitted.",
     "required_filters": ["pii", "toxicity", "dedupe", "langid", "length"]
   },
   "_observed_comment": "`license.observed` is research: someone looked up the terms and wrote down what they found, with the page they found it on. It is deliberately NOT `verified` — only a named person asserts that, per the rule above. A source may be observed and still unfetchable.",
@@ -19,6 +20,7 @@
       "revision": null,
       "enabled": false,
       "why": "Large, curated Hindi (Devanagari) text — the main Stage A source for Hindi prose.",
+      "provenance": { "origin": "web", "notes": "Curated by AI4Bharat from public web sources; not machine-generated." },
       "license": {
         "spdx": "UNKNOWN",
         "url": null,
@@ -51,6 +53,7 @@
       ],
       "enabled": false,
       "why": "Broad Hindi prose with an unambiguous licence.",
+      "provenance": { "origin": "web", "notes": "Human-written encyclopedia text." },
       "license": {
         "spdx": "CC-BY-SA-4.0",
         "url": "https://dumps.wikimedia.org/legal.html",
@@ -79,6 +82,7 @@
       "revision": null,
       "enabled": false,
       "why": "Real human Roman Hinglish, which programmatic data cannot reproduce.",
+      "provenance": { "origin": "web", "notes": "Human-written Twitter posts. Genuinely human, which was its whole appeal." },
       "license": {
         "spdx": "UNKNOWN",
         "url": null,
@@ -99,23 +103,156 @@
       "notes": "High conversational noise. If used, cap its share of the training mixture and report the share. As observed, it is not usable: see license.observed. The Roman Hinglish gap this was meant to fill is a real loss — programmatic data cannot reproduce human code-mixing, so Stage A's Hinglish will be weaker, and that limitation belongs in the model card rather than being papered over with data we may not use."
     },
     {
-      "id": "simple_english_dialogue",
-      "name": "Curated simple English + dialogue",
+      "id": "tinystories",
+      "name": "TinyStories",
       "languages": ["en"],
-      "kind": "unspecified",
-      "files": [],
+      "kind": "hf_dataset",
+      "repo": "roneneldan/TinyStories",
+      "revision": null,
       "enabled": false,
-      "why": "§7.3: small models become fluent on a narrow, clean distribution. Everyday conversational English and simple narratives.",
+      "why": "§7.3's 'narrow, clean distribution' taken literally: short simple narratives whose vocabulary a small model can actually learn. The paper's whole finding is that 1–30M-parameter models are coherent on it.",
+      "provenance": {
+        "origin": "synthetic",
+        "generated_by": "GPT-3.5 and GPT-4 (OpenAI)",
+        "disclosure": "This corpus is entirely machine-generated and must be named as such in the dataset card and the model card. The licence is permissive; the provenance rule is what applies here, and it applies to the *model* the owner ships, not only to the training run."
+      },
       "license": {
         "spdx": "UNKNOWN",
         "url": null,
         "verified": false,
         "verified_by": null,
         "verified_at": null,
-        "observed": null,
-        "notes": "Pick specific corpora and record each one separately rather than treating this entry as a slot. Nothing was looked up here, because 'simple English dialogue' is not yet a source — researching the licence of an unnamed corpus is not research."
+        "observed": {
+          "spdx": "CDLA-Sharing-1.0",
+          "evidence": "https://huggingface.co/datasets/roneneldan/TinyStories",
+          "observed_at": "2026-09-20",
+          "observed_by": "agent (research; not a verification)",
+          "confidence": "high",
+          "quote": "dataset card states License: cdla-sharing-1.0",
+          "notes": "Not NonCommercial and not NoDerivatives, so not blocked by class. CDLA-Sharing is a data licence: it obliges sharing improvements to the *dataset*, not to a model trained on it. The live question is the synthetic provenance above, not the licence."
+        },
+        "notes": "Attribution and the CDLA-Sharing terms need a read before enabling."
       },
-      "notes": "Splitting this into per-corpus entries is the next step before P4 begins."
+      "notes": "Bounded vocabulary and narrative register — good for fluency, useless for the portfolio Q&A that Stage B handles. Cap its share and report it."
+    },
+    {
+      "id": "simple_english_wikipedia",
+      "name": "Simple English Wikipedia dump",
+      "languages": ["en"],
+      "kind": "http_file",
+      "files": [
+        {
+          "url": "https://dumps.wikimedia.org/simplewiki/latest/simplewiki-latest-pages-articles.xml.bz2",
+          "sha256": null
+        }
+      ],
+      "enabled": false,
+      "why": "Simple, clean English prose written for a reduced vocabulary — the closest thing to §7.3's 'narrow, clean distribution' that is also real-world text.",
+      "provenance": { "origin": "web", "notes": "Human-written. Some articles are LLM-assisted by their authors; the dump does not mark them, which is a known limitation of any Wikipedia-derived corpus." },
+      "license": {
+        "spdx": "UNKNOWN",
+        "url": null,
+        "verified": false,
+        "verified_by": null,
+        "verified_at": null,
+        "observed": {
+          "spdx": "CC-BY-SA-4.0",
+          "evidence": "https://dumps.wikimedia.org/simplewiki/ · https://simple.wikipedia.org/wiki/Main_Page",
+          "observed_at": "2026-09-20",
+          "observed_by": "agent (research; not a verification)",
+          "confidence": "high",
+          "quote": "published under both the Creative Commons Attribution/Share-Alike License 4.0 International License and the GNU Free Documentation License",
+          "notes": "Same terms as the Hindi dump: not NC, so not blocked by class; attribution obligations apply to the corpus we build."
+        },
+        "notes": "Preferred over enwiki for Stage A: encyclopedic register is still a mismatch for conversation, but the vocabulary is small and the sentences are short."
+      },
+      "notes": "Record the dump date and revision; the dump stays out of the repository."
+    },
+    {
+      "id": "topical_chat",
+      "name": "Topical-Chat (Alexa Prize)",
+      "languages": ["en"],
+      "kind": "unspecified",
+      "files": [],
+      "enabled": false,
+      "why": "Human-human open-domain conversation with clean speaker turns — everyday English dialogue, which Wikipedia cannot supply.",
+      "provenance": { "origin": "human", "notes": "Human-human conversations collected through Amazon Mechanical Turk. Not machine-generated." },
+      "license": {
+        "spdx": "UNKNOWN",
+        "url": null,
+        "verified": false,
+        "verified_by": null,
+        "verified_at": null,
+        "observed": {
+          "spdx": "CDLA-Sharing-1.0",
+          "evidence": "https://registry.opendata.aws/topical-chat-enriched/ · https://www.amazon.science/code-and-datasets/topical-chat",
+          "observed_at": "2026-09-20",
+          "observed_by": "agent (research; not a verification)",
+          "confidence": "medium",
+          "quote": "AWS Open Data entry lists License: CDLA-Sharing",
+          "notes": "The CDLA-Sharing id came from the AWS registry entry for the *enriched* Topical-Chat. Whether the enrichment carries the same terms as the base corpus is unconfirmed, so this needs the owner's read. Not NC either way."
+        },
+        "notes": "Confirmed to belong to a different licence family from DailyDialog, which is the point of checking."
+      },
+      "notes": "Acquisition channel not chosen: register it as 'local' once attached as a Kaggle input, or as 'http_file' with a pinned URL. No URL is invented here."
+    },
+    {
+      "id": "dailydialog",
+      "name": "DailyDialog",
+      "languages": ["en"],
+      "kind": "hf_dataset",
+      "repo": "roskoN/dailydialog",
+      "revision": null,
+      "enabled": false,
+      "why": "The canonical high-quality multi-turn everyday-dialogue corpus, and the first thing anyone reaches for when asked for 'simple English dialogue'.",
+      "provenance": { "origin": "human", "notes": "Human-written dialogues by English learners, which is why the language is simple." },
+      "license": {
+        "spdx": "UNKNOWN",
+        "url": null,
+        "verified": false,
+        "verified_by": null,
+        "verified_at": null,
+        "observed": {
+          "spdx": "CC-BY-NC-SA-4.0",
+          "evidence": "https://huggingface.co/datasets/roskoN/dailydialog · https://huggingface.co/datasets/ConvLab/dailydialog",
+          "observed_at": "2026-09-20",
+          "observed_by": "agent (research; not a verification)",
+          "confidence": "high",
+          "quote": "DailyDialog dataset is licensed under CC BY-NC-SA 4.0",
+          "notes": "BLOCKED BY CLASS. Multiple independent mirrors and the dataset's own loader state NonCommercial, so this is not ambiguous the way L3Cube's variant was. Dropped on the same grounds."
+        },
+        "notes": "If the terms are ever revised by the authors, re-run --verify; until then this entry records a decision that was made, not one that is pending."
+      },
+      "notes": "Recorded so nobody re-researches it: the most obvious choice for this slot is the one we may not use."
+    },
+    {
+      "id": "personachat",
+      "name": "PersonaChat",
+      "languages": ["en"],
+      "kind": "hf_dataset",
+      "repo": null,
+      "revision": null,
+      "enabled": false,
+      "why": "Persona-grounded chit-chat. Considered as a fallback for the dialogue slot.",
+      "provenance": { "origin": "human", "notes": "Paired crowdworkers given assigned personas." },
+      "license": {
+        "spdx": "UNKNOWN",
+        "url": null,
+        "verified": false,
+        "verified_by": null,
+        "verified_at": null,
+        "observed": {
+          "spdx": "UNKNOWN",
+          "evidence": "https://parl.ai/projects/personachat/ · https://www.kaggle.com/datasets/atharvjairath/personachat",
+          "observed_at": "2026-09-20",
+          "observed_by": "agent (research; not a verification)",
+          "confidence": "low",
+          "quote": "a Kaggle mirror states CC BY-NC-SA 4.0; the ParlAI project page states no data licence",
+          "notes": "INCONCLUSIVE, and deliberately left that way. A mirror's licence claim is not the rights-holder's grant, and the original release does not plainly state one. NonCommercial would block it; MIT would not. Do not resolve this by picking the convenient mirror — go to the source, or drop it."
+        },
+        "notes": "An inconclusive licence check is a result worth recording: it stops the same hour being spent twice and it stops the convenient answer being assumed."
+      },
+      "notes": "Not carried further. Only pursued if the dialogue slot still needs filling after Topical-Chat is confirmed."
     },
     {
       "id": "portfolio_instruction",
@@ -125,6 +262,7 @@
       "generator": "training/scripts/make_instruction_data.py",
       "enabled": false,
       "why": "§7.4 Stage B: templates × paraphrases × three languages, plus counterfactual contexts and abstention examples.",
+      "provenance": { "origin": "own-work", "notes": "Generated from the owner's own knowledge base by our own script." },
       "license": {
         "spdx": "own-work",
         "url": null,

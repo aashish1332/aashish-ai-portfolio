@@ -138,7 +138,7 @@ the page makes **zero** AI requests before that.
 | [docs/PROGRESS.md](docs/PROGRESS.md) | phase-by-phase log, including what is unfinished |
 
 ```bash
-npm run test:all     # 226 JS + 151 Python tests
+npm run test:all     # 226 JS + 161 Python tests
 npm run params       # parameter count + §7.1 band gate
 npm run smoke        # tokenizer contract, shards, data cursor, checkpoints
 npm run build        # production bundle → dist/ (stripped knowledge base, no dev tooling)

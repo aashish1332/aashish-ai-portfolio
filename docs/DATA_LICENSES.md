@@ -50,8 +50,9 @@ a source also enables it, and `tests/py/test_fetch_corpus.py` asserts that no
 third-party source is enabled without a verified licence — so this table and
 that file cannot drift apart silently.
 
-Today: **5 of 5 sources blocked** (the portfolio-derived Stage B generator is
-verified but not yet enabled, because it does not exist yet).
+Today: **9 of 9 sources blocked** (the portfolio-derived Stage B generator is
+verified but not yet enabled, because it does not exist yet; the other eight
+are third-party and none has been signed off).
 
 ### A verified licence can still be one we may not use
 
@@ -77,6 +78,23 @@ Recording a licence and granting permission are two different acts:
 disabled**, so the registry never carries `enabled: true` beside a licence we
 may not use.
 
+### The provenance rule is code too
+
+Rule 1 at the bottom of this file has said since P3 that no third-party
+LLM-generated dataset may be used without its provenance recorded and
+disclosed. Until the English slot was split there was nothing to apply it to,
+so nothing enforced it. Registering a synthetic corpus made it load-bearing,
+and it is now a gate next to the licence one:
+
+* every source declares `provenance.origin` — `human`, `web`, `synthetic` or
+  `own-work` — and `--verify` **refuses a source that omits it**, because "is
+  this licensed?" and "was this written by a person?" are different questions
+  and only the first one has a page to check;
+* a `synthetic` source cannot be fetched without a `disclosure` string saying
+  where that gets admitted. A permissive licence does not make a generated
+  corpus self-disclosing, and the duty attaches to the model the owner ships,
+  not just to the training run that never leaves Kaggle.
+
 ## Candidates for P4 Stage A — **not downloaded, not used**
 
 Each one must be licence-verified, PII-filtered, and recorded here with its
@@ -93,20 +111,36 @@ give. `python -m training.scripts.fetch_corpus --check` prints both columns.
 | AI4Bharat **Sangraha** (verified subset) | Hindi (Devanagari) | `CC-BY-4.0` — [dataset card](https://huggingface.co/datasets/ai4bharat/sangraha) | **Usable** (attribution, and a revision still has to be pinned before fetching) |
 | **Hindi Wikipedia** | Hindi prose | `CC-BY-SA-4.0` — [dump terms](https://dumps.wikimedia.org/legal.html) | **Usable**; open question is attribution, plus dump-date/revision pinning |
 | **L3Cube-HingCorpus** | real Roman code-mixed Hinglish | `CC-BY-NC-SA-4.0` — [repo](https://github.com/l3cube-pune/code-mixed-nlp) · [proceedings](https://aclanthology.org/2022.wildre-1.2/) | **Dropped: NonCommercial.** Two sources agree it is NC but disagree on the variant (README says NC-SA-4.0, the paper says NC-4.0), so the exact id needs the owner's check if it is ever revived |
-| Curated simple English / dialogue corpora | Stage A English | not looked up | **Not yet a source.** "Simple English dialogue" names a *slot*, and researching the licence of an unnamed corpus is not research. Must be split into named per-corpus entries, each verified separately |
-| Programmatic Hinglish | volume, controlled vocabulary | generated | must be labelled synthetic in any dataset card; not a substitute for human-written code-mixing |
+| **TinyStories** | Stage A English — simple narratives | `CDLA-Sharing-1.0` — [dataset card](https://huggingface.co/datasets/roneneldan/TinyStories) | **Usable, with a provenance duty.** Not NC and not ND, so the licence passes — but it is *entirely* GPT-3.5/GPT-4 output, so the licence is not the point and rule 1 is |
+| **Simple English Wikipedia** | Stage A English — simple prose | `CC-BY-SA-4.0` — [dumps](https://dumps.wikimedia.org/simplewiki/) · [terms](https://simple.wikipedia.org/wiki/Main_Page) | **Usable**; same attribution terms as the Hindi dump. Preferred over enwiki: small vocabulary, short sentences |
+| **Topical-Chat** | Stage A English — human dialogue | `CDLA-Sharing-1.0` per the [AWS registry entry](https://registry.opendata.aws/topical-chat-enriched/) | **Promising, medium confidence.** The id came from the *enriched* variant and it is unconfirmed whether the enrichment carries the same terms — needs the owner's read. Human-human, so no provenance duty |
+| **DailyDialog** | Stage A English — human dialogue | `CC-BY-NC-SA-4.0` — [mirrors](https://huggingface.co/datasets/roskoN/dailydialog) · [ConvLab](https://huggingface.co/datasets/ConvLab/dailydialog) | **Dropped: NonCommercial.** The first thing anyone reaches for when asked for "simple English dialogue", and the one we may not use |
+| **PersonaChat** | fallback dialogue | **inconclusive** | **Left unresolved.** A Kaggle mirror claims `CC-BY-NC-SA-4.0`; the ParlAI project page states no data licence. A mirror's claim is not the rights-holder's grant, and the convenient answer is not the answer |
+| Programmatic Hinglish | volume, controlled vocabulary | generated | must be labelled synthetic in the dataset card; not a substitute for human-written code-mixing |
 | Portfolio-derived instruction data | Stage B (§7.4), P5 | `own-work` | ours, generated from `knowledge.json`; no external licence |
+**Consequence of the two licence losses.** The two slots that were easiest to
+fill from memory — real Roman Hinglish, and everyday English dialogue — are the
+two that came back NonCommercial. So:
 
-**Consequence of the L3Cube finding.** Programmatic text cannot reproduce
-human code-mixing, so Stage A's Roman Hinglish input is now thinner than
-planned. That is a limitation to record in the model card, not a licence to
-look for a friendlier reading of the terms — and it is exactly why the check
-was made *before* a Kaggle session rather than after one.
+* **Hinglish** loses its human source. Programmatic text cannot reproduce
+  human code-mixing, so Stage A's Hinglish share is thinner than planned.
+* **English** now leans on a synthetic corpus and an encyclopedia. That is
+  genuinely the *narrow, clean distribution* §7.3 asks for, but it is not a
+  conversational one; the dialogue share depends on Topical-Chat clearing.
+  A model trained on this will read as fluent and slightly encyclopedic, which
+  is worth knowing before listening to its samples and concluding the
+  architecture is wrong.
+
+Both are limitations to record in the model card, not licence to go looking for
+a friendlier reading of the terms — and it is exactly why the check was made
+*before* a Kaggle session rather than after one.
 
 ### Rules that apply to whatever is chosen
 
 1. **No third-party LLM-generated dataset** unless its provenance is recorded
-   and disclosed in the dataset card and in this file.
+   and disclosed in the dataset card and in this file. *(Enforced in code —
+   `provenance.origin` is required and a `synthetic` source is unfetchable
+   without a `disclosure`. See "The provenance rule is code too".)*
 2. **No text sourced from the CV beyond what the portfolio already
    publishes** (`public:true`), and never the withheld phone number.
 3. `data/raw/`, `data/processed/` and checkpoints stay out of the repository

@@ -248,7 +248,7 @@ run on.
 Run everything (no torch required, ~15 s):
 
 ```bash
-npm run test:all          # 226 JS tests + 151 Python tests (5 skip: torch)
+npm run test:all          # 226 JS tests + 161 Python tests (5 skip: torch)
 npm run params            # analytic parameter counts + §7.1 band gate
 npm run smoke             # tokenizer contract, shards, cursor, checkpoints
 ```

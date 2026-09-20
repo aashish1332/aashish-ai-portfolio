@@ -356,7 +356,7 @@ Full detail in `docs/BENCHMARKS.md`.
 | Fertility (1,024 vocab) | en 2.46 · hi **4.71** · hinglish 2.69 · tech 4.35 · url_email 15.50 tok/word |
 | Seed fixture | 17,402 lines / 3.2 MB → kept 17,265 (137 near-dup) · leakage **clean** · 749,590 train tokens |
 | `prepare_data` / tokenizer training | 20.2 s / 3.6 s (this machine) |
-| Test suite | **213 JS + 92 Python**, 0 failures (5 Python skips: torch) — 226 + 151 after the production build, P4 prep and the licence-class gate |
+| Test suite | **213 JS + 92 Python**, 0 failures (5 Python skips: torch) — 226 + 161 after the production build, P4 prep and the two licence gates |
 
 ### What P3 found, and what it changed
 
@@ -452,8 +452,22 @@ otherwise be written under time pressure on Kaggle. Done here:
 * **A licence gate that is code.** `data/sources.json` + `fetch_corpus.py`:
   a source cannot be downloaded until a named person records the SPDX id, the
   URL they read and the date. No `--force`, and `tests/py/test_fetch_corpus.py`
-  asserts nothing third-party is enabled. **5 of 5 sources are blocked today,
+  asserts nothing third-party is enabled. **9 of 9 sources are blocked today,
   which is the honest state of P4's first step.**
+* **The English slot is now five named corpora, not one slot.** "Curated simple
+  English + dialogue" was unfetchable *and uncheckable* — researching the terms
+  of an unnamed corpus is not research. Splitting it immediately produced a
+  second NonCommercial loss: **DailyDialog**, the first thing anyone names for
+  "simple English dialogue," is `CC-BY-NC-SA-4.0`. TinyStories
+  (`CDLA-Sharing-1.0`) and both Wikipedia dumps survive; Topical-Chat is
+  promising at medium confidence; PersonaChat is left *inconclusive* rather than
+  resolved by picking the more convenient of two contradicting sources.
+* **Rule 1 stopped being a sentence.** "No third-party LLM-generated dataset
+  without recorded provenance" had nothing to apply to until a synthetic corpus
+  was registered, so nothing enforced it. Every source now declares
+  `provenance.origin`, `--verify` refuses one that does not, and a `synthetic`
+  source is unfetchable without a `disclosure` — because a permissive licence
+  does not make a generated corpus self-disclosing.
 * **A verified licence can still be unusable.** The gate has four states, not
   three: `licence_class` is separate from `unverified`, because `NC`/
   `NoDerivatives` data cannot enter a model that ships to browsers as part of a
@@ -495,11 +509,11 @@ otherwise be written under time pressure on Kaggle. Done here:
 
 ### Still blocked (not code)
 
-1. **A signature, not a survey.** The terms have been looked up and recorded
-   with evidence for three of the four third-party candidates, so what remains
-   is `--verify` with the owner's name on two usable sources (Sangraha,
-   Wikipedia) and splitting "simple English dialogue" into named corpora. The
-   command that ends this is printed by `fetch_corpus.py --check`.
+1. **A signature, not a survey.** Nine sources, each with its terms looked up
+   and recorded with evidence. What remains is `--verify` with the owner's name
+   on the ones that passed (Sangraha, both Wikipedia dumps, **Topical-Chat** at
+   medium confidence) and accepting the two losses. Every command is printed by
+   `fetch_corpus.py --check`.
 2. **A Kaggle account and quota** to run on — and P3's two unproven gates
    (*loss decreases*, *the loop resumes*) need a GPU before they can move from
    UNVERIFIED to verified.

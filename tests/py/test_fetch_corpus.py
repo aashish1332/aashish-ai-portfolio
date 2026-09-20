@@ -28,18 +28,20 @@ REGISTRY = {
     "policy": {"rule": "test policy", "required_filters": ["pii", "toxicity"]},
     "sources": [
         {"id": "unverified", "name": "Never checked", "kind": "http_file",
-         "enabled": True, "files": [{"url": "https://example.com/a.txt", "sha256": None}],
+         "enabled": True, "provenance": {"origin": "web"},
+         "files": [{"url": "https://example.com/a.txt", "sha256": None}],
          "license": {"spdx": "UNKNOWN", "verified": False}},
         {"id": "verified_disabled", "name": "Checked, off", "kind": "local",
-         "enabled": False, "files": [{"path": "/nowhere.txt"}],
+         "enabled": False, "provenance": {"origin": "web"},
+         "files": [{"path": "/nowhere.txt"}],
          "license": {"spdx": "CC-BY-SA-4.0", "url": "https://x", "verified": True,
                      "verified_by": "Tester", "verified_at": "2026-09-20"}},
         {"id": "ready", "name": "Ready", "kind": "local", "enabled": True,
-         "files": [],
+         "files": [], "provenance": {"origin": "own-work"},
          "license": {"spdx": "own-work", "url": "https://x", "verified": True,
                      "verified_by": "Tester", "verified_at": "2026-09-20"}},
         {"id": "bad_spdx", "name": "Flag with no answer", "kind": "local",
-         "enabled": True, "files": [],
+         "enabled": True, "files": [], "provenance": {"origin": "web"},
          "license": {"spdx": "UNKNOWN", "url": "https://x", "verified": True,
                      "verified_by": "Tester", "verified_at": "2026-09-20"}},
     ],
@@ -98,8 +100,17 @@ class Registry(unittest.TestCase):
             seen += 1
             self.assertIn("evidence", observed, f"{source.id}: observed with no source page")
             self.assertIn("observed_at", observed, f"{source.id}: observed with no date")
-            self.assertNotIn(str(observed.get("spdx", "")).upper(), fc.NON_ANSWERS,
-                             f"{source.id} 'observed' a licence nobody named")
+            spdx = observed.get("spdx")
+            self.assertIsNotNone(spdx, f"{source.id}: observed block with no spdx key")
+            if str(spdx).strip().upper() in fc.NON_ANSWERS:
+                # "I looked and could not determine it" is a legitimate finding —
+                # it saves the next person the same hour. What it must never be
+                # is dressed up as a licence, so require it to be labelled.
+                self.assertEqual(str(observed.get("confidence", "")).lower(), "low",
+                                 f"{source.id}: an unnamed observed licence is only honest "
+                                 f"at low confidence")
+                self.assertTrue(str(observed.get("notes", "")).strip(),
+                                f"{source.id}: inconclusive research must say why")
             if source.verified:
                 self.assertEqual(str(observed["spdx"]).upper(),
                                  str(source.license.get("spdx", "")).upper(),
@@ -117,6 +128,30 @@ class Registry(unittest.TestCase):
         self.assertIn("observed: CC-BY-NC-SA-4.0", text)
         self.assertIn("github.com/l3cube-pune/code-mixed-nlp", text)
         self.assertIn("[research, not a verification]", text)
+
+    def test_the_english_slot_was_split_into_named_corpora(self):
+        """A slot is not a source. 'Curated simple English' could not be licence
+        checked because there was nothing to check — researching the terms of an
+        unnamed corpus is not research."""
+        ids = {s.id for s in fc.sources(fc.load_registry())}
+        self.assertNotIn("simple_english_dialogue", ids)
+        for named in ("tinystories", "simple_english_wikipedia", "topical_chat",
+                      "dailydialog", "personachat"):
+            self.assertIn(named, ids, f"{named} should be registered by name")
+
+    def test_every_source_declares_where_its_text_came_from(self):
+        """Rule 1 needs an answer to 'was this written by a person?', and the
+        licence file cannot supply it."""
+        for source in fc.sources(fc.load_registry()):
+            self.assertIn(source.origin, fc.KNOWN_ORIGINS,
+                          f"{source.id} does not declare provenance.origin")
+
+    def test_the_one_synthetic_source_records_where_it_is_disclosed(self):
+        source = fc.find_source(fc.load_registry(), "tinystories")
+        self.assertEqual(source.origin, "synthetic")
+        self.assertIn("GPT", source.provenance.get("generated_by", ""))
+        self.assertFalse(source.needs_disclosure,
+                         "the disclosure must be recorded, not implied by a permissive licence")
 
     def test_the_noncommercial_finding_is_still_the_recorded_state(self):
         """A regression guard on the one licence check that changed the answer.
@@ -290,7 +325,7 @@ class LicenceClassGate(unittest.TestCase):
         "policy": {"rule": "test policy", "required_filters": ["pii"]},
         "sources": [
             {"id": "nc", "name": "NonCommercial corpus", "kind": "http_file",
-             "enabled": True, "why": "test",
+             "enabled": True, "why": "test", "provenance": {"origin": "human"},
              "files": [{"url": "https://example.com/nc.txt", "sha256": None}],
              "license": {"spdx": "CC-BY-NC-SA-4.0", "url": "https://example.com/terms",
                          "verified": True, "verified_by": "Tester",
@@ -342,6 +377,78 @@ class LicenceClassGate(unittest.TestCase):
                          "recording a fact is not the same as granting permission")
         reloaded = fc.find_source(fc.load_registry(self.path), "nc")
         self.assertIn("noncommercial", reloaded.status())
+
+
+class ProvenanceGate(unittest.TestCase):
+    """docs/DATA_LICENSES.md rule 1: a generated corpus must say so.
+
+    The licence can be perfectly permissive and the source still unusable —
+    'is this licensed?' and 'was this written by a person?' are different
+    questions, and only the first has a page to check.
+    """
+
+    def registry(self, disclosure="__absent__"):
+        provenance = {"origin": "synthetic", "generated_by": "GPT-4"}
+        if disclosure != "__absent__":
+            provenance["disclosure"] = disclosure
+        return {
+            "policy": {"rule": "test policy", "required_filters": ["pii"]},
+            "sources": [
+                {"id": "synth", "name": "Generated corpus", "kind": "http_file",
+                 "enabled": True, "why": "test", "provenance": provenance,
+                 "files": [{"url": "https://example.com/s.txt", "sha256": None}],
+                 "license": {"spdx": "MIT", "url": "https://example.com/legal",
+                             "verified": True, "verified_by": "Tester",
+                             "verified_at": "2026-09-20"}},
+            ],
+        }
+
+    def test_a_synthetic_source_without_a_disclosure_is_refused(self):
+        source = fc.find_source(self.registry(), "synth")
+        self.assertEqual(source.block_kind(), "provenance")
+        self.assertIn("synthetic provenance", source.status())
+        with self.assertRaises(fc.LicenceError):
+            fc.fetch(source, "ignored", log=lambda *a: None)
+
+    def test_the_same_source_with_a_disclosure_is_usable(self):
+        source = fc.find_source(self.registry("Named in the model card."), "synth")
+        self.assertEqual(source.status(), "ready")
+        self.assertIsNone(source.block_kind())
+
+    def test_a_blank_disclosure_does_not_count(self):
+        for blank in ("", "   ", "\n", None):
+            source = fc.find_source(self.registry(blank), "synth")
+            self.assertEqual(source.block_kind(), "provenance", repr(blank))
+
+    def test_human_web_and_own_work_sources_are_not_asked_to_disclose(self):
+        for origin in ("human", "web", "own-work"):
+            source = fc.Source("x", {
+                "id": "x", "kind": "local", "enabled": True,
+                "provenance": {"origin": origin},
+                "license": {"spdx": "MIT", "verified": True, "verified_by": "T",
+                            "verified_at": "2026-09-20"}})
+            self.assertFalse(source.needs_disclosure, origin)
+
+    def test_check_mode_says_the_licence_is_not_the_problem(self):
+        import io
+
+        buffer = io.StringIO()
+        fc.print_check(self.registry(), stream=buffer)
+        text = buffer.getvalue()
+        self.assertIn("generated by GPT-4", text)
+        self.assertIn("does not settle it", text)
+
+    def test_verifying_a_source_that_never_says_where_it_came_from_is_refused(self):
+        registry = {
+            "policy": {"rule": "t", "required_filters": []},
+            "sources": [{"id": "nop", "name": "x", "kind": "local", "enabled": False,
+                         "files": [], "license": {"spdx": "UNKNOWN", "verified": False}}],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = registry_file(Path(tmp), registry)
+            with self.assertRaises(fc.LicenceError) as ctx:
+                fc.verify_source("nop", "MIT", "https://x", "Tester", path=path)
+            self.assertIn("provenance.origin", str(ctx.exception))
 
 
 class FakeResponse:
@@ -476,6 +583,18 @@ class FetchLocal(unittest.TestCase):
             })
             with self.assertRaises(FileNotFoundError):
                 fc.fetch(source, Path(tmp) / "out", log=lambda *a: None)
+
+    def test_a_source_with_no_acquisition_channel_says_so_instead_of_guessing(self):
+        source = fc.Source("chan", {
+            "id": "chan", "name": "x", "kind": "unspecified", "enabled": True,
+            "provenance": {"origin": "human"},
+            "license": {"spdx": "MIT", "verified": True, "verified_by": "A",
+                        "verified_at": "2026-09-20"},
+        })
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(ValueError) as ctx:
+                fc.fetch(source, Path(tmp) / "out", log=lambda *a: None)
+            self.assertIn("no acquisition channel chosen", str(ctx.exception))
 
     def test_hf_dataset_without_a_pinned_revision_is_refused(self):
         with tempfile.TemporaryDirectory() as tmp:
