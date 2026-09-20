@@ -356,7 +356,7 @@ Full detail in `docs/BENCHMARKS.md`.
 | Fertility (1,024 vocab) | en 2.46 · hi **4.71** · hinglish 2.69 · tech 4.35 · url_email 15.50 tok/word |
 | Seed fixture | 17,402 lines / 3.2 MB → kept 17,265 (137 near-dup) · leakage **clean** · 749,590 train tokens |
 | `prepare_data` / tokenizer training | 20.2 s / 3.6 s (this machine) |
-| Test suite | **213 JS + 92 Python**, 0 failures (5 Python skips: torch) — 226 + 137 after the production build and P4-prep work |
+| Test suite | **213 JS + 92 Python**, 0 failures (5 Python skips: torch) — 226 + 151 after the production build, P4 prep and the licence-class gate |
 
 ### What P3 found, and what it changed
 
@@ -452,8 +452,26 @@ otherwise be written under time pressure on Kaggle. Done here:
 * **A licence gate that is code.** `data/sources.json` + `fetch_corpus.py`:
   a source cannot be downloaded until a named person records the SPDX id, the
   URL they read and the date. No `--force`, and `tests/py/test_fetch_corpus.py`
-  asserts nothing third-party is enabled. **4 of 5 sources are blocked today,
+  asserts nothing third-party is enabled. **5 of 5 sources are blocked today,
   which is the honest state of P4's first step.**
+* **A verified licence can still be unusable.** The gate has four states, not
+  three: `licence_class` is separate from `unverified`, because `NC`/
+  `NoDerivatives` data cannot enter a model that ships to browsers as part of a
+  professional portfolio, and no amount of re-reading the terms changes that.
+  The exception is a named field (`allow_noncommercial`), never the deletion of
+  a list entry, and matching is token-wise so `NCSA` is not read as `NC`.
+  Recording an NC licence with `--verify` **writes the fact down and leaves the
+  source disabled** — a fact and a permission are different acts.
+* **The first licence check changed an answer.** Sangraha and Hindi Wikipedia
+  are permissive (`CC-BY-4.0`, `CC-BY-SA-4.0`), but **L3Cube-HingCorpus is
+  NonCommercial** (`CC-BY-NC-SA-4.0` per the repo's licence section; the LREC
+  proceedings say `CC-BY-NC-4.0`) and is dropped. Research is recorded as
+  `license.observed` with the page it came from and is deliberately *not*
+  `verified`. The real cost: programmatic text cannot reproduce human
+  code-mixing, so Stage A's Roman Hinglish is now thinner than planned — a
+  limitation for the model card, not a reason to re-read the terms until they
+  say something nicer. **This is what the check was for, and it found it before
+  a Kaggle session rather than after one.**
 * **Resumable, hashed downloads.** `.part` + `Range` continuation; a sha256
   mismatch **deletes** the result instead of leaving a corrupt shard that later
   looks real.
@@ -477,10 +495,20 @@ otherwise be written under time pressure on Kaggle. Done here:
 
 ### Still blocked (not code)
 
-1. **Licence decisions** for the four third-party sources.
-2. **A Kaggle account and quota** to run on.
+1. **A signature, not a survey.** The terms have been looked up and recorded
+   with evidence for three of the four third-party candidates, so what remains
+   is `--verify` with the owner's name on two usable sources (Sangraha,
+   Wikipedia) and splitting "simple English dialogue" into named corpora. The
+   command that ends this is printed by `fetch_corpus.py --check`.
+2. **A Kaggle account and quota** to run on — and P3's two unproven gates
+   (*loss decreases*, *the loop resumes*) need a GPU before they can move from
+   UNVERIFIED to verified.
 3. **The 12–16k vocabulary** cannot be frozen until the corpus exists, because
    the ceiling is the corpus's distinct vocabulary, not its size.
+4. **Whether this project is a commercial use** — the one fact that decides
+   whether the L3Cube drop is permanent. It is asserted in
+   `data/sources.json` (`allow_noncommercial: false`) rather than left implicit,
+   so overturning it is a reviewable edit.
 
 ### Evidence
 `data/sources.json` · `training/scripts/fetch_corpus.py` · `estimate_budget.py` ·

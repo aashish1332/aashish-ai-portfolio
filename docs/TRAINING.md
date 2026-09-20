@@ -237,15 +237,18 @@ so an interrupted run is a resume rather than a loss.
 ### 6.4 What is still blocked on a decision
 
 Everything above is code that exists and is tested without torch. What remains
-is genuinely not mine to decide: which sources are licence-verified (4 of 5 are
-blocked today), and the Kaggle account/quota to run on.
+is genuinely not mine to decide: putting a name on the licence verifications
+(5 of 5 sources are blocked today — the terms were *looked up* and recorded as
+`observed`, which is research, not a signature; one candidate, L3Cube-HingCorpus,
+turned out to be NonCommercial and is dropped), and the Kaggle account/quota to
+run on.
 
 ## Verification
 
 Run everything (no torch required, ~15 s):
 
 ```bash
-npm run test:all          # 226 JS tests + 137 Python tests (5 skip: torch)
+npm run test:all          # 226 JS tests + 151 Python tests (5 skip: torch)
 npm run params            # analytic parameter counts + §7.1 band gate
 npm run smoke             # tokenizer contract, shards, cursor, checkpoints
 ```

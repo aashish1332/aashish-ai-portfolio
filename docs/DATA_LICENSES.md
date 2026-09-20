@@ -50,8 +50,32 @@ a source also enables it, and `tests/py/test_fetch_corpus.py` asserts that no
 third-party source is enabled without a verified licence — so this table and
 that file cannot drift apart silently.
 
-Today: **4 of 5 sources blocked** (only the portfolio-derived Stage B
-generator is verified, and it does not exist yet).
+Today: **5 of 5 sources blocked** (the portfolio-derived Stage B generator is
+verified but not yet enabled, because it does not exist yet).
+
+### A verified licence can still be one we may not use
+
+The first licence check of P4 found one, so the gate now distinguishes four
+states rather than three. `BLOCKED: CC-BY-NC-SA-4.0 is noncommercial` is a
+different problem from `BLOCKED: licence not verified`: no amount of reading
+the terms fixes the first one.
+
+**Why the default is to refuse.** This project ships a model to browsers, as
+part of a professional portfolio. That is not a personal, non-commercial use,
+so NonCommercial (`NC`) and NoDerivatives (`ND`) data are refused by default.
+The exception is a **named field** — `allow_noncommercial` in
+`data/sources.json` — and not the deletion of a list entry, because "we have
+permission" and "nobody checked" must not be able to look identical in a diff.
+
+Detection is token-wise (`CC-BY-NC-SA-4.0` → `{CC, BY, NC, SA, 4.0}`), not by
+substring, because `NCSA` is a real permissive OSI licence and a search for
+`NC` would refuse it. Both failure modes are pinned in
+`tests/py/test_fetch_corpus.py`.
+
+Recording a licence and granting permission are two different acts:
+`--verify` on an NC source **writes the fact down and leaves the source
+disabled**, so the registry never carries `enabled: true` beside a licence we
+may not use.
 
 ## Candidates for P4 Stage A — **not downloaded, not used**
 
@@ -60,14 +84,24 @@ version, retrieval date, licence text and the filters applied, *before* a
 single line enters `data/raw/`. If a licence check fails, the source is
 dropped and the reason recorded.
 
-| Candidate | Intended use | Open questions to settle first |
-|---|---|---|
-| AI4Bharat **Sangraha** (verified subset) | Hindi (Devanagari) | licence terms for the verified subset, and how to reproduce the subset without the whole collection |
-| **Hindi Wikipedia** | Hindi prose | CC BY-SA attribution obligations for a trained model; dump date and revision pinning |
-| **L3Cube-HingCorpus** | real Roman code-mixed Hinglish | Twitter-derived: PII, toxicity and URL filtering required; licence check mandatory; conversational noise may be too high for a narrow, clean distribution |
-| Curated simple English / dialogue corpora | Stage A English | licence per corpus; must be *simple and clean*, not a web dump (§7.3) |
-| Programmatic Hinglish | volume, controlled vocabulary | must be labelled synthetic in any dataset card; not a substitute for human-written code-mixing |
-| Portfolio-derived instruction data | Stage B (§7.4), P5 | ours, generated from `knowledge.json`; no external licence |
+**Observed** below is research recorded by the agent with a page to check it
+against — it is deliberately *not* a verification, which only the owner can
+give. `python -m training.scripts.fetch_corpus --check` prints both columns.
+
+| Candidate | Intended use | Observed licence | Verdict |
+|---|---|---|---|
+| AI4Bharat **Sangraha** (verified subset) | Hindi (Devanagari) | `CC-BY-4.0` — [dataset card](https://huggingface.co/datasets/ai4bharat/sangraha) | **Usable** (attribution, and a revision still has to be pinned before fetching) |
+| **Hindi Wikipedia** | Hindi prose | `CC-BY-SA-4.0` — [dump terms](https://dumps.wikimedia.org/legal.html) | **Usable**; open question is attribution, plus dump-date/revision pinning |
+| **L3Cube-HingCorpus** | real Roman code-mixed Hinglish | `CC-BY-NC-SA-4.0` — [repo](https://github.com/l3cube-pune/code-mixed-nlp) · [proceedings](https://aclanthology.org/2022.wildre-1.2/) | **Dropped: NonCommercial.** Two sources agree it is NC but disagree on the variant (README says NC-SA-4.0, the paper says NC-4.0), so the exact id needs the owner's check if it is ever revived |
+| Curated simple English / dialogue corpora | Stage A English | not looked up | **Not yet a source.** "Simple English dialogue" names a *slot*, and researching the licence of an unnamed corpus is not research. Must be split into named per-corpus entries, each verified separately |
+| Programmatic Hinglish | volume, controlled vocabulary | generated | must be labelled synthetic in any dataset card; not a substitute for human-written code-mixing |
+| Portfolio-derived instruction data | Stage B (§7.4), P5 | `own-work` | ours, generated from `knowledge.json`; no external licence |
+
+**Consequence of the L3Cube finding.** Programmatic text cannot reproduce
+human code-mixing, so Stage A's Roman Hinglish input is now thinner than
+planned. That is a limitation to record in the model card, not a licence to
+look for a friendlier reading of the terms — and it is exactly why the check
+was made *before* a Kaggle session rather than after one.
 
 ### Rules that apply to whatever is chosen
 

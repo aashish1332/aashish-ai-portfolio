@@ -76,6 +76,61 @@ class Registry(unittest.TestCase):
                 self.assertFalse(source.enabled,
                                  f"{source.id} is enabled without a verified licence")
 
+    def test_the_registry_does_not_loosen_the_safety_defaults(self):
+        """NC/ND are refused by default; a data file must not quietly change that.
+
+        `allow_noncommercial: true` is a statement about what this project is,
+        so it belongs in a diff someone reviews — not in a convenient edit made
+        at 2am to unblock a download.
+        """
+        policy = fc.load_registry()["policy"]
+        for key, default in fc.DEFAULT_POLICY.items():
+            self.assertEqual(policy.get(key, default), default,
+                             f"sources.json must not override the {key} default")
+
+    def test_observed_licences_are_research_and_stay_separate_from_verification(self):
+        """Research and an attestation are different states and must not merge."""
+        seen = 0
+        for source in fc.sources(fc.load_registry()):
+            observed = source.license.get("observed")
+            if not observed:
+                continue
+            seen += 1
+            self.assertIn("evidence", observed, f"{source.id}: observed with no source page")
+            self.assertIn("observed_at", observed, f"{source.id}: observed with no date")
+            self.assertNotIn(str(observed.get("spdx", "")).upper(), fc.NON_ANSWERS,
+                             f"{source.id} 'observed' a licence nobody named")
+            if source.verified:
+                self.assertEqual(str(observed["spdx"]).upper(),
+                                 str(source.license.get("spdx", "")).upper(),
+                                 f"{source.id}: verified as one licence, observed as another")
+        self.assertGreaterEqual(seen, 3, "the P4 licence research should be recorded here")
+
+    def test_check_shows_the_licence_research_and_where_it_came_from(self):
+        """The finding has to reach the person about to read terms for a source
+        that has already been ruled out."""
+        import io
+
+        buffer = io.StringIO()
+        fc.print_check(fc.load_registry(), stream=buffer)
+        text = buffer.getvalue()
+        self.assertIn("observed: CC-BY-NC-SA-4.0", text)
+        self.assertIn("github.com/l3cube-pune/code-mixed-nlp", text)
+        self.assertIn("[research, not a verification]", text)
+
+    def test_the_noncommercial_finding_is_still_the_recorded_state(self):
+        """A regression guard on the one licence check that changed the answer.
+
+        If someone flips L3Cube to `verified` without the owner actually reading
+        the terms, this fails: the class block is the whole reason it was looked
+        up, and `CC-BY-NC-*` can never be fetched while the defaults hold.
+        """
+        source = fc.find_source(fc.load_registry(), "l3cube_hingcorpus")
+        observed = source.license["observed"]["spdx"]
+        self.assertEqual(fc.blocked_licence_classes(observed), ["noncommercial"],
+                         "the recorded licence must still be recognised as NonCommercial")
+        self.assertFalse(source.enabled)
+
 
 class Gate(unittest.TestCase):
     def setUp(self):
@@ -166,7 +221,8 @@ class Verification(unittest.TestCase):
         self.assertEqual(reloaded.status(), "ready")
 
     def test_verifying_with_a_non_licence_is_refused(self):
-        for spdx in ("UNKNOWN", "unknown", "NONE", "TODO", "", None):
+        for spdx in ("UNKNOWN", "unknown", "NONE", "TODO", "", None,
+                     "NOASSERTION", "noassertion"):
             with self.assertRaises(fc.LicenceError):
                 fc.verify_source("unverified", spdx, "https://x", "Tester", path=self.path)
 
@@ -179,6 +235,113 @@ class Verification(unittest.TestCase):
     def test_unknown_source_id_is_refused(self):
         with self.assertRaises(KeyError):
             fc.verify_source("nope", "MIT", "https://x", "Tester", path=self.path)
+
+
+class LicenceClassTokens(unittest.TestCase):
+    """§7.3 in practice: a licence can be real and still be one we may not use.
+
+    Detection is token-wise on purpose, and both failure modes are pinned here:
+    a substring test for 'NC' would refuse NCSA (a permissive OSI licence), and
+    a test for '-NC-' would miss `CC-BY-NC-SA-4.0` exactly when it matters.
+    """
+
+    def test_noncommercial_variants_are_detected(self):
+        for spdx in ("CC-BY-NC-4.0", "CC-BY-NC-SA-4.0", "CC-BY-NC-SA-3.0",
+                     "cc-by-nc-sa-4.0"):
+            self.assertIn("noncommercial", fc.blocked_licence_classes(spdx), spdx)
+
+    def test_no_derivatives_is_detected_and_reported_separately(self):
+        self.assertEqual(fc.blocked_licence_classes("CC-BY-ND-4.0"), ["no_derivatives"])
+        self.assertEqual(fc.blocked_licence_classes("CC-BY-NC-ND-4.0"),
+                         ["noncommercial", "no_derivatives"])
+
+    def test_a_permissive_licence_containing_the_letters_nc_is_allowed(self):
+        self.assertEqual(fc.spdx_tokens("NCSA"), {"NCSA"})
+        for spdx in ("NCSA", "CC-BY-4.0", "CC-BY-SA-4.0", "Apache-2.0", "MIT",
+                     "BSD-3-Clause", "own-work"):
+            self.assertEqual(fc.blocked_licence_classes(spdx), [], spdx)
+
+    def test_a_version_is_not_mistaken_for_a_class(self):
+        self.assertEqual(fc.spdx_tokens("CC-BY-4.0"), {"CC", "BY", "4.0"})
+        self.assertEqual(fc.spdx_tokens("GPL-3.0-only"), {"GPL", "3.0", "ONLY"})
+
+    def test_the_exception_is_a_named_field_rather_than_a_deleted_entry(self):
+        policy = {"allow_noncommercial": True}
+        self.assertEqual(fc.blocked_licence_classes("CC-BY-NC-SA-4.0", policy), [])
+        # ...and permitting one class must not silently permit the other.
+        self.assertEqual(fc.blocked_licence_classes("CC-BY-NC-ND-4.0", policy),
+                         ["no_derivatives"])
+
+    def test_a_bare_source_fails_closed(self):
+        """A Source built without the registry still refuses NC — the default
+        must not depend on the file being loaded correctly."""
+        source = fc.Source("bare", {
+            "id": "bare", "name": "x", "kind": "local", "enabled": True, "files": [],
+            "license": {"spdx": "CC-BY-NC-4.0", "verified": True, "verified_by": "T",
+                        "verified_at": "2026-09-20"},
+        })
+        self.assertEqual(source.block_kind(), "licence_class")
+
+
+class LicenceClassGate(unittest.TestCase):
+    """The block must hold on every path: status, fetch, and the CLI."""
+
+    REGISTRY = {
+        "policy": {"rule": "test policy", "required_filters": ["pii"]},
+        "sources": [
+            {"id": "nc", "name": "NonCommercial corpus", "kind": "http_file",
+             "enabled": True, "why": "test",
+             "files": [{"url": "https://example.com/nc.txt", "sha256": None}],
+             "license": {"spdx": "CC-BY-NC-SA-4.0", "url": "https://example.com/terms",
+                         "verified": True, "verified_by": "Tester",
+                         "verified_at": "2026-09-20"}},
+        ],
+    }
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = registry_file(Path(self.tmp.name), self.REGISTRY)
+        self.registry = fc.load_registry(self.path)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_a_verified_noncommercial_source_still_cannot_be_fetched(self):
+        source = fc.find_source(self.registry, "nc")
+        self.assertIn("noncommercial", source.status())
+        self.assertEqual(source.block_kind(), "licence_class")
+        with self.assertRaises(fc.LicenceError):
+            fc.fetch(source, Path(self.tmp.name) / "out", log=lambda *a: None)
+        self.assertFalse((Path(self.tmp.name) / "out").exists())
+
+    def test_cli_refuses_an_nc_source_with_exit_code_2(self):
+        code = fc.main(["--sources", str(self.path), "--source", "nc",
+                        "--out", str(Path(self.tmp.name) / "out")])
+        self.assertEqual(code, 2)
+
+    def test_check_mode_says_reading_the_terms_cannot_fix_this(self):
+        import io
+
+        buffer = io.StringIO()
+        fc.print_check(self.registry, stream=buffer)
+        text = buffer.getvalue()
+        self.assertIn("noncommercial", text)
+        self.assertIn("nothing here", text,
+                      "a licence class cannot be fixed by reading the terms again")
+        self.assertIn("allow_noncommercial", text,
+                      "the only way out must be named, so it is a decision and not a guess")
+        self.assertNotIn("--spdx <SPDX-ID>", text,
+                         "a source blocked by class must not be told to re-verify")
+
+    def test_verifying_an_nc_licence_records_it_without_granting_permission(self):
+        entry = fc.verify_source("nc", "CC-BY-NC-4.0", "https://example.com/terms",
+                                 "Tester", path=self.path)
+        self.assertEqual(entry["license"]["spdx"], "CC-BY-NC-4.0")
+        self.assertTrue(entry["license"]["verified"], "the fact must still be recorded")
+        self.assertFalse(entry["enabled"],
+                         "recording a fact is not the same as granting permission")
+        reloaded = fc.find_source(fc.load_registry(self.path), "nc")
+        self.assertIn("noncommercial", reloaded.status())
 
 
 class FakeResponse:

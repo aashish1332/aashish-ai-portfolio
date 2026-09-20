@@ -3,8 +3,12 @@
   "policy": {
     "rule": "A source may be fetched only when license.verified is true AND enabled is true. There is no --force flag: an unverified source is a decision that has not been made, and a training run that stops for a decision is cheaper than a model trained on text we had no right to use.",
     "record": "Each verification records spdx, url, verified_by and verified_at so docs/DATA_LICENSES.md can be reconciled against this file by a test.",
+    "licence_classes": "A verified licence can still be one we may not use. NC (NonCommercial) and ND (NoDerivatives) are refused by default because a distributed model in a professional portfolio is not a personal, non-commercial use. Matching is token-wise, so NCSA is not NC.",
+    "allow_noncommercial": false,
+    "allow_no_derivatives": false,
     "required_filters": ["pii", "toxicity", "dedupe", "langid", "length"]
   },
+  "_observed_comment": "`license.observed` is research: someone looked up the terms and wrote down what they found, with the page they found it on. It is deliberately NOT `verified` — only a named person asserts that, per the rule above. A source may be observed and still unfetchable.",
   "sources": [
     {
       "id": "sangraha_verified",
@@ -21,6 +25,15 @@
         "verified": false,
         "verified_by": null,
         "verified_at": null,
+        "observed": {
+          "spdx": "CC-BY-4.0",
+          "evidence": "https://huggingface.co/datasets/ai4bharat/sangraha",
+          "observed_at": "2026-09-20",
+          "observed_by": "agent (research; not a verification)",
+          "confidence": "high",
+          "quote": "dataset card states License: cc-by-4.0",
+          "notes": "Permissive: commercial use allowed with attribution. Usable if the owner confirms. Still needs a pinned revision before fetching — a CC-BY grant is not a revision."
+        },
         "notes": "Terms must be read at the dataset page and the subset's own terms recorded. Confirm redistribution constraints: the model is a derivative, and data/ is git-ignored so no text is redistributed."
       },
       "notes": "Download via huggingface_hub with a pinned revision; record the revision hash in the fetch manifest."
@@ -44,6 +57,15 @@
         "verified": false,
         "verified_by": null,
         "verified_at": null,
+        "observed": {
+          "spdx": "CC-BY-SA-4.0",
+          "evidence": "https://dumps.wikimedia.org/legal.html",
+          "observed_at": "2026-09-20",
+          "observed_by": "agent (research; not a verification)",
+          "confidence": "medium",
+          "quote": "the spdx and url above were already recorded in this file; the page itself was not re-fetched during this pass",
+          "notes": "ShareAlike is not NonCommercial, so it is not blocked by class. The open question is attribution: the corpus we build is a derivative and must be credited, and the dump stays out of the repository."
+        },
         "notes": "Attribution obligations of CC BY-SA apply to the *corpus*; a trained model's outputs are not a reproduction. Record the dump date and a revision id, and keep the dump out of the repository."
       },
       "notes": "Needs aggressive filtering: encyclopedic register, templated boilerplate, names, dates, and long lists of numerals."
@@ -63,9 +85,18 @@
         "verified": false,
         "verified_by": null,
         "verified_at": null,
+        "observed": {
+          "spdx": "CC-BY-NC-SA-4.0",
+          "evidence": "https://github.com/l3cube-pune/code-mixed-nlp (License section) · https://aclanthology.org/2022.wildre-1.2/",
+          "observed_at": "2026-09-20",
+          "observed_by": "agent (research; not a verification)",
+          "confidence": "high that it is NonCommercial; medium on the exact id",
+          "quote": "L3Cube-HingCorpus, and L3Cube-HingLID is licensed under a Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License",
+          "notes": "BLOCKED BY CLASS. Two sources agree it is NonCommercial (the project README, and the LREC/WILDRE proceedings). They disagree on the variant — the README says CC-BY-NC-SA-4.0, the proceedings PDF says CC-BY-NC-4.0 — so the exact id needs the owner's check before anything else. Either way it cannot enter a distributed model while allow_noncommercial is false. This is the finding the executable gate exists to surface: the licence was on the 'must check' list, and checking it changed the answer."
+        },
         "notes": "Twitter-derived. Licence check is mandatory AND the PII/toxicity/URL filtering burden is the highest of any candidate."
       },
-      "notes": "High conversational noise. If used, cap its share of the training mixture and report the share."
+      "notes": "High conversational noise. If used, cap its share of the training mixture and report the share. As observed, it is not usable: see license.observed. The Roman Hinglish gap this was meant to fill is a real loss — programmatic data cannot reproduce human code-mixing, so Stage A's Hinglish will be weaker, and that limitation belongs in the model card rather than being papered over with data we may not use."
     },
     {
       "id": "simple_english_dialogue",
@@ -81,7 +112,8 @@
         "verified": false,
         "verified_by": null,
         "verified_at": null,
-        "notes": "Pick specific corpora and record each one separately rather than treating this entry as a slot."
+        "observed": null,
+        "notes": "Pick specific corpora and record each one separately rather than treating this entry as a slot. Nothing was looked up here, because 'simple English dialogue' is not yet a source — researching the licence of an unnamed corpus is not research."
       },
       "notes": "Splitting this into per-corpus entries is the next step before P4 begins."
     },
@@ -101,7 +133,7 @@
         "verified_at": "2026-09-20",
         "notes": "Generated from the owner's own knowledge base; only public:true facts carry values, and URLs/emails become placeholders (§8.4 layer 3)."
       },
-      "notes": "Enabled for P5, not P4. The generator does not exist yet."
+      "notes": "Enabled for P5, not P4. The generator does not exist yet. No `observed` block: there is no third-party page to read, which is the point of generating it."
     }
   ]
 }

@@ -28,12 +28,13 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import sys
 import time
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 if __package__ in (None, ""):
@@ -46,7 +47,57 @@ CHUNK = 1 << 20
 USER_AGENT = "aashish-ai-corpus-fetcher/1.0 (portfolio assistant training; contact via repository)"
 
 # SPDX ids that mean "nobody checked". Refusing these is the whole point.
-NON_ANSWERS = {None, "", "UNKNOWN", "NONE", "TODO", "TBD", "?"}
+# NOASSERTION is included because it is the SPDX id for *declining to state*
+# a licence — it is a real id and it is still not an answer.
+NON_ANSWERS = {None, "", "UNKNOWN", "NONE", "TODO", "TBD", "?", "NOASSERTION"}
+
+# A verified licence can still be one we may not use. §7.3 asks that terms be
+# checked; checking them is pointless if the answer cannot change the outcome.
+#
+# This project ships a model to browsers as part of a professional portfolio,
+# so NonCommercial data is assumed unusable until someone asserts that this is
+# not a commercial use. That assertion is a *named* field in `sources.json`
+# (`allow_noncommercial`), not the deletion of a list entry, because "we may
+# use this" and "nobody checked" must not be able to look the same in a diff.
+DEFAULT_POLICY = {
+    "allow_noncommercial": False,
+    "allow_no_derivatives": False,
+}
+
+# SPDX licence *classes* -> the component token that marks them. Matching is
+# token-wise, not substring: `NCSA` (a permissive OSI licence) must not match
+# `NC`, and neither must a stray 'nc' inside a licence name.
+CLASS_TOKENS = {
+    "noncommercial": "NC",
+    "no_derivatives": "ND",
+}
+
+
+def spdx_tokens(spdx: str | None) -> set[str]:
+    """`CC-BY-NC-SA-4.0` → {CC, BY, NC, SA, 4.0}.
+
+    Splitting on separators rather than searching for substrings, because a
+    substring test for `NC` would also block NCSA and any id containing those
+    letters. `4.0` is kept whole so the version is not read as a component.
+    """
+    if not spdx:
+        return set()
+    return {token for token in re.split(r"[^A-Za-z0-9.]+", str(spdx).upper()) if token}
+
+
+def blocked_licence_classes(spdx: str | None, policy: dict | None = None) -> list[str]:
+    """Classes of a *verified* licence that policy still refuses.
+
+    Returns class names, not a bool, so the refusal can say which part of the
+    licence is the problem.
+    """
+    policy = {**DEFAULT_POLICY, **(policy or {})}
+    tokens = spdx_tokens(spdx)
+    blocked = []
+    for name, token in CLASS_TOKENS.items():
+        if token in tokens and not policy.get(f"allow_{name}"):
+            blocked.append(name)
+    return blocked
 
 
 class LicenceError(RuntimeError):
@@ -57,6 +108,8 @@ class LicenceError(RuntimeError):
 class Source:
     id: str
     raw: dict
+    # Fail closed: a Source built without the registry still refuses NC/ND.
+    policy: dict = field(default_factory=lambda: dict(DEFAULT_POLICY))
 
     @property
     def name(self) -> str:
@@ -82,17 +135,24 @@ class Source:
     def spdx(self) -> str | None:
         return self.license.get("spdx")
 
-    def block_kind(self) -> str | None:
-        """One of 'unverified' | 'non_answer' | 'disabled', or None when usable.
+    def blocked_classes(self) -> list[str]:
+        return blocked_licence_classes(self.spdx, self.policy)
 
-        The three blocks need different fixes, and a report that tells someone
+    def block_kind(self) -> str | None:
+        """One of 'unverified' | 'non_answer' | 'licence_class' | 'disabled'.
+
+        The four blocks need different fixes, and a report that tells someone
         to flip `enabled` when their actual problem is an unread licence sends
-        them the wrong way.
+        them the wrong way. `licence_class` is separate from `non_answer`
+        because the licence *is* known and *is* recorded — it is simply one we
+        may not use, which no amount of reading the terms will change.
         """
         if not self.verified:
             return 'unverified'
         if str(self.spdx).strip().upper() in NON_ANSWERS:
             return 'non_answer'
+        if self.blocked_classes():
+            return 'licence_class'
         if not self.enabled:
             return 'disabled'
         return None
@@ -103,6 +163,8 @@ class Source:
             return "BLOCKED: licence not verified"
         if kind == 'non_answer':
             return f"BLOCKED: licence recorded as {self.spdx!r}, which is not an answer"
+        if kind == 'licence_class':
+            return f"BLOCKED: {self.spdx} is {', '.join(self.blocked_classes())}"
         if kind == 'disabled':
             return 'BLOCKED: verified but not enabled'
         return 'ready'
@@ -117,7 +179,8 @@ def load_registry(path: Path | str = SOURCES_PATH) -> dict:
 
 
 def sources(registry: dict) -> list[Source]:
-    return [Source(id=s["id"], raw=s) for s in registry.get("sources", [])]
+    policy = registry.get("policy") or {}
+    return [Source(id=s["id"], raw=s, policy=policy) for s in registry.get("sources", [])]
 
 
 def find_source(registry: dict, source_id: str) -> Source:
@@ -313,7 +376,12 @@ def verify_source(source_id: str, spdx: str, url: str, reviewer: str, notes: str
         })
         if notes:
             entry["license"]["notes"] = notes
-        entry["enabled"] = True
+        # Record the licence even when it is one we cannot use — the fact is
+        # worth having and the refusal is by class, not by silence. What is
+        # refused is the *enablement*: a blocked source must not be left
+        # sitting in the registry with `enabled: true`, because the next reader
+        # would see a green flag and an NC licence in the same block.
+        entry["enabled"] = not blocked_licence_classes(spdx, registry.get("policy"))
         Path(path).write_text(json.dumps(registry, ensure_ascii=False, indent=2) + "\n",
                               encoding="utf-8")
         return entry
@@ -331,6 +399,13 @@ def print_check(registry: dict, stream=sys.stdout) -> int:
         blocked += status != "ready"
         print(f"  {source.id:<24} {status}", file=stream)
         print(f"    {source.name} — {source.raw.get('why', '')}", file=stream)
+        # Show the research where the decision gets made. A reader who is about
+        # to spend an afternoon reading terms needs to know that this one was
+        # already found to be NonCommercial, and which page said so.
+        observed = source.license.get("observed") or None
+        if observed and not source.verified:
+            print(f"    observed: {observed.get('spdx')} — {observed.get('evidence')}"
+                  f"  [research, not a verification]", file=stream)
         if status != "ready":
             kind = source.block_kind()
             if kind == 'unverified':
@@ -339,6 +414,12 @@ def print_check(registry: dict, stream=sys.stdout) -> int:
                 print(f"    to unblock: re-run the verification with the licence you "
                       f"actually read — {source.spdx!r} names none:", file=stream)
                 print(f"      {source.verify_command()}", file=stream)
+            elif kind == 'licence_class':
+                print(f"    to unblock: nothing here — {source.spdx} is "
+                      f"{', '.join(source.blocked_classes())}, which this project may not "
+                      f"use. Either record that as acceptable in data/sources.json policy "
+                      f"(allow_{source.blocked_classes()[0]}), or drop the source.",
+                      file=stream)
             else:
                 print("    to unblock: set enabled to true once the data is actually needed",
                       file=stream)
@@ -373,7 +454,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.verify:
         entry = verify_source(args.verify, args.spdx, args.url, args.reviewer,
                               args.notes, path=args.sources)
-        print(f"verified {entry['id']} as {entry['license']['spdx']} — now enabled")
+        print(f"verified {entry['id']} as {entry['license']['spdx']}")
+        blocked = blocked_licence_classes(entry["license"]["spdx"], registry.get("policy"))
+        if blocked:
+            print(f"\nRECORDED, NOT ENABLED: {', '.join(blocked)} licence. The fact is "
+                  f"written down; the permission is not granted.")
+            print("To permit it, record why in data/sources.json policy.")
+        else:
+            print("  enabled for fetching.")
         print("Remember to update docs/DATA_LICENSES.md (a test reconciles the two).")
         return 0
 
