@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
   buildIndex, search, chunkify, similarity, normalize, canonical, hasPronoun,
-  resolveFocus, contentTokens, estimateTokens, RETRIEVAL_STOP,
+  hasEntityPronoun, resolveFocus, contentTokens, estimateTokens, RETRIEVAL_STOP,
   MAX_CHUNKS, MAX_CONTEXT_TOKENS, MIN_TOP_SCORE,
 } from '../ai/retrieval/index.mjs';
 
@@ -159,6 +159,22 @@ test('normalize strips punctuation and folds case', () => {
   assert.equal(normalize('C++ & Node.js'), 'c++ node.js');
 });
 
+/* ── R7: Devanagari combining marks must survive normalization ────
+   Vowel signs are category Mn — neither a letter nor a number — so the
+   original `[^\p{L}\p{N}]` whitelist replaced them with a space. "उसका"
+   became "उसक" on one side of the comparison and nothing matched: every
+   Hindi alias and every Devanagari pronoun silently missed. */
+test('R7 — Devanagari matras survive normalization and still retrieve', () => {
+  assert.equal(normalize('पढ़ाई'), 'पढ़ाई', 'a nukta/matra was stripped');
+  assert.equal(normalize('उसका'), 'उसका');
+  assert.equal(normalize('किराना प्रोजेक्ट'), 'किराना प्रोजेक्ट');
+
+  /* the aliases these queries rely on must actually be reachable */
+  assert.equal(top('उनकी पढ़ाई के बारे में बताइए').id, 'edu.lpu');
+  assert.equal(top('किराना प्रोजेक्ट').id, 'project.grocery');
+  assert.equal(top('उसका naam kya hai').id, 'person.name');
+});
+
 test('pronoun detection drives focus-entity carry-over', () => {
   for (const q of ['uska database kaun sa tha', 'what about his skills', 'uski padhai']) {
     assert.ok(hasPronoun(q), `${q} should be pronoun-led`);
@@ -175,6 +191,33 @@ test('focus entity is set by a strong hit and carried by a pronoun follow-up', (
   const carried = resolveFocus(IDX, 'uska database kaun sa tha', first.focus);
   assert.equal(carried.focus, 'project.volunteer', 'focus should carry forward');
   assert.equal(carried.changed, false);
+});
+
+/* ── R6: the pronoun lock must know which KIND of pronoun it has ──
+   Frozen as evaluation cases f05/f06. An entity pronoun points at the thing
+   under discussion and must lock; a person pronoun is about Aashish and must
+   be free to name a different record — otherwise "and his 12th marks?" stays
+   stuck on the B.Tech. */
+test('R6 — entity pronouns lock the focus, person pronouns do not', () => {
+  for (const q of ['uska database kaun sa tha', 'what database does it use', 'उसका database kaun sa tha']) {
+    assert.ok(hasEntityPronoun(q), `${q} should lock the focus`);
+  }
+  for (const q of ['what about his skills', 'and his 12th marks?', 'tell me about his projects']) {
+    assert.ok(hasPronoun(q), `${q} is still a pronoun-led turn`);
+    assert.ok(!hasEntityPronoun(q), `${q} must not lock the focus`);
+  }
+
+  /* the person pronoun may move the focus to the record the question names */
+  const lpu = resolveFocus(IDX, 'Where did he do his B.Tech?', null).focus;
+  assert.equal(lpu, 'edu.lpu');
+  assert.equal(resolveFocus(IDX, 'and what was the CGPA?', lpu).focus, 'edu.lpu',
+    'the B.Tech CGPA is the one "cgpa" means (f05)');
+  assert.equal(resolveFocus(IDX, 'and his 12th marks?', lpu).focus, 'edu.kv2',
+    'a person pronoun must reach the 12th marks (f06)');
+
+  /* and R5 must still hold: an entity pronoun never lets a topic word hijack */
+  assert.equal(resolveFocus(IDX, 'uska database kaun sa tha', 'project.volunteer').focus,
+    'project.volunteer');
 });
 
 test('focus switches when a different entity is named explicitly', () => {

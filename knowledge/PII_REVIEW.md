@@ -1,4 +1,8 @@
-# PII REVIEW — for your approval (§1)
+# PII REVIEW — ✅ ANSWERED 2026-09-20 (§1)
+
+**Status: approved by the owner.** Decision 1 = **(b)** phone stays out of the assistant's
+answers; decision 2 = **(a)** project live URLs may be answered. Recorded in
+`knowledge.json` → `meta.pii_decisions` and enforced in code (see the note under the table).
 
 **What this is.** Everything shipped to the browser is public to every visitor: `knowledge.json`,
 prompts and (later) model weights. This file is the complete list of personal data that would ship.
@@ -16,12 +20,12 @@ Per §1, `public:false` is the default for phone, home address, DOB and ID numbe
 | 2 | Headline | `person.headline` | Full-Stack Developer | ✅ yes | `index.html:103` |
 | 3 | Class year | `person.class_year` | Class of 2028 | ✅ yes | `index.html:103` |
 | 4 | **Email** | `contact.email` | `aashishkumarrajut1345@gmail.com` | ✅ yes | `index.html:442`, `js/main.js:26` |
-| 5 | **Phone** | `contact.phone` | `+91 6280287425` | ✅ **yes — flagged** | `index.html:447` |
+| 5 | **Phone** | `contact.phone` | `+91 6280287425` | ⛔ **no — owner declined** | `index.html:447` |
 | 6 | **Location** | `contact.location` | Phagwara, Punjab, India | ✅ **yes — flagged** | `index.html:447` |
 | 7 | Availability | `contact.availability` | Open to internships & roles | ✅ yes | `index.html:447` |
 | 8 | GitHub | `link.github` | `github.com/aashish1332` | ️ intended, **markup is a placeholder** | CV rels rId7; `index.html:443` ships `github.com/` |
 | 9 | LinkedIn | `link.linkedin` | `linkedin.com/in/aashishkumar13/` | ⚠️ intended, **markup is a placeholder** | CV rels rId6; `index.html:444` ships `linkedin.com/` |
-| 10 | Project live URLs | `project.*.links[]` | 3 × `*.vercel.app` |  not in the portfolio (CV only) | CV rels rId8/9/10 |
+| 10 | Project live URLs | `project.*.links[]` | 3 × `*.vercel.app` | ✅ **approved** (CV only — now also linked from the portfolio's `VIEW THE CUT` CTAs) | CV rels rId8/9/10 |
 | 11 | Grades | `ach.lpu-cgpa`, `ach.class12`, `ach.minor-ai-cgpa`, `ach.bootcamp-grade` | 8.28 · 87.6 % · 6.93 · Grade A | ✅ yes | `index.html:132,142,149,150` |
 | 12 | Education institutions | `edu.*` | LPU, Kendriya Vidyalaya No. 2 RCF Hussainpur | ✅ yes | `index.html:132` |
 | 13 | Certificate issuers | `cert.*` | Infosys Springboard, Masai School × IIT Ropar | ✅ yes | `index.html:149,151,152` |
@@ -40,27 +44,43 @@ Per §1, `public:false` is the default for phone, home address, DOB and ID numbe
 
 ## Numeric count
 
-- Facts flagged `public: true`: **all of them** (0 entries are `public:false`)
-- Rationale: every shipped fact is sourced from the CV **or** already published by the live
-  portfolio. Nothing new is being exposed. Verified with an automated test (`tests/knowledge.test.js`).
+- Facts flagged `public:true`: all except one
+- Facts flagged `public:false`: **1 — `contact.phone`** (owner's decision, 2026-09-20)
+- Rationale for the rest: every shipped fact is sourced from the CV **or** already published by
+  the live portfolio, and nothing new is exposed. Verified by `tests/knowledge.test.mjs`.
+
+### How `public:false` is enforced (not just declared)
+
+A flag that only a reviewer respects is not a gate, so the phone decision is enforced in three
+places, each with a test:
+
+1. **`ai/knowledge/view.mjs`** — `publicView()` drops the fact before any engine reads the base.
+   The answers path builds its fact map *and* its BM25 index from that view, so a private value
+   cannot be retrieved, ranked, or rendered.
+2. **`ai/answers/quick.mjs`** — the question is answered with an honest decline that names the
+   published route (*"That contact detail isn't published — the best way to reach Aashish is by
+   email: …"*), in all three languages, instead of silence. This matters because the portfolio
+   itself prints the number at `index.html:447`: a bare abstention would read as broken.
+3. **`evaluation/portfolio_tests.json` cases d02/d21** — assert the digits never appear, in
+   English and in Hindi, including both Devanagari spellings (`फोन` / `फ़ोन`).
+   `tests/quick-answers.test.mjs` QA-9 covers the catch-all contact answer, which previously
+   read `kb.contact` directly and would have printed a private field.
+
+**Still open:** the shipped `knowledge.json` must also be reduced to `publicView()` at build time
+(§9.3/§17 data hygiene) so the value never leaves the repository — that is the P2 dev/prod step.
 
 ---
 
-## ⚠️ The two decisions I need from you
+## ✅ The two decisions — answered 2026-09-20
 
-**1. Phone number.** §1 says *"Default `public:false` for phone number"* — but your portfolio
-already prints it at `index.html:447`. Marking it `public:false` would make the AI *refuse* to state
-a number that is visible elsewhere on the same page, which looks broken. I set it `public:true`
-and flagged it.
-- **(a)** Keep `public:true` (AI can state it) — *current setting*
-- **(b)** Set `public:false` (AI deflects: *"his email is the better route"*) — pick this if you
-  want the AI to slow down scraping/telemarketing, accepting the inconsistency
-- **(c)** Set `public:false` **and** remove it from `index.html:447` — the only fully consistent option
+**1. Phone number → (b): `public:false`.** The assistant declines it and points to the email.
+The inconsistency with `index.html:447` is accepted deliberately, to slow scraping and
+telemarketing. If you later want full consistency, option (c) is to remove the number from the
+portfolio too — one line in `index.html`; the assistant needs no change.
 
-**2. Project live URLs.** These are in your CV but **not** on the portfolio, i.e. the AI would
-surface them on the web for the first time.
-- **(a)** Keep `public:true` (recruiters can click live demos) — *current setting*
-- **(b)** Set `public:false` until you add them to the portfolio yourself
+**2. Project live URLs → (a): `public:true`.** Recruiters can open the live demos. They are now
+also linked from the portfolio itself (the three `VIEW THE CUT ↗` CTAs), so the assistant is no
+longer the only route to them.
 
 ---
 

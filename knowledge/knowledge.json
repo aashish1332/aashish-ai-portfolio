@@ -9,7 +9,12 @@
     },
     "built_at": "2026-09-19",
     "language_notes": "aliases[] carry Hindi (Devanagari) and Roman-Hinglish spellings for §8.2 retrieval and §8.3 detection.",
-    "public_rule": "public:true only where the CV or the live portfolio already publishes the fact (§1). Everything else defaults to public:false and is excluded from the shipped bundle."
+    "public_rule": "public:true only where the CV or the live portfolio already publishes the fact AND the owner approved it (§1). Everything else defaults to public:false and is excluded from the shipped bundle.",
+    "pii_decisions": {
+      "decided_at": "2026-09-20",
+      "phone": "DENIED — contact.phone.public = false (index.html still prints it; the assistant will not state it).",
+      "project_live_urls": "APPROVED — project[].links[] ship as public:true so a recruiter can open the live demos."
+    }
   },
 
   "person": {
@@ -39,11 +44,11 @@
       "id": "contact.phone",
       "value": "+91 6280287425",
       "source": "cv",
-      "source_ref": "index.html:447 (already published by the portfolio as '+91 62802 87425')",
-      "public": true,
-      "public_confirmation_required": true,
-      "aliases": ["phone", "mobile", "number", "contact number", "फोन", "मोबाइल"],
-      "note": "§1 defaults phone to public:false. It is set true here ONLY because the live portfolio already publishes it verbatim at index.html:447. Confirm before shipping."
+      "source_ref": "index.html:447 (the portfolio publishes it as '+91 62802 87425')",
+      "public": false,
+      "decided": "2026-09-20",
+      "decision": "Aashish declined: the assistant must not state the phone number. Chosen to slow scraping/telemarketing even though the portfolio itself prints it. The assistant redirects to the email instead of abstaining, so the answer is useful rather than broken (knowledge/PII_REVIEW.md, question 1b).",
+      "aliases": ["phone", "mobile", "number", "contact number", "फोन", "फ़ोन", "फोन नंबर", "फ़ोन नंबर", "मोबाइल", "मोबाइल नंबर"]
     },
     "location": {
       "id": "contact.location",
@@ -101,7 +106,8 @@
       "source": "cv",
       "source_ref": "index.html:132,142",
       "public": true,
-      "aliases": ["lpu", "lovely professional university", "b.tech", "college", "university", "graduation", "पढ़ाई", "कॉलेज", "study", "studies", "studying", "education", "degree", "padhai", "study kahan"]
+      "aliases": ["lpu", "lovely professional university", "b.tech", "college", "university", "graduation", "पढ़ाई", "कॉलेज", "study", "studies", "studying", "education", "degree", "padhai", "study kahan", "cgpa", "gpa"],
+      "alias_note": "'cgpa'/'gpa' are declared here because the portfolio's headline CGPA (index.html:142) IS the B.Tech one. Without this, 'cgpa' matched the Minor-in-AI CGPA too and BM25 length-normalisation ranked the shorter record first — frozen as evaluation case f05 before it was fixed."
     },
     {
       "id": "edu.kv2",

@@ -34,7 +34,7 @@ const B = 0.75;
 const ALIAS_BOOST = 3;   /* an alias hit counts as N occurrences */
 
 /* n-gram fuzzy: minimum Dice coefficient for two tokens to be a match */
-const FUZZY_MIN = 0.62;
+export const FUZZY_MIN = 0.62;
 const NGRAM = 3;
 
 /** Normalize a query: lower-case, strip punctuation, collapse space. */
@@ -42,7 +42,10 @@ export function normalize(text) {
   return String(text || '')
     .toLowerCase()
     .replace(/[’']/g, '')
-    .replace(/[^\p{L}\p{N}\s+#.]/gu, ' ')
+    /* \p{M} keeps COMBINING MARKS. Devanagari vowel signs are marks
+       (U+093E is Mn), not letters — without this, "उसका" normalized to
+       "उसक" and every Hindi alias and Devanagari pronoun silently missed. */
+    .replace(/[^\p{L}\p{N}\p{M}\s+#.]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -75,13 +78,35 @@ export function similarity(a, b) {
 const PRONOUNS = new Set([
   'uska', 'uski', 'uske', 'unka', 'unki', 'unke', 'woh', 'wo', 'voh', 'yeh', 'ye',
   'unhone', 'usne', 'inka', 'iski', 'iske', 'isko', 'usko', 'unko',
+  /* Devanagari twins of the forms above — they were missing, so a native-script
+     follow-up could not carry a focus at all */
+  'उसका', 'उसकी', 'उसके', 'उनका', 'उनकी', 'उनके', 'उन्होंने', 'उसने', 'इसका', 'इसकी', 'इसके',
+  'इसको', 'उसको', 'उनको', 'यह', 'वह', 'ये', 'वो',
   'his', 'her', 'their', 'its', 'he', 'she', 'they', 'him', 'them',
   'it', 'this', 'that', 'these', 'those',
 ]);
 
-/** True when the query leans on a pronoun and so needs a carried focus. */
+/* ── two kinds of pronoun (§8.2) ─────────────────────────────────
+   An ENTITY pronoun points at a thing under discussion — "uska database
+   kaun sa tha?" means "what was IT'S database?". A PERSON pronoun is
+   possessive of Aashish — "and his 12th marks?" is a new topic about him,
+   not a pointer at the previous entity.
+
+   Only the entity kind may lock the focus. Treating "his" as a lock kept
+   the conversation on the wrong record, and that bug is frozen in
+   evaluation/portfolio_tests.json as case f06. */
+const PERSON_PRONOUNS = new Set([
+  'his', 'her', 'he', 'she', 'him', 'they', 'them', 'their',
+]);
+
+/** Every pronoun — used to detect a pronoun-led turn at all. */
 export function hasPronoun(query) {
   return tokenize(normalize(query)).some((t) => PRONOUNS.has(t));
+}
+
+/** Only the pronouns that point at an entity, and so may lock the focus. */
+export function hasEntityPronoun(query) {
+  return tokenize(normalize(query)).some((t) => PRONOUNS.has(t) && !PERSON_PRONOUNS.has(t));
 }
 
 /* ── the transliteration / variant map ───────────────────────────
@@ -266,11 +291,12 @@ export const estimateTokens = (s) => Math.ceil(String(s).length / 4);
  * Returns the previous focus when the query only uses pronouns.
  */
 export function resolveFocus(index, query, previous = null) {
-  /* A pronoun LOCKS the focus to whatever is already under discussion.
+  /* An ENTITY pronoun LOCKS the focus to whatever is already under discussion.
      "uska database kaun sa tha?" means "what was ITS database?" — so we must
      not let the literal word "database" hijack the topic onto cert.dbms.
-     Only a query that names an entity outright may move the focus. */
-  if (previous && hasPronoun(query)) {
+     A PERSON pronoun ("and his 12th marks?") does not lock: that is a new
+     question about Aashish, and it must be free to name a different record. */
+  if (previous && hasEntityPronoun(query)) {
     return { focus: previous, label: null, changed: false };
   }
 
