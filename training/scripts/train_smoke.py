@@ -42,6 +42,10 @@ from ai.tokenizer import spec  # noqa: E402
 from training.scripts import checkpoint as ckpt  # noqa: E402
 
 
+DEFAULT_SCOPE = ("§7.5 smoke test — verifies the pipeline, resume and checkpointing. "
+                 "Not a quality result.")
+
+
 def have_torch() -> bool:
     try:
         import torch  # noqa: F401
@@ -184,6 +188,25 @@ def cosine_with_warmup(optimizer, warmup: int, total: int):
     return torch.optim.lr_scheduler.LambdaLR(optimizer, factor)
 
 
+def resolve_config(name: str, vocab_size: int):
+    """The config for this run, with its vocab taken from the tokenizer.
+
+    The embedding is sized from the config, so running config A against a
+    tokenizer of a different size would train a model that cannot use the
+    artifact its checkpoints carry. The vocab therefore comes *from the
+    tokenizer* and the parameter count is recomputed, not assumed.
+    """
+    if name == "smoke":
+        return smoke_config(vocab_size)
+    from dataclasses import replace
+
+    from ai.model.config import CONFIGS
+
+    if name not in CONFIGS:
+        raise SystemExit(f"unknown --config {name!r}; use one of smoke, A, lite")
+    return replace(CONFIGS[name], vocab_size=vocab_size)
+
+
 def train(args) -> int:
     import numpy as np
     import torch
@@ -196,7 +219,7 @@ def train(args) -> int:
           f"{len(checks)} contract checks passed")
 
     shards = dataset.ShardSet.load(args.shards)
-    cfg = smoke_config(meta["vocab_size"])
+    cfg = resolve_config(args.config, meta["vocab_size"])
     print(f"{cfg.summary()}")
     counts = plan.counts(cfg)
     print(f"parameters: {counts['total']:,} ({counts['total'] / 1e6:.2f}M) — "
@@ -339,8 +362,15 @@ def loss_verdict(losses: list[float], window: int = 5) -> dict:
 
 def _finish(args, cfg, meta, counts, manager, batcher, losses, verdict, started) -> int:
     seconds = time.time() - started
+    # Throughput is what §7.3's token budget is decided from, so the run
+    # measures it rather than leaving it to be guessed at: this is the number
+    # `estimate_budget.py --from-run` reads.
+    tokens = len(losses) * args.block * args.batch
+    tokens_per_second = tokens / seconds if seconds > 0 else 0.0
     print(f"\nloss: {losses[0]:.4f} → {losses[-1]:.4f} over {len(losses)} steps "
           f"({seconds:.1f}s, {seconds / max(1, len(losses)):.2f}s/step)")
+    print(f"throughput: {tokens_per_second:,.0f} tokens/s "
+          f"({args.block}x{args.batch} per step)")
     print(f"gate 'loss decreases': {verdict['verdict']} "
           f"({verdict.get('first')} → {verdict.get('last')})")
 
@@ -360,14 +390,19 @@ def _finish(args, cfg, meta, counts, manager, batcher, losses, verdict, started)
                  "sha256": {f["file"]: f["sha256"]
                             for f in batcher.shards.manifest["shards"]["train"].get("files", [])}},
         "loss": {"history": [round(v, 6) for v in losses], "verdict": verdict},
-        "scope": "§7.5 smoke test — verifies the pipeline, resume and checkpointing. "
-                 "Not a quality result.",
+        "throughput": {"tokens_per_second": round(tokens_per_second, 3),
+                       "seconds_per_step": round(seconds / max(1, len(losses)), 4),
+                       "block": args.block, "batch": args.batch},
+        "run_scope": getattr(args, "scope", DEFAULT_SCOPE),
+        "scope": getattr(args, "scope", DEFAULT_SCOPE),
     })
     print(f"checkpoints: {manager.summary()}")
     print(f"manifest: {manifest}")
     if args.json:
         Path(args.json).write_text(json.dumps(
             {"loss": losses, "verdict": verdict, "params": counts["total"],
+             "tokens_per_second": round(tokens_per_second, 3),
+             "block": args.block, "batch": args.batch,
              "checkpoints": manager.summary()}, indent=2) + "\n", encoding="utf-8")
     if args.gate and verdict["verdict"] != "PASS":
         return 1
@@ -380,18 +415,27 @@ def _load_tokenizer(path: str):
     if not path:
         raise SystemExit("--tokenizer is required (train one with "
                          "`python -m ai.tokenizer.train`)")
-    return load(Path(path))
+    directory = Path(path)
+    if not (directory / "tokenizer.json").is_file():
+        raise SystemExit(
+            f"no tokenizer at {directory} (expected {directory}/tokenizer.json).\n"
+            f"Train one first:\n  python -m ai.tokenizer.train "
+            f"--corpus 'data/raw/seed/*.txt' --vocab-size 1024 "
+            f"--out ai/tokenizer/artifacts/seed-1k")
+    return load(directory)
 
 
 # ── entry point ──────────────────────────────────────────────────────
-def main(argv: list[str] | None = None) -> int:
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-
+def build_parser() -> argparse.ArgumentParser:
+    """The flag surface, separate from `main` so other entry points
+    (`train_stage_a.py`) can fill in defaults without duplicating the list."""
     ap = argparse.ArgumentParser(description="§7.5 local smoke train + resume test")
     ap.add_argument("--tokenizer", default="ai/tokenizer/artifacts/seed-1k")
+    ap.add_argument("--scope", default=None, help="free-text label recorded in the manifest")
     ap.add_argument("--shards", default="data/processed/seed/shards")
     ap.add_argument("--run-dir", default="training/checkpoints/smoke")
+    ap.add_argument("--config", default="smoke", choices=["smoke", "A", "lite"],
+                    help="smoke (default, §7.5) or a real config from §7.1")
     ap.add_argument("--steps", type=int, default=50)
     ap.add_argument("--batch", type=int, default=4)
     ap.add_argument("--block", type=int, default=128)
@@ -416,7 +460,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--json", default=None)
     ap.add_argument("--gate", action="store_true",
                     help="exit non-zero if the loss did not decrease")
-    args = ap.parse_args(argv)
+    return ap
+
+
+def main(argv: list[str] | None = None) -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+    args = build_parser().parse_args(argv)
 
     if args.pipeline_only or not have_torch():
         tokenizer, meta = _load_tokenizer(args.tokenizer)

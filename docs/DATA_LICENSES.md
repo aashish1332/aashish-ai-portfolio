@@ -30,6 +30,29 @@ offline.
 | Language ID | `ai/data/langid.py`, a port of the runtime detector, pinned by a 49-case cross-runtime fixture | rule-based; Roman Hinglish with no function words reads as weak English, by design |
 | Length / letters / emptiness | `filter_reasons` | — |
 
+## The gate is code, not a checklist
+
+`data/sources.json` holds the same information in machine-readable form, and
+`training/scripts/fetch_corpus.py` **refuses to download any source whose
+licence is not verified there**. There is no `--force`.
+
+```bash
+python -m training.scripts.fetch_corpus --check     # what is blocked, and why
+
+python -m training.scripts.fetch_corpus --verify hindi_wikipedia \
+    --spdx CC-BY-SA-4.0 --url https://dumps.wikimedia.org/legal.html \
+    --reviewer "Aashish Kumar" --notes "read the dump terms 2026-09-20"
+```
+
+`--verify` requires a concrete SPDX id (writing `UNKNOWN` or `NONE` into the
+flag is refused), the URL that was actually read, and who read it. Verifying
+a source also enables it, and `tests/py/test_fetch_corpus.py` asserts that no
+third-party source is enabled without a verified licence — so this table and
+that file cannot drift apart silently.
+
+Today: **4 of 5 sources blocked** (only the portfolio-derived Stage B
+generator is verified, and it does not exist yet).
+
 ## Candidates for P4 Stage A — **not downloaded, not used**
 
 Each one must be licence-verified, PII-filtered, and recorded here with its

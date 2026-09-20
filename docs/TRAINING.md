@@ -156,29 +156,96 @@ no repeated tokens, no skipped span.
 `training/RUN_MANIFEST.json` is written per run: seed, config, tokenizer
 version, hyperparameters, shard hashes and git commit.
 
-## 6. Kaggle (P4) — the script plan
+## 6. Kaggle (P4) — the runbook
 
-Training must not depend on the notebook (§7.5), so the notebook is a thin
-driver over the same modules:
+The notebook `training/notebooks/train_stage_a.ipynb` is a **driver**, not an
+implementation: every step calls a module that is already in the repository and
+tested, because §7.5 requires training to work without the notebook.
 
-1. `make_seed_corpus` is replaced by the licensed corpus fetchers; licence
-   checks recorded in `DATA_LICENSES.md` before anything is downloaded.
-2. `prepare_data` runs the same pipeline; the notebook reports its drop
-   counts and leakage verdict.
-3. `ai.tokenizer.train` at 12–16k; the notebook prints the fertility table
-   and **freezes** the vocab from it.
-4. `train_smoke.py --steps 50` first — the pipeline gate, cheap.
-5. Stage A training with `--amp` (fp16; a T4 has no bf16), gradient
-   accumulation, SDPA attention, optional `torch.compile`.
-6. Checkpoints persisted to a Kaggle Dataset / Drive / HF Hub, **auto-resume
-   on every session start** — session limits and weekly quota apply.
+### 6.1 The licence gate comes first
+
+Nothing can be downloaded until the terms have been read and recorded:
+
+```bash
+python -m training.scripts.fetch_corpus --check      # what is blocked, and why
+python -m training.scripts.fetch_corpus --verify hindi_wikipedia \
+    --spdx CC-BY-SA-4.0 --url https://dumps.wikimedia.org/legal.html \
+    --reviewer "Aashish Kumar"
+python -m training.scripts.fetch_corpus --source hindi_wikipedia
+```
+
+`data/sources.json` is the machine-readable record; `--verify` is the only
+command that unblocks a source, it demands a concrete SPDX id (writing
+`UNKNOWN` into a flag is refused), and **there is no `--force`**. An unverified
+source is a decision nobody has made yet, and a fetch that stops for a decision
+costs minutes. `docs/DATA_LICENSES.md` must be updated alongside it.
+
+Downloads resume: a partial file is kept as `.part`, continued with a `Range`
+request, hashed, and **deleted** if the hash does not match — so a corrupt
+shard cannot later look like a real one, and a restarted session does not begin
+a 2 GB dump again.
+
+### 6.2 The order that catches problems cheapest
+
+1. **smoke first** — `train_smoke.py --steps 50 --gate` (~2M params). It is the
+   pipeline gate, not a quality result.
+2. **`prepare_data`** on the fetched corpus; read the drop counts and the
+   leakage verdict. A pipeline that silently loses half the corpus is a data
+   problem that no learning rate fixes.
+3. **train the tokenizer** at 12–16k, print the fertility table, then **freeze**
+   the vocabulary. The trainer refuses a vocab the corpus cannot justify.
+4. **`count_parameters.py --config A --gate`** — analytic and materialised.
+5. **Measure throughput for ~100 steps**, then decide the budget:
+
+   ```bash
+   python -m training.scripts.estimate_budget --config A --from-run smoke.json \
+       --hours 9 --dataset-tokens data/processed/stage_a/shards
+   ```
+
+   §7.3: the budget is decided *after* measuring tokens/sec, and "~20 tokens per
+   parameter" is a reference. The tool answers the question a Kaggle session
+   actually asks — **does the reference fit in the hours I have, and if not, how
+   many hours does it need?** At 4,200 tokens/s (a plausible CPU-ish number) the
+   reference budget for config A takes ~50 GPU hours, i.e. ~5–6 sessions against
+   the free tier's ~30 h/week; on a T4 expect the *measured* figure to differ by
+   a large factor, which is exactly why it is measured first.
+
+6. **Stage A training, resumable:**
+
+   ```bash
+   python -m training.scripts.train_stage_a \
+       --config A --tokenizer ai/tokenizer/artifacts/stage-a-12k \
+       --shards data/processed/stage_a/shards \
+       --run-dir /kaggle/working/checkpoints/stage-a \
+       --steps 20000 --batch 16 --block 1024 --grad-accum 4 --amp --gate \
+       --max-minutes 540 --resume auto
+   ```
+
+   `train_stage_a.py` is the smoke loop with Stage A's defaults (config A, lr
+   3e-4, 200-step warmup, 65K tokens/step), **not a second implementation** — a
+   second training loop is how "the resume is verified" stops being true of the
+   thing that actually trained. Every later session runs the identical command:
+   it resumes from `latest.pt` and reports the step and the tokens consumed.
+
+### 6.3 Persistence, because sessions die
+
+Checkpoints must be pushed outside the ephemeral session (§7.5): a Kaggle
+Dataset, Drive, or the Hub — or `/kaggle/working` plus a Save Version each time.
+`--max-minutes` stops cleanly and writes a checkpoint before the time box ends,
+so an interrupted run is a resume rather than a loss.
+
+### 6.4 What is still blocked on a decision
+
+Everything above is code that exists and is tested without torch. What remains
+is genuinely not mine to decide: which sources are licence-verified (4 of 5 are
+blocked today), and the Kaggle account/quota to run on.
 
 ## Verification
 
 Run everything (no torch required, ~15 s):
 
 ```bash
-npm run test:all          # 213 JS tests + 92 Python tests (5 skip: torch)
+npm run test:all          # 226 JS tests + 137 Python tests (5 skip: torch)
 npm run params            # analytic parameter counts + §7.1 band gate
 npm run smoke             # tokenizer contract, shards, cursor, checkpoints
 ```

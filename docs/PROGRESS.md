@@ -356,7 +356,7 @@ Full detail in `docs/BENCHMARKS.md`.
 | Fertility (1,024 vocab) | en 2.46 · hi **4.71** · hinglish 2.69 · tech 4.35 · url_email 15.50 tok/word |
 | Seed fixture | 17,402 lines / 3.2 MB → kept 17,265 (137 near-dup) · leakage **clean** · 749,590 train tokens |
 | `prepare_data` / tokenizer training | 20.2 s / 3.6 s (this machine) |
-| Test suite | **213 JS + 92 Python**, 0 failures (5 Python skips: torch) |
+| Test suite | **213 JS + 92 Python**, 0 failures (5 Python skips: torch) — 226 + 137 after the production build and P4-prep work |
 
 ### What P3 found, and what it changed
 
@@ -440,3 +440,51 @@ entries with a reason, reported as notes on every build.
 `tools/build.mjs` · `tools/preview.mjs` · `ai/knowledge/view.mjs`
 (`withheldFacts`) · `dev-server.mjs` (`ROOT`/`PORT`) · `package.json`
 (`build`/`preview`) · `tests/build-bundle.test.mjs` (13 tests) · `npm run build`
+
+---
+
+## Phase 4 — preparation (code ready, run blocked on decisions)
+
+P4's gate is *"val curve, samples, checkpoints, resume verified"* — it needs a
+GPU and a corpus, so what can be done ahead of it is the part that would
+otherwise be written under time pressure on Kaggle. Done here:
+
+* **A licence gate that is code.** `data/sources.json` + `fetch_corpus.py`:
+  a source cannot be downloaded until a named person records the SPDX id, the
+  URL they read and the date. No `--force`, and `tests/py/test_fetch_corpus.py`
+  asserts nothing third-party is enabled. **4 of 5 sources are blocked today,
+  which is the honest state of P4's first step.**
+* **Resumable, hashed downloads.** `.part` + `Range` continuation; a sha256
+  mismatch **deletes** the result instead of leaving a corrupt shard that later
+  looks real.
+* **`train_stage_a.py`** — Stage A's hyperparameters over the *same* loop as the
+  smoke test (`config A`, lr 3e-4, 200-step warmup, 16×1024×4 = 65K tokens/step,
+  `--max-minutes` for Kaggle's time box). Deliberately not a second training
+  loop: a second loop is how a verified resume stops describing the thing that
+  actually trained.
+* **`training/notebooks/train_stage_a.ipynb`** — 25 cells, a driver over the
+  tested modules (licence gate → prepare_data → tokenizer → params → smoke →
+  budget → Stage A → persistence → export), with an explicit `nvidia-smi`/bf16
+  check because a T4 has no bf16 (§7.5).
+* **`estimate_budget.py`** — §7.3's token budget as arithmetic on a measurement:
+  throughput × usable session, passes over the corpus, tokens/param against the
+  ~20 reference, and whether the reference *fits the hours available*. At
+  4,200 tokens/s the config A reference needs ~50 GPU hours (~5–6 free-tier
+  sessions) — a planning number that only exists because it is computed.
+* **Throughput is now measured, not assumed:** every smoke run records
+  `tokens_per_second` in its metrics and manifest, which is what
+  `--from-run` reads.
+
+### Still blocked (not code)
+
+1. **Licence decisions** for the four third-party sources.
+2. **A Kaggle account and quota** to run on.
+3. **The 12–16k vocabulary** cannot be frozen until the corpus exists, because
+   the ceiling is the corpus's distinct vocabulary, not its size.
+
+### Evidence
+`data/sources.json` · `training/scripts/fetch_corpus.py` · `estimate_budget.py` ·
+`train_stage_a.py` · `train_smoke.py` (`--config`, `build_parser`,
+`tokens_per_second`) · `training/notebooks/train_stage_a.ipynb` ·
+`tests/py/test_fetch_corpus.py` · `tests/py/test_estimate_budget.py` ·
+`tests/py/test_train_scripts.py` · `docs/TRAINING.md` · `docs/DATA_LICENSES.md`
