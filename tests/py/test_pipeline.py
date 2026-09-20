@@ -22,7 +22,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from ai.data import facts, pipeline  # noqa: E402
+from ai.data import dataset, facts, pipeline  # noqa: E402
 from ai.tokenizer import spec  # noqa: E402
 
 KB = {
@@ -241,6 +241,78 @@ class Shards(unittest.TestCase):
                 Path(tmp) / manifest["shards"]["train"]["files"][0]["file"])
             self.assertEqual(int((data == end_id).sum()), len(records),
                              "each document must be separated by exactly one <|end|>")
+
+
+class ShardTokenizerMatch(unittest.TestCase):
+    """Guards the silent tokenizer mismatch, found by reading the P4 notebook.
+
+    The notebook sharded the corpus with `seed-1k`, then trained the 12k
+    tokenizer from it and passed *that* to training while pointing `--shards`
+    at the seed-1k shards. Every existing check passed: token ids are opaque,
+    and ids from a 1k vocabulary are all valid indices into a 12k embedding.
+    The embedding is sized from the config, so the run would have produced a
+    model that encodes text one way and was trained another — hours of GPU
+    spent on a checkpoint that cannot be used for inference.
+    """
+
+    def build(self, tmp: str, version: str = "seed-1k"):
+        tokenizer = tiny_tokenizer()
+        lines = [f"Aashish wrote document number {i} with a few short words." for i in range(12)]
+        records, _ = pipeline.build_corpus(lines)
+        records = pipeline.assign_splits(records, val_percent=25)
+        manifest = pipeline.write_shards(records, tokenizer, tmp, tokenizer_version=version)
+        return dataset.ShardSet.load(tmp), manifest
+
+    def test_the_manifest_records_which_tokenizer_built_the_shards(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            shards, manifest = self.build(tmp, "seed-1k")
+            self.assertEqual(manifest["tokenizer_version"], "seed-1k")
+            self.assertEqual(shards.tokenizer_version, "seed-1k")
+            self.assertEqual(shards.vocab_size, manifest["vocab_size"])
+
+    def test_a_matching_tokenizer_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            shards, manifest = self.build(tmp)
+            shards.assert_matches_tokenizer({"vocab_size": manifest["vocab_size"],
+                                             "tokenizer_version": "seed-1k"})
+
+    def test_a_larger_tokenizer_is_refused_and_names_both_sides(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            shards, manifest = self.build(tmp, "seed-1k")
+            with self.assertRaises(ValueError) as ctx:
+                shards.assert_matches_tokenizer({"vocab_size": manifest["vocab_size"] * 4,
+                                                 "tokenizer_version": "stage-a-12k"})
+            message = str(ctx.exception)
+            self.assertIn("tokenizer mismatch", message)
+            self.assertIn("seed-1k", message)
+            self.assertIn("stage-a-12k", message)
+            self.assertIn("prepare_data", message, "the fix must be named, not implied")
+
+    def test_a_smaller_tokenizer_is_refused_too(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            shards, manifest = self.build(tmp)
+            with self.assertRaises(ValueError):
+                shards.assert_matches_tokenizer({"vocab_size": manifest["vocab_size"] // 2})
+
+    def test_a_manifest_with_no_vocab_size_is_refused_rather_than_assumed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            shards, _ = self.build(tmp)
+            del shards.manifest["vocab_size"]
+            with self.assertRaises(ValueError) as ctx:
+                shards.assert_matches_tokenizer({"vocab_size": 512})
+            self.assertIn("no vocab_size", str(ctx.exception))
+
+    def test_a_bounds_check_alone_could_not_have_caught_this(self):
+        """Why the guard has to exist: every id from the smaller vocabulary is
+        a legal index into the larger embedding, so the old
+        `max() < vocab_size` assertion is satisfied by exactly the broken case."""
+        with tempfile.TemporaryDirectory() as tmp:
+            shards, manifest = self.build(tmp, "seed-1k")
+            # read_shard copies out, so the memmap is closed before the temp
+            # directory is removed (Windows will not delete a mapped file)
+            data = pipeline.read_shard(shards.root / shards.train_files[0])
+            self.assertLess(int(data.max()), manifest["vocab_size"] * 4,
+                            "the mismatch must be invisible to a bounds check")
 
 
 if __name__ == "__main__":

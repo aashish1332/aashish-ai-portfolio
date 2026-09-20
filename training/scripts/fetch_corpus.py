@@ -531,8 +531,13 @@ def main(argv: list[str] | None = None) -> int:
     manifest = fetch(source, args.out)
     print(f"  {len(manifest['files'])} file(s), {manifest['total_bytes']:,} B")
     print(f"  manifest: {(Path(args.out) if args.out else RAW_DIR / source.id) / 'fetch_manifest.json'}")
-    print("\nNext: run the §7.3 pipeline over it — "
-          "`python -m training.scripts.prepare_data --raw <dir> --out data/processed/<name>`")
+    # A download is not text: a Wikipedia source arrives as a .bz2 archive and a
+    # Hugging Face source as parquet, and prepare_data reads `*.txt`. Saying so
+    # here is cheaper than the half-hour it costs to discover it by globbing.
+    print(f"\nNext: this is a download, not text. Extract it, then run the §7.3 pipeline —\n"
+          f"  python -m ai.data.extract --source {source.id}\n"
+          f"  python -m training.scripts.prepare_data --raw data/raw/{source.id} "
+          f"--out data/processed/{source.id}")
     return 0
 
 

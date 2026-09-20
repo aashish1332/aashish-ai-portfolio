@@ -58,6 +58,44 @@ class ShardSet:
     def eos_token_id(self) -> int:
         return self.manifest["end_token_id"]
 
+    @property
+    def vocab_size(self) -> int | None:
+        return self.manifest.get("vocab_size")
+
+    @property
+    def tokenizer_version(self) -> str | None:
+        return self.manifest.get("tokenizer_version")
+
+    def assert_matches_tokenizer(self, meta: dict) -> None:
+        """Refuse shards that were tokenized with a different vocabulary.
+
+        Token ids are opaque integers, so shards built with a *smaller*
+        tokenizer satisfy every bounds check against a larger one — every id
+        still lands inside the embedding table — and training proceeds. The
+        embedding is sized from the config, so the model would then learn a
+        mapping from one tokenizer's ids while inference encodes text with
+        another's. Nothing downstream can detect that, which is why this fails
+        rather than warns: a run that takes hours is the wrong place to find
+        out, and the resulting checkpoint is not merely worse, it is unusable.
+        """
+        tok_vocab = int(meta["vocab_size"])
+        if self.vocab_size is None:
+            raise ValueError(
+                f"the shard manifest at {self.root} records no vocab_size, so these shards "
+                f"cannot be told apart from ones built with a different tokenizer. Rebuild "
+                f"them with `python -m training.scripts.prepare_data --tokenizer <dir>`.")
+        if int(self.vocab_size) != tok_vocab:
+            raise ValueError(
+                f"tokenizer mismatch: the shards in {self.root} were built with "
+                f"{self.tokenizer_version or 'an unnamed tokenizer'} "
+                f"({int(self.vocab_size):,} vocab), but training was given "
+                f"{meta.get('tokenizer_version') or 'a tokenizer'} ({tok_vocab:,} vocab).\n"
+                f"  Token ids are not interchangeable between tokenizers, and this one is "
+                f"silent otherwise: a smaller id space passes every bounds check against a "
+                f"larger embedding. Re-shard with the frozen tokenizer:\n"
+                f"    python -m training.scripts.prepare_data --raw <raw dir> "
+                f"--out {self.root.parent} --tokenizer <tokenizer dir>")
+
     def open(self, split: str) -> list[np.ndarray]:
         files = self.train_files if split == "train" else self.val_files
         return [pipeline.load_shard(self.root / name, self.dtype) for name in files]

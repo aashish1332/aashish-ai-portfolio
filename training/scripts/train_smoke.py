@@ -219,6 +219,7 @@ def train(args) -> int:
           f"{len(checks)} contract checks passed")
 
     shards = dataset.ShardSet.load(args.shards)
+    shards.assert_matches_tokenizer(meta)
     cfg = resolve_config(args.config, meta["vocab_size"])
     print(f"{cfg.summary()}")
     counts = plan.counts(cfg)
@@ -472,6 +473,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.pipeline_only or not have_torch():
         tokenizer, meta = _load_tokenizer(args.tokenizer)
         shards = dataset.ShardSet.load(args.shards)
+        shards.assert_matches_tokenizer(meta)
         cfg = smoke_config(meta["vocab_size"])
         print(f"tokenizer {meta['tokenizer_version']} · {cfg.summary()}")
         pipeline_checks(tokenizer, meta, shards, cfg, Path(args.run_dir))

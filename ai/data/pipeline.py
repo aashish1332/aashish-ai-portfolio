@@ -337,12 +337,18 @@ def leakage_report(train: list[Record], val: list[Record]) -> dict:
 
 # ── Steps 7–8: tokenize + shard ──────────────────────────────────────
 def write_shards(records: list[Record], tokenizer, out_dir: Path | str,
-                 dtype: str = "uint16") -> dict:
+                 dtype: str = "uint16", tokenizer_version: str | None = None) -> dict:
     """Write `train.bin` / `val.bin` (+ manifest) as raw token-id memmaps.
 
     `<|end|>` is appended to every document: it is the only separator the
     model ever sees, so it is the only one it can learn to emit (§7.4's
     stop condition).
+
+    The manifest records the vocabulary this shard was tokenized with — both
+    `vocab_size` and the originating `tokenizer_version` — because token ids
+    are only meaningful relative to a tokenizer. `ShardSet.assert_matches_tokenizer`
+    reads both back; without them, shards built with one tokenizer are
+    indistinguishable from shards built with another.
     """
     from ai.tokenizer import spec
 
@@ -354,6 +360,7 @@ def write_shards(records: list[Record], tokenizer, out_dir: Path | str,
         raise SystemExit("tokenizer has no <|end|> token")
 
     manifest: dict = {"dtype": dtype, "vocab_size": vocab_size,
+                      "tokenizer_version": tokenizer_version,
                       "end_token_id": end_id, "shards": {}}
 
     for split in ("train", "val"):

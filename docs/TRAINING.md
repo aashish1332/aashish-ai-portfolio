@@ -27,7 +27,7 @@ the end of this file, with the commands that produce it.
   HingCorpus — those arrive in P4 with licence verification recorded in
   [DATA_LICENSES.md](DATA_LICENSES.md).
 
-`data/raw/`, `data/processed/`, `training/checkpoints/` and
+`data/raw/`, `data/extracted/`, `data/processed/`, `training/checkpoints/` and
 `training/datasets/` are git-ignored (§17 data hygiene).
 
 ## 2. Build the data (§7.3)
@@ -185,17 +185,53 @@ request, hashed, and **deleted** if the hash does not match — so a corrupt
 shard cannot later look like a real one, and a restarted session does not begin
 a 2 GB dump again.
 
+### 6.1a A download is not text
+
+Between fetching and the pipeline there is one more step, and it did not exist
+until the P4 notebook was read against the modules it calls:
+
+```bash
+python -m ai.data.extract --check                    # what can be extracted, and from where
+python -m ai.data.extract --source hindi_wikipedia   # → data/extracted/hindi_wikipedia.txt
+python -m ai.data.extract --in data/raw/x --list-columns   # parquet: see before guessing
+```
+
+`fetch_corpus` writes `hiwiki-...xml.bz2`; `prepare_data` globs `data/raw/<id>/*.txt`.
+Both were tested and the pipeline could still not run, because the step joining
+them was missing. The extractor streams a MediaWiki dump (`iterparse`, so a 2 GB
+file is not a 20 GB process), reads parquet batch by batch, splits articles into
+paragraph-sized documents, and writes one document per line.
+
+Text goes to **`data/extracted/`**, shared across sources, because
+`prepare_data --raw` reads exactly one directory — that is how a multi-source
+corpus is assembled. The file is *not* filtered: `extract_manifest.json` records
+`filters_applied: []` and the pending §7.3 filters, so nothing downstream can
+mistake a download for a clean corpus. `strip_wikitext` is a minimal stripper
+and not a wikitext parser; `MARKUP_LIMITATIONS` names what it misses.
+
 ### 6.2 The order that catches problems cheapest
 
-1. **smoke first** — `train_smoke.py --steps 50 --gate` (~2M params). It is the
-   pipeline gate, not a quality result.
-2. **`prepare_data`** on the fetched corpus; read the drop counts and the
-   leakage verdict. A pipeline that silently loses half the corpus is a data
-   problem that no learning rate fixes.
-3. **train the tokenizer** at 12–16k, print the fertility table, then **freeze**
-   the vocabulary. The trainer refuses a vocab the corpus cannot justify.
-4. **`count_parameters.py --config A --gate`** — analytic and materialised.
-5. **Measure throughput for ~100 steps**, then decide the budget:
+1. **extract**, then **`prepare_data` without `--tokenizer`** — cleanup stats,
+   the leakage verdict, and `corpus.txt`. Read the drop counts: a pipeline that
+   silently loses half the corpus is a data problem no learning rate fixes.
+2. **train the tokenizer** at 12–16k on `corpus.txt`, print the fertility
+   table, then **freeze** the vocabulary. The trainer refuses a vocab the corpus
+   cannot justify. `corpus.txt` is the *train split of the processed text*:
+   merges from val text would let the validation set shape what it is scored
+   against, and merges from the raw download would describe a corpus that never
+   existed.
+3. **`prepare_data` again, with `--tokenizer`** — the shards now exist, recorded
+   with the vocabulary that built them. Two passes are safe because the split is
+   a content hash, not a shuffle. **Sharding cannot precede the tokenizer**, and
+   `train_smoke` refuses a shard/tokenizer mismatch instead of training through
+   one: ids from a smaller vocabulary are all valid indices into a larger
+   embedding, so the broken case passes every bounds check.
+4. **smoke before the real run** — `train_smoke.py --steps 50 --gate` (~2M
+   params, minutes not hours). It is the pipeline gate, not a quality result: it
+   is cheap enough to run before every change and it fails fast on a corpus or
+   tokenizer problem that would otherwise surface 40 minutes in.
+5. **`count_parameters.py --config A --gate`** — analytic and materialised.
+6. **Measure throughput for ~100 steps**, then decide the budget:
 
    ```bash
    python -m training.scripts.estimate_budget --config A --from-run smoke.json \
@@ -248,7 +284,7 @@ run on.
 Run everything (no torch required, ~15 s):
 
 ```bash
-npm run test:all          # 226 JS tests + 161 Python tests (5 skip: torch)
+npm run test:all          # 226 JS tests + 204 Python tests (5 skip: torch)
 npm run params            # analytic parameter counts + §7.1 band gate
 npm run smoke             # tokenizer contract, shards, cursor, checkpoints
 ```

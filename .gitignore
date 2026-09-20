@@ -3,6 +3,7 @@
 .cv-raw.txt
 *.docx
 data/raw/
+data/extracted/
 data/processed/
 training/checkpoints/
 training/datasets/

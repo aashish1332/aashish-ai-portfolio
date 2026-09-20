@@ -6,13 +6,24 @@
 
 Writes:
     data/processed/<name>/corpus.jsonl   the surviving records + labels
+    data/processed/<name>/corpus.txt     the *train* split as plain text (tokenizer input)
     data/processed/<name>/stats.json     what was kept and what was dropped, per reason
     data/processed/<name>/leakage.json   train/val overlap check
     data/processed/<name>/shards/*.bin   uint16 token ids (memmap-ready) + manifest
 
 The `--tokenizer` step is optional on purpose: cleaning, dedupe, language
 tagging and the leakage check are worth running before a tokenizer exists,
-and they are the steps whose output you actually want to read.
+and they are the steps whose output you actually want to read. So the normal
+order is this script **twice** — once without `--tokenizer` to get stats and
+`corpus.txt`, then train the tokenizer on that text, then again with
+`--tokenizer` to write the shards. Two passes are safe because the split is a
+content hash (`pipeline.assign_split`), not a shuffle, so both runs agree.
+
+`corpus.txt` is the train split and not the whole corpus: merges learned from
+val text would let the validation set shape the vocabulary it is later scored
+against. And it is the *processed* text, not the raw download, because a
+vocabulary learned from text the filters are about to reject describes a corpus
+that never existed.
 """
 
 from __future__ import annotations
@@ -27,6 +38,8 @@ if __package__ in (None, ""):
 
 from ai.data import facts, pipeline  # noqa: E402
 from ai.tokenizer import spec  # noqa: E402
+
+PIPELINE_TEXT = "corpus.txt"
 
 
 def read_lines(raw_dir: Path) -> list[tuple[str, str]]:
@@ -46,8 +59,12 @@ def prepare(raw_dir: Path, out_dir: Path, tokenizer_dir: Path | None = None,
 
     source_pairs = read_lines(raw_dir)
     if not source_pairs:
-        raise SystemExit(f"no .txt files under {raw_dir} — run "
-                         f"`python -m training.scripts.make_seed_corpus`")
+        raise SystemExit(
+            f"no .txt files under {raw_dir}.\n"
+            f"  · a fetched source is a download, not text — extract it first:\n"
+            f"      python -m ai.data.extract --source {raw_dir.name}\n"
+            f"  · the dev fixture is generated: "
+            f"python -m training.scripts.make_seed_corpus")
 
     by_source: dict[str, list[str]] = {}
     for name, text in source_pairs:
@@ -80,6 +97,13 @@ def prepare(raw_dir: Path, out_dir: Path, tokenizer_dir: Path | None = None,
                                  "source": r.source, "split": r.split},
                                 ensure_ascii=False) + "\n")
 
+    # Plain text of the train split, one document per line: the tokenizer
+    # trainer's input. Written here rather than derived later so the tokenizer
+    # and the shards cannot disagree about which documents exist.
+    with (out_dir / PIPELINE_TEXT).open("w", encoding="utf-8", newline="\n") as fh:
+        for record in train:
+            fh.write(record.text.replace("\n", " ").strip() + "\n")
+
     stats_dict = stats.as_dict()
     stats_dict["by_source"] = per_source
     stats_dict["masked_facts"] = sorted(masked)
@@ -90,13 +114,16 @@ def prepare(raw_dir: Path, out_dir: Path, tokenizer_dir: Path | None = None,
     (out_dir / "leakage.json").write_text(
         json.dumps(leakage, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-    summary = {"stats": stats_dict, "leakage": leakage, "shards": None}
+    summary = {"stats": stats_dict, "leakage": leakage, "shards": None,
+               "corpus_txt": str(out_dir / PIPELINE_TEXT),
+               "corpus_txt_docs": len(train)}
 
     if tokenizer_dir:
         from ai.tokenizer.train import load
 
         tokenizer, meta = load(tokenizer_dir)
-        shards = pipeline.write_shards(records, tokenizer, out_dir / "shards")
+        shards = pipeline.write_shards(records, tokenizer, out_dir / "shards",
+                                       tokenizer_version=meta.get("tokenizer_version"))
         summary["shards"] = shards
         summary["tokenizer_version"] = meta["tokenizer_version"]
 
@@ -140,7 +167,13 @@ def main(argv: list[str] | None = None) -> int:
                       Path(args.tokenizer) if args.tokenizer else None,
                       args.val_percent)
     _print(summary["stats"], summary["leakage"], summary["shards"])
+    print(f"  {PIPELINE_TEXT:<12} {summary['corpus_txt_docs']:,} train documents as "
+          f"plain text — this is what the tokenizer trainer reads")
     print(f"\nwrote {args.out}")
+    if summary["shards"] is None:
+        print(f"No shards: pass --tokenizer <dir> once the vocabulary is frozen. "
+              f"If you shard with one tokenizer and train with another, training "
+              f"now refuses rather than producing an unusable checkpoint.")
     return 0
 
 

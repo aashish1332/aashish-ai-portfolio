@@ -71,14 +71,30 @@ def report(tokenizer, vocab_size: int | None = None, stream=sys.stdout) -> dict[
 
 
 def main(argv: list[str] | None = None) -> int:
+    import argparse
+
     from ai.tokenizer.train import load
 
-    argv = sys.argv[1:] if argv is None else argv
-    if not argv:
-        raise SystemExit("usage: python -m ai.tokenizer.fertility <artifact-dir>")
-    tokenizer, meta = load(argv[0])
+    # argparse rather than a bare sys.argv read: without it, `--help` was taken
+    # as the artifact directory and the CLI failed with a FileNotFoundError for
+    # "--help/meta.json". Every other entry point in the project answers --help,
+    # and the notebook validator checks that, so this has to as well.
+    parser = argparse.ArgumentParser(
+        description="Tokenizer fertility — tokens per word, per category (§7.2).",
+        epilog="A high tokens/word means the vocabulary is spending its budget on "
+               "other languages: every document in that language then costs more "
+               "of the block size than one in the language the vocab favours.")
+    parser.add_argument("artifact", nargs="?", help="tokenizer artifact directory")
+    parser.add_argument("--vocab-size", type=int, default=None,
+                        help="override the vocab size used in the heading")
+    args = parser.parse_args(argv)
+    if not args.artifact:
+        parser.error("an artifact directory is required, e.g. "
+                     "python -m ai.tokenizer.fertility ai/tokenizer/artifacts/seed-1k")
+
+    tokenizer, meta = load(args.artifact)
     print(f"{meta['tokenizer_version']}")
-    report(tokenizer, meta["vocab_size"])
+    report(tokenizer, args.vocab_size or meta["vocab_size"])
     return 0
 
 

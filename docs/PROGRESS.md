@@ -356,7 +356,8 @@ Full detail in `docs/BENCHMARKS.md`.
 | Fertility (1,024 vocab) | en 2.46 · hi **4.71** · hinglish 2.69 · tech 4.35 · url_email 15.50 tok/word |
 | Seed fixture | 17,402 lines / 3.2 MB → kept 17,265 (137 near-dup) · leakage **clean** · 749,590 train tokens |
 | `prepare_data` / tokenizer training | 20.2 s / 3.6 s (this machine) |
-| Test suite | **213 JS + 92 Python**, 0 failures (5 Python skips: torch) — 226 + 161 after the production build, P4 prep and the two licence gates |
+| Test suite | **213 JS + 92 Python**, 0 failures (5 Python skips: torch) — 226 + 204 after the production build, P4 prep, the two licence gates and the
+pipeline seam |
 
 ### What P3 found, and what it changed
 
@@ -494,10 +495,36 @@ otherwise be written under time pressure on Kaggle. Done here:
   `--max-minutes` for Kaggle's time box). Deliberately not a second training
   loop: a second loop is how a verified resume stops describing the thing that
   actually trained.
-* **`training/notebooks/train_stage_a.ipynb`** — 25 cells, a driver over the
-  tested modules (licence gate → prepare_data → tokenizer → params → smoke →
-  budget → Stage A → persistence → export), with an explicit `nvidia-smi`/bf16
-  check because a T4 has no bf16 (§7.5).
+* **`ai/data/extract.py`** — the step that did not exist. `fetch_corpus` writes
+  `hiwiki-…xml.bz2`; `prepare_data` globs `data/raw/<id>/*.txt`; **nothing joined
+  them**, so running the notebook as written would have reached `prepare_data`,
+  found no text, and stopped. Both components were tested; the *seam* was never
+  a component, so no test could have covered it. Now a streaming MediaWiki dump
+  reader (`iterparse`, so 2 GB is not a 20 GB process) and a batch-by-batch
+  parquet reader, writing one document per line to a shared `data/extracted/`
+  because `prepare_data --raw` reads a single directory. It does **not** filter:
+  its manifest records `filters_applied: []` and the pending §7.3 filters.
+* **The tokenizer/shard mismatch is refused, not trained through.** The notebook
+  sharded with `seed-1k` and then trained with the 12k tokenizer. Ids from a
+  smaller vocabulary are all valid indices into a larger embedding, so every
+  bounds check passed and the model would have learnt a mapping from one
+  tokenizer's ids while inference encodes with another's — hours of GPU for an
+  unusable checkpoint, with nothing downstream able to detect it. Shards now
+  record `vocab_size` and `tokenizer_version`, and training compares them.
+  `test_a_bounds_check_alone_could_not_have_caught_this` proves the guard is
+  load-bearing rather than decorative.
+* **The notebook is validated rather than hoped for.**
+  `tests/py/test_notebook_refs.py` resolves every `python -m` / `python x.py` it
+  invokes, requires each CLI to answer `--help`, checks every `--flag` against
+  that CLI's parser, and checks that no cell uses `$VAR` before its assignment.
+  It reads commented-out commands too, because those are the ones a human
+  copy-pastes. This is how a bare `sys.argv` read in `ai.tokenizer.fertility`
+  was found treating `--help` as a directory name.
+* **`training/notebooks/train_stage_a.ipynb`** — 29 cells
+  (licence gate → **extract** → **prepare pass 1** → tokenizer → **prepare pass
+  2** → params → smoke → budget → Stage A → persistence → export), with an
+  explicit `nvidia-smi`/bf16 check because a T4 has no bf16 (§7.5). Two passes
+  over the pipeline are safe because the split is a content hash, not a shuffle.
 * **`estimate_budget.py`** — §7.3's token budget as arithmetic on a measurement:
   throughput × usable session, passes over the corpus, tokens/param against the
   ~20 reference, and whether the reference *fits the hours available*. At
