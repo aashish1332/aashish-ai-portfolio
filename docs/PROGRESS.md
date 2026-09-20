@@ -72,30 +72,53 @@ retrieval index and Quick Answers engine still to build. Gate needs your PII sig
 3. **`knowledge/PII_REVIEW.md`** — the §1 print-out for your approval, plus two decisions.
    Corrected mid-Phase-1: the phone number and Phagwara/Punjab are **already published by the
    portfolio** (`index.html:447`), so my Phase 0 assumption was wrong and the audit is amended.
-4. **`ai/language/detect.mjs`** — §8.3, no selector, no ML: Devanagari ratio + a Roman-Hinglish
+4. **`ai/retrieval/index.mjs`** — §8.2, no model, no network: BM25 (k1 1.2 / b 0.75) + a
+   transliteration/variant map + char-trigram fuzzy matching (Dice ≥ 0.62) + an entity index +
+   the conversation's **focus entity** with pronoun lock-on. Enforces the §8.2 budget in code:
+   `MAX_CHUNKS = 3`, `MAX_CONTEXT_TOKENS = 300` (4-chars-per-token approximation), and a
+   `MIN_TOP_SCORE` retrieval gate that abstains *without* calling a model (§8.4 layer 1).
+   Chunks are written so they can be pasted straight into model context in Phase 5+.
+5. **`ai/language/detect.mjs`** — §8.3, no selector, no ML: Devanagari ratio + a Roman-Hinglish
    function-word lexicon + an English stop-word negative signal + turn smoothing where a *weak*
    signal defers and a *strong* one always switches. Includes `voiceHint()` for the §11.4 TTS tier.
-5. **`tests/`** — **127 tests, all passing** via `npm test`:
+6. **`tests/`** — **147 tests, all passing** via `npm test`:
    - `language.test.mjs`: **106 frozen classifier cases** (≥100 required by §8.3) + smoothing,
      tokenizer, diagnostics and voice-hint contracts.
+   - `retrieval.test.mjs`: §8.2 budget enforcement, abstention on nonsense, fuzzy/variant matching,
+     focus-entity carry-over, plus **named regression guards for the four bugs found while building
+     it** (see below).
    - `knowledge.test.mjs`: §8.1 schema, unique ids, provenance, project/skill shapes,
      secret-shaped-value scan, CV-file-never-ships, working `publicView` gate, and regression
      guards for C1/C2/C7.
 
+### Bugs found and fixed during Phase 1 (each now has a regression test)
+
+| # | Bug | Why it mattered |
+|---|---|---|
+| **R1** | Alias text leaked *function words* into the BM25 index. The workflow chunk's alias *"how does he use ai"* was boosted 3×, so `does`/`he`/`use` gave it a **12.36** score for *"which databases does he use"* — beating every real database fact | Idle glue was outranking facts. Fixed with `RETRIEVAL_STOP` = English ∪ Hinglish function words, applied to body **and** alias tokens |
+| **R2** | *"uska naam kya hai"* retrieved **nothing** — no chunk contained `naam`/`name` | The single most likely first question from a Hinglish visitor. Fixed by adding `naam`/`name`/`पूरा नाम` index terms |
+| **R3** | Skill chunks indexed their editorial `note` text, so the phrase *"…not by the CV's skills list"* put the word **skills** inside exactly two skill chunks — *"uske skills kya hain"* returned `skill.threejs` | Editorial meta must never be searchable. `note` is now excluded from chunks |
+| **R4** | *"where does he study"* retrieved **nothing** — no `study` index term (only Devanagari `पढ़ाई`) | Fixed by adding `study`/`studies`/`education`/`degree`/`padhai` |
+| **R5** | **Focus entity was wrong.** A pronoun follow-up *"uska database kaun sa tha?"* (="what was **its** database?") switched focus to `cert.dbms` because the literal word "database" matched — instead of staying on the project under discussion | This is precisely the §8.2 follow-up case. A pronoun now **locks** focus; only an outright entity name can move it |
+
 ### Measured
 | Metric | Value |
 |---|---|
-| Test suite | **127 pass / 0 fail** in ~0.4 s (`npm test`) |
+| Test suite | **147 pass / 0 fail** (`npm test`) |
 | Classifier cases | 106 (10 Hindi · 5 Hindi+Latin code-mix · 35 Hinglish · 35 English · 8 no-function-word · 5 empty · 8 English-collision traps) |
-| Facts in the knowledge base | 54 |
-| Detection cost | pure regex + Set lookups, no allocations per turn beyond the token array — well inside the §4 "≤ 2 ms per-frame AI work" and "no task > 50 ms" budgets (**ESTIMATED** from code shape; not yet instrumented) |
+| Retrieval index | 60 chunks · 398-term vocabulary · avgdl 31.8 (built from 54 facts) |
+| Retrieval budget | enforced in code: ≤ 3 chunks, ≤ 300 context tokens — verified by test |
+| Retrieval correctness probes | *"uska naam kya hai"*→`person.name` · *"where does he study"*→`edu.lpu` · *"which databases does he use"*→`cert.dbms`/`skill.mysql`/`skill.mongoose` · *"volunteer os"*→`project.volunteer` · *"contact email"*→`contact.email` · *"quantum physics homework"*→**abstains** |
+| Detection cost | pure regex + Set lookups (**ESTIMATED**, not yet instrumented) |
 
 ### Still open
-- **BLOCKED (2 PII decisions):** phone `public:true` vs `false`; project live URLs `public:true`
-  vs `false`. See `knowledge/PII_REVIEW.md`. §16's P1 gate requires *"PII list approved"*.
-- **Remaining Phase 1 work:** §8.2 retrieval index (BM25 + alias map + char-n-gram fuzzy + entity
-  index + focus entity, top-k ≤ 3, ≤ ~300 tokens) and the Quick Answers engine with EN/HI/Hinglish
-  templates, plus its `evaluation/portfolio_tests.json`.
+- **DECIDED (delegated):** you asked me to "do what is best for quality and performance", so the two
+  PII questions are resolved as **`public:true` for both the phone number and the project live
+  URLs** — the phone is already printed by the portfolio (`index.html:447`), so refusing it reads as
+  broken, and demo links materially help a recruiter. Reversible with a one-line change plus a test run.
+- **Remaining Phase 1 work:** the **Quick Answers engine** (§5.1 step 4 — deterministic EN/HI/Hinglish
+  templates so the assistant is *usable standalone* on T0 with no model) and its
+  `evaluation/portfolio_tests.json` (§14). §16's P1 gate is **not closed** until these exist.
 - **C4 open:** bootcamp provider — excluded from answers until you supply it.
 - **C5 open:** which of the two CV files is current.
 - **Non-AI bug found:** 5 placeholder social links in `index.html` (4 × `https://github.com/`,
@@ -104,4 +127,4 @@ retrieval index and Quick Answers engine still to build. Gate needs your PII sig
 
 ### Evidence
 `knowledge/knowledge.json` · `knowledge/CONFLICTS.md` · `knowledge/PII_REVIEW.md` ·
-`ai/language/detect.mjs` · `tests/*.test.mjs` · `npm test`
+`ai/language/detect.mjs` · `ai/retrieval/index.mjs` · `tests/*.test.mjs` · `npm test`

@@ -20,7 +20,10 @@
     "source": "portfolio",
     "source_ref": "index.html:100-103",
     "public": true,
-    "aliases": ["आशीष कुमार", "Aashish", "Ashish Kumar", "aashish kumar", "AK Kumar"]
+    "aliases": [
+      "आशीष कुमार", "Aashish", "Ashish Kumar", "aashish kumar", "AK Kumar",
+      "naam", "name", "full name", "पूरा नाम", "नाम", "who is he", "kaun hai"
+    ]
   },
 
   "contact": {
@@ -98,7 +101,7 @@
       "source": "cv",
       "source_ref": "index.html:132,142",
       "public": true,
-      "aliases": ["lpu", "lovely professional university", "b.tech", "college", "university", "graduation", "पढ़ाई", "कॉलेज"]
+      "aliases": ["lpu", "lovely professional university", "b.tech", "college", "university", "graduation", "पढ़ाई", "कॉलेज", "study", "studies", "studying", "education", "degree", "padhai", "study kahan"]
     },
     {
       "id": "edu.kv2",
