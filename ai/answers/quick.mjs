@@ -20,7 +20,7 @@
    every language changes with it. `tests/quick-answers.test.mjs` asserts
    that against the real base, in all three languages.
    ═══════════════════════════════════════════════════════════════ */
-import { detectIntent, ABSTAIN, INJECTION_REPLY } from '../intent/rules.mjs';
+import { detectIntent, abstainFor, INJECTION_REPLY } from '../intent/rules.mjs';
 import { detectLanguage } from '../language/detect.mjs';
 import {
   buildIndex, search, normalize, contentTokens, similarity,
@@ -198,51 +198,95 @@ const CATEGORY_WORDS = [
 ];
 
 const firstName = (kb) => String(kb?.person?.name || 'Aashish').split(' ')[0];
+const fullName = (kb) => String(kb?.person?.name || 'Aashish Kumar');
 const bullet = (lines) => lines.join('\n');
+
+/* ── voice (§10) ─────────────────────────────────────────────────
+   The visitor is being shown a portfolio. They are reading it to decide
+   whether to talk to Aashish, so the answers are written in HIS voice:
+   "my CGPA", "my email", not "his CGPA" on a page he wrote himself.
+
+   `pick` keeps both phrasings side by side at the template itself, in all
+   three languages, instead of a regex pass over the finished text. A
+   rewrite pass would have been shorter and would have quietly produced
+   wrong grammar the first time a template changed its shape — this way an
+   untranslated string is visible in the diff.
+
+   `third` is kept because the raw phrasing is what the evaluation set and
+   the older docs were written against, and because one caller (a
+   recruiter-facing "share my portfolio" view, say) may want the neutral
+   voice. It is not the default. */
+export const PERSONAS = ['first', 'third'];
+export const DEFAULT_PERSONA = 'first';
+const pick = (persona, third, first) => (persona === 'first' ? first : third);
 
 /* A `public:false` contact field is declined, not silently revealed, and the
    decline points at the route that IS published. Kept here rather than beside
    ABSTAIN/INJECTION_REPLY because it has to name a value from the base, and
    rules.mjs deliberately knows nothing about the knowledge base. */
-function privateReply(kb, lang) {
+function privateReply(kb, lang, persona) {
   const email = (kb.contact?.email && kb.contact.email.public !== false)
     ? kb.contact.email.value : '';
   return tri(lang,
-    `That contact detail isn't published${email ? ` — the best way to reach ${firstName(kb)} is by email: ${email}` : ''}.`,
-    `वह संपर्क विवरण सार्वजनिक नहीं है${email ? ` — ${firstName(kb)} से संपर्क का सबसे अच्छा तरीक़ा ईमेल है: ${email}` : ''}।`,
-    `Wo contact detail publish nahi hai${email ? ` — ${firstName(kb)} se contact ka best tarika email hai: ${email}` : ''}.`);
+    `That contact detail isn't published${email ? ` — the best way to reach ${pick(persona, firstName(kb), 'me')} is by email: ${email}` : ''}.`,
+    `वह संपर्क विवरण सार्वजनिक नहीं है${email ? ` — ${pick(persona, `${firstName(kb)} से`, 'मुझसे')} संपर्क का सबसे अच्छा तरीक़ा ईमेल है: ${email}` : ''}।`,
+    `Wo contact detail publish nahi hai${email ? ` — ${pick(persona, `${firstName(kb)} se`, 'mujhse')} contact ka best tarika email hai: ${email}` : ''}.`);
 }
 
 /* ── answer builders ─────────────────────────────────────────────
    Each builder is pure: (kb, lang, ctx) → { text, sources }.
    Templates are fixed prose; every interpolated value comes from kb. */
 const BUILD = {
-  greeting: (kb, lang, ctx = {}) => ({
-    /* "thanks" gets an acknowledgement, not the full introduction */
-    text: /\b(thanks|thank you|dhanyavad|dhanyawad|shukriya|शुक्रिया|धन्यवाद)/i.test(String(ctx.question || ''))
-      ? tri(lang,
-        'Anytime! Ask me anything else about Aashish.',
-        'खुशी हुई! Aashish के बारे में और कुछ भी पूछ सकते हैं।',
-        'Khushi hui! Aashish ke baare mein aur kuch bhi pooch sakte hain.')
-      : tri(lang,
-        `Hi! I'm ${firstName(kb)}'s AI Portfolio Assistant. Ask me about his projects, skills, education, or how to reach him.`,
-        `नमस्ते! मैं ${firstName(kb)} का AI पोर्टफोलियो असिस्टेंट हूँ। आप उनके प्रोजेक्ट्स, स्किल्स, पढ़ाई या संपर्क के बारे में पूछ सकते हैं।`,
-        `Namaste! Main ${firstName(kb)} ka AI Portfolio Assistant hoon. Aap unke projects, skills, padhai ya contact ke baare mein pooch sakte hain.`),
-    sources: [],
-  }),
+  greeting: (kb, lang, ctx = {}) => {
+    const persona = ctx.persona || DEFAULT_PERSONA;
+    return {
+      /* "thanks" gets an acknowledgement, not the full introduction */
+      text: /\b(thanks|thank you|dhanyavad|dhanyawad|shukriya|शुक्रिया|धन्यवाद)/i.test(String(ctx.question || ''))
+        ? tri(lang,
+          pick(persona, 'Anytime! Ask me anything else about Aashish.', 'Anytime! Ask me anything else.'),
+          pick(persona, 'खुशी हुई! Aashish के बारे में और कुछ भी पूछ सकते हैं।', 'खुशी हुई! और कुछ भी पूछ सकते हैं।'),
+          pick(persona, 'Khushi hui! Aashish ke baare mein aur kuch bhi pooch sakte hain.', 'Khushi hui! Aur kuch bhi pooch sakte hain.'))
+        : tri(lang,
+          pick(persona,
+            `Hi! I'm ${firstName(kb)}'s AI Portfolio Assistant. Ask me about his projects, skills, education, or how to reach him.`,
+            `Hi — I'm ${fullName(kb)}. Ask me about my projects, skills, education, or how to reach me.`),
+          pick(persona,
+            `नमस्ते! मैं ${firstName(kb)} का AI पोर्टफोलियो असिस्टेंट हूँ। आप उनके प्रोजेक्ट्स, स्किल्स, पढ़ाई या संपर्क के बारे में पूछ सकते हैं।`,
+            `नमस्ते — मैं ${fullName(kb)} हूँ। मेरे प्रोजेक्ट्स, स्किल्स, पढ़ाई या संपर्क के बारे में पूछ सकते हैं।`),
+          pick(persona,
+            `Namaste! Main ${firstName(kb)} ka AI Portfolio Assistant hoon. Aap unke projects, skills, padhai ya contact ke baare mein pooch sakte hain.`,
+            `Namaste — main ${fullName(kb)} hoon. Mere projects, skills, padhai ya contact ke baare mein pooch sakte hain.`)),
+      sources: [],
+    };
+  },
 
-  meta: (kb, lang) => ({
-    text: tri(lang,
-      `I'm ${firstName(kb)}'s AI Portfolio Assistant — not ${firstName(kb)} himself. I answer questions about his work, skills and background using only his portfolio data.`,
-      `मैं ${firstName(kb)} का AI पोर्टफोलियो असिस्टेंट हूँ — ${firstName(kb)} खुद नहीं। मैं उनके काम, स्किल्स और पढ़ाई से जुड़े सवालों का जवाब सिर्फ़ उनके पोर्टफोलियो डेटा से देता हूँ।`,
-      `Main ${firstName(kb)} ka AI Portfolio Assistant hoon — ${firstName(kb)} khud nahi. Main unke kaam, skills aur padhai ke baare mein sirf unke portfolio data se bata sakta hoon.`),
-    sources: [kb?.person?.id || 'person.name'],
-  }),
+  /* The ONE place that must not join the fiction. "Are you Aashish?" is a
+     direct question about identity, and answering "yes" would be a lie about
+     a person — so the answer discloses what is speaking while staying in the
+     conversation's voice. tests/intent.test.mjs already refuses an injection
+     reply that claims to be Aashish; this refuses the same claim here. */
+  meta: (kb, lang, ctx = {}) => {
+    const persona = ctx.persona || DEFAULT_PERSONA;
+    return {
+      text: tri(lang,
+        pick(persona,
+          `I'm ${firstName(kb)}'s AI Portfolio Assistant — not ${firstName(kb)} himself. I answer questions about his work, skills and background using only his portfolio data.`,
+          `That's me — ${fullName(kb)}. One thing I'll say plainly: this is my portfolio assistant, answering in my voice and using only my portfolio data. Ask me about my work, skills or background.`),
+        pick(persona,
+          `मैं ${firstName(kb)} का AI पोर्टफोलियो असिस्टेंट हूँ — ${firstName(kb)} खुद नहीं। मैं उनके काम, स्किल्स और पढ़ाई से जुड़े सवालों का जवाब सिर्फ़ उनके पोर्टफोलियो डेटा से देता हूँ।`,
+          `यह मैं ही हूँ — ${fullName(kb)}। एक बात साफ़ कह दूँ: यह मेरा पोर्टफोलियो असिस्टेंट है, जो मेरी आवाज़ में और सिर्फ़ मेरे पोर्टफोलियो डेटा से जवाब देता है। मेरे काम, स्किल्स या पढ़ाई के बारे में पूछ सकते हैं।`),
+        pick(persona,
+          `Main ${firstName(kb)} ka AI Portfolio Assistant hoon — ${firstName(kb)} khud nahi. Main unke kaam, skills aur padhai ke baare mein sirf unke portfolio data se bata sakta hoon.`,
+          `Ye main hi hoon — ${fullName(kb)}. Ek baat saaf keh doon: ye mera portfolio assistant hai, meri awaaz mein aur sirf mere portfolio data se jawab deta hai. Mere kaam, skills ya padhai ke baare mein pooch sakte hain.`)),
+      sources: [kb?.person?.id || 'person.name'],
+    };
+  },
 
   /* Contact is deliberately field-aware: a question about the email gets the
      email, not the entire contact block. */
   contact: (kb, lang, ctx) => {
     const q = String(ctx.question || '');
+    const persona = ctx.persona || DEFAULT_PERSONA;
     /* EVERY read goes through this filter. The catch-all answer used to reach
        into `kb.contact` directly, so a `public:false` field would have been
        printed by "how can I contact him?" even though the field is marked
@@ -258,22 +302,37 @@ const BUILD = {
     const norm = normalize(q);
     const askedWithheld = (ctx.withheld || []).some((f) => f.aliases
       .some((a) => { const t = normalize(a); return t && norm.includes(t); }));
-    if (askedWithheld) return { text: privateReply(kb, lang), sources: [], private: true };
+    if (askedWithheld) return { text: privateReply(kb, lang, persona), sources: [], private: true };
 
     if (/\b(e-?mail|mail|gmail)\b/i.test(q)) {
       const f = find(/email|mail/i);
-      if (f) return { text: tri(lang, `His email is ${f.value}.`,
-        `उनका ईमेल ${f.value} है।`, `Unka email ${f.value} hai.`), sources: [f.id] };
+      if (f) return {
+        text: tri(lang,
+          pick(persona, `His email is ${f.value}.`, `My email is ${f.value}.`),
+          pick(persona, `उनका ईमेल ${f.value} है।`, `मेरा ईमेल ${f.value} है।`),
+          pick(persona, `Unka email ${f.value} hai.`, `Mera email ${f.value} hai.`)),
+        sources: [f.id],
+      };
     }
     if (/\b(phone|mobile|number|call)\b/i.test(q)) {
       const f = find(/phone|mobile/i);
-      if (f) return { text: tri(lang, `His phone number is ${f.value}.`,
-        `उनका फ़ोन नंबर ${f.value} है।`, `Unka phone number ${f.value} hai.`), sources: [f.id] };
+      if (f) return {
+        text: tri(lang,
+          pick(persona, `His phone number is ${f.value}.`, `My phone number is ${f.value}.`),
+          pick(persona, `उनका फ़ोन नंबर ${f.value} है।`, `मेरा फ़ोन नंबर ${f.value} है।`),
+          pick(persona, `Unka phone number ${f.value} hai.`, `Mera phone number ${f.value} hai.`)),
+        sources: [f.id],
+      };
     }
-    if (/\blocation|where does he live|city\b/i.test(q)) {
+    if (/\blocation|where does he live|where do you live|city\b/i.test(q)) {
       const f = find(/location|city/i);
-      if (f) return { text: tri(lang, `He's based in ${f.value}.`,
-        `वे ${f.value} में रहते हैं।`, `Wo ${f.value} mein rehte hain.`), sources: [f.id] };
+      if (f) return {
+        text: tri(lang,
+          pick(persona, `He's based in ${f.value}.`, `I'm based in ${f.value}.`),
+          pick(persona, `वे ${f.value} में रहते हैं।`, `मैं ${f.value} में रहता हूँ।`),
+          pick(persona, `Wo ${f.value} mein rehte hain.`, `Main ${f.value} mein rehta hoon.`)),
+        sources: [f.id],
+      };
     }
     if (/\bavailable|availability|hiring|open to\b/i.test(q)) {
       const f = find(/available|hiring/i);
@@ -283,7 +342,9 @@ const BUILD = {
     if (/\b(github|linkedin|profile|links?|repos?|repository|code)\b/i.test(q) && links.length) {
       const lines = links.map((l) => `• ${l.label}: ${l.url}`);
       return {
-        text: tri(lang, `${firstName(kb)}'s profiles:`, `प्रोफ़ाइल:`, `Profiles:`)
+        text: tri(lang,
+          pick(persona, `${firstName(kb)}'s profiles:`, 'My profiles:'),
+          `प्रोफ़ाइल:`, `Profiles:`)
           + '\n' + bullet(lines),
         sources: links.map((l) => l.id),
       };
@@ -296,13 +357,17 @@ const BUILD = {
     for (const l of links) parts.push(`• ${l.label}: ${l.url}`);
     if (c.availability) parts.push(tri(lang, `Availability: ${c.availability.value}`, `उपलब्धता: ${c.availability.value}`, `Availability: ${c.availability.value}`));
     return {
-      text: tri(lang, `Here's how to reach ${firstName(kb)}:`, `${firstName(kb)} से संपर्क:`, `${firstName(kb)} se contact:`)
+      text: tri(lang,
+        pick(persona, `Here's how to reach ${firstName(kb)}:`, "Here's how to reach me:"),
+        pick(persona, `${firstName(kb)} से संपर्क:`, 'मुझसे संपर्क:'),
+        pick(persona, `${firstName(kb)} se contact:`, 'Mujhse contact:'))
         + '\n' + bullet(parts),
       sources: [...Object.values(c).map((f) => f.id), ...links.map((l) => l.id)].filter(Boolean),
     };
   },
 
-  list_projects: (kb, lang) => {
+  list_projects: (kb, lang, ctx = {}) => {
+    const persona = ctx.persona || DEFAULT_PERSONA;
     const projects = (kb.projects || []).filter((p) => p.public !== false);
     const lines = projects.map((p) => {
       /* skip the codename when it only repeats the project name
@@ -314,9 +379,12 @@ const BUILD = {
     });
     return {
       text: tri(lang,
-        `${firstName(kb)} has ${projects.length} shipped projects:`,
-        `${firstName(kb)} के ${projects.length} शिप्ड प्रोजेक्ट्स हैं:`,
-        `${firstName(kb)} ke ${projects.length} shipped projects hain:`)
+        pick(persona, `${firstName(kb)} has ${projects.length} shipped projects:`,
+          `I've shipped ${projects.length} projects:`),
+        pick(persona, `${firstName(kb)} के ${projects.length} शिप्ड प्रोजेक्ट्स हैं:`,
+          `मैंने ${projects.length} प्रोजेक्ट्स बनाए हैं:`),
+        pick(persona, `${firstName(kb)} ke ${projects.length} shipped projects hain:`,
+          `Maine ${projects.length} projects banaye hain:`))
         + '\n' + bullet(lines)
         + '\n' + tri(lang, 'Ask about any one for its stack and live link.',
           'किसी एक के बारे में पूछें — स्टैक और लाइव लिंक बताऊँगा।',
@@ -326,6 +394,7 @@ const BUILD = {
   },
 
   skills: (kb, lang, ctx) => {
+    const persona = ctx.persona || DEFAULT_PERSONA;
     const all = (kb.skills || []).filter((s) => s.public !== false);
     const q = String(ctx.question || '');
     const only = (CATEGORY_WORDS.find(([re]) => re.test(q)) || [])[1];
@@ -335,7 +404,9 @@ const BUILD = {
     if (only && list.length) {
       const label = (CATEGORY_LABEL[only] || {})[lang] || only;
       return {
-        text: tri(lang, `${label} he works with: `, `${label}: `, `${label}: `)
+        text: tri(lang,
+          pick(persona, `${label} he works with: `, `My ${label.toLowerCase()}: `),
+          `${label}: `, `${label}: `)
           + list.map((s) => s.name).join(', ') + '.',
         sources: list.map((s) => s.id),
       };
@@ -354,15 +425,19 @@ const BUILD = {
     const extras = byCat.get('extras') || [];
     const footnote = extras.length
       ? '\n' + tri(lang,
-        `${extras.map((s) => s.name).join(' and ')} ${extras.length > 1 ? 'are' : 'is'} evidenced by this portfolio, not listed on the CV.`,
-        `${extras.map((s) => s.name).join(' और ')} — CV में लिस्टेड नहीं, यह पोर्टफोलियो इनका सबूत है।`,
-        `${extras.map((s) => s.name).join(' and ')} — CV mein listed nahi, ye portfolio inka proof hai.`)
+        `${extras.map((s) => s.name).join(' and ')} ${extras.length > 1 ? 'are' : 'is'} evidenced by this portfolio, not listed on ${pick(persona, 'the CV', 'my CV')}.`,
+        `${extras.map((s) => s.name).join(' और ')} — ${pick(persona, 'CV में लिस्टेड नहीं', 'मेरे CV में लिस्टेड नहीं')}, यह पोर्टफोलियो इनका सबूत है।`,
+        `${extras.map((s) => s.name).join(' and ')} — ${pick(persona, 'CV mein listed nahi', 'mere CV mein listed nahi')}, ye portfolio inka proof hai.`)
       : '';
 
     return {
-      text: tri(lang, `${firstName(kb)}'s skills (${list.length}):`,
-        `${firstName(kb)} के स्किल्स (${list.length}):`,
-        `${firstName(kb)} ke skills (${list.length}):`)
+      text: tri(lang,
+        pick(persona, `${firstName(kb)}'s skills (${list.length}):`,
+          `My skills (${list.length}):`),
+        pick(persona, `${firstName(kb)} के स्किल्स (${list.length}):`,
+          `मेरे स्किल्स (${list.length}):`),
+        pick(persona, `${firstName(kb)} ke skills (${list.length}):`,
+          `Mere skills (${list.length}):`))
         + '\n' + bullet(lines) + footnote,
       sources: list.map((s) => s.id),
     };
@@ -395,23 +470,32 @@ const BUILD = {
     };
   },
 
-  achievements: (kb, lang) => {
+  achievements: (kb, lang, ctx = {}) => {
+    const persona = ctx.persona || DEFAULT_PERSONA;
     const ach = (kb.achievements || []).filter((a) => a.public !== false);
     return {
-      text: tri(lang, 'Highlights:', 'हाइलाइट्स:', 'Uski highlights:')
+      text: tri(lang, 'Highlights:', 'हाइलाइट्स:',
+        pick(persona, 'Uski highlights:', 'Meri highlights:'))
         + '\n' + bullet(ach.map((a) => `• ${a.text}`)),
       sources: ach.map((a) => a.id),
     };
   },
 
-  experience: (kb, lang) => {
+  experience: (kb, lang, ctx = {}) => {
+    const persona = ctx.persona || DEFAULT_PERSONA;
     const exp = (kb.experience || []).filter((e) => e.public !== false);
     const availability = kb.contact?.availability?.value;
     return {
       text: tri(lang,
-        `${firstName(kb)}'s CV shows no employment history — no companies, internships or freelance work. Its only experience entry is training:`,
-        `${firstName(kb)} के CV में कोई नौकरी नहीं है — कोई कंपनी, इंटर्नशिप या फ्रीलांस नहीं। केवल एक ट्रेनिंग एंट्री है:`,
-        `${firstName(kb)} ke CV mein koi employment history nahi hai — koi company, internship ya freelance nahi. Sirf ek training entry hai:`)
+        pick(persona,
+          `${firstName(kb)}'s CV shows no employment history — no companies, internships or freelance work. Its only experience entry is training:`,
+          'My CV shows no employment history — no companies, internships or freelance work. My only experience entry is training:'),
+        pick(persona,
+          `${firstName(kb)} के CV में कोई नौकरी नहीं है — कोई कंपनी, इंटर्नशिप या फ्रीलांस नहीं। केवल एक ट्रेनिंग एंट्री है:`,
+          'मेरे CV में कोई नौकरी नहीं है — कोई कंपनी, इंटर्नशिप या फ्रीलांस नहीं। केवल एक ट्रेनिंग एंट्री है:'),
+        pick(persona,
+          `${firstName(kb)} ke CV mein koi employment history nahi hai — koi company, internship ya freelance nahi. Sirf ek training entry hai:`,
+          'Mere CV mein koi employment history nahi hai — koi company, internship ya freelance nahi. Sirf ek training entry hai:'))
         + '\n' + bullet(exp.map((e) => `• ${renderFact(kb, e.id, lang)}`))
         + (availability ? '\n' + tri(lang, `Availability: ${availability}`, `उपलब्धता: ${availability}`, `Availability: ${availability}`) : ''),
       sources: [...exp.map((e) => e.id), ...(kb.contact?.availability ? [kb.contact.availability.id] : [])],
@@ -428,10 +512,14 @@ function extractive(kb, lang, intent, ctx) {
      every intent, which made "what is his favourite pizza" answer with the
      project list instead of abstaining (§8.4 layer 1). */
   if (intent !== 'workflow' && intent !== 'project_detail') return null;
+  const persona = ctx.persona || DEFAULT_PERSONA;
 
   if (intent === 'workflow') {
     return {
-      text: tri(lang, 'How he builds: ', 'बनाने का तरीक़ा: ', 'Kaise banate hain: ')
+      text: tri(lang,
+        pick(persona, 'How he builds: ', 'How I build: '),
+        'बनाने का तरीक़ा: ',
+        pick(persona, 'Kaise banate hain: ', 'Kaise banata hoon: '))
         + renderFact(kb, kb.workflow?.id || 'workflow.how-he-builds', lang),
       sources: [kb.workflow?.id || 'workflow.how-he-builds'],
     };
@@ -474,7 +562,7 @@ function extractive(kb, lang, intent, ctx) {
 const FACT_KINDS = new Set(['skill', 'contact', 'link', 'education',
   'certification', 'achievement', 'person']);
 
-function factAnswer(kb, lang, hit, query) {
+function factAnswer(kb, lang, hit, query, persona = DEFAULT_PERSONA) {
   const entry = indexFacts(kb).get(hit.id);
   if (!entry || !FACT_KINDS.has(entry.kind)) return null;
   const { kind, fact: f } = entry;
@@ -491,9 +579,15 @@ function factAnswer(kb, lang, hit, query) {
 
   if (kind === 'skill') {
     let text = tri(lang,
-      `Yes — ${f.name} (${f.category}) is on his list.`,
-      `हाँ — ${f.name} (${f.category}) उनकी लिस्ट में है।`,
-      `Haan — ${f.name} (${f.category}) unki list mein hai.`);
+      pick(persona,
+        `Yes — ${f.name} (${f.category}) is on his list.`,
+        `Yes — ${f.name} (${f.category}) is on my list.`),
+      pick(persona,
+        `हाँ — ${f.name} (${f.category}) उनकी लिस्ट में है।`,
+        `हाँ — ${f.name} (${f.category}) मेरी लिस्ट में है।`),
+      pick(persona,
+        `Haan — ${f.name} (${f.category}) unki list mein hai.`,
+        `Haan — ${f.name} (${f.category}) meri list mein hai.`));
     if (f.source === 'portfolio') {
       text += ' ' + tri(lang,
         'Evidence: this portfolio, not the CV.',
@@ -505,14 +599,21 @@ function factAnswer(kb, lang, hit, query) {
   if (kind === 'achievement') return { text: f.text, sources: [f.id] };
   if (kind === 'person') {
     return {
-      text: tri(lang, `His full name is ${f.name}.`, `उनका पूरा नाम ${f.name} है।`, `Unka poora naam ${f.name} hai.`),
+      text: tri(lang,
+        pick(persona, `His full name is ${f.name}.`, `My name is ${f.name}.`),
+        pick(persona, `उनका पूरा नाम ${f.name} है।`, `मेरा नाम ${f.name} है।`),
+        pick(persona, `Unka poora naam ${f.name} hai.`, `Mera naam ${f.name} hai.`)),
       sources: [f.id],
     };
   }
   return { text: renderFact(kb, f.id, lang), sources: [f.id] };
 }
 
-/* ── deterministic follow-ups (§5.1 step 7) ────────────────────── */
+/* ── deterministic follow-ups (§5.1 step 7) ──────────────────────
+   Two tables, because a chip is the VISITOR's sentence and its pronouns
+   follow the voice. Under the first-person persona the chips address Aashish
+   directly ("What are your skills?"), which is what a recruiter clicking
+   through a conversation with him would actually say. */
 const FOLLOWUPS = {
   greeting: [[`What projects has he built?`, `उन्होंने कौन-कौन से प्रोजेक्ट बनाए हैं?`, `Unhone kaun kaun se projects banaye hain?`],
     [`What are his skills?`, `उनके स्किल्स क्या हैं?`, `Unke skills kya hain?`],
@@ -540,10 +641,39 @@ const FOLLOWUPS = {
     [`How can I contact him?`, `मैं उनसे कैसे संपर्क करूँ?`, `Main unse contact kaise karoon?`]],
 };
 
+/* The same graph, addressed to Aashish himself (see the note above). */
+const FOLLOWUPS_FIRST = {
+  greeting: [[`What projects have you built?`, `आपने कौन-कौन से प्रोजेक्ट बनाए हैं?`, `Aapne kaun kaun se projects banaye hain?`],
+    [`What are your skills?`, `आपके स्किल्स क्या हैं?`, `Aapke skills kya hain?`],
+    [`How can I contact you?`, `मैं आपसे कैसे संपर्क करूँ?`, `Main aapse contact kaise karoon?`]],
+  contact: [[`What projects have you built?`, `आपने कौन-कौन से प्रोजेक्ट बनाए हैं?`, `Aapne kaun kaun se projects banaye hain?`],
+    [`Are you open to internships?`, `क्या आप इंटर्नशिप के लिए उपलब्ध हैं?`, `Kya aap internship ke liye available hain?`]],
+  list_projects: [[`How do you work with AI?`, `आप AI के साथ कैसे काम करते हैं?`, `Aap AI ke saath kaise kaam karte hain?`],
+    [`What are your skills?`, `आपके स्किल्स क्या हैं?`, `Aapke skills kya hain?`]],
+  project_detail: [[`What else have you built?`, `आपने और क्या बनाया है?`, `Aapne aur kya banaya hai?`],
+    [`How do you work with AI?`, `आप AI के साथ कैसे काम करते हैं?`, `Aap AI ke saath kaise kaam karte hain?`]],
+  skills: [[`Which databases do you use?`, `आप कौन से डेटाबेस इस्तेमाल करते हैं?`, `Aap kaun se databases use karte hain?`],
+    [`What projects have you built?`, `आपने कौन-कौन से प्रोजेक्ट बनाए हैं?`, `Aapne kaun kaun se projects banaye hain?`]],
+  education: [[`What certifications do you have?`, `आपके पास कौन से सर्टिफिकेट हैं?`, `Aapke paas kaun se certifications hain?`],
+    [`What is your CGPA?`, `आपका CGPA कितना है?`, `Aapka CGPA kitna hai?`]],
+  certifications: [[`What is your CGPA?`, `आपका CGPA कितना है?`, `Aapka CGPA kitna hai?`],
+    [`What projects have you built?`, `आपने कौन-कौन से प्रोजेक्ट बनाए हैं?`, `Aapne kaun kaun se projects banaye hain?`]],
+  achievements: [[`What projects have you built?`, `आपने कौन-कौन से प्रोजेक्ट बनाए हैं?`, `Aapne kaun kaun se projects banaye hain?`],
+    [`What are your skills?`, `आपके स्किल्स क्या हैं?`, `Aapke skills kya hain?`]],
+  experience: [[`What projects have you built?`, `आपने कौन-कौन से प्रोजेक्ट बनाए हैं?`, `Aapne kaun kaun se projects banaye hain?`],
+    [`What are your skills?`, `आपके स्किल्स क्या हैं?`, `Aapke skills kya hain?`]],
+  workflow: [[`What projects have you built?`, `आपने कौन-कौन से प्रोजेक्ट बनाए हैं?`, `Aapne kaun kaun se projects banaye hain?`],
+    [`What are your skills?`, `आपके स्किल्स क्या हैं?`, `Aapke skills kya hain?`]],
+  abstain: [[`What projects have you built?`, `आपने कौन-कौन से प्रोजेक्ट बनाए हैं?`, `Aapne kaun kaun se projects banaye hain?`],
+    [`What are your skills?`, `आपके स्किल्स क्या हैं?`, `Aapke skills kya hain?`],
+    [`How can I contact you?`, `मैं आपसे कैसे संपर्क करूँ?`, `Main aapse contact kaise karoon?`]],
+};
+
 /** Follow-up chips, computed from the graph — zero inference cost. */
-export function followupsFor(intent, lang = 'en') {
-  const pick = FOLLOWUPS[intent] || FOLLOWUPS.abstain;
-  return pick.map(([en, hi, hinglish]) => tri(lang, en, hi, hinglish));
+export function followupsFor(intent, lang = 'en', persona = DEFAULT_PERSONA) {
+  const tables = persona === 'first' ? FOLLOWUPS_FIRST : FOLLOWUPS;
+  const table = tables[intent] || tables.abstain;
+  return table.map(([en, hi, hinglish]) => tri(lang, en, hi, hinglish));
 }
 
 /* the index is deterministic and cheap, but not free — build it once per base */
@@ -563,14 +693,21 @@ function indexFor(kb) {
  * @param {string} [opts.lang] language already smoothed by the caller's
  *                             tracker (§8.3) — otherwise detected per message
  * @param {string|null} [opts.focus] the conversation's carried focus entity (§8.2)
+ * @param {'first'|'third'} [opts.persona] whose voice the answer is written in.
+ *        Defaults to `'first'`: the answers read as Aashish talking about
+ *        himself ("my CGPA"), which is what a visitor browsing his portfolio
+ *        is being shown. `'third'` is the neutral phrasing the evaluation set
+ *        was written against. The direct identity question (`meta`) and the
+ *        injection reply disclose the assistant either way — see BUILD.meta.
  * @returns {{handled:boolean, extractive:boolean, abstained:boolean,
  *            injection:boolean, intent:string, project:string|null,
- *            focus:string|null, lang:string, text:string, sources:string[],
- *            followups:string[]}}
+ *            focus:string|null, lang:string, persona:string, text:string,
+ *            sources:string[], followups:string[]}}
  */
 export function quickAnswer(kb, query, opts = {}) {
   const question = String(query || '');
   const lang = opts.lang || detectLanguage(question).lang;
+  const persona = opts.persona === 'third' ? 'third' : DEFAULT_PERSONA;
   const det = detectIntent(question, kb);
 
   /* EVERY read below goes through the public view (§1): a `public:false` fact is
@@ -585,7 +722,8 @@ export function quickAnswer(kb, query, opts = {}) {
     /* the focus entity carries between turns: a caller passes back what this
        returned, and a pronoun follow-up resolves against it (§8.2) */
     focus: opts.focus || null,
-    intent: det.intent, project: det.project, lang, text: '', sources: [],
+    intent: det.intent, project: det.project, lang, persona,
+    text: '', sources: [],
     followups: [],
   };
 
@@ -596,19 +734,19 @@ export function quickAnswer(kb, query, opts = {}) {
 
   /* 2. hallucination bait abstains, then names what IS known (C7/C4) */
   if (det.intent === 'hallucination_bait') {
-    const known = BUILD.experience(kb, lang);
+    const known = BUILD.experience(kb, lang, { persona });
     return {
       ...base, handled: true, abstained: true,
-      text: `${ABSTAIN[lang] || ABSTAIN.en}\n${known.text}`,
+      text: `${abstainFor(lang, persona)}\n${known.text}`,
       sources: known.sources,
-      followups: followupsFor('abstain', lang),
+      followups: followupsFor('abstain', lang, persona),
     };
   }
 
   /* 3. verbatim-fact templates — the Quick Answer proper */
   const builder = BUILD[det.intent];
   if (builder) {
-    const built = builder(kb, lang, { question, project: det.project, withheld });
+    const built = builder(kb, lang, { question, project: det.project, withheld, persona });
     /* a declined (private) field asserts nothing about the visitor's question,
        so it reports as an abstention with no sources — but with a useful,
        published next step instead of the generic abstention string */
@@ -619,7 +757,7 @@ export function quickAnswer(kb, query, opts = {}) {
       ...base, handled: true, text: built.text,
       /* naming a project moves the focus; every other template carries it */
       focus: det.project || base.focus,
-      ...shape, followups: followupsFor(det.intent, lang),
+      ...shape, followups: followupsFor(det.intent, lang, persona),
     };
   }
 
@@ -629,11 +767,11 @@ export function quickAnswer(kb, query, opts = {}) {
   base.focus = searchRes.focus || base.focus;
 
   /* 4. prose intents: verbatim text now, model later if one exists */
-  const ex = extractive(kb, lang, det.intent, { project: det.project, hits, question });
+  const ex = extractive(kb, lang, det.intent, { project: det.project, hits, question, persona });
   if (ex) {
     return {
       ...base, extractive: true, text: ex.text, sources: ex.sources,
-      followups: followupsFor(det.intent, lang),
+      followups: followupsFor(det.intent, lang, persona),
     };
   }
 
@@ -648,10 +786,10 @@ export function quickAnswer(kb, query, opts = {}) {
     return e && FACT_KINDS.has(e.kind);
   });
   if (factHit && factHit.score >= MIN_TOP_SCORE) {
-    const fa = factAnswer(kb, lang, factHit, question);
+    const fa = factAnswer(kb, lang, factHit, question, persona);
     if (fa) {
       return { ...base, handled: true, text: fa.text, sources: fa.sources,
-        followups: followupsFor('skills', lang) };
+        followups: followupsFor('skills', lang, persona) };
     }
   }
 
@@ -661,10 +799,10 @@ export function quickAnswer(kb, query, opts = {}) {
   {
     const top = hits[0];
     if (top && top.score >= MIN_TOP_SCORE && top.kind === 'project') {
-      const fallback = extractive(kb, lang, 'project_detail', { project: null, hits, question });
+      const fallback = extractive(kb, lang, 'project_detail', { project: null, hits, question, persona });
       if (fallback) {
         return { ...base, extractive: true, text: fallback.text, sources: fallback.sources,
-          followups: followupsFor('project_detail', lang) };
+          followups: followupsFor('project_detail', lang, persona) };
       }
     }
   }
@@ -672,7 +810,7 @@ export function quickAnswer(kb, query, opts = {}) {
   /* 6. the §8.4 layer-1 abstention — reached without any inference */
   return {
     ...base, handled: true, abstained: true,
-    text: ABSTAIN[lang] || ABSTAIN.en,
-    followups: followupsFor('abstain', lang),
+    text: abstainFor(lang, persona),
+    followups: followupsFor('abstain', lang, persona),
   };
 }

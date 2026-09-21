@@ -18,6 +18,7 @@
    announcements (§10).
    ═══════════════════════════════════════════════════════════════ */
 import { quickAnswer } from '../answers/quick.mjs';
+import { resolveAnchor, anchorLabel } from './anchors.mjs';
 import { createLanguageTracker } from '../language/detect.mjs';
 import {
   probeCapabilities, chooseTier, probeWebGPU, tierInfo,
@@ -73,6 +74,10 @@ const escape = (s) => String(s);
  * @param {object} [opts.doc] @param {object} [opts.env]
  * @param {object} [opts.hooks]  scene/scroll integration (§12)
  * @param {object|null} [opts.modelPlan] §6.5 download plan, when a model exists
+ * @param {boolean} [opts.handsFree] proactive mode: answers move the page by
+ *        themselves, with nobody clicking. Off by default — a page that jumps
+ *        while you are typing is hostile, and this is what the voice layer
+ *        switches on once it exists.
  */
 export function createChat(opts = {}) {
   const doc = opts.doc || document;
@@ -80,6 +85,7 @@ export function createChat(opts = {}) {
   const hooks = opts.hooks || {};
   const launcher = opts.launcher || doc.getElementById('askAI');
   const track = createLanguageTracker('en');
+  let handsFree = !!opts.handsFree;
 
   let state = 'closed';        /* closed | loading | ready | error */
   let kb = null;
@@ -90,6 +96,7 @@ export function createChat(opts = {}) {
   let input = null;
   let focus = null;            /* §8.2 carried focus entity */
   let lastQuestion = '';
+  let lastAnchor = null;
   let noticeShown = false;
   let userScrolledUp = false;
   let stylesInjected = false;
@@ -116,6 +123,9 @@ export function createChat(opts = {}) {
   function build() {
     body = el('div', 'ai');
     body.hidden = true;
+    /* never a scroll target: the panel contains the answer, so it repeats the
+       very words a "show me where" lookup searches for. See ai/ui/anchors.mjs */
+    body.setAttribute('data-ai-ignore', '');
 
     const scrim = el('div', 'ai__scrim');
     scrim.addEventListener('click', close);
@@ -211,6 +221,53 @@ export function createChat(opts = {}) {
     return wrap;
   }
 
+  /* ── section: "show me where that is" (§12) ────────────────────
+     The target is resolved from the answer's FACTS against the live DOM, so
+     it follows the page's own content instead of a stored offset: reorder the
+     projects, move them to another scene, and the same question lands on the
+     same content. `anchors.mjs` is where that lives; the chat shell only
+     decides *when* to move.
+
+     It moves SILENTLY, and only in hands-free mode. Two rules, both from how
+     this has to feel in use:
+       · nothing is ever said about the navigation — not "moving to the
+         projects section", not "I couldn't find that". A recruiter listening
+         to an answer is being shown a portfolio, not a scrolling mechanism,
+         and a miss is simply a question with no place on the page.
+       · the typed chat stays plain. Auto-scrolling the page out from under
+         somebody who is mid-sentence is hostile; it is the voice layer that
+         needs the page to follow the answer. */
+  function sceneFor(node) {
+    let n = node;
+    while (n && n !== doc.body && n !== doc.documentElement) {
+      const tag = String(n.tagName || '').toUpperCase();
+      if (n.getAttribute?.('data-scene') || (tag === 'SECTION' && n.id)) return n;
+      n = n.parentElement;
+    }
+    return null;
+  }
+
+  function flash(node) {
+    if (!node?.classList?.add) return;
+    node.classList.add('is-ai-focus');
+    env.setTimeout?.(() => node.classList.remove('is-ai-focus'), 2400);
+  }
+
+  /** Move the page to where an answer came from. Never announces itself, and
+   *  does nothing at all when the fact has no place on this page. */
+  function showAnchor(anchor) {
+    if (!anchor) return false;
+    const scene = sceneFor(anchor.el) || anchor.el;
+    /* §12 keeps the page still while the panel is open; the page is being
+       asked to move instead, so the lock is released — and it stays released,
+       because a visitor watching the page follow the answer should not have
+       to close the panel to scroll it afterwards. */
+    hooks.releaseScroll?.();
+    hooks.scrollToAnchor?.(scene, anchor);
+    flash(anchor.el);
+    return true;
+  }
+
   function renderChips(list) {
     const chips = body.querySelector('.ai__chips');
     while (chips.firstChild) chips.removeChild(chips.firstChild);
@@ -222,11 +279,12 @@ export function createChat(opts = {}) {
     }
   }
 
+  /* the visitor's own words, in the voice the answers use (§10) */
   const starterChips = () => [
-    'What projects has he built?',
-    'What are his skills?',
-    'What is his CGPA?',
-    'How can I contact him?',
+    'What projects have you built?',
+    'What are your skills?',
+    'What is your CGPA?',
+    'How can I contact you?',
   ];
 
   /* ── section: answering ───────────────────────────────────────── */
@@ -249,6 +307,11 @@ export function createChat(opts = {}) {
     const res = quickAnswer(kb, text, { lang, focus });
     focus = res.focus || focus;
 
+    /* where on THIS page the answer came from — resolved by content, every
+       time, so an edited page resolves to the same facts */
+    const anchor = resolveAnchor(doc, { kb, ids: res.sources });
+    lastAnchor = anchor;
+
     const badge = res.injection ? 'SAFE REPLY'
       : res.abstained ? 'NO CLAIM MADE'
         : res.extractive ? 'QUICK ANSWER · VERBATIM FROM PORTFOLIO'
@@ -258,6 +321,9 @@ export function createChat(opts = {}) {
       badgeClass: res.abstained || res.injection ? 'is-note' : 'is-quick',
       sources: res.sources,
     });
+    /* hands-free only: nobody is holding a mouse, so the page follows the
+       answer by itself. A miss is silence — never an apology in the log. */
+    if (anchor && handsFree) showAnchor(anchor);
     renderChips(res.followups?.length ? res.followups : starterChips());
 
     if (res.intent === 'injection_suspect') {
@@ -364,9 +430,9 @@ export function createChat(opts = {}) {
       await loadKnowledge();
       await prepareModel();
       state = 'ready';
-      bubble('bot', 'Ask me anything about Aashish — his projects, skills, education, '
-        + 'certifications, or how to reach him. Answers here come from his portfolio data, '
-        + 'with no model loaded.',
+      bubble('bot', 'Ask me about my projects, skills, education, certifications, '
+        + 'or how to reach me. Every answer comes from my portfolio data, with no model '
+        + 'loaded.',
         { badge: 'QUICK ANSWERS READY · NO DOWNLOAD', badgeClass: 'is-quick' });
       renderChips(starterChips());
       input?.focus();
@@ -406,12 +472,31 @@ export function createChat(opts = {}) {
 
   /* ── public API (also used by dev-ai-probe.js) ────────────────── */
   const api = {
-    open, close, toggle, ask,
+    open, close, toggle, ask, showAnchor,
+    /* the voice layer of P-later flips this on; nothing else has to change */
+    setHandsFree(on) { handsFree = !!on; return handsFree; },
     get state() { return state; },
     get tier() { return tier; },
     get caps() { return caps; },
     get isOpen() { return !!body && !body.hidden; },
     get focus() { return focus; },
+    get handsFree() { return handsFree; },
+    /* exposed so the e2e probe can assert which section a question resolved
+       to without having to infer it from the scroll position */
+    get lastAnchor() {
+      if (!lastAnchor) return null;
+      const target = sceneFor(lastAnchor.el) || lastAnchor.el;
+      return {
+        why: lastAnchor.why, kind: lastAnchor.kind, id: lastAnchor.id,
+        topics: lastAnchor.topics, tag: lastAnchor.tag,
+        /* the element the content lives in, and the section the page will
+           actually move to — they differ, and the probe needs both */
+        text: String(lastAnchor.el?.textContent || '').slice(0, 60),
+        target: target?.id || null,
+        targetTag: target?.tagName || null,
+        label: anchorLabel(lastAnchor),
+      };
+    },
     ladderStatus: () => (ladder ? ladder.status() : null),
     onKey: (e) => { if (e.key === 'Escape' && body && !body.hidden) close(); },
   };
@@ -420,12 +505,22 @@ export function createChat(opts = {}) {
 }
 
 /** Boot helper the launcher calls: wires the button, Escape, and the hook set. */
-export function mount({ launcher, hooks } = {}) {
+export function mount({ launcher, hooks, handsFree } = {}) {
   const chat = createChat({
     launcher: launcher || document.getElementById('askAI'),
+    handsFree,
     hooks: hooks || {
       stopScroll: () => window.Director?.getLenis?.()?.stop?.(),
       startScroll: () => window.Director?.getLenis?.()?.start?.(),
+      /* "show me" needs the opposite of open(): scrolling has to be live,
+         and the move itself goes through the same scrollTo the chapter dots
+         use, so a pinned scene moves the way the site already knows how. */
+      releaseScroll: () => window.Director?.getLenis?.()?.start?.(),
+      scrollToAnchor: (scene) => {
+        const id = scene?.id ? `#${scene.id}` : null;
+        if (id && window.Director?.scrollTo) window.Director.scrollTo(id);
+        else scene?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+      },
       pauseScene: () => window.Film3D?.pause?.(),
       resumeScene: () => window.Film3D?.resume?.(),
       setSceneQuality: (m) => window.Film3D?.setQuality?.(m),

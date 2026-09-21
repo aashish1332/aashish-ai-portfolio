@@ -59,6 +59,9 @@ probe.err.txt
 film3d_recovered_0.js
 film3d_firsthalf_f_001ac2.txt
 
+# Agent/tooling state (holds only a project id, never anything to ship)
+.freebuff/
+
 # OS / editor
 Thumbs.db
 desktop.ini

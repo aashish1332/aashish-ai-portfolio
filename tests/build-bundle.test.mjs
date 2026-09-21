@@ -66,6 +66,61 @@ test('source masking separates code from comments, strings from both', () => {
     'masking must preserve line count so reports stay line-accurate');
 });
 
+test('a quote inside a regex literal does not swallow the comments after it', () => {
+  /* the construct that broke the masker: a character class containing an
+     apostrophe, a quote and a backtick. The first quote opened a phantom
+     "string", so every comment after it was classified as code — and the
+     build refused a file that was correct. Built from char codes so the test
+     itself is not a lesson in escaping. */
+  const Q = String.fromCharCode(39);
+  const BT = String.fromCharCode(96);
+  const source = [
+    `const strip = (s) => s.replace(/[${Q}${BT}]/g, ${Q}${Q});`,
+    'const url = /^https?:\\/\\//;',
+    'const half = total / count;',
+    '/* run dev-foo.js to check this */',
+    'import { y } from "./dev-thing.mjs";',
+  ].join('\n');
+  const { code, comments } = maskSource(source);
+
+  assert.ok(!code.includes('dev-foo.js'), 'a comment after a regex leaked into code');
+  assert.ok(comments.includes('dev-foo.js'), 'the comment after a regex was lost');
+  /* and a real import AFTER the regex is still code, or the fix would have
+     traded a false failure for a false pass */
+  assert.ok(code.includes('dev-thing.mjs'), 'a real import after a regex was masked away');
+  /* the regex bodies themselves are code, so nothing inside them is lost */
+  assert.ok(code.includes(`${Q}${BT}`), 'the regex body was masked away');
+  assert.ok(code.includes('https?:'), 'a URL-shaped regex was treated as a line comment');
+  assert.ok(code.includes('total / count'), 'a division was mistaken for a regex');
+  assert.equal(code.split('\n').length, source.split('\n').length,
+    'masking must preserve line count so reports stay line-accurate');
+});
+
+test('a dev reference in code is a failure, and in a comment it is only a note', () => {
+  /* the direction that matters: a masker that returns the wrong answer here
+     would ship a dev dependency while reporting it as harmless */
+  const dir = mkdtempSync(join(tmpdir(), 'devref-'));
+  try {
+    writeFileSync(join(dir, 'real.mjs'), 'import x from "./dev-helper.js";\n');
+    writeFileSync(join(dir, 'doc.mjs'), '/* see dev-helper.js for why */\n');
+    /* a file where a regex precedes the comment AND a real import follows it:
+       the masker has to get both the comment and the import right */
+    writeFileSync(join(dir, 'regex.mjs'),
+      'const s = (t) => t.replace(/[\u2019\u0027\u0060]/g, \'\');\n'
+      + '/* see dev-helper.js */\nimport y from "./dev-regex.js";\n');
+    const files = ['real.mjs', 'doc.mjs', 'regex.mjs'].map((rel) => ({ rel, abs: join(dir, rel) }));
+    const { failures, notes } = scanForDevReferences(files);
+    const failed = failures.map((f) => f.path).sort();
+    assert.deepEqual(failed, ['real.mjs', 'regex.mjs'],
+      'a dev import in code was not reported as a failure');
+    /* `regex.mjs` fails on its import, so only the comment-only file notes */
+    assert.deepEqual(notes.map((n) => n.path), ['doc.mjs'],
+      'a dev mention in a comment was not reported as a note');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('numeric values are matched digit-wise, so reformatting cannot hide one', () => {
   assert.ok(containsValue('call +91 62802 87425 now', '+91 6280287425'));
   assert.ok(containsValue('call +91 6280287425 now', '+91 6280287425'));

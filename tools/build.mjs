@@ -80,6 +80,14 @@ export const DEV_ONLY_PATTERNS = [
  * code), so this walks the text keeping comment and string state: line and
  * block comments become comment, and quoted strings are skipped so a URL
  * inside a string is never mistaken for a comment.
+ *
+ * Regex literals are consumed as code too, and that is load-bearing rather
+ * than tidy: a character class such as the one that strips apostrophes
+ * contains a quote character, so a masker that only knows about strings
+ * opens a "string" at that quote and swallows every comment after it. The
+ * symptom was this check failing on a file that was correct, but the same
+ * confusion in the other direction would report a real dependency as a
+ * comment — which is the direction that ships something it must not.
  */
 /* Named so the three quote characters never appear escaped in a regex or a
    string literal — a build script that cannot parse its own quote handling is
@@ -89,6 +97,48 @@ const QUOTES = {
   single: String.fromCharCode(39),
   backtick: String.fromCharCode(96),
 };
+
+/** Characters after which a `/` opens a REGEX rather than a division. */
+const REGEX_AFTER = new Set(['(', ',', '=', ':', '[', '!', '&', '|', '?',
+  '{', '}', ';', '+', '-', '*', '%', '^', '~', '<', '>', '\n']);
+const REGEX_KEYWORD = /(?:^|[^\w$])(return|typeof|instanceof|in|of|new|delete|void|do|else|case|await|yield)$/;
+
+/**
+ * Can a `/` at this point in the code be a regex literal?
+ *
+ * The distinction is the whole problem: `a / b` is division after an
+ * identifier or a closing bracket, and `/x'/` is a regex after an operator.
+ * Getting it wrong in the *permissive* direction is safe here (the regex body
+ * is code, so a reference inside it still fails the build); getting it wrong
+ * the other way is what the fix above is about.
+ */
+function canStartRegex(codeSoFar) {
+  const trimmed = codeSoFar.replace(/\s+$/, '');
+  if (!trimmed) return true;
+  const last = trimmed[trimmed.length - 1];
+  if (REGEX_AFTER.has(last)) return true;
+  return REGEX_KEYWORD.test(trimmed);
+}
+
+/**
+ * Index just past a regex literal starting at `start`, or -1 when this `/` was
+ * a division. A regex cannot contain a raw newline, which is what makes a
+ * wrong guess cheap to detect instead of swallowing the rest of the file.
+ */
+function scanRegex(text, start) {
+  let i = start + 1;
+  let inClass = false;
+  while (i < text.length) {
+    const ch = text[i];
+    if (ch === '\\') { i += 2; continue; }
+    if (ch === '\n') return -1;
+    if (ch === '[') inClass = true;
+    else if (ch === ']') inClass = false;
+    else if (ch === '/' && !inClass) return i + 1;
+    i += 1;
+  }
+  return -1;
+}
 
 export function maskSource(text) {
   let code = '';
@@ -105,6 +155,14 @@ export function maskSource(text) {
       if (two === '/*') { blank('/'); blank('*'); i += 2; state = 'block'; continue; }
       if (two === '//') { blank('/'); blank('/'); i += 2; state = 'line'; continue; }
       const ch = text[i];
+      if (ch === '/' && canStartRegex(code)) {
+        const end = scanRegex(text, i);
+        if (end > i) {
+          for (let k = i; k < end; k++) push(text[k], false);
+          i = end;
+          continue;
+        }
+      }
       if (ch === QUOTES.double || ch === QUOTES.single || ch === QUOTES.backtick) {
         push(ch, false); i += 1;
         while (i < text.length && text[i] !== ch) {

@@ -89,6 +89,18 @@ export const STYLES = `
   color: var(--paper-faint); border: 1px solid var(--line); padding: 3px 6px;
 }
 
+/* The flash on whatever the answer pointed at, in hands-free mode only.
+   Outline only: the page's own hover/active styling must not be fought, and
+   it disappears on its own — it is a pointer, not a state. */
+.is-ai-focus {
+  outline: 1px solid var(--cyan);
+  outline-offset: 6px;
+  transition: outline-color .4s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .is-ai-focus { transition: none; }
+}
+
 .ai__chips { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 16px 10px; }
 .ai__chip {
   font-family: var(--font-mono); font-size: 10px; letter-spacing: .04em;

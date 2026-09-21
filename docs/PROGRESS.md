@@ -297,11 +297,22 @@ Full detail in `docs/BENCHMARKS.md`. Headlines:
 **Gate:** *tokenizer, model, `count_parameters.py`, local smoke train + resume
 test → loss decreases; resume verified; param count printed.*
 
-**Verdict: the code is complete and the param count is printed; two of the
-three gate items are UNVERIFIED on this machine because PyTorch is not
-installed (owner's call: no install, run the training gates on Kaggle in
-P4).** They are not claimed. `docs/TRAINING.md` carries the same verdict at
-item level.
+**Verdict, revised: all three gate items are VERIFIED — on CPU, at smoke
+scale (1.82M params), after PyTorch 2.14.0+cpu was installed on this machine.**
+The earlier "two of three are UNVERIFIED" line is left in the history rather
+than quietly overwritten, because the difference between *not run* and *run*
+is the whole point of the section.
+
+| Gate item | Evidence |
+|---|---|
+| *loss decreases* | `python -m training.scripts.train_smoke --steps 50` → `gate 'loss decreases': PASS (6.6847 → 4.3151)`, 50 steps in 19.2 s, 1,335 tokens/s |
+| *resume verified* | second run `--steps 60 --resume auto` → `resumed from latest.pt at step 50 (loss history 50 entries, 27,648 tokens consumed)`, ran to a PASS (6.6847 → 4.1782); pruning left `[40, 50, 60]` |
+| *param count printed* | `inference/count_parameters.py --config all --gate` analytic band gate, **and** the materialised check: 1,820,352 params over 39 state-dict keys, matching the HF key set name-for-name |
+
+Those two figures are a **CPU** smoke run, not a T4 Stage A run: they verify
+the loop, the objective and the resume semantics, and they do not pretend to
+speak for a 37.9M-parameter config A over several sessions.
+`docs/TRAINING.md` carries the same verdict at item level.
 
 ### Done
 
@@ -373,17 +384,13 @@ pipeline seam |
 
 ### Still open (P3)
 
-* **`loss decreases` — UNVERIFIED.** No torch on this machine; owner chose to
-  run it on Kaggle. `train_smoke.py --gate` is written and prints a PASS/FAIL
-  verdict on equal-size loss windows; it has not been executed.
-* **`resume verified` — UNVERIFIED for the training loop.** Everything the
-  resume depends on *is* verified without torch: atomic writes, key
-  validation, latest/best selection, pruning, RNG round-trip, and the exact
-  data-stream continuation (`test_checkpoint.py`, 17 tests). What is missing
-  is one integration run showing a torch optimizer/scheduler/GradScaler
-  surviving the trip.
-* **Parameter count is one derivation here, not two.** The analytic count is
-  exact and test-pinned; the materialised cross-check prints `NOT INSTALLED`.
+* **A GPU run at Stage A scale is still ahead of us.** The gates pass on CPU
+  at smoke scale; nothing here speaks for config A on a T4, and a Kaggle
+  account and quota are the owner's to provide.
+* **The parameter count is now two derivations, not one.** The analytic count
+  remains test-pinned, and the materialised cross-check runs whenever torch is
+  present — both read 1,820,352 for the smoke config, over the same 39
+  state-dict keys.
 * **The seed corpus is synthetic.** Hindi fertility at 1k overstates the
   problem for a real 16k vocab; no quality claim may rest on it.
 * **Vocab size is not frozen.** §7.2's 12–16k is decided in P4 from the
@@ -395,8 +402,8 @@ pipeline seam |
 `ai/data/` (`pipeline.py`, `dataset.py`, `langid.py`, `facts.py`) ·
 `ai/language/lexicons.json` · `ai/knowledge/placeholders.mjs` ·
 `inference/count_parameters.py` · `training/scripts/` (`make_seed_corpus.py`,
-`prepare_data.py`, `checkpoint.py`, `train_smoke.py`) · `tests/py/` (6 files,
-92 tests) · `tests/placeholders.test.mjs` · `tests/lexicons.test.mjs` ·
+`prepare_data.py`, `checkpoint.py`, `train_smoke.py`) · `tests/py/` (12 test
+modules, 219 tests) · `tests/placeholders.test.mjs` · `tests/lexicons.test.mjs` ·
 `tests/langid-fixture.test.mjs` · `tests/fixtures/` · `docs/AI_ARCHITECTURE.md` ·
 `docs/TRAINING.md` · `docs/DATA_LICENSES.md` · `docs/BENCHMARKS.md` ·
 `npm run test:all` · `npm run params` · `npm run smoke`
@@ -428,6 +435,10 @@ Measured: bundle 26 files / 354,105 B · `knowledge.json` 24,326 B · the
 withheld number appears in **no** shipped file, and the two files that
 publish it deliberately (`index.html`, `js/terminal.js`) are allow-listed
 entries with a reason, reported as notes on every build.
+
+As of the §10/§12 work the same build is **27 files / 387,696 B**
+(`knowledge.json` unchanged at 24,326 B) with the same verdict; the figures
+above are left as the numbers that were measured for that phase.
 
 ### Bugs found
 
@@ -557,3 +568,126 @@ otherwise be written under time pressure on Kaggle. Done here:
 `tokens_per_second`) · `training/notebooks/train_stage_a.ipynb` ·
 `tests/py/test_fetch_corpus.py` · `tests/py/test_estimate_budget.py` ·
 `tests/py/test_train_scripts.py` · `docs/TRAINING.md` · `docs/DATA_LICENSES.md`
+
+---
+
+## Voice, and a page that follows the answer (§10/§12)
+
+**Gate:** the assistant speaks as Aashish ("my CGPA", not "his CGPA"); when
+an answer comes from somewhere on the page, the page moves to that place —
+and keeps working after the page is edited.
+
+### Done
+
+* **The answers are written in Aashish's voice (§10).** `persona: 'first'` is
+the default in `quickAnswer`; `'third'` is one option away and the evaluation
+set still runs against it. Both phrasings sit next to each other at every
+template, in all three languages, via a `pick(persona, third, first)` helper —
+not a regex pass over the finished text, which would have produced wrong
+grammar the first time a template changed shape and would have been invisible
+in review.
+
+  Two deliberate exceptions, both with a test:
+  * the **identity question** ("who are you", "are you Aashish?") discloses
+    that a portfolio assistant is answering in his voice. Answering "yes, I'm
+    Aashish" would be a lie about a person, and `tests/intent.test.mjs` already
+    refused that claim for the injection reply;
+  * the **injection reply** stays the neutral safety string for the same reason.
+
+  The refusal follows the voice too: an abstention asserts nothing, so a page
+  that speaks as Aashish must not switch to third person exactly when it has
+  nothing to say. `ABSTAIN_FIRST` / `abstainFor` are the one place that lives.
+* **The intent rules learned the second person.** A visitor following the
+  voice asks "how do **you** build things", "list **your** projects" —
+  phrasings the Latin-only patterns did not cover, so they fell to
+  `project_detail` (one project) instead of the list. Six alternatives added,
+  and the chips are tested to still route, because a chip that abstains is a
+  dead click.
+* **`ai/ui/anchors.mjs` — the section an answer came from, resolved by
+  content.** It stores no offset, no index and no section id. Every answer
+  resolves fresh against the live DOM:
+
+  | Signal | Why it survives an edit |
+  |---|---|
+  | `data-ai-topics` on a section | the declaration travels with the markup |
+  | the fact's own words (name, codename, aliases) found in an element | the section carries its content with it |
+  | specificity (deeper beats shallower; `<main>` and `<body>` never qualify) | stops "the whole page contains the word" from winning |
+
+  A miss returns `null`, so the page does not move. Scoring counts **facts
+  covered**, not words matched — otherwise one project card outranked the
+  section holding two of the three projects the question was about.
+* **§12 — the navigation is never spoken about, and the typed chat stays
+  plain.** No "moving to the projects section", no "I couldn't find that":
+  a miss is silence. The page moves only in hands-free mode; auto-scrolling the
+  page out from under somebody who is mid-sentence is hostile, and the voice
+  layer is what needs the page to follow. `setHandsFree(true)` is the whole
+  switch — voice work will not need to touch the panel again.
+* **`dev-anchor-probe.js` — verifies the claim by editing the page first.**
+  It opens the real portfolio, records where seven questions resolve, then
+  **renames a whole scene, moves it, strips its declarations** and moves a
+  project into a scene of its own — and asks again. 20/20 checks, including
+  `hands-free mode moved the page by itself  scrollY 0 → 5059`.
+
+### Measured
+
+| Claim | Result |
+|---|---|
+| Every question resolves to a real section, as shipped | 7/7 — `scene-work` for projects, `scene-end` for contact, `scene-story` for CGPA and certificates, `scene-credits` for skills |
+| Still true after renaming and moving a scene, and moving a project | 7/7, and the moved project resolved to its **new** section |
+| Hands-free scroll actually moves the page | `scrollY 0 → 5059` |
+| Cost per resolution | **14.6–29 ms**, inside §4's 50 ms task budget (a bounded walk of ≤800 elements, no layout read) |
+| Tests | **254 JS + 219 Python**, 0 failures |
+
+### Bugs found (each one would have shipped)
+
+1. **A chunked prefill attended to its own future.** `generate()` decodes one
+token at a time, so nothing in P3 fired it — but `is_causal` is aligned
+top-left by PyTorch, so for t>1 new tokens over a longer cache it masks the
+wrong pairs, and query row 0 sees the chunk's own future which every later
+layer inherits. No bounds check can see this: every index is legal. Now an
+explicit bottom-right mask, with `test_chunked_prefill_matches_a_full_forward`
+asserting **every** position (measured divergence with the old code: 1.78e-01
+at the logits), across a parametrised split set (4+4, 2+3+3, 1×6).
+2. **The assistant found its own panel.** "Show me where the grocery project
+is" resolved to the `SHOW ME · Smart Grocery List Generator` button, because
+the chat repeats the answer text and the walk saw it. `data-ai-ignore` is now
+an explicit opt-out on the panel subtree — measured, not imagined.
+3. **One project card outranked the section holding two.** Counting matched
+*words* let a single card's repeated hits tie with a section covering more of
+the question. Scoring counts facts covered, and a test pins it.
+4. **A bare `<span>` beat the card the name belonged to**, because depth was
+the only signal. Inline tags with no id now pay a small penalty: a heading or
+an article is a place to stand, a fragment is not.
+5. **The build's code/comment masker could be fooled by a regex literal.**
+A character class containing an apostrophe opened a phantom "string", so
+every comment after it was classified as code — the check then *failed a file
+that was correct*. Fixed by consuming regex literals as code, which also
+closes the dangerous direction (a real dependency mis-read as a comment and
+reported as harmless). Two tests: the exact construct, and one asserting that
+a dev import after a regex-containing line is still a **failure**.
+
+### Still open
+
+* **Voice input is not built.** What exists is the mode flag the page's
+  following behaviour hangs off, and the honest statement that no microphone,
+  no wake word and no speech synthesis exist anywhere in this build. The
+  section-following does not depend on it: it is driven by the answer, so a
+  typed question in hands-free mode moves the page the same way.
+* **The anchor is per-page, not per-viewport.** It chooses a section and
+  flashes the element inside it; where the film's pinned scroll puts that
+  scene on screen is still the director's business, so the probe measures the
+  resulting `scrollY` instead of assuming a position.
+* **Two sections can both be right.** On a page that names the same project in
+  its card *and* in its build ledger, both are true answers. The shipped page
+  settles it with `data-ai-topics`; the probe removes that declaration
+  deliberately, to show what content alone does (it lands on a section that
+  still names 2 of 3). Worth knowing before adding a third mention.
+
+### Evidence
+`ai/ui/anchors.mjs` · `ai/ui/chat.mjs` (`handsFree`, `showAnchor`, no
+narration) · `ai/ui/styles.mjs` · `ai/answers/quick.mjs` (`persona`, `pick`) ·
+`ai/intent/rules.mjs` (`ABSTAIN_FIRST`, second-person patterns) ·
+`ai/model/model.py` (chunked-prefill mask) · `tests/anchors.test.mjs` (18) ·
+`tests/quick-answers.test.mjs` (QA-10, QA-11, the §12 narration guard) ·
+`tests/py/test_model_torch.py` (15) · `tests/build-bundle.test.mjs` (masker) ·
+`dev-anchor-probe.js` · `index.html` (`data-ai-topics`) · `npm run test:all`

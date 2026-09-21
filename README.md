@@ -126,6 +126,14 @@ per answer: *"Quick answer — no AI model on this device"*. A scratch model
 and training pipeline built and tested; the browser runtime arrives in
 P6–P7, and Stage A training runs on Kaggle in P4.
 
+The answers are written **as Aashish** — "my CGPA", not "his CGPA" — because
+the visitor is being introduced to him, and once voice mode drives the panel
+the page moves by itself to the part an answer came from. That part is found
+by looking at the page's own content every time, not at a stored position, so
+it still works after the sections are reordered or renamed; a question with no
+place on the page simply does not move it. The move is never narrated, and it
+is off in the typed chat — `setHandsFree(true)` is the whole switch.
+
 Nothing AI-related loads until you click: the launcher is **958 B gz** and
 the page makes **zero** AI requests before that.
 
@@ -138,7 +146,7 @@ the page makes **zero** AI requests before that.
 | [docs/PROGRESS.md](docs/PROGRESS.md) | phase-by-phase log, including what is unfinished |
 
 ```bash
-npm run test:all     # 226 JS + 204 Python tests
+npm run test:all     # 254 JS + 219 Python tests
 npm run params       # parameter count + §7.1 band gate
 npm run smoke        # tokenizer contract, shards, data cursor, checkpoints
 npm run build        # production bundle → dist/ (stripped knowledge base, no dev tooling)

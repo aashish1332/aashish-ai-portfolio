@@ -5,15 +5,59 @@ is labelled ESTIMATED or NOT TESTED — never rounded up into a pass.
 
 ---
 
+## Voice + section-following (§10/§12) — 2026-09-21
+
+**Method:** `node dev-anchor-probe.js` against the real portfolio on
+`localhost:5577` (headless Chrome, desktop 1280×800) and
+`python -m unittest tests.py.test_model_torch` on torch 2.14.0+cpu.
+
+### Anchor resolution — content, after the page was edited
+
+The probe asks seven questions, records the section each resolves to, then
+**renames a whole scene, moves it to the end, strips its `data-ai-topics`, and
+moves one project into a scene of its own** — and asks again.
+
+| Claim | As shipped | After the edit |
+|---|---|---|
+| Questions resolving to a real section | **7/7** | **7/7** |
+| Projects → | `#scene-work` | a section still naming 2 of 3 |
+| The moved project → | `#scene-work` | its **new** section, found only there |
+| Contact → | `#scene-end` | `#scene-end` |
+| CGPA, certificates → | `#scene-story` | `#scene-story` |
+| Skills → | `#scene-credits` | `#scene-credits` |
+
+| Metric | Value |
+|---|---|
+| Resolution cost | **14.6–29 ms** per call (20-call average per run) — inside §4's 50 ms task budget |
+| Elements walked | bounded at 800; no layout read, so no forced reflow |
+| Hands-free scroll | `scrollY 0 → 5059` with nobody clicking |
+| Page errors | 0 |
+
+### Training gates, CPU smoke (1.82M params)
+
+| Metric | Value |
+|---|---|
+| `loss decreases` | **PASS** — 6.6847 → 4.3151 over 50 steps (windowed verdict) |
+| Throughput | **1,335 tokens/s** (batch 4 × block 128), 19.2 s for 50 steps |
+| `resume verified` | resumed from `latest.pt` at step 50 with 50 loss-history entries and 27,648 tokens consumed; continued to a PASS (6.6847 → 4.1782) |
+| Checkpoint pruning | `[30, 40, 50]` → `[40, 50, 60]` |
+| Materialised param count | **1,820,352** over 39 state-dict keys, matching the HF key set |
+
+Device note: **CPU, not a T4.** These verify the loop, the objective and the
+resume; they say nothing about config A on a GPU, and are not quoted as if
+they did.
+
+---
+
 ## Production build — dev/prod split (2026-09-20)
 
 **Method:** `npm run build` (node v24.13.0), sizes by byte count on disk.
 
 | Metric | Value |
 |---|---|
-| Shipped files | **26** |
-| Bundle size | **354,105 B** total |
-| `knowledge.json` (stripped) | 24,326 B, sha256 `e6efeabf4c9ee4bc…` |
+| Shipped files | **27** |
+| Bundle size | **387,696 B** total |
+| `knowledge.json` (stripped) | 24,326 B, sha256 `205cd198ab42e6ca…` |
 | Withheld values in the bundle | **0** — id kept as metadata, value gone |
 | Files publishing the value deliberately | 2 (`index.html`, `js/terminal.js`) — allow-listed, reported per build |
 | Dev tooling in the bundle | **0** |

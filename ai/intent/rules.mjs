@@ -91,11 +91,16 @@ const PATTERNS = {
     /\b(linkedin|github|link|links|profile|resume|cv)\b/i,
     /* "where can I see his code" must reach the links, not the skill whose
        NAME contains the word code ("VS Code"). Guarded by test. */
-    /\b(repo|repos|repository|repositories|source code|his code)\b/i,
+    /\b(repo|repos|repository|repositories|source code|(his|your) code)\b/i,
     /\b(reach|touch|connect|hire)\b/i,
   ],
   list_projects: [
-    /\b(list|all|show|which|what) ?(his |the )?(projects|work|apps?)\b/i,
+    /* `your` as well as `his`: the assistant answers in the first person
+       (§10), so a visitor following that voice asks "list your projects".
+       Without the alternative, that phrasing skipped this bucket and landed
+       on `project_detail` — the same facts, but as one project instead of
+       the list. */
+    /\b(list|all|show|which|what) ?(his |her |your |the )?(projects|work|apps?)\b/i,
     /\bprojects (list|batao|dikhao|dikha|kaun|kya|kitne)\b/i,
     /\b(kaun kaun se|kitne) (projects?|project)\b/i,
     /\bhow many projects\b/i,
@@ -109,6 +114,7 @@ const PATTERNS = {
        retrieval fallback. tests/intent.test.mjs has a guard per stem. */
     /\b(skills?|tech|stack|technolog|languages?|frameworks?|tools?|databases?)/i,
     /\b(what|which) (can|does) he (do|use|know)\b/i,
+    /\b(what|which) (can|do) (you|u) (do|use|know|work with)\b/i,
     /\bskills batao\b/i,
     /\bkya (aata|aati) hai\b/i,
     /\bkaun si language\b/i,
@@ -117,6 +123,7 @@ const PATTERNS = {
     /\b(educat|study|studies|studying|college|university|degrees?|schools?|graduat|b\.?tech|cgpa|gpa|marks?)/i,
     /\b(padhai|padhaai)\b/i,
     /\bwhere does he (study|go to school)\b/i,
+    /\bwhere do (you|u) (study|go to school)\b/i,
   ],
   certifications: [
     /\b(certificat|certified|infosys|masai|iit ?ropar|minor)/i,
@@ -127,6 +134,7 @@ const PATTERNS = {
   ],
   workflow: [
     /\b(how does he (use|build|work|write|code|learn)|ai ?(assisted|generated|driven))\b/i,
+    /\b(how do (you|u) (use|build|work|write|code|learn)|how (you|u) build)\b/i,
     /\b(did he (use|write) (ai|the code)|who wrote the code)\b/i,
     /\b(workflow|approach|method)\b/i,
     /\b(kind of developer|what kind of dev)\b/i,
@@ -240,6 +248,23 @@ export const ABSTAIN = {
   hi: 'यह जानकारी अभी Aashish के पोर्टफोलियो में उपलब्ध नहीं है।',
   hinglish: 'Ye information abhi Aashish ke portfolio mein available nahi hai.',
 };
+
+/* The same refusal in the first-person voice (§10). An abstention is not a
+   safety string — it asserts nothing — so it is free to follow the persona,
+   and a page that speaks as Aashish must not switch to third person exactly
+   when it has nothing to say. Only the *identity* answers are kept neutral;
+   see `BUILD.meta` and `INJECTION_REPLY`. */
+export const ABSTAIN_FIRST = {
+  en: "I don't have that in my portfolio yet.",
+  hi: 'यह जानकारी अभी मेरे पोर्टफोलियो में उपलब्ध नहीं है।',
+  hinglish: 'Ye information abhi mere portfolio mein available nahi hai.',
+};
+
+/** The abstention line for a voice — unknown languages fall back to English. */
+export function abstainFor(lang, persona = 'first') {
+  const table = persona === 'first' ? ABSTAIN_FIRST : ABSTAIN;
+  return table[lang] || table.en;
+}
 
 /* §9: a safe, honest reply to prompt-injection attempts. It must never
    assert a fact and never pretend to have hidden instructions. */

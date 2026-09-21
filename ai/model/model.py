@@ -17,6 +17,11 @@ Notes that matter for this size of model:
   lose long-range positions.
 * The KV cache is tiny at this scale (§7.1: ~10 KB/token fp16), so the
   implementation is deliberately simple: a list of per-layer (k, v).
+* **Chunked prefill needs an explicit mask.** `is_causal` is aligned
+  top-left, so a chunk of t>1 tokens over a longer cache would be masked
+  against the wrong pairs and could attend to its own future. One-token
+  `generate()` never hits it; the mask is built in `Attention.forward` so
+  nothing downstream has to know.
 
 Importing this module requires torch. Everything that must work without
 it (config, parameter count, the schema) lives in `config.py` / `plan.py`.
@@ -28,17 +33,39 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-import inspect
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# `enable_gqa` landed in torch 2.5. Detected from the real signature rather
-# than a version string, and falling back to `repeat_kv` — which is the
-# same grouping, just with the memory the expansion costs.
-_SDPA_KWARGS = set(inspect.signature(F.scaled_dot_product_attention).parameters)
-HAS_NATIVE_GQA = "enable_gqa" in _SDPA_KWARGS
+
+def _probe_native_gqa() -> bool:
+    """Detect `enable_gqa` by *using* it, not by reading a signature.
+
+    Two reasons this is a probe and not `inspect.signature`:
+
+    1. torch 2.14 makes ``scaled_dot_product_attention`` a builtin, so
+       signature inspection raises ``ValueError: no signature found for
+       builtin`` and the import dies.
+    2. Even a readable signature only proves the kwarg is *accepted*, not
+       that the kernel honours the grouping. A 1x1x1 tensor probe answers
+       the real question for effectively zero cost.
+
+    The shape check is load-bearing: with 2 query heads and 1 KV head, a
+    kernel that ignored ``enable_gqa`` would either fail on the head-count
+    mismatch or return the wrong shape.
+    """
+    q = torch.zeros(1, 2, 1, 4)
+    kv = torch.zeros(1, 1, 1, 4)
+    try:
+        out = F.scaled_dot_product_attention(q, kv, kv, enable_gqa=True)
+    except (TypeError, RuntimeError, ValueError):
+        return False
+    return tuple(out.shape) == (1, 2, 1, 4)
+
+
+# `enable_gqa` landed in torch 2.5. When it is absent we fall back to
+# `repeat_kv` — the same grouping, just paying the expansion's memory.
+HAS_NATIVE_GQA = _probe_native_gqa()
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -156,16 +183,32 @@ class Attention(nn.Module):
             k = repeat_kv(k, self.n_rep)
             v = repeat_kv(v, self.n_rep)
 
+        # Only pass `enable_gqa` when the installed torch actually has it.
+        # Passing `enable_gqa=False` on an older torch raises TypeError, which
+        # would make the repeat_kv fallback above unreachable dead code.
+        gqa_kw = {"enable_gqa": use_gqa} if HAS_NATIVE_GQA else {}
+
         if attention_mask is not None:
             out = F.scaled_dot_product_attention(
-                q, k, v, attn_mask=attention_mask, scale=self.scaling,
-                enable_gqa=use_gqa)
-        else:
-            # A single query token against a cache is always fully visible;
-            # anything longer is strictly causal.
+                q, k, v, attn_mask=attention_mask, scale=self.scaling, **gqa_kw)
+        elif t > 1 and kv_len > t:
+            # A *chunk* appended to a cache. `is_causal` cannot express this:
+            # PyTorch aligns its causal mask top-left, so for 2 new tokens over
+            # a 6-token cache it would mask the wrong pairs. The correct mask is
+            # bottom-right aligned — query i may see keys up to (kv_len - t + i)
+            # — and it has to be explicit. Without this, the first row of the
+            # chunk attends to the last row of the same chunk, i.e. to the
+            # future, and every later layer then inherits the pollution.
+            chunk_mask = torch.full((t, kv_len), float("-inf"),
+                                    dtype=q.dtype, device=q.device)
+            chunk_mask = torch.triu(chunk_mask, diagonal=kv_len - t + 1)
             out = F.scaled_dot_product_attention(
-                q, k, v, is_causal=(t > 1 and t == kv_len), scale=self.scaling,
-                enable_gqa=use_gqa)
+                q, k, v, attn_mask=chunk_mask, scale=self.scaling, **gqa_kw)
+        else:
+            # Every query token either has no cache (t == kv_len) or is the only
+            # one (t == 1), where causal and full attention coincide.
+            out = F.scaled_dot_product_attention(
+                q, k, v, is_causal=(t > 1 and t == kv_len), scale=self.scaling, **gqa_kw)
         out = out.transpose(1, 2).reshape(b, t, self.num_heads * self.head_dim)
         return self.o_proj(out)
 

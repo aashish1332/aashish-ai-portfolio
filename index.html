@@ -99,7 +99,11 @@
   <canvas id="filmgl" aria-hidden="true"></canvas>
 
   <!-- ══════════════════ SCENE 01 · HERO / OPENING SHOT ══════════════════ -->
-  <section class="scene scene--hero" id="scene-hero" data-scene="hero">
+  <!-- data-ai-topics: the assistant's "show me where that is" resolves a
+       section by CONTENT, not by position. Declaring the topics here is the
+       strongest signal — and it travels with the markup, so reordering or
+       moving a section never invalidates it. See ai/ui/anchors.mjs. -->
+  <section class="scene scene--hero" id="scene-hero" data-scene="hero" data-ai-topics="profile intro name">
     <div class="pinwrap">
       <div class="hero__frame">
         <p class="hero__kicker">A FILM BY AASHISH KUMAR</p>
@@ -126,7 +130,7 @@
   </div>
 
   <!-- ══════════════════ SCENE 02 · THE STORY ══════════════════ -->
-  <section class="scene scene--story" id="scene-story" data-scene="story">
+  <section class="scene scene--story" id="scene-story" data-scene="story" data-ai-topics="story about education achievements certifications skills">
     <div class="pinwrap">
       <div class="story__content">
         <div class="story__header">
@@ -163,7 +167,7 @@
   </section>
 
   <!-- ══════════════════ SCENE 03 · THE WORK (THREE TAKES) ══════════════════ -->
-  <section class="scene scene--work" id="scene-work" data-scene="work">
+  <section class="scene scene--work" id="scene-work" data-scene="work" data-ai-topics="projects project work">
     <div class="pinwrap">
       <div class="takes">
         <!-- TAKE 1 -->
@@ -249,7 +253,7 @@
        reel does it too — one ledger per film, split into what was directed
        (spec, architecture, security, review) and what was machine-written to
        that spec. Sourced verbatim from the CV's own wording. -->
-  <section class="scene scene--codir" id="scene-codir" data-scene="codir">
+  <section class="scene scene--codir" id="scene-codir" data-scene="codir" data-ai-topics="workflow ai process attribution">
     <div class="pinwrap">
       <div class="codir__content">
         <div class="codir__header">
@@ -351,7 +355,7 @@
   </section>
 
   <!-- ══════════════════ SCENE 05 · INTERLUDE (THE TESSERACT) ══════════════════ -->
-  <section class="scene scene--interlude" id="scene-interlude" data-scene="interlude">
+  <section class="scene scene--interlude" id="scene-interlude" data-scene="interlude" data-ai-topics="interlude craft">
     <div class="pinwrap">
       <div class="interlude__content">
         <span class="interlude__kicker">INTERMISSION</span>
@@ -369,7 +373,7 @@
   </section>
 
   <!-- ══════════════════ SCENE 06 · CREDITS ROLL ══════════════════ -->
-  <section class="scene scene--credits" id="scene-credits" data-scene="credits">
+  <section class="scene scene--credits" id="scene-credits" data-scene="credits" data-ai-topics="credits stack skills tools certifications">
     <div class="pinwrap">
       <div class="credits__overflow">
         <div class="credits__roll" id="creditsRoll">
@@ -422,7 +426,7 @@
   </section>
 
   <!-- ══════════════════ SCENE 07 · POST-CREDITS ══════════════════ -->
-  <section class="scene scene--end" id="scene-end" data-scene="end">
+  <section class="scene scene--end" id="scene-end" data-scene="end" data-ai-topics="contact reach links email">
     <div class="pinwrap">
       <div class="end__content">
         <span class="end__postcredit">POST-CREDIT SCENE</span>
