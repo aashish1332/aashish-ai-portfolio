@@ -268,7 +268,6 @@ test('VOICE-5: press-to-talk answers the question and lets the page follow', () 
   const { voice, chat, nick } = build(2);
   voice.enable();
   assert.equal(chat.handsFree, true, 'proactive mode is the point of the button');
-  assert.equal(chat.working, 1);
   assert.equal(nick.started, 1);
 
   const r = voice.onFinal('what are your projects');
@@ -277,6 +276,22 @@ test('VOICE-5: press-to-talk answers the question and lets the page follow', () 
 
   voice.onFinal('hey aashish, what is your name');
   assert.deepEqual(chat.asked[1], 'what is your name', 'a wake phrase is still stripped');
+});
+
+test('VOICE-5: listening arms nothing — no §6.3 rung makes recognition faster', () => {
+  /* Every rung acts on the model or the scene (pace generation, shorten the
+     budget, lower scene quality, quick answers only) and rung 3's cost is
+     measured: 21 shader programs relinked, 1221 ms of blocked main thread.
+     Holding the film down for a listen protects a generation that is not
+     running — which is the same mistake as arming it for a panel that is
+     merely open, one door along. */
+  const chat = fakeChat();
+  const { voice } = build(3, chat);
+  voice.enable();
+  assert.equal(chat.working, 0, 'the ladder is armed for answering, not for listening');
+  assert.equal(voice.status().listening, true, '…and it really is listening');
+  voice.disable();
+  assert.equal(chat.working, 0);
 });
 
 test('VOICE-5: an empty utterance asks nothing', () => {
@@ -450,14 +465,13 @@ test('VOICE-9: a refused microphone turns voice mode off and releases the scene'
   const chat = fakeChat();
   const v = createVoice(env, { tier: 3, chat, speaker: fakeSpeaker() });
   assert.equal(v.enable().enabled, true);
-  assert.equal(chat.working, 1);
   /* the engine reports the refusal the way a browser does */
   events.instances[0].fail('not-allowed');
   const st = v.status();
   assert.equal(st.enabled, false, 'a dead microphone must not leave the button lit');
   assert.match(st.reason, /microphone is not available/,
     'and the visitor has to be able to find out why it went off');
-  assert.equal(chat.working, 0, 'the ladder must not stay armed for a session that is over');
+  assert.equal(chat.working, 0, 'nothing may stay armed for a session that is over');
   assert.equal(chat.handsFree, false);
   /* the reason is a report, not a latch: turning it on again clears it */
   assert.equal(v.enable().enabled, true);

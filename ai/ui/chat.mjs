@@ -115,10 +115,11 @@ let loadOutcome = null;
   let stylesInjected = false;
   let tickerFn = null;
   let ladder = null;
-/* Nesting depth of "the assistant is working": answering and listening can
-   overlap, and either one alone is a reason to hold the scene down. A plain
-   boolean was the bug waiting to happen — whoever finished first would give
-   the scene back while the other was still busy (§15.3). */
+/* Nesting depth of "the assistant is working". Answering is the only thing
+   that raises it: not the panel being open, and not a microphone listening
+   (no §6.3 rung makes recognition faster — see ai/voice/index.mjs). It counts
+   rather than toggles because two overlapping generations would otherwise
+   hand the scene back when the first finished (§15.3, and P5 makes that real). */
 let working = 0;
   let voice = null;            /* built on the first tap, never on open */
   let micBtn = null;
@@ -331,8 +332,11 @@ let working = 0;
    * not merely around the panel being open. Leaving it running while the
    * visitor reads made it degrade the scene for no reason and, in doing so,
    * force a full shader recompile (measured: 21 programs, 1221 ms — see
-   * docs/BENCHMARKS.md §15.3). Answering is the work; a future microphone arms
-   * it while listening. The scene comes back when this returns.
+   * docs/BENCHMARKS.md §15.3). Answering is the work, and it is the only thing
+   * that arms this — not the panel being open, and not a microphone listening
+   * (see `ai/voice/index.mjs`: no rung makes recognition faster, so arming for
+   * a listen would only hold the film down). The scene comes back when this
+   * returns.
    */
   function whileWorking(fn) {
     setWorking(true);
@@ -413,6 +417,10 @@ let working = 0;
     ladder?.setActive(working > 0);
     return working;
   }
+  /* A depth count rather than a boolean, for the day answering is
+     asynchronous (P5): with one boolean, the first of two overlapping
+     generations to finish hands the scene back while the other is still
+     running — the one moment the ladder exists for. */
 
   /* ── section: voice (§11) ────────────────────────────────────────
      Adapter-first: `ai/voice/index.mjs` owns every decision (which tier may
@@ -633,8 +641,6 @@ let working = 0;
     open, close, toggle, ask, showAnchor,
     /* the voice layer flips this on; nothing else has to change */
     setHandsFree(on) { handsFree = !!on; return handsFree; },
-    /* voice calls this around listening, whileWorking around answering */
-    setWorking,
     enableVoice: toggleVoice,
     disableVoice: stopVoice,
     get voice() { return voice?.status() || null; },
@@ -644,6 +650,9 @@ let working = 0;
     get isOpen() { return !!body && !body.hidden; },
     get focus() { return focus; },
     get handsFree() { return handsFree; },
+    /* exposed so the e2e probe can assert that LISTENING does not arm the
+       frame ladder, and that an answer does */
+    ladderStatus: () => (ladder ? ladder.status() : null),
     /* exposed so the e2e probe can assert which section a question resolved
        to without having to infer it from the scroll position */
     get lastAnchor() {
@@ -660,7 +669,6 @@ let working = 0;
         label: anchorLabel(lastAnchor),
       };
     },
-    ladderStatus: () => (ladder ? ladder.status() : null),
     onKey: (e) => { if (e.key === 'Escape' && body && !body.hidden) close(); },
   };
 

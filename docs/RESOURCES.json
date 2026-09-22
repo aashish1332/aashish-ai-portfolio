@@ -1,39 +1,50 @@
 {
-  "measuredAt": "2026-09-22T04:35:50.931Z",
+  "measuredAt": "2026-09-22T15:53:30.046Z",
   "url": "http://localhost:5577/",
   "states": [
     {
       "label": "1 panel-closed",
       "jsHeapMB": 6.6,
-      "jsHeapTotalMB": 7.7,
+      "jsHeapTotalMB": 7.5,
       "nodes": 1493,
       "documents": 17,
       "listeners": 127,
       "workers": 0,
       "links": 31,
-      "frames": 142,
-      "medianMs": 21.4,
-      "p95Ms": 24.8,
-      "medianFps": 46.7,
-      "longTaskMs": 0,
-      "longTaskCount": 0,
-      "maxLongTaskMs": 0,
-      "mainThreadBusyPct": 0,
-      "topLongTasks": []
+      "frames": 130,
+      "medianMs": 23.1,
+      "p95Ms": 26.3,
+      "medianFps": 43.3,
+      "longTaskMs": 52,
+      "longTaskCount": 1,
+      "maxLongTaskMs": 52,
+      "mainThreadBusyPct": 1.73,
+      "topLongTasks": [
+        {
+          "ms": 52,
+          "atMs": 580,
+          "startMs": 22519,
+          "endMs": 22571,
+          "name": "self",
+          "containerType": "window",
+          "containerName": null,
+          "containerSrc": null
+        }
+      ]
     },
     {
       "label": "2 chat-idle",
-      "jsHeapMB": 7,
+      "jsHeapMB": 6.8,
       "jsHeapTotalMB": 7.7,
-      "nodes": 1538,
+      "nodes": 1540,
       "documents": 17,
-      "listeners": 140,
+      "listeners": 141,
       "workers": 0,
       "links": 31,
-      "frames": 134,
-      "medianMs": 21.8,
-      "p95Ms": 28.3,
-      "medianFps": 45.9,
+      "frames": 126,
+      "medianMs": 24,
+      "p95Ms": 30.6,
+      "medianFps": 41.7,
       "longTaskMs": 0,
       "longTaskCount": 0,
       "maxLongTaskMs": 0,
@@ -42,17 +53,17 @@
     },
     {
       "label": "3 after-answers",
-      "jsHeapMB": 7.3,
-      "jsHeapTotalMB": 8.5,
-      "nodes": 1605,
+      "jsHeapMB": 8.1,
+      "jsHeapTotalMB": 8.7,
+      "nodes": 1607,
       "documents": 17,
-      "listeners": 138,
+      "listeners": 139,
       "workers": 0,
       "links": 31,
-      "frames": 139,
-      "medianMs": 21.6,
-      "p95Ms": 26,
-      "medianFps": 46.3,
+      "frames": 104,
+      "medianMs": 29.1,
+      "p95Ms": 33.9,
+      "medianFps": 34.4,
       "longTaskMs": 0,
       "longTaskCount": 0,
       "maxLongTaskMs": 0,
@@ -61,17 +72,17 @@
     },
     {
       "label": "4 hands-free",
-      "jsHeapMB": 7.3,
-      "jsHeapTotalMB": 8.2,
-      "nodes": 1616,
+      "jsHeapMB": 7.7,
+      "jsHeapTotalMB": 8.7,
+      "nodes": 1630,
       "documents": 17,
-      "listeners": 138,
+      "listeners": 139,
       "workers": 0,
       "links": 31,
-      "frames": 138,
-      "medianMs": 20.9,
-      "p95Ms": 29.4,
-      "medianFps": 47.8,
+      "frames": 110,
+      "medianMs": 26.2,
+      "p95Ms": 39.1,
+      "medianFps": 38.2,
       "longTaskMs": 0,
       "longTaskCount": 0,
       "maxLongTaskMs": 0,
@@ -80,38 +91,49 @@
     },
     {
       "label": "5 closed-again",
-      "jsHeapMB": 7.4,
-      "jsHeapTotalMB": 8.2,
-      "nodes": 1616,
+      "jsHeapMB": 7.8,
+      "jsHeapTotalMB": 9.7,
+      "nodes": 1618,
       "documents": 17,
-      "listeners": 138,
+      "listeners": 139,
       "workers": 0,
       "links": 31,
-      "frames": 153,
-      "medianMs": 19.5,
-      "p95Ms": 23,
-      "medianFps": 51.3,
-      "longTaskMs": 0,
-      "longTaskCount": 0,
-      "maxLongTaskMs": 0,
-      "mainThreadBusyPct": 0,
-      "topLongTasks": []
+      "frames": 113,
+      "medianMs": 25.9,
+      "p95Ms": 33.8,
+      "medianFps": 38.6,
+      "longTaskMs": 54,
+      "longTaskCount": 1,
+      "maxLongTaskMs": 54,
+      "mainThreadBusyPct": 1.8,
+      "topLongTasks": [
+        {
+          "ms": 54,
+          "atMs": 136,
+          "startMs": 42482.700000000186,
+          "endMs": 42536.700000000186,
+          "name": "self",
+          "containerType": "window",
+          "containerName": null,
+          "containerSrc": null
+        }
+      ]
     }
   ],
   "baseline": [
     {
       "label": "baseline-1",
       "jsHeapMB": 6.3,
-      "jsHeapTotalMB": 7.5,
+      "jsHeapTotalMB": 7.2,
       "nodes": 1493,
       "documents": 17,
       "listeners": 127,
       "workers": 0,
       "links": 31,
-      "frames": 103,
-      "medianMs": 29.4,
-      "p95Ms": 34.3,
-      "medianFps": 34,
+      "frames": 102,
+      "medianMs": 29.6,
+      "p95Ms": 33.8,
+      "medianFps": 33.8,
       "longTaskMs": 0,
       "longTaskCount": 0,
       "maxLongTaskMs": 0,
@@ -120,27 +142,27 @@
     },
     {
       "label": "baseline-2",
-      "jsHeapMB": 6.4,
-      "jsHeapTotalMB": 7.2,
+      "jsHeapMB": 6.7,
+      "jsHeapTotalMB": 7.5,
       "nodes": 1493,
       "documents": 17,
       "listeners": 127,
       "workers": 0,
       "links": 31,
-      "frames": 112,
-      "medianMs": 26.6,
-      "p95Ms": 32.4,
-      "medianFps": 37.6,
-      "longTaskMs": 87,
+      "frames": 106,
+      "medianMs": 28.2,
+      "p95Ms": 32.5,
+      "medianFps": 35.5,
+      "longTaskMs": 93,
       "longTaskCount": 1,
-      "maxLongTaskMs": 87,
-      "mainThreadBusyPct": 2.9,
+      "maxLongTaskMs": 93,
+      "mainThreadBusyPct": 3.1,
       "topLongTasks": [
         {
-          "ms": 87,
-          "atMs": 895,
-          "startMs": 13800.100000000093,
-          "endMs": 13887.100000000093,
+          "ms": 93,
+          "atMs": 1142,
+          "startMs": 13828.100000000093,
+          "endMs": 13921.100000000093,
           "name": "self",
           "containerType": "window",
           "containerName": null,
@@ -150,27 +172,27 @@
     },
     {
       "label": "baseline-3",
-      "jsHeapMB": 7.3,
-      "jsHeapTotalMB": 8.2,
+      "jsHeapMB": 6.5,
+      "jsHeapTotalMB": 7.5,
       "nodes": 1493,
       "documents": 17,
       "listeners": 127,
       "workers": 0,
       "links": 31,
-      "frames": 114,
-      "medianMs": 26.3,
-      "p95Ms": 31.1,
-      "medianFps": 38,
-      "longTaskMs": 71,
+      "frames": 109,
+      "medianMs": 27.6,
+      "p95Ms": 31.5,
+      "medianFps": 36.2,
+      "longTaskMs": 75,
       "longTaskCount": 1,
-      "maxLongTaskMs": 71,
-      "mainThreadBusyPct": 2.37,
+      "maxLongTaskMs": 75,
+      "mainThreadBusyPct": 2.5,
       "topLongTasks": [
         {
-          "ms": 71,
-          "atMs": 2132,
-          "startMs": 18108.100000000093,
-          "endMs": 18179.100000000093,
+          "ms": 75,
+          "atMs": 2540,
+          "startMs": 18309.899999999907,
+          "endMs": 18384.899999999907,
           "name": "self",
           "containerType": "window",
           "containerName": null,
@@ -187,67 +209,432 @@
       "listeners": 127,
       "workers": 0,
       "links": 31,
-      "frames": 129,
-      "medianMs": 23.2,
-      "p95Ms": 27.8,
-      "medianFps": 43.1,
-      "longTaskMs": 57,
-      "longTaskCount": 1,
-      "maxLongTaskMs": 57,
-      "mainThreadBusyPct": 1.9,
-      "topLongTasks": [
-        {
-          "ms": 57,
-          "atMs": 2932,
-          "startMs": 22011.700000000186,
-          "endMs": 22068.700000000186,
-          "name": "self",
-          "containerType": "window",
-          "containerName": null,
-          "containerSrc": null
-        }
-      ]
+      "frames": 119,
+      "medianMs": 25.4,
+      "p95Ms": 29.9,
+      "medianFps": 39.4,
+      "longTaskMs": 0,
+      "longTaskCount": 0,
+      "maxLongTaskMs": 0,
+      "mainThreadBusyPct": 0,
+      "topLongTasks": []
     }
   ],
-  "baselineWorst": 87,
+  "baselineWorst": 93,
   "cycles": [
     {
       "cycle": 1,
-      "jsHeapMB": 7.5,
-      "nodes": 1616,
-      "listeners": 138,
+      "jsHeapMB": 7.9,
+      "nodes": 1618,
+      "listeners": 139,
       "workers": 0
     },
     {
       "cycle": 2,
-      "jsHeapMB": 7.4,
-      "nodes": 1616,
-      "listeners": 138,
+      "jsHeapMB": 7.7,
+      "nodes": 1618,
+      "listeners": 139,
       "workers": 0
     },
     {
       "cycle": 3,
       "jsHeapMB": 7.6,
-      "nodes": 1616,
-      "listeners": 138,
+      "nodes": 1618,
+      "listeners": 139,
       "workers": 0
     },
     {
       "cycle": 4,
-      "jsHeapMB": 7.4,
-      "nodes": 1616,
-      "listeners": 138,
+      "jsHeapMB": 8.1,
+      "nodes": 1618,
+      "listeners": 139,
       "workers": 0
     },
     {
       "cycle": 5,
-      "jsHeapMB": 7.5,
-      "nodes": 1616,
-      "listeners": 138,
+      "jsHeapMB": 8,
+      "nodes": 1618,
+      "listeners": 139,
       "workers": 0
     }
   ],
-  "soak": null,
+  "voiceCycles": [
+    {
+      "cycle": 1,
+      "on": {
+        "st": {
+          "level": "tap",
+          "supported": true,
+          "enabled": true,
+          "mode": "push",
+          "listening": true,
+          "speaking": false,
+          "pushToTalk": true,
+          "speakAnswers": false,
+          "continuous": false,
+          "reason": null,
+          "disclosure": "Voice mode uses your browser's speech recognition, which sends what you say to your browser's speech service — so while it listens, your audio leaves this device. Typed questions never do. Turn voice off any time."
+        },
+        "handsFree": true,
+        "ladder": {
+          "active": false,
+          "step": 0,
+          "effect": null,
+          "fps": 0,
+          "ema": 0,
+          "p95": 0,
+          "samples": 0,
+          "slowForMs": 0,
+          "healthyForMs": 0
+        },
+        "pressed": "true",
+        "label": "MIC ON"
+      },
+      "off": {
+        "st": {
+          "level": "tap",
+          "supported": true,
+          "enabled": false,
+          "mode": null,
+          "listening": false,
+          "speaking": false,
+          "pushToTalk": true,
+          "speakAnswers": false,
+          "continuous": false,
+          "reason": null,
+          "disclosure": null
+        },
+        "ladder": {
+          "active": false,
+          "step": 0,
+          "effect": null,
+          "fps": 0,
+          "ema": 0,
+          "p95": 0,
+          "samples": 0,
+          "slowForMs": 0,
+          "healthyForMs": 0
+        },
+        "pressed": "false",
+        "instances": 1
+      },
+      "engine": {
+        "instances": 1,
+        "starts": 1,
+        "stops": 1,
+        "emitted": 0
+      },
+      "jsHeapMB": 8.1,
+      "nodes": 1623,
+      "listeners": 139
+    },
+    {
+      "cycle": 2,
+      "on": {
+        "st": {
+          "level": "tap",
+          "supported": true,
+          "enabled": true,
+          "mode": "push",
+          "listening": true,
+          "speaking": false,
+          "pushToTalk": true,
+          "speakAnswers": false,
+          "continuous": false,
+          "reason": null,
+          "disclosure": "Voice mode uses your browser's speech recognition, which sends what you say to your browser's speech service — so while it listens, your audio leaves this device. Typed questions never do. Turn voice off any time."
+        },
+        "handsFree": true,
+        "ladder": {
+          "active": false,
+          "step": 0,
+          "effect": null,
+          "fps": 0,
+          "ema": 0,
+          "p95": 0,
+          "samples": 0,
+          "slowForMs": 0,
+          "healthyForMs": 0
+        },
+        "pressed": "true",
+        "label": "MIC ON"
+      },
+      "off": {
+        "st": {
+          "level": "tap",
+          "supported": true,
+          "enabled": false,
+          "mode": null,
+          "listening": false,
+          "speaking": false,
+          "pushToTalk": true,
+          "speakAnswers": false,
+          "continuous": false,
+          "reason": null,
+          "disclosure": null
+        },
+        "ladder": {
+          "active": false,
+          "step": 0,
+          "effect": null,
+          "fps": 0,
+          "ema": 0,
+          "p95": 0,
+          "samples": 0,
+          "slowForMs": 0,
+          "healthyForMs": 0
+        },
+        "pressed": "false",
+        "instances": 2
+      },
+      "engine": {
+        "instances": 2,
+        "starts": 2,
+        "stops": 2,
+        "emitted": 0
+      },
+      "jsHeapMB": 8.1,
+      "nodes": 1623,
+      "listeners": 139
+    },
+    {
+      "cycle": 3,
+      "on": {
+        "st": {
+          "level": "tap",
+          "supported": true,
+          "enabled": true,
+          "mode": "push",
+          "listening": true,
+          "speaking": false,
+          "pushToTalk": true,
+          "speakAnswers": false,
+          "continuous": false,
+          "reason": null,
+          "disclosure": "Voice mode uses your browser's speech recognition, which sends what you say to your browser's speech service — so while it listens, your audio leaves this device. Typed questions never do. Turn voice off any time."
+        },
+        "handsFree": true,
+        "ladder": {
+          "active": false,
+          "step": 0,
+          "effect": null,
+          "fps": 0,
+          "ema": 0,
+          "p95": 0,
+          "samples": 0,
+          "slowForMs": 0,
+          "healthyForMs": 0
+        },
+        "pressed": "true",
+        "label": "MIC ON"
+      },
+      "off": {
+        "st": {
+          "level": "tap",
+          "supported": true,
+          "enabled": false,
+          "mode": null,
+          "listening": false,
+          "speaking": false,
+          "pushToTalk": true,
+          "speakAnswers": false,
+          "continuous": false,
+          "reason": null,
+          "disclosure": null
+        },
+        "ladder": {
+          "active": false,
+          "step": 0,
+          "effect": null,
+          "fps": 0,
+          "ema": 0,
+          "p95": 0,
+          "samples": 0,
+          "slowForMs": 0,
+          "healthyForMs": 0
+        },
+        "pressed": "false",
+        "instances": 3
+      },
+      "engine": {
+        "instances": 3,
+        "starts": 3,
+        "stops": 3,
+        "emitted": 0
+      },
+      "jsHeapMB": 7.7,
+      "nodes": 1623,
+      "listeners": 139
+    },
+    {
+      "cycle": 4,
+      "on": {
+        "st": {
+          "level": "tap",
+          "supported": true,
+          "enabled": true,
+          "mode": "push",
+          "listening": true,
+          "speaking": false,
+          "pushToTalk": true,
+          "speakAnswers": false,
+          "continuous": false,
+          "reason": null,
+          "disclosure": "Voice mode uses your browser's speech recognition, which sends what you say to your browser's speech service — so while it listens, your audio leaves this device. Typed questions never do. Turn voice off any time."
+        },
+        "handsFree": true,
+        "ladder": {
+          "active": false,
+          "step": 0,
+          "effect": null,
+          "fps": 0,
+          "ema": 0,
+          "p95": 0,
+          "samples": 0,
+          "slowForMs": 0,
+          "healthyForMs": 0
+        },
+        "pressed": "true",
+        "label": "MIC ON"
+      },
+      "off": {
+        "st": {
+          "level": "tap",
+          "supported": true,
+          "enabled": false,
+          "mode": null,
+          "listening": false,
+          "speaking": false,
+          "pushToTalk": true,
+          "speakAnswers": false,
+          "continuous": false,
+          "reason": null,
+          "disclosure": null
+        },
+        "ladder": {
+          "active": false,
+          "step": 0,
+          "effect": null,
+          "fps": 0,
+          "ema": 0,
+          "p95": 0,
+          "samples": 0,
+          "slowForMs": 0,
+          "healthyForMs": 0
+        },
+        "pressed": "false",
+        "instances": 4
+      },
+      "engine": {
+        "instances": 4,
+        "starts": 4,
+        "stops": 4,
+        "emitted": 0
+      },
+      "jsHeapMB": 7.6,
+      "nodes": 1623,
+      "listeners": 139
+    },
+    {
+      "cycle": 5,
+      "on": {
+        "st": {
+          "level": "tap",
+          "supported": true,
+          "enabled": true,
+          "mode": "push",
+          "listening": true,
+          "speaking": false,
+          "pushToTalk": true,
+          "speakAnswers": false,
+          "continuous": false,
+          "reason": null,
+          "disclosure": "Voice mode uses your browser's speech recognition, which sends what you say to your browser's speech service — so while it listens, your audio leaves this device. Typed questions never do. Turn voice off any time."
+        },
+        "handsFree": true,
+        "ladder": {
+          "active": false,
+          "step": 0,
+          "effect": null,
+          "fps": 0,
+          "ema": 0,
+          "p95": 0,
+          "samples": 0,
+          "slowForMs": 0,
+          "healthyForMs": 0
+        },
+        "pressed": "true",
+        "label": "MIC ON"
+      },
+      "off": {
+        "st": {
+          "level": "tap",
+          "supported": true,
+          "enabled": false,
+          "mode": null,
+          "listening": false,
+          "speaking": false,
+          "pushToTalk": true,
+          "speakAnswers": false,
+          "continuous": false,
+          "reason": null,
+          "disclosure": null
+        },
+        "ladder": {
+          "active": false,
+          "step": 0,
+          "effect": null,
+          "fps": 0,
+          "ema": 0,
+          "p95": 0,
+          "samples": 0,
+          "slowForMs": 0,
+          "healthyForMs": 0
+        },
+        "pressed": "false",
+        "instances": 5
+      },
+      "engine": {
+        "instances": 5,
+        "starts": 5,
+        "stops": 5,
+        "emitted": 0
+      },
+      "jsHeapMB": 8.4,
+      "nodes": 1623,
+      "listeners": 139
+    }
+  ],
+  "voiceWiring": {
+    "before": 14,
+    "after": 16,
+    "text": "QUICK ANSWER · NO AI MODEL ON THIS DEVICEEducation:\n• Lovely Professional University — Bac",
+    "anchor": "scene-story"
+  },
+  "glLinks": {
+    "before": 31,
+    "beforeVoice": 31,
+    "afterWiring": 31,
+    "afterSoak": 31,
+    "end": 31
+  },
+  "soak": {
+    "ms": 600000,
+    "voiceEnabled": true,
+    "engineEvents": 31,
+    "bubblesBefore": 16,
+    "bubblesAfter": 16,
+    "heapBeforeMB": 7.6,
+    "heapAfterMB": 7.6,
+    "growthMB": 0,
+    "nodesBefore": 1636,
+    "nodesAfter": 1636,
+    "listenersBefore": 139,
+    "listenersAfter": 139,
+    "ladderActive": false,
+    "ladderStep": 0,
+    "ladderDegraded": false
+  },
   "profile": null,
   "qualityCalls": [],
   "perQuestion": [
@@ -345,7 +732,7 @@
       {
         "name": "no heap growth across open/close cycles",
         "ok": true,
-        "detail": "0 MB/cycle over 5 cycles"
+        "detail": "0.02 MB/cycle over 5 cycles"
       },
       {
         "name": "a reopen leaks no DOM nodes",
@@ -370,25 +757,90 @@
       {
         "name": "median FPS drop with the panel open <= 10% (§4)",
         "ok": true,
-        "detail": "1.7%"
+        "detail": "3.7%"
       },
       {
         "name": "no long task attributable to the AI (§4: <= 50 ms above the page baseline)",
         "ok": true,
-        "detail": "AI windows worst 0 ms · page-only baseline 87 ms"
+        "detail": "AI windows worst 54 ms · page-only baseline 93 ms"
       },
       {
         "name": "the AI compiles no GL program (rung 3 costs a full recompile)",
         "ok": true,
-        "detail": "31 -> 31 programs linked"
+        "detail": "31 -> 31 programs linked, idle session only"
+      },
+      {
+        "name": "voice: turning it off releases the recognizer",
+        "ok": true,
+        "detail": "engine instances held at 1 across on/off"
+      },
+      {
+        "name": "voice: no engine is built until the button is pressed",
+        "ok": true,
+        "detail": "1 engines built"
+      },
+      {
+        "name": "voice: listening does NOT hold the frame ladder down",
+        "ok": true,
+        "detail": "ladder active while listening: false,false,false,false,false"
+      },
+      {
+        "name": "voice: the scene keeps its quality while listening",
+        "ok": true,
+        "detail": "ladder step while listening: 0,0,0,0,0"
+      },
+      {
+        "name": "voice: on/off leaks no heap",
+        "ok": true,
+        "detail": "0.3 MB over 5 on/off cycles"
+      },
+      {
+        "name": "voice: on/off leaks no DOM nodes",
+        "ok": true,
+        "detail": "0 nodes over 5 on/off cycles"
+      },
+      {
+        "name": "voice: on/off leaks no listeners",
+        "ok": true,
+        "detail": "0 listeners over 5 on/off cycles"
+      },
+      {
+        "name": "voice: a recognized question reaches the answer path",
+        "ok": true,
+        "detail": "bubbles 14 -> 16, anchor scene-story"
       },
       {
         "name": "extra AI heap under the desktop budget (§4: <=300 MB)",
         "ok": true,
-        "detail": "0.8 MB heap delta"
+        "detail": "1.2 MB heap delta"
+      },
+      {
+        "name": "no heap growth during the Proactive soak",
+        "ok": true,
+        "detail": "0 MB over 600 s"
+      },
+      {
+        "name": "the microphone is still on at the end of the soak",
+        "ok": true,
+        "detail": "enabled=true"
+      },
+      {
+        "name": "a soak of unaddressed speech answers nothing",
+        "ok": true,
+        "detail": "31 utterances heard, bubbles 16 -> 16"
+      },
+      {
+        "name": "a 10-minute-style listen never arms the frame ladder",
+        "ok": true,
+        "detail": "active=false step=0 after 600 s of listening"
+      },
+      {
+        "name": "listening for the whole soak leaks no DOM nodes",
+        "ok": true,
+        "detail": "0 nodes · listeners 139 -> 139"
       }
     ],
-    "passed": 9,
+    "passed": 22,
     "failed": 0
   },
   "provenance": {

@@ -412,6 +412,45 @@ armed, see PROGRESS §11 VOC-2). The listening path, and everything about
 continuous mode, is verified with doubles only. No claim here rests on a human
 having spoken to it.
 
+### Lifecycle, and the 10-minute Proactive soak (`npm run probe:resources`)
+
+The soak that §15.3 lists as never run has now been run — with the microphone
+**active**, which is what a Proactive soak was always supposed to mean. A stub
+engine stands in for Chrome's (`dev-resource-probe.js`): headless Chrome's real
+one can only ever be observed refusing, so this measures the lifecycle *around*
+a listening engine, and the transcript is a string the probe made up. Nothing
+below is a claim about hearing.
+
+| Claim | Result (R1 · headless Chrome · 600 s soak · GPU) |
+|---|---|
+| 10 minutes listening, mic active | **0 MB heap · 0 nodes · 0 listeners** (7.6 → 7.6 MB, 1636 → 1636, 139 → 139) |
+| utterances delivered during it | **31** — and **0** bubbles (`16 → 16`): unaddressed speech is not a question |
+| the §6.3 ladder over the whole listen | **never armed** (`active=false`, `step=0`) · GL programs **31 → 31** |
+| 5 voice on/off cycles | 0 nodes · 0 listeners · 0.3 MB; a fresh engine per enable, released on disable |
+| a question asked through the engine | reached the same answer path and the same anchor a typed one does (`14 → 16` bubbles, anchor `scene-story`) |
+| extra AI heap | 1.2 MB against §4's 300 MB desktop budget |
+| verdict | **22/22 checks** |
+
+**A correction this run forced.** The §11 work first armed the ladder *while
+listening*, reasoning that answering and listening can overlap. The first soak
+reported `active=true` for the full 600 s with `step=0` — which passed only
+because this renderer's frames are healthy, and a pass for the wrong reason is
+the exact mistake RSRC-2 was. Every rung acts on the **model** or the
+**scene** — pace generation, shorten the answer budget, lower scene quality,
+quick answers only — and none of them on speech, so arming for a listen holds
+the film down and, where the ladder fires, pays rung 3's measured price (**21
+programs, 1221 ms**) to protect a generation that is not running. Listening now
+arms nothing; the answer at the end of the listen goes through `ask()`, which
+arms it exactly as a typed question does. Pinned by `tests/voice.test.mjs`
+(4 tests fail if the arming comes back) and by a probe check that failed before
+the fix.
+
+**What this run cannot see, stated so it is not read as covered:** rung 3's
+price, because the ladder never had a reason to move here. Forcing software GL
+did not help — frames were *slower than the frame monitor's own 1000 ms sanity
+bound*, so it discards every sample and the ladder stays at step 0. That cost
+remains the §15.3 measurement above.
+
 ---
 
 **NOT TESTED:** the §4 target "median FPS drop ≤ 10 %, p95 ≤ 1.5× baseline" on a real GPU, the

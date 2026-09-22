@@ -269,15 +269,23 @@ the same `ask()` a typed one does.
 **A failure is undone, not just logged.** A refused permission
 (`not-allowed`, `audio-capture`, `service-not-allowed`) stops the recognizer
 rather than riding the restart loop that continuous listening needs, and the
-session turns *itself* off: the ladder is released, Proactive mode goes back to
-what it was, and the panel says why once. Measured in a browser with no
+session turns *itself* off: Proactive mode goes back to what it was, the button
+goes dark, and the panel says why once. It also has to be *undone*, not merely
+logged — a dead engine that leaves the session nominally on is a button lit
+over a microphone that cannot work, which is what the browser probe caught. Measured in a browser with no
 microphone — the button goes dark and the reason is stated, which is the
 failure a visitor with a blocked permission actually gets.
 
 ### The frame ladder is armed around work, not around the panel (§6.3)
 
 `ai/governor/index.mjs` exposes `setActive(on)`, and `ai/ui/chat.mjs` arms the
-ladder only while an answer is being produced. This is a **measured** rule, not
+ladder only while an answer is being produced — not while the panel is open,
+and **not while a microphone is listening**. The second half of that was learned
+the hard way: the §11 work first armed it for a listen too, and a 600 s soak
+that reported `active=true, step=0` looked like a pass when it was a pass for
+the wrong reason. Every rung acts on the model or the scene, so a listen has
+nothing to protect — and where the ladder fires, rung 3 recompiles every shader
+(21 programs, 1,221 ms) to protect a generation that is not running. This is a **measured** rule, not
 a preference: every rung exists to make room for the assistant's own work, and
 left running while the visitor merely reads, the ladder reached rung 3 on a
 device the film already struggles on — where rung 3 switches the render path
@@ -305,7 +313,7 @@ Sizes will be measured, never estimated in prose.
 
 ## 7. Dev vs prod — the build (§9.3/§17)
 
-`npm run build` → `dist/` (28 files, **421,495 B** — 396,152 B before §11
+`npm run build` → `dist/` (28 files, **422,606 B** — 396,152 B before §11
 voice added a module, and 27 files / 391,619 B before that);
 `npm run preview` serves it on `:5580` through the same dev server with
 `ROOT=dist`.

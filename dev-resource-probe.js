@@ -35,6 +35,11 @@ const OUT = process.env.OUT || path.join(__dirname, 'docs', 'RESOURCES.json');
 const PROFILE = process.env.PROFILE === '1';
 const NO_SCENE_DEGRADE = process.env.NO_SCENE_DEGRADE === '1';
 const CONTROL = process.env.CONTROL === '1';
+/* SW_GL=1 forces software GL. The §6.3 ladder only moves on a device whose
+   frames are slow, so the cost of ARMING it (rung 3 changes the render path →
+   every shader program is recompiled) is invisible on a fast renderer. This
+   knob is the device that already struggles, on demand. */
+const SW_GL = process.env.SW_GL === '1';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const MB = (b) => +(b / 1048576).toFixed(1);
 
@@ -46,10 +51,56 @@ const MB = (b) => +(b / 1048576).toFixed(1);
        the default protocol timeout aborts the whole run instead of reporting
        the number, which is how a 1.2 s freeze turns into "no measurement". */
     protocolTimeout: 240000,
-    args: ['--window-size=1380,900', '--enable-gpu'],
+    args: ['--window-size=1380,900', ...(SW_GL
+      ? ['--use-gl=swiftshader', '--enable-unsafe-swiftshader']
+      : ['--enable-gpu'])],
   });
   const page = await browser.newPage();
   await page.setViewport({ width: 1360, height: 860, deviceScaleFactor: 1 });
+
+  /* ── the voice stub (§11) ───────────────────────────────────────────
+     Headless Chrome ships the speech API and has no microphone, so the REAL
+     engine can only ever be observed in its failure branch — which is what
+     dev-ai-probe.js measures, deliberately. A stub stands in here so the
+     lifecycle AROUND the engine can be measured at all: whether the
+     recognizer is rebuilt or released, whether its transcript leaks nodes,
+     and whether a long listen holds the §6.3 ladder down. Nothing here is a
+     claim about recognition; the transcript is a string this probe made up. */
+  await page.evaluateOnNewDocument(() => {
+    window.__voice = { instances: 0, starts: 0, stops: 0, emitted: 0, current: null };
+    class StubRecognition {
+      constructor() {
+        window.__voice.instances++;
+        this.started = false;
+        this.onstart = this.onend = this.onresult = this.onerror = null;
+      }
+      start() {
+        if (this.started) throw new Error('already started');
+        this.started = true;
+        window.__voice.starts++;
+        window.__voice.current = this;
+        this.onstart?.();
+      }
+      stop() { this.started = false; window.__voice.stops++; this.onend?.(); }
+      abort() { this.started = false; this.onend?.(); }
+    }
+    window.SpeechRecognition = StubRecognition;
+    window.webkitSpeechRecognition = StubRecognition;
+    /* The only way to make the engine speak: the probe calls this. The timer
+       below gives a continuous listen something to hear that is NOT a
+       question — a wake phrase on its own — so a 10-minute soak measures an
+       idle microphone and not a transcript. */
+    window.__voiceSay = (text) => {
+      const r = window.__voice.current;
+      if (!r || !r.started) return false;
+      window.__voice.emitted++;
+      r.onresult?.({ resultIndex: 0, results: [{ 0: { transcript: text }, isFinal: true }] });
+      return true;
+    };
+    setInterval(() => {
+      try { window.__voiceSay('hey aashish'); } catch { /* the stub is not the measurement */ }
+    }, 20000);
+  });
 
   /* Count GL program LINKs at the driver boundary. three.js recompiles every
      material's program when the render path or the render-target format
@@ -261,7 +312,10 @@ const MB = (b) => +(b / 1048576).toFixed(1);
 
   /* ── run: the four states, then cycles, then soak ────────────── */
   console.log('── §15.3 RESOURCE + LIFECYCLE ──');
-  await page.goto(URL_, { waitUntil: 'networkidle2', timeout: 60000 });
+  /* Software GL takes long enough that "network idle" can be reached after the
+     default timeout; the boot grace below is what the measurements need. */
+  await page.goto(URL_, { waitUntil: SW_GL ? 'domcontentloaded' : 'networkidle2',
+    timeout: SW_GL ? 120000 : 60000 });
   await sleep(5000);                                   /* boot + governor grace */
 
   /* ── controlled experiment: is the big long task the AI, or the film? ──
@@ -404,21 +458,118 @@ const MB = (b) => +(b / 1048576).toFixed(1);
     console.log(`cycle ${i}: heap ${m.jsHeapMB} MB · nodes ${m.nodes} · listeners ${m.listeners} · workers ${w}`);
   }
 
+  /* ── voice (§11): the lifecycle AROUND a listening engine ────────
+     Measured here rather than in a unit test because the question is about
+     the browser's own bookkeeping: does turning voice off actually release
+     the recognizer, and does a long listen hold the §6.3 ladder down? */
+  const linksBeforeVoice = await glLinks();
+  const voiceCycles = [];
+  console.log(`\n── ${CYCLES} voice on/off cycles (stub engine, nothing asked) ──`);
+  for (let i = 1; i <= CYCLES; i++) {
+    const r = await page.evaluate(async () => {
+      window.PortfolioAI.open();
+      window.PortfolioAI.enableVoice();
+      await new Promise((res) => setTimeout(res, 400));
+      const on = {
+        st: window.PortfolioAI.voice,
+        handsFree: window.PortfolioAI.handsFree,
+        ladder: window.PortfolioAI.ladderStatus(),
+        pressed: document.querySelector('.ai__mic')?.getAttribute('aria-pressed'),
+        label: document.querySelector('.ai__mic')?.textContent,
+      };
+      window.PortfolioAI.disableVoice();
+      await new Promise((res) => setTimeout(res, 250));
+      const off = { st: window.PortfolioAI.voice, ladder: window.PortfolioAI.ladderStatus(),
+                    pressed: document.querySelector('.ai__mic')?.getAttribute('aria-pressed'),
+                    instances: window.__voice.instances };
+      return { on, off, engine: { ...window.__voice, current: undefined } };
+    });
+    const m = await metrics();
+    voiceCycles.push({ cycle: i, ...r, jsHeapMB: m.jsHeapMB, nodes: m.nodes, listeners: m.listeners });
+    console.log(`voice cycle ${i}: enabled=${r.on.st.enabled} listening=${r.on.st.listening}`
+      + ` ladder=${r.on.ladder ? r.on.ladder.active : 'n/a'} pressed=${r.on.pressed}`
+      + ` · after off: enabled=${r.off.st.enabled} ladder=${r.off.ladder ? r.off.ladder.active : 'n/a'}`
+      + ` · engines built ${r.off.instances} · heap ${m.jsHeapMB} MB · nodes ${m.nodes} · listeners ${m.listeners}`);
+  }
+  const vcFirst = voiceCycles[0];
+  const vcLast = voiceCycles[voiceCycles.length - 1];
+
+  /* Does a recognized question reach the same answer path a typed one does?
+     One question, through the engine, and the bubble count is the evidence. */
+  const voiceWiring = await page.evaluate(async () => {
+    window.PortfolioAI.enableVoice();
+    await new Promise((res) => setTimeout(res, 300));
+    const before = document.querySelectorAll('.ai__msg').length;
+    window.__voiceSay('what is my cgpa');
+    await new Promise((res) => setTimeout(res, 900));
+    const bots = [...document.querySelectorAll('.ai__msg.is-bot')];
+    return {
+      before,
+      after: document.querySelectorAll('.ai__msg').length,
+      text: (bots[bots.length - 1]?.textContent || '').slice(0, 90),
+      anchor: window.PortfolioAI.lastAnchor?.target || null,
+    };
+  });
+  console.log(`voice -> answer: "${voiceWiring.text.slice(0, 60)}" (bubbles ${voiceWiring.before} -> ${voiceWiring.after})`);
+  const linksAfterWiring = await glLinks();
+
   let soak = null;
   if (SOAK_MS > 0) {
-    console.log(`\n── soak (${Math.round(SOAK_MS / 1000)} s, hands-free) ──`);
+    /* The Proactive soak: the panel open with voice ACTIVE, the engine fed a
+       wake phrase every 20 s and never a question, for the whole window. The
+       bubble count is what makes it a real measurement — ten minutes of a hot
+       microphone must answer nothing. */
+    console.log(`\n── soak (${Math.round(SOAK_MS / 1000)} s, Proactive: mic on, no questions) ──`);
     await openPanel();
-    await page.evaluate(() => window.PortfolioAI.setHandsFree(true));
+    const soakOn = await page.evaluate(async () => {
+      window.PortfolioAI.enableVoice();
+      await new Promise((res) => setTimeout(res, 300));
+      return {
+        bubbles: document.querySelectorAll('.ai__msg').length,
+        st: window.PortfolioAI.voice,
+      };
+    });
     const before = await metrics();
     const t0 = Date.now();
     while (Date.now() - t0 < SOAK_MS) await sleep(5000);
     const after = await metrics();
-    soak = { ms: SOAK_MS, heapBeforeMB: before.jsHeapMB, heapAfterMB: after.jsHeapMB,
-             growthMB: +(after.jsHeapMB - before.jsHeapMB).toFixed(1) };
-    console.log(`heap ${before.jsHeapMB} MB -> ${after.jsHeapMB} MB over ${Math.round(SOAK_MS / 1000)} s`);
-    await page.evaluate(() => window.PortfolioAI.setHandsFree(false));
+    const soakAfter = await page.evaluate(() => ({
+      bubbles: document.querySelectorAll('.ai__msg').length,
+      emitted: window.__voice.emitted,
+      st: window.PortfolioAI.voice,
+      ladder: window.PortfolioAI.ladderStatus(),
+    }));
+    soak = {
+      ms: SOAK_MS,
+      voiceEnabled: soakAfter.st?.enabled === true,
+      engineEvents: soakAfter.emitted,
+      bubblesBefore: soakOn.bubbles, bubblesAfter: soakAfter.bubbles,
+      heapBeforeMB: before.jsHeapMB, heapAfterMB: after.jsHeapMB,
+      growthMB: +(after.jsHeapMB - before.jsHeapMB).toFixed(1),
+      nodesBefore: before.nodes, nodesAfter: after.nodes,
+      listenersBefore: before.listeners, listenersAfter: after.listeners,
+      ladderActive: soakAfter.ladder?.active ?? null,
+      ladderStep: soakAfter.ladder?.step ?? null,
+      /* the honest version of "it stayed armed": armed AND stepping is the
+         cost; armed and never stepping is a latent one */
+      ladderDegraded: (soakAfter.ladder?.step ?? 0) > 0,
+    };
+    console.log(`heap ${before.jsHeapMB} MB -> ${after.jsHeapMB} MB · nodes ${before.nodes} -> ${after.nodes}`
+      + ` · listeners ${before.listeners} -> ${after.listeners}`);
+    console.log(`mic still on: ${soak.voiceEnabled} · engine events delivered: ${soakAfter.emitted}`
+      + ` · bubbles ${soak.bubblesBefore} -> ${soak.bubblesAfter} (must not change)`);
+    console.log(`ladder during the whole listen: active=${soak.ladderActive} step=${soak.ladderStep}`
+      + ` · GL programs ${linksBeforeVoice} -> ${await glLinks()}`);
+    console.log(`GL programs over the whole listen: ${linksBeforeVoice} -> ${await glLinks()}`);
+    if (!soak.ladderDegraded) {
+      console.log('note: the ladder never moved in this window, so this run cannot see rung 3\'s'
+        + ' price — §15.3 measured it separately (21 programs, 1221 ms). The rule that'
+        + ' matters here is that listening does not arm it at all.');
+    }
+    await page.evaluate(() => window.PortfolioAI.disableVoice());
     await closePanel();
   }
+  const linksAfterSoak = await glLinks();
 
   /* ── verdicts against the §4 budgets ────────────────────────── */
   const base = rows[0];
@@ -430,8 +581,7 @@ const MB = (b) => +(b / 1048576).toFixed(1);
   const nodeGrowth = lastCycle.nodes - firstCycle.nodes;
   const listenerGrowth = lastCycle.listeners - firstCycle.listeners;
   const worstMaxTask = Math.max(...rows.map((r) => r.maxLongTaskMs));
-  const linksEnd = await glLinks();
-  const fpsClosed = base.medianFps;
+  const linksEnd = await glLinks();  const fpsClosed = base.medianFps;
   const fpsOpen = rows[1].medianFps;
   const fpsDropPct = fpsClosed && fpsOpen
     ? +(((fpsClosed - fpsOpen) / fpsClosed) * 100).toFixed(1) : null;
@@ -461,16 +611,64 @@ const MB = (b) => +(b / 1048576).toFixed(1);
        programs relinked, 1221 ms blocked. A reopen or an idle session must
        compile nothing at all. */
     { name: 'the AI compiles no GL program (rung 3 costs a full recompile)',
-      ok: linksEnd === linksBefore,
-      detail: `${linksBefore} -> ${linksEnd} programs linked` },
+      ok: linksBeforeVoice === linksBefore,
+      detail: `${linksBefore} -> ${linksBeforeVoice} programs linked, idle session only` },
+    /* ── §11 voice: the lifecycle around a listening engine ── */
+    { name: 'voice: turning it off releases the recognizer',
+      ok: vcFirst.off.instances === vcFirst.engine.instances
+        && voiceCycles.every((c) => c.off.instances === c.engine.instances),
+      detail: `engine instances held at ${vcFirst.off.instances} across on/off` },
+    { name: 'voice: no engine is built until the button is pressed',
+      ok: vcFirst.engine.instances >= 1, detail: `${vcFirst.engine.instances} engines built` },
+    /* Listening must NOT arm the §6.3 ladder. Every rung acts on the model or
+       the scene, so arming for a listen holds the film down — and where the
+       ladder fires, rung 3 recompiles every shader (measured: 21 programs,
+       1221 ms) to protect a generation that is not running. */
+    { name: 'voice: listening does NOT hold the frame ladder down',
+      ok: voiceCycles.every((c) => c.on.ladder && c.on.ladder.active === false),
+      detail: `ladder active while listening: ${voiceCycles.map((c) => c.on.ladder?.active).join(',')}` },
+    { name: 'voice: the scene keeps its quality while listening',
+      ok: voiceCycles.every((c) => c.on.st?.enabled === true && c.on.ladder?.step === 0),
+      detail: `ladder step while listening: ${voiceCycles.map((c) => c.on.ladder?.step).join(',')}` },
+    { name: 'voice: on/off leaks no heap',
+      ok: (vcLast.jsHeapMB - vcFirst.jsHeapMB) <= 1.5 * Math.max(1, CYCLES - 1),
+      detail: `${+(vcLast.jsHeapMB - vcFirst.jsHeapMB).toFixed(2)} MB over ${CYCLES} on/off cycles` },
+    { name: 'voice: on/off leaks no DOM nodes',
+      ok: (vcLast.nodes - vcFirst.nodes) <= 4,
+      detail: `${vcLast.nodes - vcFirst.nodes} nodes over ${CYCLES} on/off cycles` },
+    { name: 'voice: on/off leaks no listeners',
+      ok: (vcLast.listeners - vcFirst.listeners) <= 2,
+      detail: `${vcLast.listeners - vcFirst.listeners} listeners over ${CYCLES} on/off cycles` },
+    { name: 'voice: a recognized question reaches the answer path',
+      ok: voiceWiring.after > voiceWiring.before,
+      detail: `bubbles ${voiceWiring.before} -> ${voiceWiring.after}, anchor ${voiceWiring.anchor || 'none'}` },
     { name: 'extra AI heap under the desktop budget (§4: <=300 MB)',
       ok: (last.jsHeapMB - base.jsHeapMB) <= 300,
       detail: `${(last.jsHeapMB - base.jsHeapMB).toFixed(1)} MB heap delta` },
   ];
-  if (soak) checks.push({
-    name: 'no heap growth during the soak', ok: soak.growthMB <= 5,
-    detail: `${soak.growthMB} MB over ${Math.round(soak.ms / 1000)} s`,
-  });
+  if (soak) {
+    checks.push({
+      name: 'no heap growth during the Proactive soak', ok: soak.growthMB <= 5,
+      detail: `${soak.growthMB} MB over ${Math.round(soak.ms / 1000)} s`,
+    }, {
+      name: 'the microphone is still on at the end of the soak',
+      ok: soak.voiceEnabled === true, detail: `enabled=${soak.voiceEnabled}`,
+    }, {
+      /* The measurement that makes the soak mean something: noise arriving
+         for ten minutes, and not one bubble. */
+      name: 'a soak of unaddressed speech answers nothing',
+      ok: soak.bubblesAfter === soak.bubblesBefore && soak.engineEvents > 0,
+      detail: `${soak.engineEvents} utterances heard, bubbles ${soak.bubblesBefore} -> ${soak.bubblesAfter}`,
+    }, {
+      name: 'a 10-minute-style listen never arms the frame ladder',
+      ok: soak.ladderActive === false,
+      detail: `active=${soak.ladderActive} step=${soak.ladderStep} after ${Math.round(soak.ms / 1000)} s of listening`,
+    }, {
+      name: 'listening for the whole soak leaks no DOM nodes',
+      ok: soak.nodesAfter - soak.nodesBefore <= 4,
+      detail: `${soak.nodesAfter - soak.nodesBefore} nodes · listeners ${soak.listenersBefore} -> ${soak.listenersAfter}`,
+    });
+  }
 
   console.log('\n── VERDICT ──');
   let failed = 0;
@@ -490,6 +688,10 @@ const MB = (b) => +(b / 1048576).toFixed(1);
     baseline,
     baselineWorst,
     cycles,
+    voiceCycles,
+    voiceWiring,
+    glLinks: { before: linksBefore, beforeVoice: linksBeforeVoice,
+      afterWiring: linksAfterWiring, afterSoak: linksAfterSoak, end: linksEnd },
     soak,
     profile,
     qualityCalls,

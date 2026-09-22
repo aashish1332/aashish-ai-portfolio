@@ -705,9 +705,14 @@ available here. Raw output `docs/RESOURCES.json`, panel-closed control
 
 ### Still open
 
-* **The 10-minute Proactive soak has not been run.** The probe supports it
-  (`SOAK_MS=600000`); no soak number is claimed without it. It would currently
-  measure an idle panel, because there is no microphone in this build.
+* ~~**The 10-minute Proactive soak has not been run.**~~ **CLOSED — run
+  2026-09-22**, with the microphone ACTIVE rather than the idle panel this note
+  predicted: **0 MB heap, 0 nodes, 0 listeners** over 600 s, 31 utterances
+  delivered and **0** bubbles produced, and the §6.3 ladder never armed
+  (22/22 checks, `docs/RESOURCES.json`). It measures the lifecycle around a
+  **stub** engine, because headless Chrome's real one can only be observed
+  refusing — see the *Voice* section under BENCHMARKS §11, which also records
+  the rule this run corrected (listening must not arm the ladder).
 * **No real GPU and no phone.** The 1.2 s relink is expected to be far smaller
   where shader compilation is not software — that is an expectation, and it is
   labelled as one.
@@ -899,7 +904,7 @@ building for on its own.
   | # | Bug | Consequence | Caught by |
   |---|---|---|---|
   | **VOC-1** | `abort()` is not guaranteed to fire `onend`, but the wrapper cleared `listening` only in `onend` | after a refused microphone the wrapper still believed it was listening — the exact state the button reads | `tests/voice.test.mjs` |
-  | **VOC-2** | A dead engine left `enabled` true, `hands-free` on and the §15.3 ladder **armed for a session that was over** | the button stayed lit over a microphone that could not work, and the scene stayed degraded. The failure now calls `disable()`, hands the scene back, and keeps the reason for the panel to say once — a button that silently goes back to off is not self-explanatory | `dev-ai-probe.js` |
+  | **VOC-2** | A dead engine left `enabled` true and `hands-free` on — and, because listening armed the ladder in the first version, the scene degraded with it | the button stayed lit over a microphone that could not work. The failure now calls `disable()`, gives Proactive mode back, and keeps the reason for the panel to say once — a button that silently goes back to off is not self-explanatory. The ladder half is moot now: see the correction below, which the soak forced | `dev-ai-probe.js` |
   | **VOC-3** | `stripWake` also trimmed trailing punctuation, so *"what is your name?"* came back as *"what is your name"* — rewording the visitor while its own contract says it returns their sentence | a small lie in the one place a voice layer has to be verbatim | `tests/voice.test.mjs` (the table) |
 
   VOC-2 only exists in a browser: it is a state machine walking off the end
@@ -912,8 +917,22 @@ building for on its own.
   outlive the panel; enabling voice is what turns Proactive mode on, and
   disabling it restores whatever hands-free was before (a host that already
   wanted it keeps it). `whileWorking` became a **depth counter**, because
-  listening and answering overlap and either one alone is a reason to hold
-  the scene down.
+  two overlapping generations would otherwise hand the scene back when the
+  first finished. **Listening does not arm it** — see the correction below,
+  which the §15.3 probe forced.
+
+### Corrected while measuring (§15.3 soak)
+
+**Listening does not arm the frame ladder.** The first version did — answering
+and listening were treated as overlapping reasons to hold the scene down. A
+600 s soak then reported the ladder `active` for the whole window with
+`step=0`: a pass only because this renderer's frames are healthy. Every §6.3
+rung acts on the model or the scene and none on speech, so arming for a listen
+only holds the film down — and where the ladder fires it pays rung 3's measured
+price (21 programs, 1221 ms) to protect a generation that is not running. That
+is RSRC-2 one door along. Removed; the answer at the end of a listen arms it
+through `ask()`, like any other. The `whileWorking` counter stays, because two
+overlapping *generations* are a real case in P5.
 
 ### Measured (R1 · headless Chrome, software GL · `node dev-ai-probe.js`)
 
@@ -929,6 +948,10 @@ building for on its own.
 
 ### Still open
 
+* **The 10-minute soak now exists, with a stub engine.** It is in `§15.3` /
+  BENCHMARKS §11: 0 MB / 0 nodes / 0 listeners over 600 s of an active
+  microphone. What it cannot cover is Chrome's own recognizer, which refuses in
+  this environment — so the lifecycle is measured and the *hearing* is not.
 * **No live microphone anywhere in this build's verification.** The
   listening branch (`enabled`, finals flowing into `chat.ask`) is covered by
   unit tests against doubles, not by a real voice. That needs a human at a

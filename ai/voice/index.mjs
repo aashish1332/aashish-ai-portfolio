@@ -306,7 +306,7 @@ export function createSpeaker(env, opts = {}) {
  *
  * @param {object} env     `window`-shaped
  * @param {object} opts
- * @param {object} opts.chat  the chat api: `ask`, `setHandsFree`, `setWorking`
+ * @param {object} opts.chat  the chat api: `ask`, `setHandsFree`
  * @param {number} [opts.tier]
  * @param {object} [opts.recognizer] inject a recognizer (tests, probes)
  * @param {object} [opts.speaker]    inject a speaker
@@ -395,10 +395,15 @@ let failure = null;
        mouse: that is what "proactive" means here, and it is the mode the
        anchors were built for (§12). */
     chat.setHandsFree?.(true);
-    /* And the frame ladder is armed for as long as the assistant is working —
-       listening is work (§15.3: it is armed around work, never around the
-       panel merely being open). */
-    chat.setWorking?.(true);
+    /* Deliberately NOT `chat.setWorking(true)`. Listening is not work: every
+       §6.3 rung acts on the model or the scene — pace generation, shorten the
+       answer budget, lower the scene quality, quick answers only — and not one
+       of them makes speech recognition faster. Arming the ladder for a listen
+       only holds the film down, and on a device where it fires it pays rung
+       3's cost (MEASURED: 21 shader programs relinked, 1221 ms of blocked main
+       thread) to protect a generation that is not running. The answer that
+       arrives at the end of the listen goes through `ask()`, which arms it
+       then, exactly as a typed one does. */
     nick.start();
     opts.onStatus?.(status());
     return status();
@@ -414,7 +419,6 @@ let failure = null;
     speaker?.stop();
     speaker = opts.speaker || null;
     chat.setHandsFree?.(!!priorHandsFree);
-    chat.setWorking?.(false);
     priorHandsFree = null;
     opts.onStatus?.(status());
     return status();

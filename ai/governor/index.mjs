@@ -246,7 +246,9 @@ export function createDegradeLadder(opts = {}) {
      * MEASURED at 21 programs and a 1221 ms main-thread block on the toolchain
      * that produced docs/RESOURCES.json, i.e. the ladder's "help" cost the
      * page more than any frame it saved. So the caller arms it while an answer
-     * is being produced (and a future microphone arms it while listening),
+     * is being produced — not while a microphone merely listens, because no
+     * rung makes recognition faster and every one of them holds the film
+     * down (see ai/voice/index.mjs),
      * and going idle gives the scene back.
      */
     setActive(on) {
