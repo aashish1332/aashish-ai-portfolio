@@ -190,9 +190,13 @@ load at all:
   compound technology name can still be retrieved ("his code" → *VS Code*). The intent layer
   now routes the one shape I found ("where can I see his code" → the links); the general case
   is the retrieval calibration §8.2 already schedules for P5 against this very eval file.
-- **`MIN_TOP_SCORE` is still an unmeasured heuristic** (documented as such in
-  `ai/retrieval/index.mjs` and asserted by test). It is now exercised by 55 executable cases,
-  so P5 has the data to calibrate it; nothing depends on it silently.
+- **`MIN_TOP_SCORE` — ✅ CALIBRATED 2026-09-22** (`npm run calibrate`, artefact
+  `docs/CALIBRATION.json`, see the phase section below). It is no longer an unmeasured
+  heuristic: it has a hard measured ceiling of **4.647** (the weakest alias a fact declares
+  about itself) which `tests/retrieval.test.mjs` recomputes from the data on every run, and a
+  floor that is **explicitly NOT MEASURED** — none of the corpus's must-not-answer questions
+  is kept out by the gate. The sweep also found two real retrieval defects (numbers invisible;
+  glue-only declared aliases dead).
 - **Localization boundary (by design, visible to a visitor):** the *templates* are native in
   EN / HI / Hinglish, but the fact **values** are English, because `knowledge.json` is built
   from an English CV. A Hindi question about a project therefore answers with a Hindi lead-in
@@ -569,6 +573,82 @@ otherwise be written under time pressure on Kaggle. Done here:
 `tokens_per_second`) · `training/notebooks/train_stage_a.ipynb` ·
 `tests/py/test_fetch_corpus.py` · `tests/py/test_estimate_budget.py` ·
 `tests/py/test_train_scripts.py` · `docs/TRAINING.md` · `docs/DATA_LICENSES.md`
+
+---
+
+## P5 preparation — the retrieval gate, calibrated (§8.2/§8.4)
+
+**Gate:** *"`MIN_TOP_SCORE` is still an unmeasured heuristic … P5 has the data to
+calibrate it"* (P1's open list). It is now measured, and the measurement is an
+instrument rather than a number.
+
+### Done
+
+* **`tools/calibrate-retrieval.mjs`** (`npm run calibrate`) — sweeps
+  `MIN_TOP_SCORE` 0 → 15 in 0.05 steps and re-answers **every** executable case
+  in `evaluation/portfolio_tests.json` at each step, plus **290 probes built
+  from the knowledge base's own declarations** (every alias of every fact, each
+  of which must retrieve that fact). Artefact: `docs/CALIBRATION.json`.
+  The threshold is a **parameter** now (`search`, `resolveFocus`, `quickAnswer`
+  all take `minScore`) — a threshold that cannot be swept can only be asserted.
+* **The evaluation file cannot calibrate this gate, and that is measured:**
+  only **7 of 56** executable cases change with the threshold, and **0 of 11**
+  must-not-answer questions are refused *by the gate* — they are refused by an
+  intent rule or by the withheld-facts list (the phone questions score 12.9 and
+  11.2 and are still declined, which is only possible because the decline never
+  asks the gate). The rest of the evidence came from the alias probes.
+* **What the sweep pinned:** a **hard ceiling of 4.647** — the weakest alias a
+  fact declares about itself ("who is he" → `person.name`) — and a floor that
+  is **NOT MEASURED**, because nothing in the corpus is kept out by the gate.
+  Every value in `(0, 4.647]` behaves identically, so the shipped `1.0` was left
+  where it was rather than moved to a midpoint resting on a boundary of "our
+  negatives all score zero".
+* **The ceiling is enforced by a test, not by a comment.**
+  `tests/retrieval.test.mjs` recomputes it from the data (the weakest
+  unambiguous alias that routes to its own fact) on every run, so an edit that
+  adds a weak alias — or a constant changed without re-running the sweep — fails
+  the suite and names `npm run calibrate`. Mutation-tested: setting the constant
+  to 5.0 fails 7 tests.
+
+### Bugs found by measuring (each now has a regression test)
+
+| # | Bug | Why it mattered |
+|---|---|---|
+| **CAL-1** | Retrieval inherited the **language detector's** tokenizer, which ignores digits on purpose. `tokenize('8.28')` is `[]`, so **every number in the knowledge base was invisible** — including the CGPA fact's own declared alias `"8.28"` | A recruiter asking "is it 8.28?" got *"I don't have that in my portfolio yet."* Asking by the fact's own declared spelling failed. Numbers are now content for retrieval (added on **both** sides, so the index and the query cannot diverge again — they were also being tokenized by two different expressions, which is the tokenizer/shard-mismatch class P4 already refuses to train through) |
+| **CAL-2** | A **declared** alias made only of function words ("who is he", "kaun hai" on `person.name`) was dropped by the retrieval stop set on one side and matched nothing on the other. The answer layer had the same hole from the other direction: `[].some(...)` is silently `false`, so `factAnswer`'s "is this query about this fact?" test answered *no* for every glue-only alias the base declares | *"who is he"* → *"I don't have that in my portfolio yet."* — the most natural question a recruiter can ask, refused by a fact that declares it. Fixed by indexing an exact alias as **one phrase token** (declaration, not fuzz — so it cannot reproduce QA-3's drive/driven accident) and by treating a declared spelling as "about this fact" in the answer layer |
+
+Alias routing went from **14 misrouted declarations to 0**. The remaining
+reported ambiguities are deliberate: `"cgpa"` is claimed by two facts and the
+base resolves that in **data** (R6), and glue-only aliases route through the
+intent layer.
+
+### Measured
+
+| Claim | Result |
+|---|---|
+| Executable evaluation cases whose answer changes with the gate | **7 of 56** |
+| Must-not-answer questions refused *by the gate* | **0 of 11** (the other mechanism is always first) |
+| Hard ceiling, from the base's own declarations | **4.647** |
+| Shipped value | **1.0** — inside every measured bound |
+| Declared aliases probed / misrouted | 230 / **0** (was 14) |
+| Tests | **258 JS + 219 Python**, 0 failures |
+
+### Still open
+
+* **The gate's lower bound is unmeasured on purpose.** It becomes measurable in
+  P5, where crossing it means paying for an inference; a decision that costs
+  something is a decision that can be calibrated.
+* **No visitor traffic** — this is the question set we chose to be judged on,
+  not a sample of real questions.
+* **`"who is this"` still abstains**, because the base does not declare it.
+  That is a knowledge-base question, not a threshold one, and it is left
+  visible rather than patched with a guess.
+
+### Evidence
+`tools/calibrate-retrieval.mjs` · `npm run calibrate` · `docs/CALIBRATION.json` ·
+`ai/retrieval/index.mjs` (`rawTokens`, `phrase`, `minScore`) ·
+`ai/answers/quick.mjs` (`minScore`, declared-spelling check) ·
+`tests/retrieval.test.mjs` (24) · `docs/BENCHMARKS.md`
 
 ---
 

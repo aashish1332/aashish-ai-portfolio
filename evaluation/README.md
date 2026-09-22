@@ -64,6 +64,23 @@ and writing d19/d20 surfaced **R7** (Devanagari vowel marks were deleted by `nor
 cases are now ordinary gates. `known_gap` remains available for genuine cases — a measured,
 understood gap printed by the runner instead of a quietly lowered threshold.
 
+## The file is also the calibration input (P5)
+
+`npm run calibrate` (`tools/calibrate-retrieval.mjs`) sweeps the §8.4 layer-1
+retrieval gate over this file and writes `docs/CALIBRATION.json`. It found that
+this file constrains the gate far less than expected: **only 7 of the 56
+executable cases change at all when the threshold moves**, because 49 are answered
+by intent templates that never consult retrieval, and **none of the 11
+must-not-answer questions is refused by the gate** — an intent rule or the
+withheld-facts list always gets there first. The gate's hard ceiling therefore
+comes from the knowledge base's own alias declarations rather than from here.
+
+That is a fact about the *coverage* of this set, not a failure of it: the set
+tests visitor-facing behaviour, and the gate is an internal signal. If you want a
+new case to constrain the gate, it has to be a question whose answer reaches the
+retrieval path — e.g. one with no template intent that is answerable only from a
+fact's body text.
+
 ## Adding a case
 
 1. Append to `portfolio_tests.json` — give it an `id`, pick the `type`, and put the fact ids

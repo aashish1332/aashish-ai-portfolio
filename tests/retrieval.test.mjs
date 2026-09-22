@@ -1,11 +1,17 @@
 /* ═══════════════════════════════════════════════════════════════
    tests/retrieval.test.mjs — §8.2 contract + regression guards
 
-   The four bugs found while building this are frozen here by name:
+   The bugs found while building this are frozen here by name:
      R1 alias glue words hijacked scoring ("which databases…" → workflow)
      R2 "uska naam kya hai" retrieved nothing (no name/naam index term)
      R3 editorial `note` text hijacked the skills queries
      R4 "where does he study" retrieved nothing (no study index term)
+     CAL-1 NUMBERS were invisible: retrieval inherited the language detector's
+           tokenizer, which drops digits on purpose — so the CGPA fact's own
+           alias "8.28" retrieved nothing
+     CAL-2 a DECLARED alias made only of function words ("who is he" on
+           person.name) was dropped by the stop set on both sides of the
+           comparison, so the fact was unreachable by its own spelling
    Run:  npm test
    ═══════════════════════════════════════════════════════════════ */
 import test from 'node:test';
@@ -18,6 +24,7 @@ import {
   hasEntityPronoun, resolveFocus, contentTokens, estimateTokens, RETRIEVAL_STOP,
   MAX_CHUNKS, MAX_CONTEXT_TOKENS, MIN_TOP_SCORE,
 } from '../ai/retrieval/index.mjs';
+import { quickAnswer } from '../ai/answers/quick.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const KB = JSON.parse(readFileSync(join(HERE, '..', 'knowledge', 'knowledge.json'), 'utf8'));
@@ -124,9 +131,83 @@ test('a factual query retrieves; nonsense abstains (§8.4 layer 1)', () => {
   }
 });
 
-test('MIN_TOP_SCORE is a documented heuristic, not a measured constant', () => {
-  assert.equal(typeof MIN_TOP_SCORE, 'number');
-  assert.ok(MIN_TOP_SCORE > 0, 'threshold must be positive');
+/* ── the gate, as a measured bound rather than a vibe ──────────
+   `npm run calibrate` sweeps MIN_TOP_SCORE over `evaluation/portfolio_tests.json`
+   and over every alias the knowledge base declares about itself. That sweep
+   produced a hard CEILING — above it, a fact stops being reachable by its own
+   declared name — and an honest gap on the other side (see the artefact).
+   The ceiling is recomputed here from the data instead of pasted in, so an
+   edit that adds a weak alias, or a constant changed without re-running the
+   sweep, fails the suite and points at the command that resolves it. */
+test('MIN_TOP_SCORE sits below the weakest alias a fact declares about itself', () => {
+  const aliasProbes = [];
+  for (const c of IDX.chunks) {
+    for (const a of (c.aliases || []).filter(Boolean)) {
+      aliasProbes.push({ q: String(a), fact: c.id });
+    }
+  }
+  /* an alias whose tokens another fact also claims proves nothing either way */
+  const claims = new Map();
+  for (const p of aliasProbes) {
+    for (const t of contentTokens(p.q)) {
+      if (!claims.has(t)) claims.set(t, new Set());
+      claims.get(t).add(p.fact);
+    }
+  }
+  const routing = aliasProbes.filter((p) => {
+    const toks = contentTokens(p.q);
+    if (toks.some((t) => (claims.get(t)?.size || 0) > 1)) return false;   /* ambiguous */
+    return search(IDX, p.q, { minScore: 0 }).hits[0]?.id === p.fact;      /* routes home */
+  });
+  assert.ok(routing.length >= 100, `only ${routing.length} alias probes to calibrate against`);
+  const weakest = routing
+    .map((p) => ({ ...p, score: search(IDX, p.q, { minScore: 0 }).hits[0].score }))
+    .sort((a, b) => a.score - b.score)[0];
+  assert.ok(MIN_TOP_SCORE <= weakest.score,
+    `MIN_TOP_SCORE ${MIN_TOP_SCORE} exceeds the weakest declared alias ("${weakest.q}" → ${weakest.fact}, `
+    + `${weakest.score.toFixed(3)}) — that alias can no longer retrieve its own fact. `
+    + 'Re-run `npm run calibrate` and move the constant inside the measured band.');
+  assert.ok(MIN_TOP_SCORE > 0, 'a gate that refuses nothing is not a gate');
+});
+
+/* ── numbers are content (found by the calibration sweep) ────
+   `tokenize()` is the language detector's and drops digits on purpose. The
+   index used it, so every number in the base was invisible: the CGPA fact
+   declares the alias "8.28" and it retrieved nothing at all. */
+test('numeric facts and numeric aliases are retrievable', () => {
+  assert.deepEqual(contentTokens('8.28'), ['8.28'],
+    'the language tokenizer drops digits; retrieval must not inherit that');
+  assert.deepEqual(contentTokens('87.6%'), ['87.6'], 'a percent sign is not part of the number');
+
+  for (const [q, id] of [['8.28', 'ach.lpu-cgpa'], ['87.6', 'ach.class12'],
+    ['6.93', 'ach.minor-ai-cgpa']]) {
+    const r = search(IDX, q);
+    assert.ok(!r.lowConfidence, `"${q}" retrieved nothing`);
+    assert.equal(r.hits[0].id, id, `"${q}" → ${r.hits[0].id}`);
+  }
+  /* and the number is a weak signal on its own, so a full question still wins */
+  assert.equal(search(IDX, 'is it 8.28').hits[0].id, 'ach.lpu-cgpa');
+});
+
+/* ── a glue-only alias must not be dead on arrival ──────────────
+   "who is he" is DECLARED as an alias of person.name, but every token in it is
+   a function word, so the stop set emptied it on both sides of the comparison:
+   `[].some(...)` is false, and the assistant refused a fact that says it is
+   about exactly that question. */
+test('an alias made only of function words still reaches its fact', () => {
+  for (const q of ['who is he', 'kaun hai']) {
+    const r = search(IDX, q);
+    assert.ok(!r.lowConfidence, `"${q}" retrieved nothing`);
+    assert.equal(r.hits[0].id, 'person.name', `"${q}" → ${r.hits[0].id}`);
+    const a = quickAnswer(KB, q, {});
+    assert.equal(a.abstained, false, `"${q}" was refused`);
+    assert.deepEqual(a.sources, ['person.name']);
+    /* the third-person voice answers with the name, not an identity claim */
+    assert.match(a.text, /Aashish Kumar/);
+  }
+  /* the declared spelling is what counts: an adjacency is still refused */
+  assert.equal(quickAnswer(KB, 'who is this', {}).abstained, true,
+    'a phrasing the base does not declare must still abstain — declaring it is a data change, not a guess');
 });
 
 test('fuzzy matching survives typos the variant map does not cover', () => {

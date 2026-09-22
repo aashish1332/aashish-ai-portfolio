@@ -5,6 +5,84 @@ is labelled ESTIMATED or NOT TESTED — never rounded up into a pass.
 
 ---
 
+## The retrieval gate, calibrated (§8.2/§8.4) — 2026-09-22
+
+**Method:** `npm run calibrate` → `docs/CALIBRATION.json`. It sweeps
+`MIN_TOP_SCORE` from 0 to 15 in 0.05 steps and re-answers **every** executable
+case in `evaluation/portfolio_tests.json` at each step, then does the same for
+every alias the knowledge base declares about itself (290 probes). No number
+below is inferred from reading the code.
+
+### What the sweep found: the evaluation file cannot calibrate this gate
+
+| Finding | Number |
+|---|---|
+| Executable cases | 56 of 60 (4 synthetic need a model) |
+| Cases whose answer CHANGES with the threshold | **7** |
+| Cases that reach the gate at all | 7 — the other 49 are answered by templates or intent rules that never consult it |
+| Questions that must not be answered but are refused BY the gate | **0 of 11** |
+
+So the gate has a measurable ceiling and **no measurable floor**: every
+must-not-answer question either shares no vocabulary with the base (scoring
+0.000) or is declined by something else first — an intent rule, or the
+withheld-facts list. The two phone questions score **12.9 and 11.2**, far above
+any candidate threshold, which is only possible because the decline never asks
+the gate for permission. That is measured, not assumed: the sweep runs to 15,
+and a case that still passes with the gate wide open is a case the gate never
+saw.
+
+| Bound | Value | Source |
+|---|---|---|
+| **Ceiling (hard)** | **4.647** | the weakest alias a fact declares about itself (`"who is he"` → `person.name`) |
+| Floor | **NOT MEASURED** | nothing in the corpus is kept out by the gate |
+| Shipped value | **1.0** | inside every measured bound |
+
+Every threshold in `(0, 4.647]` behaves **identically** on this corpus, which
+is exactly why an unmeasured `1.0` survived: the gate is load-bearing for 7
+answerable cases and for none of the negatives. The value was therefore left
+where it was rather than moved to a midpoint that rests on a boundary of "our
+negatives all score zero" — and the ceiling is now recomputed **from the data
+by `tests/retrieval.test.mjs`**, so a constant edited without re-running the
+sweep fails the suite and names the command.
+
+### Two real defects the sweep found, and what they cost
+
+| # | Defect | Measured before | After |
+|---|---|---|---|
+| **CAL-1** | Retrieval inherited the **language detector's** tokenizer, which drops digits on purpose. `tokenize('8.28')` is `[]`, so every number in the base was invisible — including the CGPA fact's own declared alias `"8.28"` | `"8.28"`, `"87.6"`, `"6.93"` → **no hits at all**; asking "is it 8.28?" was refused | → `ach.lpu-cgpa` (5.53), `ach.class12` (5.36), `ach.minor-ai-cgpa` (5.78) |
+| **CAL-2** | A **declared** alias whose every token is a function word ("who is he", "kaun hai" on `person.name`) was deleted by the stop set on one side and matched nothing on the other. In the answer layer the same set made `[].some(...)` silently `false`, so the fact path refused it too | "who is he" → *"I don't have that in my portfolio yet."* | → *"My name is Aashish Kumar."* (`person.name`) |
+
+The index and the query were also being tokenized by two different expressions.
+They are now one function (`rawTokens`), because two tokenizers that agree today
+are the same class of bug as the shard/tokenizer mismatch P4 already refuses to
+train through.
+
+Alias routing, as a precision measure over the base's own declarations:
+
+| | Before | After |
+|---|---|---|
+| Declared aliases probed | 230 | 230 |
+| MISROUTED (unambiguous alias that does not reach its own fact) | **14** | **0** |
+| Token-ambiguous (two facts claim the same word — reported, not "fixed") | 55 | 57 |
+
+The residual list is honest by construction: `"cgpa"` is claimed by two facts
+and the base deliberately resolves that in **data** (R6), and a glue-only alias
+routes through the intent layer rather than retrieval. Both are recorded in the
+artefact instead of being tuned away.
+
+### NOT MEASURED
+
+* **Visitor traffic.** This is the corpus we chose to be judged on, not a
+  sample of real questions. No recall claim is made from it.
+* **The model path.** `lowConfidence` exists so that P5 can abstain *without*
+  calling a model; that is where the missing lower bound will come from, because
+  crossing it then costs an inference. Until a model exists, this half of the
+  band is open and is labelled as open.
+* **"who is this"** — still abstains, because the base does not declare it.
+  That is a data question, not a threshold one, and it is left visible.
+
+---
+
 ## Resource + lifecycle (§15.3) — 2026-09-22
 
 **Device:** R1 (Intel HD 520, 4 threads, 8 GB, Windows) — **software GL**

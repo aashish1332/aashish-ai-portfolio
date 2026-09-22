@@ -21,9 +21,27 @@ import { tokenize, ENGLISH_WORDS, HINGLISH_WORDS } from '../language/detect.mjs'
    Hinglish glue ("kaam") are dropped too — see tests/retrieval.test.mjs */
 export const RETRIEVAL_STOP = new Set([...ENGLISH_WORDS, ...HINGLISH_WORDS]);
 
-/** Tokenize for indexing: normalize → tokenize → canonical → drop glue. */
+/**
+ * The ONE tokenizer retrieval uses, for the index and for the query alike.
+ *
+ * The index and the query used to be tokenized by two different expressions
+ * (`contentTokens()` for documents, a bare `tokenize()` for queries). That is
+ * the same class of bug as a tokenizer/shard mismatch: they agree until the
+ * day one of them changes. They diverged on numbers, in fact — see below.
+ */
+function rawTokens(text) {
+  const n = normalize(text);
+  /* NUMBERS ARE CONTENT HERE, even though the language detector throws them
+     away on purpose: a digit says nothing about the language of a sentence.
+     Retrieval inherited that choice, so `tokenize('8.28')` was `[]` and every
+     number in the base was invisible — the CGPA fact's own declared alias
+     "8.28" matched nothing, and neither did "87.6" or "6.93". */
+  return [...tokenize(n), ...(n.match(NUMBER_RE) || [])];
+}
+
+/** Tokenize for indexing: raw tokens → canonical → drop glue. */
 export function contentTokens(text) {
-  return tokenize(normalize(text)).map(canonical).filter((t) => !RETRIEVAL_STOP.has(t));
+  return rawTokens(text).map(canonical).filter((t) => !RETRIEVAL_STOP.has(t));
 }
 
 /* ─ BM25 knobs ───────────────────────────────────────────────────
@@ -32,6 +50,9 @@ export function contentTokens(text) {
 const K1 = 1.2;
 const B = 0.75;
 const ALIAS_BOOST = 3;   /* an alias hit counts as N occurrences */
+
+/* A number, with its separators kept together ("8.28", "87.6", "1,200"). */
+const NUMBER_RE = /\p{N}+(?:[.,]\p{N}+)*/gu;
 
 /* n-gram fuzzy: minimum Dice coefficient for two tokens to be a match */
 export const FUZZY_MIN = 0.62;
@@ -206,6 +227,7 @@ export function buildIndex(kb) {
   const chunks = chunkify(kb);
   const df = new Map();          /* term -> document frequency */
   const vocab = new Set();
+  const phrase = new Map();      /* normalized phrase -> Set(chunk ids) */
   let totalLen = 0;
 
   for (const c of chunks) {
@@ -216,6 +238,23 @@ export function buildIndex(kb) {
       for (const t of contentTokens(a)) {
         for (let i = 0; i < ALIAS_BOOST; i++) aliasToks.push(t);
       }
+    }
+    /* ── exact phrases ──
+       An alias is a DECLARATION that this text means this fact. Tokenizing it
+       throws that away whenever every token is a function word: the alias
+       "who is he" on person.name was dropped by the stop set here and matched
+       nothing on the query side, so the fact was unreachable by its own
+       declared spelling — and the alias layer is what a recruiter is most
+       likely to type. The whole normalized alias (and the fact's own label) is
+       therefore indexed as one token, so it can only ever match a query that
+       IS that phrase. Glue cannot bleed into other questions, which is exactly
+       what breaking R1 would have meant. */
+    c.phrases = [...new Set([...c.aliases, c.label])]
+      .filter(Boolean).map(normalize).filter(Boolean);
+    for (const p of c.phrases) {
+      if (!phrase.has(p)) phrase.set(p, new Set());
+      phrase.get(p).add(c.id);
+      for (let i = 0; i < ALIAS_BOOST; i++) aliasToks.push(`phrase:${p}`);
     }
     c.tokens = body.concat(aliasToks);
     c.len = c.tokens.length;
@@ -231,7 +270,7 @@ export function buildIndex(kb) {
     for (const t of c.tokens) c.tf.set(t, (c.tf.get(t) || 0) + 1);
   }
 
-  return { chunks, df, vocab, avgdl: chunks.length ? totalLen / chunks.length : 1, n: chunks.length };
+  return { chunks, df, vocab, phrase, avgdl: chunks.length ? totalLen / chunks.length : 1, n: chunks.length };
 }
 
 /** Expand a query token to vocabulary terms via char n-grams (kya/kia). */
@@ -274,9 +313,28 @@ export function scoreAll(index, queryTokens) {
 const ENTITY_KINDS = new Set(['project', 'education', 'certification', 'experience']);
 
 /* ── the retrieval gate (§8.4 layer 1) ───────────────────────────
-   Starting heuristic, NOT a measured constant: it must be calibrated
-   against `evaluation/portfolio_tests.json` in Phase 5. Below this the
-   pipeline abstains without ever calling a model. */
+   Below this the pipeline abstains without ever calling a model.
+
+   `npm run calibrate` sweeps it (`docs/CALIBRATION.json`). What the sweep
+   measured, honestly:
+
+     CEILING 4.647 — the weakest alias a fact declares about itself. Above it,
+       asking for a real fact by a spelling the base itself declares stops
+       retrieving it. This is a hard bound and `tests/retrieval.test.mjs`
+       recomputes it from the data on every run.
+     FLOOR   NOT MEASURED — of the 11 questions in the corpus that must not be
+       answered, all 11 are refused without consulting the gate (they share no
+       vocabulary, or an intent rule or the withheld-facts list declines them
+       first). So nothing here says how LOW it may safely sit.
+
+   Behaviour is identical for every value in (0, 4.647] on the corpus, which
+   is why an unmeasured 1.0 survived this long: the gate is load-bearing for
+   the 7 answerable cases that reach it, and for none of the negatives. The
+   missing lower bound arrives in P5, where crossing it means calling a model
+   — a cost decision that can be measured per case. Until then the value is
+   kept where it was rather than moved to a midpoint the evidence cannot
+   support, and it is behind: `minScore` is a parameter so it can be swept at
+   all — a threshold that cannot be swept can only ever be asserted. */
 export const MIN_TOP_SCORE = 1.0;
 
 /* Context budget (§8.2): top-k ≤ 3 chunks AND ≤ ~300 tokens together.
@@ -290,7 +348,8 @@ export const estimateTokens = (s) => Math.ceil(String(s).length / 4);
  * Resolve the conversation's focus entity from a query (§8.2).
  * Returns the previous focus when the query only uses pronouns.
  */
-export function resolveFocus(index, query, previous = null) {
+export function resolveFocus(index, query, previous = null, opts = {}) {
+  const minScore = opts.minScore ?? MIN_TOP_SCORE;
   /* An ENTITY pronoun LOCKS the focus to whatever is already under discussion.
      "uska database kaun sa tha?" means "what was ITS database?" — so we must
      not let the literal word "database" hijack the topic onto cert.dbms.
@@ -304,7 +363,7 @@ export function resolveFocus(index, query, previous = null) {
   const scored = scoreAll(index, toks).filter((s) => ENTITY_KINDS.has(s.chunk.kind));
   const best = scored[0];
   /* a content-token-free pronoun query keeps the previous focus */
-  if (!best || best.score < MIN_TOP_SCORE) {
+  if (!best || best.score < minScore) {
     return { focus: previous, label: null, changed: false };
   }
   return { focus: best.chunk.id, label: best.chunk.label, changed: best.chunk.id !== previous };
@@ -315,10 +374,13 @@ export function resolveFocus(index, query, previous = null) {
  * @returns {{query, tokens, hits, focus, tokensUsed, lowConfidence, expanded}}
  */
 export function search(index, query, opts = {}) {
-  const { focus = null, k = MAX_CHUNKS, maxTokens = MAX_CONTEXT_TOKENS } = opts;
+  const { focus = null, k = MAX_CHUNKS, maxTokens = MAX_CONTEXT_TOKENS,
+    minScore = MIN_TOP_SCORE } = opts;
 
-  const raw = tokenize(normalize(query));
+  const raw = rawTokens(query);
   const expanded = [];
+  /* a query that IS a declared phrase scores as that phrase (see buildIndex) */
+  const qnorm = normalize(query);
   const qtokens = [];
   for (const t of raw) {
     const c = canonical(t);
@@ -331,13 +393,15 @@ export function search(index, query, opts = {}) {
     }
   }
 
-  const focusRes = resolveFocus(index, query, focus);
+  if (index.phrase?.has(qnorm)) qtokens.push(`phrase:${qnorm}`);
+
+  const focusRes = resolveFocus(index, query, focus, { minScore });
 
   let scored = scoreAll(index, qtokens);
   /* pronoun follow-up: if the focus is carried but nothing scored strongly,
      pull the focus chunk in so "uska database kaun sa tha?" still resolves */
   if (hasPronoun(query) && focusRes.focus &&
-      (!scored.length || scored[0].score < MIN_TOP_SCORE)) {
+      (!scored.length || scored[0].score < minScore)) {
     const fc = index.chunks.find((c) => c.id === focusRes.focus);
     if (fc) {
       let s = 0;
@@ -345,7 +409,7 @@ export function search(index, query, opts = {}) {
         const f = fc.tf.get(q);
         if (f) s += idf(index, q) * ((f * (K1 + 1)) / (f + K1 * (1 - B + B * (fc.len / index.avgdl))));
       }
-      scored = [{ chunk: fc, score: Math.max(s, MIN_TOP_SCORE) }, ...scored];
+      scored = [{ chunk: fc, score: Math.max(s, minScore) }, ...scored];
     }
   }
 
@@ -370,6 +434,7 @@ export function search(index, query, opts = {}) {
     focus: focusRes.focus,
     focusChanged: focusRes.changed,
     tokensUsed,
-    lowConfidence: !hits.length || hits[0].score < MIN_TOP_SCORE,
+    lowConfidence: !hits.length || hits[0].score < minScore,
+    minScore,
   };
 }

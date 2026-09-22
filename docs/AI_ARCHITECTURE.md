@@ -172,6 +172,21 @@ Two details worth knowing because they are load-bearing:
   private value must never reach the corpus, because a model that learns a
   value cannot be made to un-learn it by a runtime filter.
 
+**The layer-1 gate is calibrated, and its bounds are known.** `MIN_TOP_SCORE`
+was an unmeasured heuristic until `npm run calibrate` swept it over the
+evaluation set and over every alias the knowledge base declares about itself.
+The sweep's ceiling is hard and is recomputed by a test from the data: **4.647**,
+the weakest alias a fact declares about itself, above which a real fact stops
+being reachable by its own name. The floor is **not measured** — nothing in the
+corpus is kept out by the gate, because every must-not-answer question is
+declined by an intent rule or by the withheld-facts list first. The value ships
+at 1.0, inside the measured band, rather than at a midpoint the evidence cannot
+support; the missing half is P5's to supply, where crossing the gate costs an
+inference. Two real defects fell out of the sweep: numbers were invisible to
+retrieval (it inherited the language detector's tokenizer, which drops digits on
+purpose), and a declared alias made only of function words ("who is he") was
+deleted by the stop set on both sides of the comparison.
+
 ---
 
 ## 5. Voice and page navigation (§10/§12)
@@ -271,6 +286,8 @@ That is an allow-list entry with a reason, not a default.
 | Answers speak as Aashish, refusals included | **verified** — every template, three languages, in `tests/quick-answers.test.mjs` |
 | Opening and closing the panel leaks nothing | **verified** on R1/software GL — 0 nodes, 0 listeners, 0 MB per reopen over 5 cycles, and 0 shader programs compiled; the 10-minute Proactive soak and any real-GPU figure are **NOT TESTED** (`docs/RESOURCES.json`) |
 | Hindi/Hinglish answer quality | **not measurable yet** — no model, and the seed fixture is synthetic |
+| The §8.4 retrieval gate is calibrated rather than assumed | **bounded, one half measured** — ceiling 4.647 recomputed from the data by test; the floor is **NOT MEASURED** (`docs/CALIBRATION.json`) |
+| Numbers and declared aliases are retrievable | **verified** — "8.28" → `ach.lpu-cgpa`, "who is he" → `person.name`, both regression-tested |
 | Browser inference and quantisation | not started |
 | **Voice**: microphone, wake word, speech synthesis | **does not exist.** Only the mode flag that makes the page follow an answer, and the honest statement that no audio input or output is implemented anywhere in this build |
 

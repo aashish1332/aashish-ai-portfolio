@@ -570,11 +570,24 @@ function factAnswer(kb, lang, hit, query, persona = DEFAULT_PERSONA) {
   /* The query must actually be ABOUT this fact — matching its own name or one
      of its aliases — not merely fuzzy-adjacent to text in its body. Without
      this, "what car does he drive" answered with a bootcamp achievement
-     (drive → driven, Dice 0.73) instead of abstaining. */
+     (drive → driven, Dice 0.73) instead of abstaining.
+
+     Two ways to be about a fact, because the token test alone cannot see one
+     of them. A declared spelling ("who is he" on person.name) has NO content
+     tokens — the stop set empties it on both sides — so `[].some(...)` was
+     silently `false` for every glue-only alias the base declares, and a
+     recruiter asking "who is he" was refused by a fact that says it is about
+     exactly that. Declaration is not fuzz: QA-3's accident (drive/driven) is a
+     token-level coincidence, and an exact phrase cannot reproduce it. */
+  const declaredSpellings = [f.name, f.id, ...(f.aliases || [])]
+    .filter(Boolean).map((a) => normalize(String(a)));
+  const aboutByDeclaration = declaredSpellings.includes(normalize(query));
+
   const qTokens = contentTokens(query);
   const nameTokens = [f.name, f.id, ...(f.aliases || [])]
     .filter(Boolean).flatMap((a) => contentTokens(a));
-  const aboutFact = qTokens.some((t) => nameTokens.some((n) => n === t || similarity(t, n) >= FUZZY_MIN));
+  const aboutFact = aboutByDeclaration
+    || qTokens.some((t) => nameTokens.some((n) => n === t || similarity(t, n) >= FUZZY_MIN));
   if (!aboutFact) return null;
 
   if (kind === 'skill') {
@@ -708,6 +721,9 @@ export function quickAnswer(kb, query, opts = {}) {
   const question = String(query || '');
   const lang = opts.lang || detectLanguage(question).lang;
   const persona = opts.persona === 'third' ? 'third' : DEFAULT_PERSONA;
+  /* the §8.4 layer-1 gate, overridable so it can be SWEPT against the
+     evaluation set (`npm run calibrate`) instead of only asserted */
+  const minScore = opts.minScore ?? MIN_TOP_SCORE;
   const det = detectIntent(question, kb);
 
   /* EVERY read below goes through the public view (§1): a `public:false` fact is
@@ -762,7 +778,7 @@ export function quickAnswer(kb, query, opts = {}) {
   }
 
   /* one retrieval pass, shared by the prose path and the fact path */
-  const searchRes = search(indexFor(kb), question, { focus: opts.focus || null });
+  const searchRes = search(indexFor(kb), question, { focus: opts.focus || null, minScore });
   const hits = searchRes.hits;
   base.focus = searchRes.focus || base.focus;
 
@@ -785,7 +801,7 @@ export function quickAnswer(kb, query, opts = {}) {
     const e = indexFacts(kb).get(h.id);
     return e && FACT_KINDS.has(e.kind);
   });
-  if (factHit && factHit.score >= MIN_TOP_SCORE) {
+  if (factHit && factHit.score >= minScore) {
     const fa = factAnswer(kb, lang, factHit, question, persona);
     if (fa) {
       return { ...base, handled: true, text: fa.text, sources: fa.sources,
@@ -798,7 +814,7 @@ export function quickAnswer(kb, query, opts = {}) {
      turn into an unrelated project list instead of an abstention */
   {
     const top = hits[0];
-    if (top && top.score >= MIN_TOP_SCORE && top.kind === 'project') {
+    if (top && top.score >= minScore && top.kind === 'project') {
       const fallback = extractive(kb, lang, 'project_detail', { project: null, hits, question, persona });
       if (fallback) {
         return { ...base, extractive: true, text: fallback.text, sources: fallback.sources,
