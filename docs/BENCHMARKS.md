@@ -388,6 +388,32 @@ The A/B (panel closed vs open) is computed, but in headless software GL the film
 page is GPU-starved. The probe prints `INCONCLUSIVE — needs the §15 reference profile on real
 hardware` instead of a fabricated pass.
 
+## Voice input (§11) — 2026-09-22
+
+Measured with `node dev-ai-probe.js` on **R1**, headless Chrome, software GL.
+The number that matters most is the first one: turning voice on must not cost
+the pre-click promise anything.
+
+| Claim | Result |
+|---|---|
+| AI requests before the first click | **0**, and the list is checked *including* `ai/voice/index.mjs` |
+| AI assets on first open | 12 files · no worker · no wasm · no model |
+| Tier chosen on this machine | **T2 · STANDARD** → voice level `both` (push-to-talk + spoken answers) |
+| Engine object constructed before the tap | **no** — `createRecognizer` builds nothing until `start()` |
+| Tap, in a browser **with no microphone** | engine refused → voice off in < 1.5 s, `aria-pressed` back to `false`, `handsFree` back to `false`, the §15.3 ladder released, reason stated |
+| After Escape (panel closed) | `enabled=false` |
+| Console errors · page errors · failed requests | **0 · 0 · 0** |
+
+**NOT TESTED, and this is the honest limit of the above:** a **live
+microphone**. Headless Chrome ships `webkitSpeechRecognition` and has no
+microphone, so what was measured is the *refusal* path — which turned out to
+be a real bug (a dead engine used to leave the button lit and the frame ladder
+armed, see PROGRESS §11 VOC-2). The listening path, and everything about
+continuous mode, is verified with doubles only. No claim here rests on a human
+having spoken to it.
+
+---
+
 **NOT TESTED:** the §4 target "median FPS drop ≤ 10 %, p95 ≤ 1.5× baseline" on a real GPU, the
 4×/6× DevTools CPU throttling profiles, and any real phone. `longtask` observation and the
 ladder's *cost* were added afterwards by the §15.3 pass above — see

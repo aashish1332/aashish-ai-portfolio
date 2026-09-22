@@ -54,6 +54,7 @@ export const SHIP_PATHS = [
   'ai/language',
   'ai/retrieval',
   'ai/ui',
+  'ai/voice',
   'knowledge/knowledge.json',
 ];
 

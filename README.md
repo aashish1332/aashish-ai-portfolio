@@ -127,12 +127,22 @@ and training pipeline built and tested; the browser runtime arrives in
 P6–P7, and Stage A training runs on Kaggle in P4.
 
 The answers are written **as Aashish** — "my CGPA", not "his CGPA" — because
-the visitor is being introduced to him, and once voice mode drives the panel
-the page moves by itself to the part an answer came from. That part is found
-by looking at the page's own content every time, not at a stored position, so
-it still works after the sections are reordered or renamed; a question with no
-place on the page simply does not move it. The move is never narrated, and it
-is off in the typed chat — `setHandsFree(true)` is the whole switch.
+the visitor is being introduced to him, and in **Proactive mode** the page
+moves by itself to the part an answer came from. That part is found by looking
+at the page's own content every time, not at a stored position, so it still
+works after the sections are reordered or renamed; a question with no place on
+the page simply does not move it. The move is never narrated, and it is off in
+the typed chat — the typed chat is a text box that answers, nothing else.
+
+Press **VOICE** and you can ask out loud: the answer is spoken, and the page
+follows it. Nothing is listened to until you press it, the panel tells you
+beforehand that your browser's speech service receives the audio (typing never
+leaves the device), and saying *"Aashish…"* is what it answers to when it is
+listening continuously — anything else it hears is ignored in silence. If the
+microphone is blocked it turns itself off and says why, rather than leaving a
+dead one switched on. The voice available here is your browser's, chosen by
+the answer's language; a clone of Aashish's own voice is a future feature, not
+this one.
 
 Nothing AI-related loads until you click: the launcher is **958 B gz** and
 the page makes **zero** AI requests before that. Opening and closing the panel
@@ -150,7 +160,7 @@ idle page cost a measured 1.2 s of blocked main thread (`docs/BENCHMARKS.md` §1
 | [docs/PROGRESS.md](docs/PROGRESS.md) | phase-by-phase log, including what is unfinished |
 
 ```bash
-npm run test:all     # 258 JS + 219 Python tests
+npm run test:all     # 285 JS + 219 Python tests
 npm run probe:resources  # §15.3: heap, nodes, listeners, long tasks → docs/RESOURCES.json
 npm run calibrate    # sweep the §8.4 retrieval gate against the evaluation set → docs/CALIBRATION.json
 npm run params       # parameter count + §7.1 band gate

@@ -5,8 +5,10 @@ what is not. It is written per phase and updated as phases land; anything
 not yet built says so instead of describing the plan as if it existed.
 
 Status: **P1 complete · P2 complete · P3 complete (all three gates verified,
-on CPU at smoke scale — see [TRAINING.md](TRAINING.md)) · §10 voice and §12
-section-following landed.** P4–P11 not started; voice input does not exist.
+on CPU at smoke scale — see [TRAINING.md](TRAINING.md)) · §10 voice, §11 voice
+input and §12 section-following landed.** P4–P11 not started. Voice input
+exists and is browser-verified, but it has never been run with a live
+microphone — see §5.
 
 ---
 
@@ -224,6 +226,54 @@ moves a project into a scene of its own — and asks again. **20/20**, including
 `scrollY 0 → 5059` from hands-free mode alone. Resolution costs 14.6–29 ms
 (a bounded walk of ≤800 elements, no layout read) against §4's 50 ms budget.
 
+### Heard, and heard out loud (§11)
+
+`ai/voice/index.mjs` is the whole thing: **adapter-first**, so the engine can
+be replaced without the panel noticing.
+
+**Nothing is listened to until the visitor asks.** The recognition object is
+not constructed until the button is pressed, and the first thing that happens
+afterwards is the disclosure — *"Voice mode uses your browser's speech
+recognition, which sends what you say to your browser's speech service, so
+while it listens, your audio leaves this device. Typed questions never do."*
+The panel's older promise ("what you type stays in your browser") is still
+true, and it is deliberately not stretched to cover speech.
+
+**§6.2's `voice` column is now read rather than declared.** It has been in the
+tier table since P2 with nothing consuming it:
+
+| Tier | `voice` | What that means |
+|---|---|---|
+| T0 | `none` | typed only. Also where a `saveData` visitor lands, and recognition is a network service — so "off" is the answer they asked for |
+| T1 | `tap` | push-to-talk; nothing played aloud at somebody on a phone |
+| T2 | `both` | push-to-talk **and** answers read aloud |
+| T3 | `all` | both, plus continuous listening behind a wake phrase |
+
+A test recomputes the policy table **from** `TIERS` in both directions (every
+declared level is implemented; no implemented level is unreachable), and an
+unrecognised level fails **closed** — an unknown capability is not permission.
+
+**It is addressed, not eavesdropping.** Continuous mode requires a wake phrase
+(`aashish`, `ask aashish`, `hey aashish`, `ok aashish`); anything else is
+dropped in silence. The rest of the sentence is returned as the visitor's own
+words — punctuation included — because the wake splitter must not tidy up the
+question it is about to be judged on.
+
+The answer is then spoken as itself (`res.text` only — badges and source chips
+are furniture, not speech), in a voice chosen by the answer's own language,
+and a partial transcript during playback stops it: **talking over the answer
+takes the turn back.** Which section of the page that answer came from is
+resolved by §12 as usual, because the recognized question goes through exactly
+the same `ask()` a typed one does.
+
+**A failure is undone, not just logged.** A refused permission
+(`not-allowed`, `audio-capture`, `service-not-allowed`) stops the recognizer
+rather than riding the restart loop that continuous listening needs, and the
+session turns *itself* off: the ladder is released, Proactive mode goes back to
+what it was, and the panel says why once. Measured in a browser with no
+microphone — the button goes dark and the reason is stated, which is the
+failure a visitor with a blocked permission actually gets.
+
 ### The frame ladder is armed around work, not around the panel (§6.3)
 
 `ai/governor/index.mjs` exposes `setActive(on)`, and `ai/ui/chat.mjs` arms the
@@ -255,8 +305,8 @@ Sizes will be measured, never estimated in prose.
 
 ## 7. Dev vs prod — the build (§9.3/§17)
 
-`npm run build` → `dist/` (27 files, **391,619 B** — 387,696 B before the
-§15.3 lifecycle fix moved the ladder's arming into the shell);
+`npm run build` → `dist/` (28 files, **421,495 B** — 396,152 B before §11
+voice added a module, and 27 files / 391,619 B before that);
 `npm run preview` serves it on `:5580` through the same dev server with
 `ROOT=dist`.
 
@@ -289,7 +339,9 @@ That is an allow-list entry with a reason, not a default.
 | The §8.4 retrieval gate is calibrated rather than assumed | **bounded, one half measured** — ceiling 4.647 recomputed from the data by test; the floor is **NOT MEASURED** (`docs/CALIBRATION.json`) |
 | Numbers and declared aliases are retrievable | **verified** — "8.28" → `ach.lpu-cgpa`, "who is he" → `person.name`, both regression-tested |
 | Browser inference and quantisation | not started |
-| **Voice**: microphone, wake word, speech synthesis | **does not exist.** Only the mode flag that makes the page follow an answer, and the honest statement that no audio input or output is implemented anywhere in this build |
+| **Voice**: microphone, wake phrase, speech output | **built, adapter-first, and browser-verified** — 0 AI requests before the tap, the audio disclosure before anything is listened to, a wake phrase in continuous mode, the answer spoken in its own language, and a dead microphone turned off with a stated reason and the scene handed back (`dev-ai-probe.js`, 27/27) |
+| **Voice with a live microphone** | **NOT TESTED.** Headless Chrome ships the API and has no microphone, so the *listening* path is covered by unit tests against doubles (28) and never by a real voice. Continuous mode has never been spoken to. Chrome-only in practice; Firefox and Safari get the disabled button and the reason |
+| A cloned voice (his own) | **not started** — this is the browser's voice, chosen by language |
 
 Every "verified" row above corresponds to a command in
 [TRAINING.md](TRAINING.md#verification) or a test name in `tests/`.

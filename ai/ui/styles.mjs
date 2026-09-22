@@ -58,6 +58,21 @@ export const STYLES = `
 }
 .ai__close:hover, .ai__close:focus-visible { color: var(--accent); border-color: var(--accent); }
 
+/* VOICE — off until pressed. A border and a word, no colour until it is
+   actually listening, because a permanently-lit microphone icon on a
+   portfolio is a claim that something is being recorded. */
+.ai__mic {
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: .12em;
+  background: none; border: 1px solid var(--line-strong); color: var(--paper-dim);
+  padding: 6px 8px; cursor: pointer; white-space: nowrap;
+  transition: color .2s, border-color .2s;
+}
+.ai__mic:hover:not(:disabled), .ai__mic:focus-visible { color: var(--accent); border-color: var(--accent); }
+.ai__mic:disabled { color: var(--paper-faint); border-color: var(--line); cursor: default; }
+.ai__mic.is-on { color: var(--cyan); border-color: var(--cyan); }
+
+@media (max-width: 640px) { .ai__mic { font-size: 8.5px; padding: 6px 6px; } }
+
 .ai__log {
   flex: 1; overflow-y: auto; overscroll-behavior: contain;
   padding: 16px; display: flex; flex-direction: column; gap: 14px;

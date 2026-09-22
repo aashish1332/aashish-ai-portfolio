@@ -820,11 +820,11 @@ a dev import after a regex-containing line is still a **failure**.
 
 ### Still open
 
-* **Voice input is not built.** What exists is the mode flag the page's
-  following behaviour hangs off, and the honest statement that no microphone,
-  no wake word and no speech synthesis exist anywhere in this build. The
-  section-following does not depend on it: it is driven by the answer, so a
-  typed question in hands-free mode moves the page the same way.
+* ~~**Voice input is not built.**~~ **CLOSED — see the §11 voice section at the
+  end of this file.** It was true when written: the mode flag was all that
+  existed. Section-following still does not depend on it, which is why it
+  landed first and why a typed question in hands-free mode moves the page the
+  same way a spoken one does.
 * **The anchor is per-page, not per-viewport.** It chooses a section and
   flashes the element inside it; where the film's pinned scroll puts that
   scene on screen is still the director's business, so the probe measures the
@@ -843,3 +843,112 @@ narration) · `ai/ui/styles.mjs` · `ai/answers/quick.mjs` (`persona`, `pick`) �
 `tests/quick-answers.test.mjs` (QA-10, QA-11, the §12 narration guard) ·
 `tests/py/test_model_torch.py` (15) · `tests/build-bundle.test.mjs` (masker) ·
 `dev-anchor-probe.js` · `index.html` (`data-ai-topics`) · `npm run test:all`
+
+---
+
+## Voice input, and answers out loud (§11) — 2026-09-22
+
+**Gate:** in Proactive mode the assistant hears the visitor, answers as
+Aashish, and the page moves to the part the answer came from — and nothing at
+all is listened to before the visitor asks for it.
+
+**Verdict: built, adapter-first, and browser-verified on R1**
+(`node dev-ai-probe.js`, 27/27). The **listening path itself is NOT TESTED**:
+headless Chrome has `webkitSpeechRecognition` and no microphone, so what the
+probe actually exercises is the refusal — which turned out to be worth
+building for on its own.
+
+### Done
+
+* **`ai/voice/index.mjs`** — the whole decision surface: the tier policy, the
+  wake phrase, the recognizer wrapper, the speaker, and the controller. All
+  injected, so `tests/voice.test.mjs` (28) drives it with doubles and no
+  browser.
+* **The tier column is finally read.** `TIERS[].voice`
+  (`none`/`tap`/`both`/`all`) has been declared since P2 and consumed by
+  nothing. It now decides: **T0** typed only (which is also where a
+  `saveData` visitor lands — and speech recognition sends audio over the
+  network, so "off" there is the answer they asked for), **T1**
+  push-to-talk, **T2** + answers spoken aloud, **T3** + continuous listening
+  behind a wake phrase. A test recomputes the policy table *from* `TIERS`, and
+  an unrecognised level **fails closed** rather than granting.
+* **Nothing is opted in for you.** The engine object is not even constructed
+  until the button is pressed, the audio-leaves-the-device disclosure is shown
+  once before anything is listened to, and a refused permission is never
+  asked for again — `not-allowed`/`audio-capture`/`service-not-allowed` stop
+  the recognizer and abort it rather than riding the normal restart loop.
+* **It is addressed, not eavesdropping.** In continuous mode a sentence with
+  no wake phrase in it is dropped **in silence** — not answered, not
+  announced, not logged (§12's rule applies to a transcript exactly as it
+  applies to a scroll). `aashish`, `ask aashish`, `hey aashish`, `ok aashish`;
+  the rest of the sentence is the visitor's own words, punctuation included,
+  because it is meant to be their question and not a tidied version of it.
+* **It speaks the answer, and only the answer.** `onAnswer` hands
+  `res.text` to `speechSynthesis` — the badge and the source chips are
+  furniture, not speech — and the voice is picked from the answer's own
+  language (`hi` → `hi-IN`, Hinglish → `en-IN`), because a Hindi answer read
+  by an English voice is a different bug with the same root cause as the
+  others in this project.
+* **Talking over it takes the turn back.** A partial transcript while the
+  answer is being read stops the synthesis. No narration of any kind, checked
+  over every string literal in the file by the same §12 guard the panel uses.
+* **Three bugs found while building, each of which would have shipped:**
+
+  | # | Bug | Consequence |
+  |---|---|---|
+  | # | Bug | Consequence | Caught by |
+  |---|---|---|---|
+  | **VOC-1** | `abort()` is not guaranteed to fire `onend`, but the wrapper cleared `listening` only in `onend` | after a refused microphone the wrapper still believed it was listening — the exact state the button reads | `tests/voice.test.mjs` |
+  | **VOC-2** | A dead engine left `enabled` true, `hands-free` on and the §15.3 ladder **armed for a session that was over** | the button stayed lit over a microphone that could not work, and the scene stayed degraded. The failure now calls `disable()`, hands the scene back, and keeps the reason for the panel to say once — a button that silently goes back to off is not self-explanatory | `dev-ai-probe.js` |
+  | **VOC-3** | `stripWake` also trimmed trailing punctuation, so *"what is your name?"* came back as *"what is your name"* — rewording the visitor while its own contract says it returns their sentence | a small lie in the one place a voice layer has to be verbatim | `tests/voice.test.mjs` (the table) |
+
+  VOC-2 only exists in a browser: it is a state machine walking off the end
+  of a failure the unit tests had no way to produce. The probe's most useful
+  run so far is the one where it had **no microphone** — that is the failure a
+  visitor with a blocked permission gets, and it is now measured rather than
+  assumed.
+
+* **Wiring, not a rewrite.** `close()` stops the microphone, so it cannot
+  outlive the panel; enabling voice is what turns Proactive mode on, and
+  disabling it restores whatever hands-free was before (a host that already
+  wanted it keeps it). `whileWorking` became a **depth counter**, because
+  listening and answering overlap and either one alone is a reason to hold
+  the scene down.
+
+### Measured (R1 · headless Chrome, software GL · `node dev-ai-probe.js`)
+
+| Claim | Result |
+|---|---|
+| AI requests before the first click | **0** — including `ai/voice/index.mjs` |
+| AI assets on first open | 12 files, no worker, no wasm |
+| Tier on this machine | **T2 · STANDARD** → voice level `both` |
+| Voice button before the tap | present, `aria-pressed=false`, engine **not constructed** |
+| Tap, on a machine with no microphone | engine refused → voice **off**, `aria-pressed` back to `false`, `handsFree=false`, ladder released, and the reason stated: *"The microphone is not available, so voice mode is off. Typing works."* |
+| After Escape (panel closed) | `enabled=false` — the microphone does not outlive the panel |
+| Console / page errors | **0** |
+
+### Still open
+
+* **No live microphone anywhere in this build's verification.** The
+  listening branch (`enabled`, finals flowing into `chat.ask`) is covered by
+  unit tests against doubles, not by a real voice. That needs a human at a
+  real browser, and it is on the manual checklist rather than claimed here.
+* **Continuous mode is the least-verified path.** It is T3-only, it is built,
+  and nobody has spoken to it. The wake phrase is tested as a function, not
+  as an experience.
+* **Chrome-only in practice.** The recognition engine ships as
+  `webkitSpeechRecognition`; Firefox and Safari get the honest disabled
+  button with the reason, which is the behaviour the probe verifies.
+* **Hindi/Hinglish recognition is untested by ear.** The language hint is
+  wired (`voiceHint`), the answers are native in all three, and the values are
+  still English (`§ Phase 1`).
+* **No voice cloning.** A cloned voice — his own — is a future feature and is
+  not started: today it is the browser's voice, chosen by language.
+
+### Evidence
+`ai/voice/index.mjs` (`VOICE_POLICY`, `stripWake`, `createRecognizer`,
+`createSpeaker`, `createVoice`, `SPEECH_DISCLOSURE`) ·
+`ai/ui/chat.mjs` (`toggleVoice`, `voiceButton`, `setWorking`, `close`) ·
+`ai/ui/styles.mjs` (`.ai__mic`) · `tests/voice.test.mjs` (28) ·
+`tests/quick-answers.test.mjs` (§12 guard, now over both files) ·
+`dev-ai-probe.js` (§11 phase) · `npm run test:all`

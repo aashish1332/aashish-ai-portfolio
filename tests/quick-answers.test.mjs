@@ -410,16 +410,30 @@ test('§12: no answer ever narrates the navigation', () => {
   assert.deepEqual(offenders, [], `the answer talks about its own scrolling:\n  ${offenders.join('\n  ')}`);
 });
 
-test('§12: the chat shell has no user-facing string about navigation either', () => {
+test('§12: nothing the shell or the voice layer can say narrates the navigation', () => {
+  /* The shell is checked by source because that is where its user-facing
+     strings live; the voice layer speaks, so a narration there would play
+     OVER the answer rather than merely sit beside it. */
+  const files = ['ai/ui/chat.mjs', 'ai/voice/index.mjs'];
+  for (const rel of files) {
+    const src = readFileSync(join(HERE, '..', ...rel.split('/')), 'utf8');
+    /* every single-quoted, double-quoted or template string literal */
+    const literals = src.match(/'[^'\n]*'|"[^"\n]*"|`[^`]*`/gs) || [];
+    const offenders = literals.filter((s) => NAV_NARRATION.test(s));
+    assert.deepEqual(offenders, [], `${rel} would say something about moving the page:\n  ${offenders.join('\n  ')}`);
+  }
+
   const chatSource = readFileSync(join(HERE, '..', 'ai', 'ui', 'chat.mjs'), 'utf8');
-  /* every single-quoted, double-quoted or template string literal in the file */
-  const literals = chatSource.match(/'[^'\n]*'|"[^"\n]*"|`[^`]*`/gs) || [];
-  const offenders = literals.filter((s) => NAV_NARRATION.test(s));
-  assert.deepEqual(offenders, [], `the panel would say something about moving the page:\n  ${offenders.join('\n  ')}`);
   /* and the disclaimer is worth stating positively: the shell DOES move the
      page, so the check above must not be passing because nothing happens */
   assert.ok(/scrollToAnchor/.test(chatSource), 'the chat shell no longer moves the page at all');
   assert.ok(/handsFree/.test(chatSource), 'there is no hands-free mode to move it from');
+  /* and the microphone is wired to it, or the only thing that could ever set
+     hands-free is the visitor typing into a text box */
+  assert.ok(/createVoice/.test(chatSource) && /toggleVoice/.test(chatSource),
+    'the panel no longer has a way to turn voice mode on');
+  assert.ok(/stopVoice/.test(chatSource) && /function close\(\)/.test(chatSource)
+    && /stopVoice\(\);/.test(chatSource), 'the microphone could outlive the closed panel');
 });
 
 test('QA-11: the identity question discloses instead of joining the voice', () => {

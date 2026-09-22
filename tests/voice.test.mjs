@@ -1,0 +1,532 @@
+/* ═══════════════════════════════════════════════════════════════
+   tests/voice.test.mjs — the §11 voice layer
+
+   There is no microphone in this environment and no test here pretends
+   otherwise: every engine is a double, and what is asserted is the
+   behaviour that is expensive to discover live —
+
+     · nothing touches the microphone before the visitor presses the button,
+       and a refused permission is never asked for again;
+     · speech that is not addressed to the assistant is dropped in SILENCE
+       (§12: a miss is not an announcement);
+     · the tier table decides what each device may do, and the table is
+       checked against `TIERS` rather than restated, so editing a tier cannot
+       silently grant a capability the policy has never heard of;
+     · an answer is spoken as itself — never accompanied by a description of
+       what the assistant is doing.
+
+   Run:  npm test
+   ═══════════════════════════════════════════════════════════════ */
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { TIERS } from '../ai/governor/index.mjs';
+import {
+  VOICE_POLICY, voicePolicy, voiceSummary, pickVoice, stripWake,
+  recognizeSupported, createRecognizer, createSpeaker, createVoice,
+  speechRecognitionCtor, WAKE_PHRASES, SPEECH_DISCLOSURE, NO_ENGINE, THRASH_LIMIT,
+} from '../ai/voice/index.mjs';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+/* ── doubles ────────────────────────────────────────────────────── */
+
+/** An `env` shaped like a browser, with an engine that can be driven. */
+function makeEnv(over = {}) {
+  const events = { constructed: 0, starts: 0, stops: 0, aborts: 0, cancels: 0, spoken: [], instances: [], utterances: [] };
+
+  class FakeRecognition {
+    constructor() {
+      events.constructed++;
+      events.instances.push(this);
+      this.lang = '';
+      this.started = false;
+    }
+    start() {
+      if (this.started) throw new Error('already started');
+      this.started = true;
+      events.starts++;
+      this.onstart?.();
+    }
+    stop() { this.started = false; events.stops++; this.onend?.(); }
+    abort() { this.started = false; events.aborts++; }
+    /* test controls */
+    emit(transcript, isFinal = true, resultIndex = 0) {
+      const results = [{ 0: { transcript }, isFinal }];
+      this.onresult?.({ resultIndex, results });
+    }
+    fail(code) { this.onerror?.({ error: code }); }
+    end() { this.started = false; this.onend?.(); }
+  }
+
+  class FakeUtterance { constructor(text) { this.text = text; } }
+
+  const synth = {
+    speaking: false,
+    voices: [],
+    getVoices() { return this.voices; },
+    speak(u) {
+      synth.speaking = true;
+      events.spoken.push(u.text);
+      events.utterances.push(u);
+      u.onstart?.();
+    },
+    cancel() { events.cancels++; synth.speaking = false; },
+  };
+
+  const env = {
+    SpeechRecognition: over.noEngine ? undefined : FakeRecognition,
+    speechSynthesis: over.noSpeech ? undefined : synth,
+    SpeechSynthesisUtterance: over.noSpeech ? undefined : FakeUtterance,
+    timers: [],
+    setTimeout(fn) { env.timers.push(fn); return env.timers.length; },
+  };
+  /** Run whatever the recognizer deferred (its restart back-off). */
+  const flush = () => { let n = 0; while (env.timers.length && n++ < 50) env.timers.shift()(); };
+  return { env, events, synth, flush };
+}
+
+/** The recognizer contract, without a browser behind it. */
+function fakeRecognizer() {
+  return {
+    supported: true, reason: null, listening: false,
+    started: 0, stopped: 0, released: 0, lang: null,
+    start() { this.started++; this.listening = true; this.started = this.started; return true; },
+    stop() { this.stopped++; this.listening = false; this.used = true; },
+    release() { this.released++; this.listening = false; },
+    setLang(l) { this.lang = l; },
+  };
+}
+
+function fakeSpeaker() {
+  return {
+    supported: true, speaking: false, spoken: [], stops: 0, lastOpts: null,
+    speak(t, o) { this.spoken.push(t); this.speaking = true; this.lastOpts = o; return true; },
+    stop() { this.stops++; this.speaking = false; return true; },
+  };
+}
+
+/** The chat api the controller talks to — the parts it uses, nothing more. */
+function fakeChat(over = {}) {
+  return {
+    asked: [], working: 0, handsFree: over.handsFree === true,
+    ask(q) { this.asked.push(q); return { text: 'answer' }; },
+    setHandsFree(v) { this.handsFree = !!v; },
+    setWorking(on) { this.working = Math.max(0, this.working + (on ? 1 : -1)); },
+  };
+}
+
+const build = (tier, chat = fakeChat()) => {
+  const nick = fakeRecognizer();
+  const spk = fakeSpeaker();
+  const { env, events, flush } = makeEnv();
+  const voice = createVoice(env, { tier, chat, recognizer: nick, speaker: spk });
+  return { voice, chat, nick, spk, env, events, flush };
+};
+
+/* ── VOICE-1 · the microphone is opt-in, and inert until then ───── */
+
+test('VOICE-1: no engine exists until the visitor turns voice on', () => {
+  const { env, events } = makeEnv();
+  assert.equal(speechRecognitionCtor(env) !== null, true);
+  assert.equal(events.constructed, 0, 'importing a module must not open a microphone');
+  const nick = createRecognizer(env, {});
+  assert.equal(events.constructed, 0, 'creating the wrapper must not either');
+  nick.start();
+  assert.equal(events.constructed, 1, 'exactly one engine, on start');
+  nick.start();                                   /* a second start reuses it */
+  assert.equal(events.constructed, 1);
+  assert.equal(events.starts, 1, 'start was sent to a settled engine');
+});
+
+test('VOICE-1: a browser with no engine says why, and does not throw', () => {
+  assert.deepEqual(recognizeSupported({}), { supported: false, reason: NO_ENGINE });
+  assert.equal(recognizeSupported(undefined).supported, false);
+  assert.equal(recognizeSupported(null).supported, false);
+  const nick = createRecognizer(undefined, {});
+  assert.equal(nick.supported, false);
+  assert.equal(nick.start(), false);
+  assert.equal(nick.listening, false);
+});
+
+/* ── VOICE-2 · the tier table decides, and is read not restated ─── */
+
+test('VOICE-2: every voice level a tier declares is implemented, and vice versa', () => {
+  for (const t of TIERS) {
+    assert.ok(VOICE_POLICY[t.voice],
+      `tier ${t.name} declares voice "${t.voice}", which VOICE_POLICY does not implement — ` +
+      'an unknown capability must never be treated as permission');
+  }
+  for (const level of Object.keys(VOICE_POLICY)) {
+    assert.ok(TIERS.some((t) => t.voice === level),
+      `VOICE_POLICY implements "${level}", which no tier can ever grant — dead policy`);
+  }
+});
+
+test('VOICE-2: an unknown level fails CLOSED rather than granting', () => {
+  const original = TIERS[0].voice;
+  try {
+    TIERS[0].voice = 'whatever';
+    const p = voicePolicy(0);
+    assert.equal(p.pushToTalk, false);
+    assert.equal(p.speakAnswers, false);
+    assert.equal(p.continuous, false);
+    assert.match(p.reason, /whatever/);
+  } finally { TIERS[0].voice = original; }
+});
+
+test('VOICE-2: the ladder is tap → +spoken → +continuous, and T0 is typed only', () => {
+  const p0 = voicePolicy(0);
+  assert.equal(p0.pushToTalk, false, 'T0 has no voice at all');
+  assert.ok(p0.reason, 'T0 must say why, not just be disabled');
+
+  const p1 = voicePolicy(1);
+  assert.deepEqual(
+    [p1.pushToTalk, p1.speakAnswers, p1.continuous], [true, false, false],
+    'T1 is a phone: push-to-talk, and nothing played at somebody in public');
+
+  const p2 = voicePolicy(2);
+  assert.deepEqual([p2.pushToTalk, p2.speakAnswers, p2.continuous], [true, true, false]);
+
+  const p3 = voicePolicy(3);
+  assert.deepEqual([p3.pushToTalk, p3.speakAnswers, p3.continuous], [true, true, true]);
+});
+
+test('VOICE-2: voiceSummary reports the browser before it reports the tier', () => {
+  const { env } = makeEnv({ noEngine: true });
+  const s = voiceSummary(2, env);
+  assert.equal(s.supported, false);
+  assert.equal(s.reason, NO_ENGINE);
+  const ok = voiceSummary(0, makeEnv().env);
+  assert.equal(ok.supported, true);
+  assert.equal(ok.pushToTalk, false);
+  assert.equal(ok.reason, VOICE_POLICY.none.reason);
+});
+
+/* ── VOICE-3 · enabling is gated, and never half-way ────────────── */
+
+test('VOICE-3: on a typed-only tier, enabling starts nothing at all', () => {
+  const { env, events } = makeEnv();
+  const chat = fakeChat();
+  const v = createVoice(env, { tier: 0, chat });
+  const st = v.enable();
+  assert.equal(st.enabled, false);
+  assert.match(st.reason, /typed/);
+  assert.equal(events.constructed, 0, 'a refused enable must not open a microphone');
+  assert.equal(chat.handsFree, false);
+  assert.equal(chat.working, 0);
+});
+
+test('VOICE-3: an unsupported browser enables nothing either', () => {
+  const chat = fakeChat();
+  const v = createVoice({}, { tier: 3, chat });
+  const st = v.enable();
+  assert.equal(st.enabled, false);
+  assert.equal(st.reason, NO_ENGINE);
+  assert.equal(chat.working, 0, 'nothing is listening, so the ladder must not be held');
+});
+
+/* ── VOICE-4 · the wake phrase, precisely ───────────────────────── */
+
+test('VOICE-4: the wake phrase is split off without re-writing the question', () => {
+  const cases = [
+    ['ask aashish what are your projects', true, 'what are your projects'],
+    ['Hey Aashish, tell me about your CGPA', true, 'tell me about your CGPA'],
+    ['Aashish, what is your name?', true, 'what is your name?'],
+    ['hey aashish mera cgpa kya hai', true, 'mera cgpa kya hai'],
+    ['...aashish? batao', true, 'batao'],
+    ['aashish', true, ''],
+    ['ask aashish', true, ''],
+    ['what are your projects', false, 'what are your projects'],
+    ['aashish what is his name', true, 'what is his name'],
+    ['', false, ''],
+  ];
+  for (const [input, wake, question] of cases) {
+    const r = stripWake(input);
+    assert.equal(r.wake, wake, `wake detection wrong for "${input}"`);
+    assert.equal(r.question, question, `question wrong for "${input}"`);
+  }
+});
+
+test('VOICE-4: the longest wake phrase wins, and the name is not eaten twice', () => {
+  const r = stripWake('ok aashish what are your skills');
+  assert.equal(r.wake, true);
+  assert.equal(r.question, 'what are your skills');
+  /* every phrase is usable on its own */
+  for (const p of WAKE_PHRASES) {
+    const s = stripWake(`${p} what is your name`);
+    assert.equal(s.wake, true, `"${p}" does not wake it`);
+    assert.equal(s.question, 'what is your name');
+  }
+});
+
+/* ── VOICE-5 · push-to-talk ─────────────────────────────────────── */
+
+test('VOICE-5: press-to-talk answers the question and lets the page follow', () => {
+  const { voice, chat, nick } = build(2);
+  voice.enable();
+  assert.equal(chat.handsFree, true, 'proactive mode is the point of the button');
+  assert.equal(chat.working, 1);
+  assert.equal(nick.started, 1);
+
+  const r = voice.onFinal('what are your projects');
+  assert.deepEqual(chat.asked, ['what are your projects']);
+  assert.equal(r.wake, false, 'push-to-talk does not need a wake phrase');
+
+  voice.onFinal('hey aashish, what is your name');
+  assert.deepEqual(chat.asked[1], 'what is your name', 'a wake phrase is still stripped');
+});
+
+test('VOICE-5: an empty utterance asks nothing', () => {
+  const { voice, chat } = build(2);
+  voice.enable();
+  assert.equal(voice.onFinal('   '), null);
+  assert.deepEqual(chat.asked, []);
+});
+
+/* ── VOICE-6 · continuous mode is addressed, never eavesdropped ─── */
+
+test('VOICE-6: in continuous mode, speech that is not addressed is ignored in silence', () => {
+  const { voice, chat } = build(3);
+  voice.enable();
+  assert.equal(voice.status().mode, 'continuous');
+  assert.equal(voice.onFinal('I was just talking to someone else'), null);
+  assert.equal(voice.onFinal('so anyway that is what happened'), null);
+  assert.deepEqual(chat.asked, [], 'a room conversation must not be answered');
+  assert.equal(voice.isSessionOpen(), false);
+});
+
+test('VOICE-6: the wake phrase opens a turn, with or without the question in it', () => {
+  /* wake and question together */
+  const a = build(3);
+  a.voice.enable();
+  assert.deepEqual(a.voice.onFinal('hey aashish what are your projects').question, 'what are your projects');
+  assert.deepEqual(a.chat.asked, ['what are your projects']);
+
+  /* the name alone opens the session, the next sentence is the question */
+  const b = build(3);
+  b.voice.enable();
+  assert.deepEqual(b.voice.onFinal('aashish').question, '');
+  assert.deepEqual(b.chat.asked, []);
+  assert.equal(b.voice.isSessionOpen(), true);
+  b.voice.onFinal('what is your CGPA');
+  assert.deepEqual(b.chat.asked, ['what is your CGPA']);
+});
+
+test('VOICE-6: T1/T2 cannot be forced into always-on listening', () => {
+  const { voice, chat } = build(2);
+  voice.enable({ continuous: true });
+  assert.equal(voice.status().mode, 'push', 'a phone may not hold the microphone open');
+  assert.equal(voice.status().continuous, false);
+  /* and push-to-talk needs no wake phrase, because pressing the button IS
+     the wake phrase — the visitor already said who they were talking to */
+  assert.deepEqual(voice.onFinal('what are your skills').question, 'what are your skills');
+  assert.deepEqual(chat.asked, ['what are your skills']);
+});
+
+/* ── VOICE-7 · barge-in, and speaking the answer itself ─────────── */
+
+test('VOICE-7: talking over the answer takes the turn back', () => {
+  const { voice, spk } = build(2);
+  voice.enable();
+  voice.onAnswer({ text: 'My name is Aashish Kumar.' }, { lang: 'en' });
+  assert.equal(spk.spoken.length, 1);
+  spk.speaking = true;
+  assert.equal(voice.onPartial('actually, what about'), true);
+  assert.equal(spk.stops, 1);
+  assert.equal(spk.speaking, false);
+  /* a partial when nothing is being said is not a turn */
+  assert.equal(voice.onPartial('hello'), false);
+  assert.equal(voice.onPartial(''), false);
+});
+
+test('VOICE-7: only the answer\'s own words are spoken, and only where allowed', () => {
+  const t2 = build(2);
+  t2.voice.enable();
+  const res = { text: 'My CGPA is 8.28.', badge: 'QUICK ANSWER', sources: ['ach.lpu-cgpa'] };
+  assert.equal(t2.voice.onAnswer(res, { lang: 'en' }), true);
+  assert.deepEqual(t2.spk.spoken, ['My CGPA is 8.28.'],
+    'the badge and the sources are furniture, not speech');
+
+  /* an abstention is still an answer and is still read out */
+  assert.equal(t2.voice.onAnswer({ text: 'That is not in my portfolio.' }), true);
+
+  /* T1 reads nothing aloud */
+  const t1 = build(1);
+  t1.voice.enable();
+  assert.equal(t1.voice.onAnswer(res, { lang: 'en' }), false);
+  assert.deepEqual(t1.spk.spoken, []);
+
+  /* and nothing is spoken when the answer has no text, or voice is off */
+  assert.equal(t2.voice.onAnswer({}, {}), false);
+  const off = build(2);
+  assert.equal(off.voice.onAnswer(res), false);
+});
+
+test('VOICE-7: the spoken voice follows the answer\'s language', () => {
+  const voices = [
+    { name: 'US', lang: 'en-US' },
+    { name: 'IN-HI', lang: 'hi-IN' },
+    { name: 'UK', lang: 'en-GB' },
+    { name: 'FR', lang: 'fr-FR' },
+  ];
+  assert.equal(pickVoice(voices, 'hi-IN').name, 'IN-HI');
+  assert.equal(pickVoice(voices, 'en-IN').name, 'US', 'no en-IN: any English beats a silence');
+  assert.equal(pickVoice(voices, 'en-GB').name, 'UK');
+  assert.equal(pickVoice(voices, 'fr-FR').name, 'FR');
+  assert.equal(pickVoice(voices, 'ta-IN'), null, 'no Tamil voice: the browser default, not English');
+  assert.equal(pickVoice([], 'en-US'), null);
+  assert.equal(pickVoice(undefined, 'en-US'), null);
+  assert.equal(pickVoice(voices, ''), null);
+
+  /* end to end: a Hindi turn picks the Hindi voice off the real utterance */
+  const { env, events } = makeEnv();
+  env.speechSynthesis.voices = voices;
+  const spk = createSpeaker(env, {});
+  assert.equal(spk.speak('मेरा नाम आशीष है।', { lang: 'hi' }), true);
+  assert.equal(events.utterances[0].lang, 'hi-IN');
+  assert.equal(events.utterances[0].voice?.name, 'IN-HI');
+  assert.equal(spk.speak('   '), false, 'nothing to say is not a thing to say');
+});
+
+/* ── VOICE-8 · turning it off leaves nothing hot ────────────────── */
+
+test('VOICE-8: disabling stops the engine, the voice, and the work it held', () => {
+  const chat = fakeChat();
+  const { voice, nick, spk } = build(2, chat);
+  voice.enable();
+  voice.disable();
+  assert.equal(nick.stopped, 1);
+  assert.equal(nick.released, 1, 'a released engine cannot be left listening');
+  assert.equal(spk.stops >= 1, true);
+  assert.equal(chat.working, 0, 'the scene must be handed back');
+  assert.equal(chat.handsFree, false, 'and hands-free goes back to what it was');
+  assert.equal(voice.status().enabled, false);
+  assert.equal(voice.status().disclosure, null, 'the disclosure belongs to an enabled session');
+  /* a second disable is a no-op, not an error */
+  voice.disable();
+  assert.equal(nick.released, 1);
+});
+
+test('VOICE-8: a host that already wanted hands-free keeps it', () => {
+  const chat = fakeChat({ handsFree: true });
+  const { voice } = build(2, chat);
+  voice.enable();
+  voice.disable();
+  assert.equal(chat.handsFree, true, 'voice off must not silently disable proactive mode');
+});
+
+test('VOICE-8: dropping to T0 while enabled turns it off', () => {
+  const { voice, chat } = build(3);
+  voice.enable();
+  const st = voice.setTier(0);
+  assert.equal(st.enabled, false);
+  assert.equal(chat.working, 0);
+  assert.equal(chat.handsFree, false);
+});
+
+/* ── VOICE-9 · the engine's real-world failure modes ────────────── */
+
+test('VOICE-9: a refused microphone is never asked for again', () => {
+  const { env, events, flush } = makeEnv();
+  const nick = createRecognizer(env, {});
+  nick.start();
+  events.instances[0].fail('not-allowed');
+  assert.match(nick.reason, /microphone is not available/);
+  assert.equal(events.aborts, 1, 'the engine was left running after a refusal');
+  assert.equal(nick.listening, false);
+  flush();
+  assert.equal(events.starts, 1, 'a restart after not-allowed re-prompts the visitor');
+  /* even if the engine ends on its own afterwards */
+  events.instances[0].end();
+  flush();
+  assert.equal(events.starts, 1);
+});
+
+test('VOICE-9: a refused microphone turns voice mode off and releases the scene', () => {
+  const { env, events } = makeEnv();
+  const chat = fakeChat();
+  const v = createVoice(env, { tier: 3, chat, speaker: fakeSpeaker() });
+  assert.equal(v.enable().enabled, true);
+  assert.equal(chat.working, 1);
+  /* the engine reports the refusal the way a browser does */
+  events.instances[0].fail('not-allowed');
+  const st = v.status();
+  assert.equal(st.enabled, false, 'a dead microphone must not leave the button lit');
+  assert.match(st.reason, /microphone is not available/,
+    'and the visitor has to be able to find out why it went off');
+  assert.equal(chat.working, 0, 'the ladder must not stay armed for a session that is over');
+  assert.equal(chat.handsFree, false);
+  /* the reason is a report, not a latch: turning it on again clears it */
+  assert.equal(v.enable().enabled, true);
+  assert.equal(v.status().reason, null);
+});
+
+test('VOICE-9: an engine that dies instantly is retried, then given up on', () => {
+  const { env, events, flush } = makeEnv();
+  const nick = createRecognizer(env, { clock: () => 1000 });
+  nick.start();
+  for (let i = 0; i < THRASH_LIMIT + 3; i++) {
+    events.instances[0].end();
+    flush();
+  }
+  assert.match(nick.reason, /kept stopping/, 'a hot restart loop must end in a stop, not in a spin');
+  const starts = events.starts;
+  flush();
+  events.instances[0].end();
+  flush();
+  assert.equal(events.starts, starts, 'it is still restarting after giving up');
+});
+
+test('VOICE-9: a healthy session restarts after each utterance', () => {
+  let t = 0;
+  const { env, events, flush } = makeEnv();
+  const nick = createRecognizer(env, { clock: () => (t += 5000) });
+  nick.start();
+  events.instances[0].end();
+  flush();
+  assert.equal(events.starts, 2, 'continuous listening is a restart loop by design');
+  assert.equal(nick.reason, null);
+});
+
+test('VOICE-9: interim results arrive as partials and only finals are answered', () => {
+  const { env, events } = makeEnv();
+  const finals = [];
+  const partials = [];
+  const nick = createRecognizer(env, {
+    onFinal: (t) => finals.push(t),
+    onPartial: (t) => partials.push(t),
+  });
+  nick.start();
+  const rec = events.instances[0];
+  rec.emit('what are', false);
+  rec.emit('what are your projects', true);
+  assert.deepEqual(partials, ['what are']);
+  assert.deepEqual(finals, ['what are your projects']);
+});
+
+/* ── VOICE-10 · what the panel may claim ────────────────────────── */
+
+test('VOICE-10: the disclosure says the audio leaves the device', () => {
+  assert.match(SPEECH_DISCLOSURE, /leaves this device/i,
+    'the panel promises "what you type stays in your browser"; speech is not typing');
+  assert.match(SPEECH_DISCLOSURE, /speech service/i);
+  assert.match(SPEECH_DISCLOSURE, /typed questions/i);
+  const st = build(2).voice;
+  st.enable();
+  assert.equal(st.status().disclosure, SPEECH_DISCLOSURE,
+    'the sentence is only shown while it is true');
+});
+
+test('VOICE-10: the module carries no string that narrates its own navigation', () => {
+  /* the same rule tests/quick-answers.test.mjs applies to the panel, applied
+     here to the file that speaks — a spoken narration is worse than a written
+     one, because it plays over the answer. */
+  const NAV = /\b(moving to|move to (the|that)|moving the page|scroll(ing|ed)? (to|down|up)|taking you to|take you to|jump(ing)? to|skip(ping)? to|can'?t find|couldn'?t find|unable to find|cannot find|find that section|no such section|that section)\b/i;
+  const src = readFileSync(join(HERE, '..', 'ai', 'voice', 'index.mjs'), 'utf8');
+  const literals = src.match(/'[^'\n]*'|"[^"\n]*"|`[^`]*`/gs) || [];
+  const offenders = literals.filter((s) => NAV.test(s));
+  assert.deepEqual(offenders, [], `the voice layer would say something about the page:\n  ${offenders.join('\n  ')}`);
+});

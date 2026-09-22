@@ -179,6 +179,48 @@ const say = (label, ok, detail) => {
   say('no horizontal overflow', overflow.scrollW <= overflow.innerW + 1,
     `${overflow.scrollW} vs ${overflow.innerW}`);
 
+  /* ── 6b. voice (§11) — the adapter, in a browser with no microphone ──
+     A headless browser cannot recognise speech, and this probe does not
+     pretend it can. What it CAN check is the part that only exists in a
+     browser: that the button is there and labelled, that pressing it either
+     turns voice on or says why, and that a failure is undone — a dead
+     microphone left switched on, holding the scene's ladder down, is the
+     failure mode worth catching here. */
+  const micBefore = await page.evaluate(() => {
+    const b = document.querySelector('.ai__mic');
+    return b ? { text: b.textContent, pressed: b.getAttribute('aria-pressed'), disabled: b.disabled, title: b.title } : null;
+  });
+  say('voice button present', !!micBefore, micBefore
+    ? `"${micBefore.text}" pressed=${micBefore.pressed} — ${micBefore.title}` : 'MISSING');
+
+  const voiceRun = micBefore ? await page.evaluate(async () => {
+    document.querySelector('.ai__mic').click();
+    await new Promise((r) => setTimeout(r, 1500));
+    const bots = [...document.querySelectorAll('.ai__msg.is-bot')];
+    const last = bots[bots.length - 1];
+    return {
+      st: window.PortfolioAI.voice,
+      handsFree: window.PortfolioAI.handsFree,
+      badge: last?.querySelector('.ai__badge')?.textContent,
+      text: last?.textContent?.slice(0, 120),
+      pressed: document.querySelector('.ai__mic')?.getAttribute('aria-pressed'),
+    };
+  }) : null;
+
+  if (voiceRun) {
+    const st = voiceRun.st || {};
+    console.log(`  voice state                   level=${st.level} supported=${st.supported} enabled=${st.enabled} mode=${st.mode}`);
+    if (st.enabled) {
+      say('voice: disclosure shown', /VOICE ON/.test(voiceRun.badge || '')
+        && /leaves this device/i.test(voiceRun.text || ''), `badge="${voiceRun.badge}"`);
+      say('voice: proactive mode on', voiceRun.handsFree === true, `handsFree=${voiceRun.handsFree} mode=${st.mode}`);
+    } else {
+      say('voice: failure is not silent', !!st.reason, `reason="${st.reason || 'NONE — the button just went dead'}"`);
+      say('voice: scene handed back', voiceRun.handsFree === false, `handsFree=${voiceRun.handsFree}`);
+      say('voice: button went back off', voiceRun.pressed === 'false', `aria-pressed=${voiceRun.pressed}`);
+    }
+  }
+
   /* ── 7. Escape closes and returns focus ─────────────────────────── */
   await page.keyboard.press('Escape');
   await new Promise((r) => setTimeout(r, 350));
@@ -189,6 +231,9 @@ const say = (label, ok, detail) => {
     scenePaused: window.Film3D?.isPaused?.() ?? null,
   }));
   say('Escape closes', closedState.isOpen === false, `aria-expanded=${closedState.ariaExpanded}`);
+  const voiceAfter = await page.evaluate(() => window.PortfolioAI?.voice);
+  say('voice off when closed', !voiceAfter || voiceAfter.enabled === false,
+    `enabled=${voiceAfter?.enabled} — a microphone must not outlive the panel`);
   say('focus returned', closedState.focusOnLauncher === true, `activeElement=${closedState.focusOnLauncher ? '#askAI' : 'other'}`);
   if (MOBILE) say('scene resumed (phone)', closedState.scenePaused === false, `isPaused=${closedState.scenePaused}`);
 

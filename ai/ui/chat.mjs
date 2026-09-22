@@ -21,6 +21,9 @@ import { quickAnswer } from '../answers/quick.mjs';
 import { resolveAnchor, anchorLabel } from './anchors.mjs';
 import { createLanguageTracker } from '../language/detect.mjs';
 import {
+  createVoice, recognizeSupported, voiceSummary,
+} from '../voice/index.mjs';
+import {
   probeCapabilities, chooseTier, probeWebGPU, tierInfo,
   createDegradeLadder, LADDER, hasSimd,
 } from '../governor/index.mjs';
@@ -112,6 +115,15 @@ let loadOutcome = null;
   let stylesInjected = false;
   let tickerFn = null;
   let ladder = null;
+/* Nesting depth of "the assistant is working": answering and listening can
+   overlap, and either one alone is a reason to hold the scene down. A plain
+   boolean was the bug waiting to happen — whoever finished first would give
+   the scene back while the other was still busy (§15.3). */
+let working = 0;
+  let voice = null;            /* built on the first tap, never on open */
+  let micBtn = null;
+  let disclosureSpoken = false;
+  let voiceFailure = null;      /* the reason last spoken for a stop nobody asked for */
 
   /* ── section: DOM ─────────────────────────────────────────────── */
   function injectStyles() {
@@ -151,11 +163,19 @@ let loadOutcome = null;
     const aiWord = el('span', null, 'AI');
     title.appendChild(aiWord);
     const tierBadge = el('span', 'ai__tier', 'CHECKING…');
+    /* VOICE is a button, not a mode: nothing about speech exists until it is
+       pressed, and the reason it cannot be pressed is its tooltip. On a
+       browser without an engine it is disabled from the first paint rather
+       than failing after the visitor has spoken into a dead microphone. */
+    micBtn = el('button', 'ai__mic', 'VOICE');
+    micBtn.type = 'button';
+    micBtn.setAttribute('aria-pressed', 'false');
+    micBtn.addEventListener('click', toggleVoice);
     const closeBtn = el('button', 'ai__close', '✕');
     closeBtn.type = 'button';
     closeBtn.setAttribute('aria-label', 'Close the assistant');
     closeBtn.addEventListener('click', close);
-    head.append(title, tierBadge, closeBtn);
+    head.append(title, tierBadge, micBtn, closeBtn);
 
     log = el('div', 'ai__log');
     log.setAttribute('role', 'log');
@@ -315,8 +335,8 @@ let loadOutcome = null;
    * it while listening. The scene comes back when this returns.
    */
   function whileWorking(fn) {
-    ladder?.setActive(true);
-    const done = () => ladder?.setActive(false);
+    setWorking(true);
+    const done = () => setWorking(false);
     let out;
     try {
       out = fn();
@@ -366,6 +386,9 @@ let loadOutcome = null;
     /* hands-free only: nobody is holding a mouse, so the page follows the
        answer by itself. A miss is silence — never an apology in the log. */
     if (anchor && handsFree) showAnchor(anchor);
+    /* out loud, when voice mode is on and the tier allows it — the same
+       words the bubble shows, never a description of the bubble */
+    voice?.onAnswer(res, { lang });
     renderChips(res.followups?.length ? res.followups : starterChips());
 
     if (res.intent === 'injection_suspect') {
@@ -379,6 +402,81 @@ let loadOutcome = null;
     if (noticeShown) return;
     noticeShown = true;
     bubble('bot', text, { badge: 'NOTICE', badgeClass: 'is-note' });
+  }
+
+  /* ── section: the assistant is working ─────────────────────────
+     The frame ladder is armed around work and disarmed when the work is
+     finished — counting, because listening and answering can overlap and a
+     boolean would let the first one to finish hand the scene back early. */
+  function setWorking(on) {
+    working = Math.max(0, working + (on ? 1 : -1));
+    ladder?.setActive(working > 0);
+    return working;
+  }
+
+  /* ── section: voice (§11) ────────────────────────────────────────
+     Adapter-first: `ai/voice/index.mjs` owns every decision (which tier may
+     do what, what wakes it, what gets spoken) and this shell owns only the
+     button. Two rules from §12 survive into speech unchanged — the answer is
+     never accompanied by a description of what the assistant is doing, and
+     when nothing was asked, nothing happens at all. */
+  function voiceButton() {
+    if (!micBtn) return;
+    const st = voice?.status();
+    const info = st || (tier == null
+      ? { ...recognizeSupported(env), pushToTalk: true, enabled: false, mode: null }
+      : voiceSummary(tier, env));
+    const on = !!info.enabled;
+    micBtn.classList.toggle('is-on', on);
+    micBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    micBtn.textContent = on ? (info.mode === 'continuous' ? 'LISTENING' : 'MIC ON') : 'VOICE';
+    micBtn.disabled = !info.supported || !info.pushToTalk;
+    micBtn.title = info.reason || 'Talk to the assistant';
+  }
+
+  /** A status change the visitor did not ask for — a dead microphone, or an
+   *  engine that gave up. Turning voice off is not something to narrate, but
+   *  a button silently going back to off IS, so the reason is said once. */
+  function voiceChanged() {
+    voiceButton();
+    const st = voice?.status();
+    if (st && !st.enabled && st.reason && st.reason !== voiceFailure) {
+      voiceFailure = st.reason;
+      bubble('bot', st.reason, { badge: 'VOICE OFF', badgeClass: 'is-note' });
+    }
+  }
+
+  function toggleVoice() {
+    if (voice?.isEnabled()) { stopVoice(); return; }
+    if (!voice) {
+      voice = createVoice(env, {
+        tier: tier ?? 0,
+        chat: api,
+        onStatus: voiceChanged,
+      });
+    }
+    const st = voice.enable();
+    voiceButton();
+    if (!st.enabled) {
+      if (st.reason) {
+        voiceFailure = st.reason;
+        bubble('bot', st.reason, { badge: 'VOICE UNAVAILABLE', badgeClass: 'is-note' });
+      }
+      return;
+    }
+    voiceFailure = null;
+    /* Said once, in the open, before anything is listened to: this engine
+       sends audio off the device, and the panel's usual "what you type stays
+       in your browser" does not stretch to cover speech. */
+    if (!disclosureSpoken) {
+      disclosureSpoken = true;
+      bubble('bot', st.disclosure, { badge: 'VOICE ON', badgeClass: 'is-note' });
+    }
+  }
+
+  function stopVoice() {
+    voice?.disable();
+    voiceButton();
   }
 
   /* ── section: governor wiring ─────────────────────────────────── */
@@ -411,12 +509,16 @@ let loadOutcome = null;
     });
     tickerFn = (_time, deltaMs) => ladder.tick(deltaMs);
     gsapRef.ticker.add(tickerFn);
+    /* A reopen (or a voice mode that is still listening) must not get a
+       freshly-created ladder that thinks nobody is working. */
+    if (working > 0) ladder.setActive(true);
   }
 
   function stopFrameHealth() {
     if (tickerFn && env.gsap?.ticker?.remove) env.gsap.ticker.remove(tickerFn);
     tickerFn = null;
     if (ladder) { ladder.reset(); ladder = null; }
+    working = 0;
     hooks.setSceneQuality?.('normal');
   }
 
@@ -465,6 +567,9 @@ let loadOutcome = null;
     const { tierBadge, chips: chipRow } = build();
     built = true;
     show();
+    /* before the tier is known, the button reports what the BROWSER can do;
+       prepareModel() refines it with what this tier is allowed to do */
+    voiceButton();
 
     try {
       await loadKnowledge();
@@ -476,6 +581,7 @@ let loadOutcome = null;
         + 'loaded.',
         { badge: 'QUICK ANSWERS READY · NO DOWNLOAD', badgeClass: 'is-quick' });
       renderChips(starterChips());
+      voiceButton();
       input?.focus();
       return api;
     } catch (err) {
@@ -490,6 +596,7 @@ let loadOutcome = null;
 
   function close() {
     if (state === 'closed') return;
+    stopVoice();                                       /* the mic never outlives the panel */
     stopFrameHealth();
     hooks.startScroll?.();                             /* §12: Lenis start */
     hooks.resumeScene?.();
@@ -524,8 +631,13 @@ let loadOutcome = null;
   /* ── public API (also used by dev-ai-probe.js) ────────────────── */
   const api = {
     open, close, toggle, ask, showAnchor,
-    /* the voice layer of P-later flips this on; nothing else has to change */
+    /* the voice layer flips this on; nothing else has to change */
     setHandsFree(on) { handsFree = !!on; return handsFree; },
+    /* voice calls this around listening, whileWorking around answering */
+    setWorking,
+    enableVoice: toggleVoice,
+    disableVoice: stopVoice,
+    get voice() { return voice?.status() || null; },
     get state() { return state; },
     get tier() { return tier; },
     get caps() { return caps; },
