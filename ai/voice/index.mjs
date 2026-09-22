@@ -28,7 +28,10 @@
                  somebody on a phone.
      T2 `both` — push-to-talk + answers read aloud.
      T3 `all`  — both of those, plus continuous listening behind a wake
-                 phrase, because a desktop can afford it.
+                 phrase, because a desktop can afford it. A turn opened that
+                 way has to be KEPT open (`VOICE_TIMING.followUpMs`): one
+                 question buys the next one briefly, and then the wake phrase
+                 is required again.
    ═══════════════════════════════════════════════════════════════ */
 import { tierInfo } from '../governor/index.mjs';
 import { voiceHint } from '../language/detect.mjs';
@@ -55,6 +58,20 @@ export function voicePolicy(tierId) {
   if (!p) return { level, ...VOICE_POLICY.none, reason: `Unknown voice level "${level}".` };
   return { level, ...p };
 }
+
+/* ── timing ──────────────────────────────────────────────────────
+   A continuous-mode turn is opened by the wake phrase and then has to be
+   KEPT open. Without a window, one "hey Aashish" would leave the assistant
+   answering everything for the rest of the call — including the half of the
+   conversation that is with somebody else in the room.
+
+   The window is short on purpose: anything said inside it is treated as a
+   follow-up, so its length is the pause between two questions to the same
+   person ("…and your projects?"), NOT the pause before a different
+   conversation. An answer that made no claim closes the turn immediately. */
+export const VOICE_TIMING = {
+  followUpMs: 12000,
+};
 
 /* ── the disclosure ────────────────────────────────────────────── */
 
@@ -311,15 +328,23 @@ export function createSpeaker(env, opts = {}) {
  * @param {object} [opts.recognizer] inject a recognizer (tests, probes)
  * @param {object} [opts.speaker]    inject a speaker
  * @param {string[]} [opts.wake]
+ * @param {number} [opts.followUpMs] how long one turn stays open (see above)
+ * @param {Function} [opts.clock]    ms clock, injectable so the window is testable
  */
 export function createVoice(env = {}, opts = {}) {
   const chat = opts.chat || {};
   const wake = opts.wake || WAKE_PHRASES;
+  const now = opts.clock || (() => Date.now());
+  const followUpMs = Number.isFinite(opts.followUpMs) ? opts.followUpMs : VOICE_TIMING.followUpMs;
   let tier = Number.isInteger(opts.tier) ? opts.tier : 0;
 
   let enabled = false;
   let mode = 'push';
-  let session = false;                /* continuous: has the wake phrase been heard? */
+/* Continuous mode only: when the open turn was last extended, or null when
+   there is no open turn and the wake phrase is required again. Expiry is
+   evaluated on read rather than by a timer — a timer would be another thing
+   to leak, and the only moment the answer matters is the next utterance. */
+let sessionAt = null;
   let nick = opts.recognizer || null;
   let speaker = opts.speaker || null;
   let priorHandsFree = null;
@@ -331,6 +356,9 @@ export function createVoice(env = {}, opts = {}) {
 let failure = null;
 
   const policy = () => voicePolicy(tier);
+  const sessionLive = (at) => sessionAt !== null && (at - sessionAt) < followUpMs;
+  const openSession = (at) => { sessionAt = at; };
+  const closeSession = () => { sessionAt = null; };
 
   function status() {
     const p = policy();
@@ -342,6 +370,8 @@ let failure = null;
       mode: enabled ? mode : null,
       listening: !!(enabled && nick?.listening),
       speaking: !!(enabled && speaker?.speaking),
+      session: enabled && mode === 'continuous' ? sessionLive(now()) : false,
+      followUpMs,
       pushToTalk: p.pushToTalk,
       speakAnswers: p.speakAnswers,
       continuous: p.continuous,
@@ -383,7 +413,7 @@ let failure = null;
     nick.setLang?.(voiceHint(lang));
 
     enabled = true;
-    session = false;
+    closeSession();
     failure = null;
     /* Remembered, not assumed: if the visitor (or a host) had already turned
        proactive mode on, turning voice off must not take it away. */
@@ -412,7 +442,7 @@ let failure = null;
   function disable() {
     if (!enabled) return status();
     enabled = false;
-    session = false;
+    closeSession();
     nick?.stop();
     nick?.release?.();
     nick = opts.recognizer || null;     /* never keep a hot engine */
@@ -441,13 +471,20 @@ let failure = null;
    */
   function onFinal(text) {
     if (!enabled) return null;
+    const at = now();
     const { wake: heard, question } = stripWake(text, wake);
 
     if (mode === 'continuous') {
-      if (heard) session = true;
-      else if (!session) return null;              /* not addressed to me */
+      const live = sessionLive(at);
+      if (heard) openSession(at);                  /* addressed to the assistant */
+      else if (!live) return null;                 /* and nothing else is */
       if (!question) { opts.onStatus?.(status()); return { wake: heard, question: '' }; }
-      return { wake: heard, question: ask(question) ? question : '' };
+      /* The window is NOT extended here. `ask()` calls back into `onAnswer`
+         synchronously — which is where the answer is known — so re-opening
+         the turn at this point would undo the close that an abstention had
+         just performed. The turn's length belongs to the answer, below. */
+      const asked = ask(question);
+      return { wake: heard, question: asked ? question : '' };
     }
 
     /* push-to-talk: the button is the wake phrase */
@@ -470,6 +507,16 @@ let failure = null;
   function onAnswer(res, { lang: turnLang } = {}) {
     if (!enabled) return false;
     if (turnLang) lang = turnLang;
+    /* The turn's length is decided by what the answer WAS, not by the fact
+       that something was heard: one question that landed on the portfolio
+       buys the next one for the window, so a follow-up needs no wake phrase —
+       and an answer that made no claim ends the turn right there, rather than
+       staying open for a conversation the assistant cannot join. Checked
+       before the speaking rules, because it is about the turn, not the audio. */
+    if (mode === 'continuous') {
+      if (res?.abstained || res?.injection) closeSession();
+      else openSession(now());
+    }
     const p = policy();
     if (!p.speakAnswers) return false;
     const text = res?.text;
@@ -491,7 +538,9 @@ let failure = null;
     setLang(l) { if (l) lang = l; nick?.setLang?.(voiceHint(lang)); },
     /** The visitor's own words can never wake it — nothing else can either. */
     isEnabled: () => enabled,
-    isSessionOpen: () => session,
+    isSessionOpen: () => sessionLive(now()),
+    closeSession,
+    get followUpMs() { return followUpMs; },
     tierInfo: () => tierInfo(tier),
   };
 }

@@ -247,7 +247,7 @@ tier table since P2 with nothing consuming it:
 | T0 | `none` | typed only. Also where a `saveData` visitor lands, and recognition is a network service — so "off" is the answer they asked for |
 | T1 | `tap` | push-to-talk; nothing played aloud at somebody on a phone |
 | T2 | `both` | push-to-talk **and** answers read aloud |
-| T3 | `all` | both, plus continuous listening behind a wake phrase |
+| T3 | `all` | both, plus continuous listening behind a wake phrase — and a turn that has to be *kept* open (below) |
 
 A test recomputes the policy table **from** `TIERS` in both directions (every
 declared level is implemented; no implemented level is unreachable), and an
@@ -258,6 +258,21 @@ unrecognised level fails **closed** — an unknown capability is not permission.
 dropped in silence. The rest of the sentence is returned as the visitor's own
 words — punctuation included — because the wake splitter must not tidy up the
 question it is about to be judged on.
+
+**And a turn has to be kept open.** Being woken is not the same as being on
+forever: one "hey Aashish" must not leave the assistant answering for the rest
+of the call, including the half of the conversation that is with somebody else
+in the room. So a question that lands on the portfolio buys the next one for
+`VOICE_TIMING.followUpMs` (**12 s**, and short on purpose — that is the pause
+between two questions to the same person, not the pause before a different
+conversation), silence past the window closes the turn and the wake phrase is
+required again, and an answer that claimed nothing (**an abstention**, or a
+bait request) ends the turn immediately, because those words were not about
+the portfolio. Expiry is evaluated on read rather than by a timer: a timer is
+one more thing to leak, and the only moment the answer matters is the next
+utterance. The decision lives in `onAnswer`, not after `ask()` returns —
+`ask()` calls back synchronously, so extending the window there would undo
+the close an abstention had just performed (VOC-4 in PROGRESS).
 
 The answer is then spoken as itself (`res.text` only — badges and source chips
 are furniture, not speech), in a voice chosen by the answer's own language,
@@ -313,7 +328,7 @@ Sizes will be measured, never estimated in prose.
 
 ## 7. Dev vs prod — the build (§9.3/§17)
 
-`npm run build` → `dist/` (28 files, **422,606 B** — 396,152 B before §11
+`npm run build` → `dist/` (28 files, **426,217 B** — 396,152 B before §11
 voice added a module, and 27 files / 391,619 B before that);
 `npm run preview` serves it on `:5580` through the same dev server with
 `ROOT=dist`.
@@ -348,7 +363,8 @@ That is an allow-list entry with a reason, not a default.
 | Numbers and declared aliases are retrievable | **verified** — "8.28" → `ach.lpu-cgpa`, "who is he" → `person.name`, both regression-tested |
 | Browser inference and quantisation | not started |
 | **Voice**: microphone, wake phrase, speech output | **built, adapter-first, and browser-verified** — 0 AI requests before the tap, the audio disclosure before anything is listened to, a wake phrase in continuous mode, the answer spoken in its own language, and a dead microphone turned off with a stated reason and the scene handed back (`dev-ai-probe.js`, 27/27) |
-| **Voice with a live microphone** | **NOT TESTED.** Headless Chrome ships the API and has no microphone, so the *listening* path is covered by unit tests against doubles (28) and never by a real voice. Continuous mode has never been spoken to. Chrome-only in practice; Firefox and Safari get the disabled button and the reason |
+| **Voice with a live microphone** | **NOT TESTED.** Headless Chrome ships the API and has no microphone, so the *listening* path is covered by unit tests against doubles (34) and by a browser running a **stub** engine (`dev-resource-probe.js`), never by a real voice. A human saying "hey Aashish" into a laptop, in a noisy room, with an accent, has not happened. Chrome-only in practice; Firefox and Safari get the disabled button and the reason |
+| Continuous mode's turn lifecycle: wake → follow-up → expiry | **verified in a browser with a stub engine** — unaddressed speech asked 0 questions, the wake phrase asked 1 and opened the turn, a bare follow-up asked 2, and after 12 s of silence the turn closed and the next unaddressed sentence asked nothing |
 | A cloned voice (his own) | **not started** — this is the browser's voice, chosen by language |
 
 Every "verified" row above corresponds to a command in

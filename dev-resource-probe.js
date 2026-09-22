@@ -97,7 +97,13 @@ const MB = (b) => +(b / 1048576).toFixed(1);
       r.onresult?.({ resultIndex: 0, results: [{ 0: { transcript: text }, isFinal: true }] });
       return true;
     };
+    /* Ambient noise, for the soak. Settable to false so a controlled
+       experiment is not interrupted by a wake phrase arriving on a timer —
+       which is what happened the first time this phase ran, and it made an
+       expired session look still open. */
+    window.__voiceAmbient = true;
     setInterval(() => {
+      if (window.__voiceAmbient === false) return;
       try { window.__voiceSay('hey aashish'); } catch { /* the stub is not the measurement */ }
     }, 20000);
   });
@@ -513,6 +519,70 @@ const MB = (b) => +(b / 1048576).toFixed(1);
   console.log(`voice -> answer: "${voiceWiring.text.slice(0, 60)}" (bubbles ${voiceWiring.before} -> ${voiceWiring.after})`);
   const linksAfterWiring = await glLinks();
 
+  /* ── continuous mode (§11): the path with no microphone to speak into ──
+     Continuous listening is T3-only, and this machine probes as T2 — so this
+     phase moves the tier the way §6.2 says a session may ("a starting point")
+     and drives the whole turn lifecycle through the stub: unaddressed speech
+     ignored, a wake phrase opening a turn, a follow-up needing no wake phrase,
+     and the turn closing once the silence outlasts the window.
+
+     The signal is the VISITOR's own bubble (`.ai__msg.is-user`): the shell
+     echoes every question it is asked, so "was it answered" is not inferred
+     from timing or from the answer's text. */
+  const continuous = await page.evaluate(async () => {
+    const users = () => document.querySelectorAll('.ai__msg.is-user').length;
+    window.__voiceAmbient = false;      /* this phase drives the words itself */
+    window.PortfolioAI.open();
+    window.PortfolioAI.enableVoice();
+    window.PortfolioAI.disableVoice();
+    window.PortfolioAI.setVoiceTier(3);
+    window.PortfolioAI.enableVoice();
+    await new Promise((r) => setTimeout(r, 300));
+    /* Deltas, not totals: earlier phases have already asked questions, and the
+       first run of this phase read the cumulative count as if it were this
+       phase's — the same instrument mistake as reading a window total instead
+       of a per-task one. */
+    const base = users();
+    const out = { base, mode: window.PortfolioAI.voice?.mode, level: window.PortfolioAI.voice?.level,
+      ignored: 0, woke: 0, followUp: 0, sessionAfterWake: null, followUpMs: null };
+
+    window.__voiceSay('so anyway I was just telling somebody else about that');
+    await new Promise((r) => setTimeout(r, 300));
+    out.ignored = users() - base;
+
+    window.__voiceSay('hey aashish what is my cgpa');
+    await new Promise((r) => setTimeout(r, 900));
+    out.woke = users() - base;
+    out.sessionAfterWake = window.PortfolioAI.voice?.session;
+
+    window.__voiceSay('and what are your projects');   /* no wake phrase */
+    await new Promise((r) => setTimeout(r, 900));
+    out.followUp = users() - base;
+    out.followUpMs = window.PortfolioAI.voice?.followUpMs;
+    return out;
+  });
+  console.log(`continuous mode: level=${continuous.level} mode=${continuous.mode}`
+    + ` · ignored=${continuous.ignored} asked=${continuous.woke} follow-up=${continuous.followUp}`
+    + ` · turn open after the wake: ${continuous.sessionAfterWake}`);
+
+  /* Let the window lapse, then speak again without a wake phrase. Ambient
+     noise stays off for this too, or a timer's "hey aashish" would open a new
+     turn and the window would look like it never expired. */
+  await sleep((continuous.followUpMs || 12000) + 2500);
+  const continuousExpired = await page.evaluate(async () => {
+    const users = () => document.querySelectorAll('.ai__msg.is-user').length;
+    const before = users();
+    const session = window.PortfolioAI.voice?.session;
+    window.__voiceSay('I am talking to somebody else now');
+    await new Promise((r) => setTimeout(r, 400));
+    window.__voiceAmbient = true;      /* the soak wants the noise back */
+    return { before, after: users(), session };
+  });
+  console.log(`after the window (${Math.round((continuous.followUpMs || 12000) / 1000)} s of silence):`
+    + ` turn open=${continuousExpired.session} · asked ${continuousExpired.before} -> ${continuousExpired.after}`);
+
+  const linksAfterContinuous = await glLinks();
+
   let soak = null;
   if (SOAK_MS > 0) {
     /* The Proactive soak: the panel open with voice ACTIVE, the engine fed a
@@ -522,6 +592,10 @@ const MB = (b) => +(b / 1048576).toFixed(1);
     console.log(`\n── soak (${Math.round(SOAK_MS / 1000)} s, Proactive: mic on, no questions) ──`);
     await openPanel();
     const soakOn = await page.evaluate(async () => {
+      /* disable-then-enable, because enableVoice() TOGGLES: assuming it was a
+         plain "on" would have this phase measure a panel with the microphone
+         off, which is the opposite of a Proactive soak. */
+      window.PortfolioAI.disableVoice();
       window.PortfolioAI.enableVoice();
       await new Promise((res) => setTimeout(res, 300));
       return {
@@ -529,6 +603,7 @@ const MB = (b) => +(b / 1048576).toFixed(1);
         st: window.PortfolioAI.voice,
       };
     });
+    console.log(`soak mode: ${soakOn.st?.mode} (level ${soakOn.st?.level})`);
     const before = await metrics();
     const t0 = Date.now();
     while (Date.now() - t0 < SOAK_MS) await sleep(5000);
@@ -541,6 +616,7 @@ const MB = (b) => +(b / 1048576).toFixed(1);
     }));
     soak = {
       ms: SOAK_MS,
+      mode: soakOn.st?.mode,
       voiceEnabled: soakAfter.st?.enabled === true,
       engineEvents: soakAfter.emitted,
       bubblesBefore: soakOn.bubbles, bubblesAfter: soakAfter.bubbles,
@@ -570,6 +646,8 @@ const MB = (b) => +(b / 1048576).toFixed(1);
     await closePanel();
   }
   const linksAfterSoak = await glLinks();
+  /* leave the page as the probe found it: the tier move was this probe's */
+  await page.evaluate(() => window.PortfolioAI.setVoiceTier(2)).catch(() => {});
 
   /* ── verdicts against the §4 budgets ────────────────────────── */
   const base = rows[0];
@@ -642,6 +720,18 @@ const MB = (b) => +(b / 1048576).toFixed(1);
     { name: 'voice: a recognized question reaches the answer path',
       ok: voiceWiring.after > voiceWiring.before,
       detail: `bubbles ${voiceWiring.before} -> ${voiceWiring.after}, anchor ${voiceWiring.anchor || 'none'}` },
+    { name: 'continuous: unaddressed speech is ignored in silence',
+      ok: continuous.mode === 'continuous' && continuous.ignored === 0,
+      detail: `mode=${continuous.mode}, questions asked before the wake phrase: ${continuous.ignored}` },
+    { name: 'continuous: the wake phrase opens a turn and asks',
+      ok: continuous.woke === 1 && continuous.sessionAfterWake === true,
+      detail: `asked=${continuous.woke}, turn open=${continuous.sessionAfterWake}` },
+    { name: 'continuous: a follow-up needs no wake phrase',
+      ok: continuous.followUp === 2,
+      detail: `asked=${continuous.followUp} (wake, then a bare follow-up)` },
+    { name: 'continuous: the turn closes when the silence outlasts the window',
+      ok: continuousExpired.session === false && continuousExpired.after === continuousExpired.before,
+      detail: `turn open=${continuousExpired.session}, asked ${continuousExpired.before} -> ${continuousExpired.after}` },
     { name: 'extra AI heap under the desktop budget (§4: <=300 MB)',
       ok: (last.jsHeapMB - base.jsHeapMB) <= 300,
       detail: `${(last.jsHeapMB - base.jsHeapMB).toFixed(1)} MB heap delta` },
@@ -690,8 +780,11 @@ const MB = (b) => +(b / 1048576).toFixed(1);
     cycles,
     voiceCycles,
     voiceWiring,
+    continuous,
+    continuousExpired,
     glLinks: { before: linksBefore, beforeVoice: linksBeforeVoice,
-      afterWiring: linksAfterWiring, afterSoak: linksAfterSoak, end: linksEnd },
+      afterWiring: linksAfterWiring, afterContinuous: linksAfterContinuous,
+      afterSoak: linksAfterSoak, end: linksEnd },
     soak,
     profile,
     qualityCalls,

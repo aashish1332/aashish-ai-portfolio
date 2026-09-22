@@ -138,11 +138,13 @@ Press **VOICE** and you can ask out loud: the answer is spoken, and the page
 follows it. Nothing is listened to until you press it, the panel tells you
 beforehand that your browser's speech service receives the audio (typing never
 leaves the device), and saying *"Aashish…"* is what it answers to when it is
-listening continuously — anything else it hears is ignored in silence. If the
-microphone is blocked it turns itself off and says why, rather than leaving a
-dead one switched on. The voice available here is your browser's, chosen by
-the answer's language; a clone of Aashish's own voice is a future feature, not
-this one.
+listening continuously — anything else it hears is ignored in silence. Being
+woken is not being on forever: one question buys a **12-second** window for the
+next one (so *"…and your projects?"* needs no name again), and after that it
+stops answering until it is addressed again. If the microphone is blocked it
+turns itself off and says why, rather than leaving a dead one switched on. The
+voice available here is your browser's, chosen by the answer's language; a
+clone of Aashish's own voice is a future feature, not this one.
 
 Nothing AI-related loads until you click: the launcher is **958 B gz** and
 the page makes **zero** AI requests before that. Opening and closing the panel

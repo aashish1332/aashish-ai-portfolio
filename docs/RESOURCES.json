@@ -1,30 +1,30 @@
 {
-  "measuredAt": "2026-09-22T15:53:30.046Z",
+  "measuredAt": "2026-09-22T16:18:15.126Z",
   "url": "http://localhost:5577/",
   "states": [
     {
       "label": "1 panel-closed",
       "jsHeapMB": 6.6,
-      "jsHeapTotalMB": 7.5,
+      "jsHeapTotalMB": 8.7,
       "nodes": 1493,
       "documents": 17,
       "listeners": 127,
       "workers": 0,
       "links": 31,
-      "frames": 130,
-      "medianMs": 23.1,
-      "p95Ms": 26.3,
-      "medianFps": 43.3,
-      "longTaskMs": 52,
+      "frames": 115,
+      "medianMs": 26,
+      "p95Ms": 30.2,
+      "medianFps": 38.5,
+      "longTaskMs": 75,
       "longTaskCount": 1,
-      "maxLongTaskMs": 52,
-      "mainThreadBusyPct": 1.73,
+      "maxLongTaskMs": 75,
+      "mainThreadBusyPct": 2.5,
       "topLongTasks": [
         {
-          "ms": 52,
-          "atMs": 580,
-          "startMs": 22519,
-          "endMs": 22571,
+          "ms": 75,
+          "atMs": 1449,
+          "startMs": 23406.299999999814,
+          "endMs": 23481.299999999814,
           "name": "self",
           "containerType": "window",
           "containerName": null,
@@ -34,17 +34,17 @@
     },
     {
       "label": "2 chat-idle",
-      "jsHeapMB": 6.8,
+      "jsHeapMB": 6.9,
       "jsHeapTotalMB": 7.7,
       "nodes": 1540,
       "documents": 17,
       "listeners": 141,
       "workers": 0,
       "links": 31,
-      "frames": 126,
-      "medianMs": 24,
-      "p95Ms": 30.6,
-      "medianFps": 41.7,
+      "frames": 119,
+      "medianMs": 25.2,
+      "p95Ms": 30.3,
+      "medianFps": 39.7,
       "longTaskMs": 0,
       "longTaskCount": 0,
       "maxLongTaskMs": 0,
@@ -53,17 +53,17 @@
     },
     {
       "label": "3 after-answers",
-      "jsHeapMB": 8.1,
-      "jsHeapTotalMB": 8.7,
+      "jsHeapMB": 7.4,
+      "jsHeapTotalMB": 8.5,
       "nodes": 1607,
       "documents": 17,
       "listeners": 139,
       "workers": 0,
       "links": 31,
-      "frames": 104,
-      "medianMs": 29.1,
-      "p95Ms": 33.9,
-      "medianFps": 34.4,
+      "frames": 114,
+      "medianMs": 26.5,
+      "p95Ms": 31.3,
+      "medianFps": 37.7,
       "longTaskMs": 0,
       "longTaskCount": 0,
       "maxLongTaskMs": 0,
@@ -72,17 +72,17 @@
     },
     {
       "label": "4 hands-free",
-      "jsHeapMB": 7.7,
-      "jsHeapTotalMB": 8.7,
-      "nodes": 1630,
+      "jsHeapMB": 7.4,
+      "jsHeapTotalMB": 8.2,
+      "nodes": 1618,
       "documents": 17,
       "listeners": 139,
       "workers": 0,
       "links": 31,
-      "frames": 110,
-      "medianMs": 26.2,
-      "p95Ms": 39.1,
-      "medianFps": 38.2,
+      "frames": 118,
+      "medianMs": 25.3,
+      "p95Ms": 32.3,
+      "medianFps": 39.5,
       "longTaskMs": 0,
       "longTaskCount": 0,
       "maxLongTaskMs": 0,
@@ -91,49 +91,38 @@
     },
     {
       "label": "5 closed-again",
-      "jsHeapMB": 7.8,
-      "jsHeapTotalMB": 9.7,
+      "jsHeapMB": 7.4,
+      "jsHeapTotalMB": 8.5,
       "nodes": 1618,
       "documents": 17,
       "listeners": 139,
       "workers": 0,
       "links": 31,
-      "frames": 113,
-      "medianMs": 25.9,
-      "p95Ms": 33.8,
-      "medianFps": 38.6,
-      "longTaskMs": 54,
-      "longTaskCount": 1,
-      "maxLongTaskMs": 54,
-      "mainThreadBusyPct": 1.8,
-      "topLongTasks": [
-        {
-          "ms": 54,
-          "atMs": 136,
-          "startMs": 42482.700000000186,
-          "endMs": 42536.700000000186,
-          "name": "self",
-          "containerType": "window",
-          "containerName": null,
-          "containerSrc": null
-        }
-      ]
+      "frames": 132,
+      "medianMs": 22.6,
+      "p95Ms": 26.7,
+      "medianFps": 44.2,
+      "longTaskMs": 0,
+      "longTaskCount": 0,
+      "maxLongTaskMs": 0,
+      "mainThreadBusyPct": 0,
+      "topLongTasks": []
     }
   ],
   "baseline": [
     {
       "label": "baseline-1",
-      "jsHeapMB": 6.3,
+      "jsHeapMB": 6.4,
       "jsHeapTotalMB": 7.2,
       "nodes": 1493,
       "documents": 17,
       "listeners": 127,
       "workers": 0,
       "links": 31,
-      "frames": 102,
-      "medianMs": 29.6,
-      "p95Ms": 33.8,
-      "medianFps": 33.8,
+      "frames": 93,
+      "medianMs": 32.5,
+      "p95Ms": 42.2,
+      "medianFps": 30.8,
       "longTaskMs": 0,
       "longTaskCount": 0,
       "maxLongTaskMs": 0,
@@ -142,27 +131,37 @@
     },
     {
       "label": "baseline-2",
-      "jsHeapMB": 6.7,
-      "jsHeapTotalMB": 7.5,
+      "jsHeapMB": 6.6,
+      "jsHeapTotalMB": 7.2,
       "nodes": 1493,
       "documents": 17,
       "listeners": 127,
       "workers": 0,
       "links": 31,
-      "frames": 106,
-      "medianMs": 28.2,
-      "p95Ms": 32.5,
-      "medianFps": 35.5,
-      "longTaskMs": 93,
-      "longTaskCount": 1,
-      "maxLongTaskMs": 93,
-      "mainThreadBusyPct": 3.1,
+      "frames": 94,
+      "medianMs": 30.6,
+      "p95Ms": 45.4,
+      "medianFps": 32.7,
+      "longTaskMs": 141,
+      "longTaskCount": 2,
+      "maxLongTaskMs": 91,
+      "mainThreadBusyPct": 4.7,
       "topLongTasks": [
         {
-          "ms": 93,
-          "atMs": 1142,
-          "startMs": 13828.100000000093,
-          "endMs": 13921.100000000093,
+          "ms": 91,
+          "atMs": 1924,
+          "startMs": 14408.5,
+          "endMs": 14499.5,
+          "name": "self",
+          "containerType": "window",
+          "containerName": null,
+          "containerSrc": null
+        },
+        {
+          "ms": 50,
+          "atMs": 655,
+          "startMs": 13140.19999999972,
+          "endMs": 13190.19999999972,
           "name": "self",
           "containerType": "window",
           "containerName": null,
@@ -173,26 +172,26 @@
     {
       "label": "baseline-3",
       "jsHeapMB": 6.5,
-      "jsHeapTotalMB": 7.5,
+      "jsHeapTotalMB": 7.2,
       "nodes": 1493,
       "documents": 17,
       "listeners": 127,
       "workers": 0,
       "links": 31,
-      "frames": 109,
-      "medianMs": 27.6,
-      "p95Ms": 31.5,
-      "medianFps": 36.2,
-      "longTaskMs": 75,
+      "frames": 110,
+      "medianMs": 27.3,
+      "p95Ms": 32.2,
+      "medianFps": 36.6,
+      "longTaskMs": 55,
       "longTaskCount": 1,
-      "maxLongTaskMs": 75,
-      "mainThreadBusyPct": 2.5,
+      "maxLongTaskMs": 55,
+      "mainThreadBusyPct": 1.83,
       "topLongTasks": [
         {
-          "ms": 75,
-          "atMs": 2540,
-          "startMs": 18309.899999999907,
-          "endMs": 18384.899999999907,
+          "ms": 55,
+          "atMs": 2569,
+          "startMs": 18134.599999999627,
+          "endMs": 18189.599999999627,
           "name": "self",
           "containerType": "window",
           "containerName": null,
@@ -202,57 +201,68 @@
     },
     {
       "label": "baseline-4",
-      "jsHeapMB": 7.1,
-      "jsHeapTotalMB": 8,
+      "jsHeapMB": 6.9,
+      "jsHeapTotalMB": 8.5,
       "nodes": 1493,
       "documents": 17,
       "listeners": 127,
       "workers": 0,
       "links": 31,
-      "frames": 119,
-      "medianMs": 25.4,
-      "p95Ms": 29.9,
-      "medianFps": 39.4,
-      "longTaskMs": 0,
-      "longTaskCount": 0,
-      "maxLongTaskMs": 0,
-      "mainThreadBusyPct": 0,
-      "topLongTasks": []
+      "frames": 111,
+      "medianMs": 27.1,
+      "p95Ms": 31.8,
+      "medianFps": 36.9,
+      "longTaskMs": 75,
+      "longTaskCount": 1,
+      "maxLongTaskMs": 75,
+      "mainThreadBusyPct": 2.5,
+      "topLongTasks": [
+        {
+          "ms": 75,
+          "atMs": 153,
+          "startMs": 18980.5,
+          "endMs": 19055.5,
+          "name": "self",
+          "containerType": "window",
+          "containerName": null,
+          "containerSrc": null
+        }
+      ]
     }
   ],
-  "baselineWorst": 93,
+  "baselineWorst": 91,
   "cycles": [
     {
       "cycle": 1,
-      "jsHeapMB": 7.9,
+      "jsHeapMB": 8,
       "nodes": 1618,
       "listeners": 139,
       "workers": 0
     },
     {
       "cycle": 2,
-      "jsHeapMB": 7.7,
-      "nodes": 1618,
-      "listeners": 139,
-      "workers": 0
-    },
-    {
-      "cycle": 3,
-      "jsHeapMB": 7.6,
-      "nodes": 1618,
-      "listeners": 139,
-      "workers": 0
-    },
-    {
-      "cycle": 4,
       "jsHeapMB": 8.1,
       "nodes": 1618,
       "listeners": 139,
       "workers": 0
     },
     {
+      "cycle": 3,
+      "jsHeapMB": 7.8,
+      "nodes": 1618,
+      "listeners": 139,
+      "workers": 0
+    },
+    {
+      "cycle": 4,
+      "jsHeapMB": 7.8,
+      "nodes": 1618,
+      "listeners": 139,
+      "workers": 0
+    },
+    {
       "cycle": 5,
-      "jsHeapMB": 8,
+      "jsHeapMB": 7.7,
       "nodes": 1618,
       "listeners": 139,
       "workers": 0
@@ -269,6 +279,8 @@
           "mode": "push",
           "listening": true,
           "speaking": false,
+          "session": false,
+          "followUpMs": 12000,
           "pushToTalk": true,
           "speakAnswers": false,
           "continuous": false,
@@ -298,6 +310,8 @@
           "mode": null,
           "listening": false,
           "speaking": false,
+          "session": false,
+          "followUpMs": 12000,
           "pushToTalk": true,
           "speakAnswers": false,
           "continuous": false,
@@ -324,7 +338,7 @@
         "stops": 1,
         "emitted": 0
       },
-      "jsHeapMB": 8.1,
+      "jsHeapMB": 7.8,
       "nodes": 1623,
       "listeners": 139
     },
@@ -338,6 +352,8 @@
           "mode": "push",
           "listening": true,
           "speaking": false,
+          "session": false,
+          "followUpMs": 12000,
           "pushToTalk": true,
           "speakAnswers": false,
           "continuous": false,
@@ -367,6 +383,8 @@
           "mode": null,
           "listening": false,
           "speaking": false,
+          "session": false,
+          "followUpMs": 12000,
           "pushToTalk": true,
           "speakAnswers": false,
           "continuous": false,
@@ -393,7 +411,7 @@
         "stops": 2,
         "emitted": 0
       },
-      "jsHeapMB": 8.1,
+      "jsHeapMB": 7.6,
       "nodes": 1623,
       "listeners": 139
     },
@@ -407,6 +425,8 @@
           "mode": "push",
           "listening": true,
           "speaking": false,
+          "session": false,
+          "followUpMs": 12000,
           "pushToTalk": true,
           "speakAnswers": false,
           "continuous": false,
@@ -436,6 +456,8 @@
           "mode": null,
           "listening": false,
           "speaking": false,
+          "session": false,
+          "followUpMs": 12000,
           "pushToTalk": true,
           "speakAnswers": false,
           "continuous": false,
@@ -476,6 +498,8 @@
           "mode": "push",
           "listening": true,
           "speaking": false,
+          "session": false,
+          "followUpMs": 12000,
           "pushToTalk": true,
           "speakAnswers": false,
           "continuous": false,
@@ -505,6 +529,8 @@
           "mode": null,
           "listening": false,
           "speaking": false,
+          "session": false,
+          "followUpMs": 12000,
           "pushToTalk": true,
           "speakAnswers": false,
           "continuous": false,
@@ -545,6 +571,8 @@
           "mode": "push",
           "listening": true,
           "speaking": false,
+          "session": false,
+          "followUpMs": 12000,
           "pushToTalk": true,
           "speakAnswers": false,
           "continuous": false,
@@ -574,6 +602,8 @@
           "mode": null,
           "listening": false,
           "speaking": false,
+          "session": false,
+          "followUpMs": 12000,
           "pushToTalk": true,
           "speakAnswers": false,
           "continuous": false,
@@ -600,7 +630,7 @@
         "stops": 5,
         "emitted": 0
       },
-      "jsHeapMB": 8.4,
+      "jsHeapMB": 7.6,
       "nodes": 1623,
       "listeners": 139
     }
@@ -611,24 +641,41 @@
     "text": "QUICK ANSWER · NO AI MODEL ON THIS DEVICEEducation:\n• Lovely Professional University — Bac",
     "anchor": "scene-story"
   },
+  "continuous": {
+    "base": 7,
+    "mode": "continuous",
+    "level": "all",
+    "ignored": 0,
+    "woke": 1,
+    "followUp": 2,
+    "sessionAfterWake": true,
+    "followUpMs": 12000
+  },
+  "continuousExpired": {
+    "before": 9,
+    "after": 9,
+    "session": false
+  },
   "glLinks": {
     "before": 31,
     "beforeVoice": 31,
     "afterWiring": 31,
+    "afterContinuous": 31,
     "afterSoak": 31,
     "end": 31
   },
   "soak": {
     "ms": 600000,
+    "mode": "continuous",
     "voiceEnabled": true,
-    "engineEvents": 31,
-    "bubblesBefore": 16,
-    "bubblesAfter": 16,
-    "heapBeforeMB": 7.6,
+    "engineEvents": 35,
+    "bubblesBefore": 20,
+    "bubblesAfter": 20,
+    "heapBeforeMB": 8.1,
     "heapAfterMB": 7.6,
-    "growthMB": 0,
-    "nodesBefore": 1636,
-    "nodesAfter": 1636,
+    "growthMB": -0.5,
+    "nodesBefore": 1664,
+    "nodesAfter": 1664,
     "listenersBefore": 139,
     "listenersAfter": 139,
     "ladderActive": false,
@@ -732,7 +779,7 @@
       {
         "name": "no heap growth across open/close cycles",
         "ok": true,
-        "detail": "0.02 MB/cycle over 5 cycles"
+        "detail": "-0.07 MB/cycle over 5 cycles"
       },
       {
         "name": "a reopen leaks no DOM nodes",
@@ -757,12 +804,12 @@
       {
         "name": "median FPS drop with the panel open <= 10% (§4)",
         "ok": true,
-        "detail": "3.7%"
+        "detail": "-3.1%"
       },
       {
         "name": "no long task attributable to the AI (§4: <= 50 ms above the page baseline)",
         "ok": true,
-        "detail": "AI windows worst 54 ms · page-only baseline 93 ms"
+        "detail": "AI windows worst 75 ms · page-only baseline 91 ms"
       },
       {
         "name": "the AI compiles no GL program (rung 3 costs a full recompile)",
@@ -792,7 +839,7 @@
       {
         "name": "voice: on/off leaks no heap",
         "ok": true,
-        "detail": "0.3 MB over 5 on/off cycles"
+        "detail": "-0.2 MB over 5 on/off cycles"
       },
       {
         "name": "voice: on/off leaks no DOM nodes",
@@ -810,14 +857,34 @@
         "detail": "bubbles 14 -> 16, anchor scene-story"
       },
       {
+        "name": "continuous: unaddressed speech is ignored in silence",
+        "ok": true,
+        "detail": "mode=continuous, questions asked before the wake phrase: 0"
+      },
+      {
+        "name": "continuous: the wake phrase opens a turn and asks",
+        "ok": true,
+        "detail": "asked=1, turn open=true"
+      },
+      {
+        "name": "continuous: a follow-up needs no wake phrase",
+        "ok": true,
+        "detail": "asked=2 (wake, then a bare follow-up)"
+      },
+      {
+        "name": "continuous: the turn closes when the silence outlasts the window",
+        "ok": true,
+        "detail": "turn open=false, asked 9 -> 9"
+      },
+      {
         "name": "extra AI heap under the desktop budget (§4: <=300 MB)",
         "ok": true,
-        "detail": "1.2 MB heap delta"
+        "detail": "0.8 MB heap delta"
       },
       {
         "name": "no heap growth during the Proactive soak",
         "ok": true,
-        "detail": "0 MB over 600 s"
+        "detail": "-0.5 MB over 600 s"
       },
       {
         "name": "the microphone is still on at the end of the soak",
@@ -827,7 +894,7 @@
       {
         "name": "a soak of unaddressed speech answers nothing",
         "ok": true,
-        "detail": "31 utterances heard, bubbles 16 -> 16"
+        "detail": "35 utterances heard, bubbles 20 -> 20"
       },
       {
         "name": "a 10-minute-style listen never arms the frame ladder",
@@ -840,7 +907,7 @@
         "detail": "0 nodes · listeners 139 -> 139"
       }
     ],
-    "passed": 22,
+    "passed": 26,
     "failed": 0
   },
   "provenance": {

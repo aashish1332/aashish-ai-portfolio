@@ -421,13 +421,14 @@ one can only ever be observed refusing, so this measures the lifecycle *around*
 a listening engine, and the transcript is a string the probe made up. Nothing
 below is a claim about hearing.
 
-| Claim | Result (R1 · headless Chrome · 600 s soak · GPU) |
+| Claim | Result (R1 · headless Chrome · 600 s soak · GPU · **continuous** mode, level `all`) |
 |---|---|
-| 10 minutes listening, mic active | **0 MB heap · 0 nodes · 0 listeners** (7.6 → 7.6 MB, 1636 → 1636, 139 → 139) |
-| utterances delivered during it | **31** — and **0** bubbles (`16 → 16`): unaddressed speech is not a question |
+| 10 minutes listening, mic active | **0.5 MB *less* heap · 0 nodes · 0 listeners** (8.1 → 7.6 MB, 1664 → 1664, 139 → 139) |
+| utterances delivered during it | **35** — and **0** bubbles (`20 → 20`): unaddressed speech is not a question |
 | the §6.3 ladder over the whole listen | **never armed** (`active=false`, `step=0`) · GL programs **31 → 31** |
 | 5 voice on/off cycles | 0 nodes · 0 listeners · 0.3 MB; a fresh engine per enable, released on disable |
 | a question asked through the engine | reached the same answer path and the same anchor a typed one does (`14 → 16` bubbles, anchor `scene-story`) |
+| **continuous mode's whole turn lifecycle**, in a browser | unaddressed speech asked **0** · wake phrase asked **1** and left the turn open · bare follow-up asked **2** · after **12 s** of silence the turn closed and an unaddressed sentence asked **0** more. Tier moved to T3 by the probe, per §6.2 |
 | extra AI heap | 1.2 MB against §4's 300 MB desktop budget |
 | verdict | **22/22 checks** |
 
@@ -449,7 +450,9 @@ the fix.
 price, because the ladder never had a reason to move here. Forcing software GL
 did not help — frames were *slower than the frame monitor's own 1000 ms sanity
 bound*, so it discards every sample and the ladder stays at step 0. That cost
-remains the §15.3 measurement above.
+remains the §15.3 measurement above. And the engine is a stub: what continuous
+mode's phase verifies is the *behaviour* (wake, follow-up, expiry, silence),
+not the recognition — no human voice has reached this build.
 
 ---
 

@@ -888,6 +888,18 @@ building for on its own.
   applies to a scroll). `aashish`, `ask aashish`, `hey aashish`, `ok aashish`;
   the rest of the sentence is the visitor's own words, punctuation included,
   because it is meant to be their question and not a tidied version of it.
+* **A turn has to be KEPT open, and that is the difference between a
+  conversation and an open microphone.** The wake phrase opens a turn; a
+  question that lands on the portfolio then buys the next one for
+  `VOICE_TIMING.followUpMs` (**12 s**), so "…and your projects?" needs no name
+  again. Silence past the window closes the turn and the wake phrase is
+  required once more — because otherwise one "hey Aashish" would leave the
+  assistant answering for the rest of the call, *including the half of the
+  conversation that is with somebody else in the room*. An answer that made
+  **no claim** (an abstention, or a bait request) ends the turn immediately:
+  those words were not about the portfolio, so there is nothing to stay open
+  for. The window is deliberately short, and the reason is written at the
+  constant.
 * **It speaks the answer, and only the answer.** `onAnswer` hands
   `res.text` to `speechSynthesis` — the badge and the source chips are
   furniture, not speech — and the voice is picked from the answer's own
@@ -897,7 +909,7 @@ building for on its own.
 * **Talking over it takes the turn back.** A partial transcript while the
   answer is being read stops the synthesis. No narration of any kind, checked
   over every string literal in the file by the same §12 guard the panel uses.
-* **Three bugs found while building, each of which would have shipped:**
+* **Four bugs found while building, each of which would have shipped:**
 
   | # | Bug | Consequence |
   |---|---|---|
@@ -906,6 +918,7 @@ building for on its own.
   | **VOC-1** | `abort()` is not guaranteed to fire `onend`, but the wrapper cleared `listening` only in `onend` | after a refused microphone the wrapper still believed it was listening — the exact state the button reads | `tests/voice.test.mjs` |
   | **VOC-2** | A dead engine left `enabled` true and `hands-free` on — and, because listening armed the ladder in the first version, the scene degraded with it | the button stayed lit over a microphone that could not work. The failure now calls `disable()`, gives Proactive mode back, and keeps the reason for the panel to say once — a button that silently goes back to off is not self-explanatory. The ladder half is moot now: see the correction below, which the soak forced | `dev-ai-probe.js` |
   | **VOC-3** | `stripWake` also trimmed trailing punctuation, so *"what is your name?"* came back as *"what is your name"* — rewording the visitor while its own contract says it returns their sentence | a small lie in the one place a voice layer has to be verbatim | `tests/voice.test.mjs` (the table) |
+  | **VOC-4** | The turn's window was extended *after* `ask()` returned — but `ask()` calls `onAnswer` **synchronously**, which is where an abstention closes the turn, so the extension undid the close every time | an unanswerable question would have left the microphone in a conversation it cannot take part in — the exact failure the window exists to prevent, defeated by statement order | `tests/voice.test.mjs` (the abstention case) |
 
   VOC-2 only exists in a browser: it is a state machine walking off the end
   of a failure the unit tests had no way to produce. The probe's most useful
@@ -934,7 +947,7 @@ is RSRC-2 one door along. Removed; the answer at the end of a listen arms it
 through `ask()`, like any other. The `whileWorking` counter stays, because two
 overlapping *generations* are a real case in P5.
 
-### Measured (R1 · headless Chrome, software GL · `node dev-ai-probe.js`)
+### Measured (R1 · headless Chrome · `node dev-ai-probe.js` and `npm run probe:resources`)
 
 | Claim | Result |
 |---|---|
@@ -942,9 +955,12 @@ overlapping *generations* are a real case in P5.
 | AI assets on first open | 12 files, no worker, no wasm |
 | Tier on this machine | **T2 · STANDARD** → voice level `both` |
 | Voice button before the tap | present, `aria-pressed=false`, engine **not constructed** |
-| Tap, on a machine with no microphone | engine refused → voice **off**, `aria-pressed` back to `false`, `handsFree=false`, ladder released, and the reason stated: *"The microphone is not available, so voice mode is off. Typing works."* |
+| Tap, on a machine with no microphone | engine refused → voice **off**, `aria-pressed` back to `false`, `handsFree=false`, and the reason stated: *"The microphone is not available, so voice mode is off. Typing works."* |
 | After Escape (panel closed) | `enabled=false` — the microphone does not outlive the panel |
 | Console / page errors | **0** |
+| Continuous mode, driven in a browser (`dev-resource-probe.js`) | level `all`, mode `continuous`: unaddressed speech asked **0** questions, the wake phrase asked **1** and opened the turn, a bare follow-up asked **2**, and after 12 s of silence the turn was **closed** and the next unaddressed sentence asked nothing |
+| A question through the engine | reached the same answer path and the same anchor a typed one does (anchor `scene-story`) |
+| 10-minute Proactive soak, **continuous** mode | 0 nodes · 0 listeners · heap *down* 0.5 MB, **35** utterances heard, **0** answered |
 
 ### Still open
 
@@ -956,9 +972,12 @@ overlapping *generations* are a real case in P5.
   listening branch (`enabled`, finals flowing into `chat.ask`) is covered by
   unit tests against doubles, not by a real voice. That needs a human at a
   real browser, and it is on the manual checklist rather than claimed here.
-* **Continuous mode is the least-verified path.** It is T3-only, it is built,
-  and nobody has spoken to it. The wake phrase is tested as a function, not
-  as an experience.
+* **Continuous mode has now been driven in a browser, but not by a person.**
+  It is T3-only, so the probe moves the tier (§6.2: the starting tier is a
+  starting point), installs a stub engine and drives the whole turn lifecycle:
+  ignored → woken → follow-up → expired. That is the *behaviour* verified; the
+  *experience* — a human saying "hey Aashish" into a laptop and being answered —
+  has not happened yet, and neither has an accent or a noisy room.
 * **Chrome-only in practice.** The recognition engine ships as
   `webkitSpeechRecognition`; Firefox and Safari get the honest disabled
   button with the reason, which is the behaviour the probe verifies.

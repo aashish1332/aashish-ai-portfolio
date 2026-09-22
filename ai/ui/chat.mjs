@@ -409,18 +409,16 @@ let working = 0;
   }
 
   /* ── section: the assistant is working ─────────────────────────
-     The frame ladder is armed around work and disarmed when the work is
-     finished — counting, because listening and answering can overlap and a
-     boolean would let the first one to finish hand the scene back early. */
+     The frame ladder is armed around the work it exists to protect and
+     disarmed when that work finishes. A depth COUNT rather than a boolean,
+     because the day answering is asynchronous (P5) two questions can overlap,
+     and with one boolean the first to finish hands the scene back while the
+     other is still generating — the one moment the ladder exists for. */
   function setWorking(on) {
     working = Math.max(0, working + (on ? 1 : -1));
     ladder?.setActive(working > 0);
     return working;
   }
-  /* A depth count rather than a boolean, for the day answering is
-     asynchronous (P5): with one boolean, the first of two overlapping
-     generations to finish hands the scene back while the other is still
-     running — the one moment the ladder exists for. */
 
   /* ── section: voice (§11) ────────────────────────────────────────
      Adapter-first: `ai/voice/index.mjs` owns every decision (which tier may
@@ -454,8 +452,10 @@ let working = 0;
     }
   }
 
-  function toggleVoice() {
-    if (voice?.isEnabled()) { stopVoice(); return; }
+  /** Created on demand — and creating it builds no engine, so this is safe to
+   *  call before anything is ever listened to (`createRecognizer` constructs
+   *  nothing until `start()`). */
+  function voiceController() {
     if (!voice) {
       voice = createVoice(env, {
         tier: tier ?? 0,
@@ -463,7 +463,12 @@ let working = 0;
         onStatus: voiceChanged,
       });
     }
-    const st = voice.enable();
+    return voice;
+  }
+
+  function toggleVoice() {
+    if (voice?.isEnabled()) { stopVoice(); return; }
+    const st = voiceController().enable();
     voiceButton();
     if (!st.enabled) {
       if (st.reason) {
@@ -485,6 +490,17 @@ let working = 0;
   function stopVoice() {
     voice?.disable();
     voiceButton();
+  }
+
+  /** §6.2: the starting tier is a starting point — "the session may move down
+   *  at runtime". Voice is where that becomes visible, because the tier decides
+   *  whether this device may listen continuously, push-to-talk only, not at
+   *  all. Exposed so a host (and the probe) can move it deliberately rather
+   *  than waiting for the governor to. */
+  function setVoiceTier(next) {
+    const st = voiceController().setTier(next);
+    voiceButton();
+    return st;
   }
 
   /* ── section: governor wiring ─────────────────────────────────── */
@@ -643,6 +659,7 @@ let working = 0;
     setHandsFree(on) { handsFree = !!on; return handsFree; },
     enableVoice: toggleVoice,
     disableVoice: stopVoice,
+    setVoiceTier,
     get voice() { return voice?.status() || null; },
     get state() { return state; },
     get tier() { return tier; },
