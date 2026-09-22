@@ -135,7 +135,11 @@ place on the page simply does not move it. The move is never narrated, and it
 is off in the typed chat — `setHandsFree(true)` is the whole switch.
 
 Nothing AI-related loads until you click: the launcher is **958 B gz** and
-the page makes **zero** AI requests before that.
+the page makes **zero** AI requests before that. Opening and closing the panel
+is measured, not assumed: **0 DOM nodes, 0 listeners and 0 MB per reopen**, and
+an AI session now compiles **no** shader programs — the frame ladder is armed
+around answering rather than around the panel being open, because degrading an
+idle page cost a measured 1.2 s of blocked main thread (`docs/BENCHMARKS.md` §15.3).
 
 | Doc | What it covers |
 |---|---|
@@ -146,7 +150,8 @@ the page makes **zero** AI requests before that.
 | [docs/PROGRESS.md](docs/PROGRESS.md) | phase-by-phase log, including what is unfinished |
 
 ```bash
-npm run test:all     # 254 JS + 219 Python tests
+npm run test:all     # 256 JS + 219 Python tests
+npm run probe:resources  # §15.3: heap, nodes, listeners, long tasks → docs/RESOURCES.json
 npm run params       # parameter count + §7.1 band gate
 npm run smoke        # tokenizer contract, shards, data cursor, checkpoints
 npm run build        # production bundle → dist/ (stripped knowledge base, no dev tooling)

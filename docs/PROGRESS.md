@@ -259,7 +259,7 @@ Full detail in `docs/BENCHMARKS.md`. Headlines:
 | Tier chosen, phone (390×844, coarse pointer) | **T1 · LITE** |
 | Phone behaviour | film **paused** while the sheet covers it, **resumed** on close, no horizontal overflow (390 vs 390) |
 | Scroll lock | `lenis.isStopped === true` while open (§12) |
-| Frame-health A/B | **INCONCLUSIVE** — headless software GL runs the film at 0.6–1.8 fps, so the ratio proves nothing. Printed as inconclusive rather than as a pass; needs the §15 reference profile on real hardware |
+| Frame-health A/B | **INCONCLUSIVE** — headless software GL runs the film at 0.6–1.8 fps, so the ratio proves nothing. Printed as inconclusive rather than as a pass; needs the §15 reference profile on real hardware. The ladder's **cost** is now measured instead (see *Resource budget + lifecycle (§15.3)*: rung 3 = a full shader recompile) |
 | Film regression after the change | desktop probe **clean** (no console/page errors, no failed requests); mobile equally clean |
 
 ### Bugs found and fixed in P2 (both would have shipped)
@@ -436,9 +436,10 @@ withheld number appears in **no** shipped file, and the two files that
 publish it deliberately (`index.html`, `js/terminal.js`) are allow-listed
 entries with a reason, reported as notes on every build.
 
-As of the §10/§12 work the same build is **27 files / 387,696 B**
-(`knowledge.json` unchanged at 24,326 B) with the same verdict; the figures
-above are left as the numbers that were measured for that phase.
+Re-measured since, with the same verdict and the same 24,326 B
+`knowledge.json`: **27 files / 391,619 B** after the §15.3 lifecycle fix
+(387,696 B after §10/§12). The figures above are left as the numbers that were
+measured for their own phase.
 
 ### Bugs found
 
@@ -568,6 +569,77 @@ otherwise be written under time pressure on Kaggle. Done here:
 `tokens_per_second`) · `training/notebooks/train_stage_a.ipynb` ·
 `tests/py/test_fetch_corpus.py` · `tests/py/test_estimate_budget.py` ·
 `tests/py/test_train_scripts.py` · `docs/TRAINING.md` · `docs/DATA_LICENSES.md`
+
+---
+
+## Resource budget + lifecycle (§15.3)
+
+**Gate:** the four states measured (panel closed · chat idle · after answers ·
+hands-free), 5 open/close cycles with no memory growth, and §4's long-task
+budget decided by measurement rather than attribution-by-vibes.
+
+**Verdict: 9/9 checks pass**, on R1 in **software GL** — the only renderer
+available here. Raw output `docs/RESOURCES.json`, panel-closed control
+`docs/RESOURCES-CONTROL.json`, `npm run probe:resources`.
+
+### Done
+
+* **`dev-resource-probe.js`** — the §15.3 instrument. CDP
+  `Performance.getMetrics` for heap/nodes/listeners (after a forced GC),
+  `Target.getTargets` for worker lifecycle, the app's **own** GSAP ticker for
+  frame deltas, `longtask` observation with per-task attribution, and
+  `PROFILE=1` for a CPU profile whose self time is reported **inside each long
+  task**, not merely for the window.
+* **Two bugs fixed, both invisible to unit tests.**
+
+  | # | Bug | Measured cost |
+  |---|---|---|
+  | **RSRC-1** | `close()` reset `state` to `'closed'` while `open()` used `state === 'ready'` as its "already open" test, so **every reopen rebuilt the panel and orphaned the previous one in the DOM** | **+87 nodes and +16 listeners per reopen**; now **0 and 0** over 5 cycles |
+  | **RSRC-2** | The §6.3 ladder was armed for the panel's **whole lifetime**, so it degraded the scene ~4.5 s after open with the assistant doing nothing — and rung 3 changes the render path, which makes three.js **recompile every material's program** | **21 programs relinked, 1,221 ms of blocked main thread** (profile: 1,105 ms inside `getProgramInfoLog`); after the gate, **0 programs, 0 ms** |
+
+* **The ladder is now armed around the work it exists to protect**
+  (`whileWorking`), not around the panel being open, and going idle hands the
+  scene back exactly once. `setActive` is pure and host-free, so
+  `tests/governor.test.mjs` pins both directions — mutation-tested by deleting
+  the guard, which fails 7 tests. The disarm is promise-aware on purpose: when
+  P5 makes `answer()` async, a `finally` would disarm the moment the promise
+  was *returned* rather than when it settled — i.e. exactly while the model was
+  generating.
+* **§4's long-task verdict now measures the AI's contribution.** The page on
+  its own produces 87–91 ms tasks under software GL (control, panel never
+  opened), so a bare "over 50 ms" rule blamed the AI for the renderer —
+  which is precisely how a 1.2 s task hid behind an 89 ms one.
+
+### Measured
+
+| Claim | Result |
+|---|---|
+| Heap growth per reopen | **0 MB/cycle** over 5 cycles |
+| DOM nodes / listeners leaked per reopen | **0 / 0** (1,616 → 1,616 · 138 → 138) |
+| Transcript cost per answer | 13.4 nodes (bounded; it is history, not a leak) |
+| Workers outliving a close | 0 → 0 |
+| Extra AI heap vs the 300 MB desktop budget | **0.8 MB** |
+| GL programs compiled during an AI session | **31 → 31** (was 31 → 52) |
+| Worst long task in AI windows | **0 ms** vs an 87 ms page-only baseline (was 1,221 ms) |
+| First open | import + build **221–405 ms**, load **285–722 ms** |
+
+### Still open
+
+* **The 10-minute Proactive soak has not been run.** The probe supports it
+  (`SOAK_MS=600000`); no soak number is claimed without it. It would currently
+  measure an idle panel, because there is no microphone in this build.
+* **No real GPU and no phone.** The 1.2 s relink is expected to be far smaller
+  where shader compilation is not software — that is an expectation, and it is
+  labelled as one.
+* **One unexplained observation:** on the pre-fix path, two runs failed to
+  return a CDP call within the 240 s protocol timeout at the first open. Not
+  reproduced after the gate, not explained, recorded rather than smoothed over.
+
+### Evidence
+`dev-resource-probe.js` · `npm run probe:resources` · `docs/RESOURCES.json` ·
+`docs/RESOURCES-CONTROL.json` · `ai/governor/index.mjs` (`setActive`) ·
+`ai/ui/chat.mjs` (`whileWorking`, `built`, `loadOutcome`) ·
+`tests/governor.test.mjs` (15) · `docs/BENCHMARKS.md`
 
 ---
 

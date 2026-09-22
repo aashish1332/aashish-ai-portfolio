@@ -88,6 +88,16 @@ export function createChat(opts = {}) {
   let handsFree = !!opts.handsFree;
 
   let state = 'closed';        /* closed | loading | ready | error */
+/* Whether the shell EXISTS, separately from whether it is open.
+   Conflating the two was a real bug: close() set state back to 'closed', so
+   every reopen after the first re-ran injectStyles() + build() and appended a
+   second panel, leaving the previous one orphaned in the DOM. Measured cost
+   before the split: +87 nodes and +16 listeners per open/close cycle — the
+   shape of growth that ends in a browser "using too much resources" warning. */
+let built = false;
+/* The result of the one-time load, remembered across close() so a reopen can
+   report 'ready' or 'error' truthfully instead of falling back to 'closed'. */
+let loadOutcome = null;
   let kb = null;
   let tier = null;
   let caps = null;
@@ -296,7 +306,39 @@ export function createChat(opts = {}) {
     ask(text);
   }
 
+  /**
+   * §6.3 — the frame ladder is armed around the work it exists to protect, and
+   * not merely around the panel being open. Leaving it running while the
+   * visitor reads made it degrade the scene for no reason and, in doing so,
+   * force a full shader recompile (measured: 21 programs, 1221 ms — see
+   * docs/BENCHMARKS.md §15.3). Answering is the work; a future microphone arms
+   * it while listening. The scene comes back when this returns.
+   */
+  function whileWorking(fn) {
+    ladder?.setActive(true);
+    const done = () => ladder?.setActive(false);
+    let out;
+    try {
+      out = fn();
+    } catch (err) {
+      done();
+      throw err;
+    }
+    /* A `finally` would disarm too early the day `answer()` becomes async
+       (P5): `return fn()` inside try/finally runs the finally as soon as the
+       promise is RETURNED, not when it settles — the ladder would go idle
+       while the model was still generating, which is the one moment it exists
+       for. So a thenable is disarmed when it settles. */
+    if (out && typeof out.then === 'function') return out.finally(done);
+    done();
+    return out;
+  }
+
   function ask(text) {
+    return whileWorking(() => answer(text));
+  }
+
+  function answer(text) {
     if (!kb) return { error: 'not-ready' };
 
     bubble('user', text);
@@ -355,9 +397,12 @@ export function createChat(opts = {}) {
   }
 
   function startFrameHealth() {
+    if (ladder) return;                                /* idempotent: never stack */
     const gsapRef = env.gsap;
     if (!gsapRef?.ticker?.add) return;                 /* §6.3: reuse the ticker or nothing */
     ladder = createDegradeLadder({
+      /* armed by whileWorking() around real work, not by the panel opening */
+      active: false,
       onStep: (step) => applyLadderStep(step),
       onRestore: (step) => {
         hooks.setSceneQuality?.('normal');
@@ -412,23 +457,19 @@ export function createChat(opts = {}) {
   }
 
   async function open() {
-    if (state === 'ready') { show(); return api; }
+    /* Built once, reused forever. A reopen only has to reveal the shell. */
+    if (built) { show(); return api; }
+
     state = 'loading';
     injectStyles();
     const { tierBadge, chips: chipRow } = build();
-    body.hidden = false;
-    env.requestAnimationFrame?.(() => body.classList.add('is-open'));
-
-    hooks.stopScroll?.();                              /* §12: Lenis stop */
-    launcher?.setAttribute?.('aria-expanded', 'true');
-    if (hooks.pauseScene && env.matchMedia?.('(max-width: 640px)')?.matches) {
-      hooks.pauseScene();                              /* panel covers the scene (§10) */
-    }
-    startFrameHealth();
+    built = true;
+    show();
 
     try {
       await loadKnowledge();
       await prepareModel();
+      loadOutcome = 'ready';
       state = 'ready';
       bubble('bot', 'Ask me about my projects, skills, education, certifications, '
         + 'or how to reach me. Every answer comes from my portfolio data, with no model '
@@ -438,6 +479,7 @@ export function createChat(opts = {}) {
       input?.focus();
       return api;
     } catch (err) {
+      loadOutcome = 'error';
       state = 'error';
       if (tierBadge) tierBadge.textContent = 'UNAVAILABLE';
       bubble('bot', `The assistant could not start (${escape(err.message)}). `
@@ -460,9 +502,18 @@ export function createChat(opts = {}) {
 
   function show() {
     body.hidden = false;
+    /* A reopen must report the shell's real state, not the fact that it was
+       closed a moment ago — `state` doubles as the toggle indicator. */
+    if (state === 'closed') state = loadOutcome || 'loading';
     env.requestAnimationFrame?.(() => body.classList.add('is-open'));
     launcher?.setAttribute?.('aria-expanded', 'true');
-    hooks.stopScroll?.();
+    hooks.stopScroll?.();                              /* §12: Lenis stop */
+    /* close() disarms frame health, so a reopen must re-arm it. The re-arm is
+       idempotent, or repeated open/close would stack ticker callbacks. */
+    startFrameHealth();
+    if (hooks.pauseScene && env.matchMedia?.('(max-width: 640px)')?.matches) {
+      hooks.pauseScene();                              /* panel covers the scene (§10) */
+    }
     input?.focus();
   }
 

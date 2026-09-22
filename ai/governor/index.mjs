@@ -229,12 +229,44 @@ export function createDegradeLadder(opts = {}) {
   let step = 0;
   let lastMoveAt = -Infinity;
   let now = 0;
+  let active = opts.active !== false;
 
   return {
     monitor,
     get step() { return step; },
+    get active() { return active; },
+    /**
+     * §6.3 — arm the ladder around the assistant's OWN work, not around the
+     * panel being open.
+     *
+     * Every rung exists to make room for work the assistant is doing (pace it,
+     * shorten it, lower the scene, fall back to extractive). Idle, there is
+     * nothing to make room for, and rung 3 is not free: it changes the render
+     * path, which makes three.js recompile every material's program —
+     * MEASURED at 21 programs and a 1221 ms main-thread block on the toolchain
+     * that produced docs/RESOURCES.json, i.e. the ladder's "help" cost the
+     * page more than any frame it saved. So the caller arms it while an answer
+     * is being produced (and a future microphone arms it while listening),
+     * and going idle gives the scene back.
+     */
+    setActive(on) {
+      const next = !!on;
+      if (next === active) return { changed: false, restored: false };
+      active = next;
+      if (active) return { changed: true, restored: false };
+      /* Idle: drop the accumulated signal (idle frames are not evidence about
+         work) and hand the scene back if the ladder had taken it. */
+      const restored = step > 0;
+      step = 0;
+      now = 0;
+      lastMoveAt = -Infinity;
+      monitor.reset();
+      if (restored) onRestore(0, LADDER[0]);
+      return { changed: true, restored };
+    },
     /** drive the clock from the same ticker that feeds the monitor */
     tick(dtMs) {
+      if (!active) return step;      /* nothing running, nothing to protect */
       monitor.push(dtMs);
       now += dtMs || 0;
       if (monitor.count < minSamples) return step;           /* not enough signal yet */
@@ -264,7 +296,7 @@ export function createDegradeLadder(opts = {}) {
       if (notify) onRestore(0, LADDER[0]);
     },
     status() {
-      return { step, effect: step ? LADDER[step - 1].key : null, ...monitor.status() };
+      return { active, step, effect: step ? LADDER[step - 1].key : null, ...monitor.status() };
     },
   };
 }

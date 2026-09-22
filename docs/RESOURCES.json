@@ -1,0 +1,402 @@
+{
+  "measuredAt": "2026-09-22T04:35:50.931Z",
+  "url": "http://localhost:5577/",
+  "states": [
+    {
+      "label": "1 panel-closed",
+      "jsHeapMB": 6.6,
+      "jsHeapTotalMB": 7.7,
+      "nodes": 1493,
+      "documents": 17,
+      "listeners": 127,
+      "workers": 0,
+      "links": 31,
+      "frames": 142,
+      "medianMs": 21.4,
+      "p95Ms": 24.8,
+      "medianFps": 46.7,
+      "longTaskMs": 0,
+      "longTaskCount": 0,
+      "maxLongTaskMs": 0,
+      "mainThreadBusyPct": 0,
+      "topLongTasks": []
+    },
+    {
+      "label": "2 chat-idle",
+      "jsHeapMB": 7,
+      "jsHeapTotalMB": 7.7,
+      "nodes": 1538,
+      "documents": 17,
+      "listeners": 140,
+      "workers": 0,
+      "links": 31,
+      "frames": 134,
+      "medianMs": 21.8,
+      "p95Ms": 28.3,
+      "medianFps": 45.9,
+      "longTaskMs": 0,
+      "longTaskCount": 0,
+      "maxLongTaskMs": 0,
+      "mainThreadBusyPct": 0,
+      "topLongTasks": []
+    },
+    {
+      "label": "3 after-answers",
+      "jsHeapMB": 7.3,
+      "jsHeapTotalMB": 8.5,
+      "nodes": 1605,
+      "documents": 17,
+      "listeners": 138,
+      "workers": 0,
+      "links": 31,
+      "frames": 139,
+      "medianMs": 21.6,
+      "p95Ms": 26,
+      "medianFps": 46.3,
+      "longTaskMs": 0,
+      "longTaskCount": 0,
+      "maxLongTaskMs": 0,
+      "mainThreadBusyPct": 0,
+      "topLongTasks": []
+    },
+    {
+      "label": "4 hands-free",
+      "jsHeapMB": 7.3,
+      "jsHeapTotalMB": 8.2,
+      "nodes": 1616,
+      "documents": 17,
+      "listeners": 138,
+      "workers": 0,
+      "links": 31,
+      "frames": 138,
+      "medianMs": 20.9,
+      "p95Ms": 29.4,
+      "medianFps": 47.8,
+      "longTaskMs": 0,
+      "longTaskCount": 0,
+      "maxLongTaskMs": 0,
+      "mainThreadBusyPct": 0,
+      "topLongTasks": []
+    },
+    {
+      "label": "5 closed-again",
+      "jsHeapMB": 7.4,
+      "jsHeapTotalMB": 8.2,
+      "nodes": 1616,
+      "documents": 17,
+      "listeners": 138,
+      "workers": 0,
+      "links": 31,
+      "frames": 153,
+      "medianMs": 19.5,
+      "p95Ms": 23,
+      "medianFps": 51.3,
+      "longTaskMs": 0,
+      "longTaskCount": 0,
+      "maxLongTaskMs": 0,
+      "mainThreadBusyPct": 0,
+      "topLongTasks": []
+    }
+  ],
+  "baseline": [
+    {
+      "label": "baseline-1",
+      "jsHeapMB": 6.3,
+      "jsHeapTotalMB": 7.5,
+      "nodes": 1493,
+      "documents": 17,
+      "listeners": 127,
+      "workers": 0,
+      "links": 31,
+      "frames": 103,
+      "medianMs": 29.4,
+      "p95Ms": 34.3,
+      "medianFps": 34,
+      "longTaskMs": 0,
+      "longTaskCount": 0,
+      "maxLongTaskMs": 0,
+      "mainThreadBusyPct": 0,
+      "topLongTasks": []
+    },
+    {
+      "label": "baseline-2",
+      "jsHeapMB": 6.4,
+      "jsHeapTotalMB": 7.2,
+      "nodes": 1493,
+      "documents": 17,
+      "listeners": 127,
+      "workers": 0,
+      "links": 31,
+      "frames": 112,
+      "medianMs": 26.6,
+      "p95Ms": 32.4,
+      "medianFps": 37.6,
+      "longTaskMs": 87,
+      "longTaskCount": 1,
+      "maxLongTaskMs": 87,
+      "mainThreadBusyPct": 2.9,
+      "topLongTasks": [
+        {
+          "ms": 87,
+          "atMs": 895,
+          "startMs": 13800.100000000093,
+          "endMs": 13887.100000000093,
+          "name": "self",
+          "containerType": "window",
+          "containerName": null,
+          "containerSrc": null
+        }
+      ]
+    },
+    {
+      "label": "baseline-3",
+      "jsHeapMB": 7.3,
+      "jsHeapTotalMB": 8.2,
+      "nodes": 1493,
+      "documents": 17,
+      "listeners": 127,
+      "workers": 0,
+      "links": 31,
+      "frames": 114,
+      "medianMs": 26.3,
+      "p95Ms": 31.1,
+      "medianFps": 38,
+      "longTaskMs": 71,
+      "longTaskCount": 1,
+      "maxLongTaskMs": 71,
+      "mainThreadBusyPct": 2.37,
+      "topLongTasks": [
+        {
+          "ms": 71,
+          "atMs": 2132,
+          "startMs": 18108.100000000093,
+          "endMs": 18179.100000000093,
+          "name": "self",
+          "containerType": "window",
+          "containerName": null,
+          "containerSrc": null
+        }
+      ]
+    },
+    {
+      "label": "baseline-4",
+      "jsHeapMB": 7.1,
+      "jsHeapTotalMB": 8,
+      "nodes": 1493,
+      "documents": 17,
+      "listeners": 127,
+      "workers": 0,
+      "links": 31,
+      "frames": 129,
+      "medianMs": 23.2,
+      "p95Ms": 27.8,
+      "medianFps": 43.1,
+      "longTaskMs": 57,
+      "longTaskCount": 1,
+      "maxLongTaskMs": 57,
+      "mainThreadBusyPct": 1.9,
+      "topLongTasks": [
+        {
+          "ms": 57,
+          "atMs": 2932,
+          "startMs": 22011.700000000186,
+          "endMs": 22068.700000000186,
+          "name": "self",
+          "containerType": "window",
+          "containerName": null,
+          "containerSrc": null
+        }
+      ]
+    }
+  ],
+  "baselineWorst": 87,
+  "cycles": [
+    {
+      "cycle": 1,
+      "jsHeapMB": 7.5,
+      "nodes": 1616,
+      "listeners": 138,
+      "workers": 0
+    },
+    {
+      "cycle": 2,
+      "jsHeapMB": 7.4,
+      "nodes": 1616,
+      "listeners": 138,
+      "workers": 0
+    },
+    {
+      "cycle": 3,
+      "jsHeapMB": 7.6,
+      "nodes": 1616,
+      "listeners": 138,
+      "workers": 0
+    },
+    {
+      "cycle": 4,
+      "jsHeapMB": 7.4,
+      "nodes": 1616,
+      "listeners": 138,
+      "workers": 0
+    },
+    {
+      "cycle": 5,
+      "jsHeapMB": 7.5,
+      "nodes": 1616,
+      "listeners": 138,
+      "workers": 0
+    }
+  ],
+  "soak": null,
+  "profile": null,
+  "qualityCalls": [],
+  "perQuestion": [
+    {
+      "q": "what is my cgpa",
+      "newLinks": 0,
+      "scrollY": [
+        0,
+        0
+      ],
+      "lenis": [
+        0,
+        0
+      ]
+    },
+    {
+      "q": "list your projects",
+      "newLinks": 0,
+      "scrollY": [
+        0,
+        0
+      ],
+      "lenis": [
+        0,
+        0
+      ]
+    },
+    {
+      "q": "which databases do you use",
+      "newLinks": 0,
+      "scrollY": [
+        0,
+        0
+      ],
+      "lenis": [
+        0,
+        0
+      ]
+    },
+    {
+      "q": "where do you study",
+      "newLinks": 0,
+      "scrollY": [
+        0,
+        0
+      ],
+      "lenis": [
+        0,
+        0
+      ]
+    },
+    {
+      "q": "how do you use ai",
+      "newLinks": 0,
+      "scrollY": [
+        0,
+        0
+      ],
+      "lenis": [
+        0,
+        0
+      ]
+    }
+  ],
+  "glStacks": [
+    "at Ctor.linkProgram (<anonymous>:11:35) | at new WebGLProgram (three.module.js:20317:5) | at Object.acquireProgram (three.module.js:21214:14) | at getProgram (three.module.js:30554:28)",
+    "at Ctor.linkProgram (<anonymous>:11:35) | at new WebGLProgram (three.module.js:20317:5) | at Object.acquireProgram (three.module.js:21214:14) | at getProgram (three.module.js:30554:28)",
+    "at Ctor.linkProgram (<anonymous>:11:35) | at new WebGLProgram (three.module.js:20317:5) | at Object.acquireProgram (three.module.js:21214:14) | at getProgram (three.module.js:30554:28)",
+    "at Ctor.linkProgram (<anonymous>:11:35) | at new WebGLProgram (three.module.js:20317:5) | at Object.acquireProgram (three.module.js:21214:14) | at getProgram (three.module.js:30554:28)",
+    "at Ctor.linkProgram (<anonymous>:11:35) | at new WebGLProgram (three.module.js:20317:5) | at Object.acquireProgram (three.module.js:21214:14) | at getProgram (three.module.js:30554:28)",
+    "at Ctor.linkProgram (<anonymous>:11:35) | at new WebGLProgram (three.module.js:20317:5) | at Object.acquireProgram (three.module.js:21214:14) | at getProgram (three.module.js:30554:28)"
+  ],
+  "viewport": {
+    "before": {
+      "innerWidth": 1360,
+      "clientWidth": 1360,
+      "scrollbarPx": 0,
+      "canvasW": 1360,
+      "canvasH": 860,
+      "dpr": 1
+    },
+    "after": {
+      "innerWidth": 1360,
+      "clientWidth": 1360,
+      "scrollbarPx": 0,
+      "canvasW": 1360,
+      "canvasH": 860,
+      "dpr": 1
+    },
+    "glLinksBefore": 31,
+    "glLinksAfter": 31
+  },
+  "verdict": {
+    "checks": [
+      {
+        "name": "no heap growth across open/close cycles",
+        "ok": true,
+        "detail": "0 MB/cycle over 5 cycles"
+      },
+      {
+        "name": "a reopen leaks no DOM nodes",
+        "ok": true,
+        "detail": "0 nodes over 5 reopens (0.0/reopen)"
+      },
+      {
+        "name": "a reopen leaks no listeners",
+        "ok": true,
+        "detail": "0 listeners over 5 reopens"
+      },
+      {
+        "name": "transcript growth per answer stays bounded",
+        "ok": true,
+        "detail": "13.4 nodes/answer"
+      },
+      {
+        "name": "no AI worker outlives a close",
+        "ok": true,
+        "detail": "closed 0 -> 0"
+      },
+      {
+        "name": "median FPS drop with the panel open <= 10% (§4)",
+        "ok": true,
+        "detail": "1.7%"
+      },
+      {
+        "name": "no long task attributable to the AI (§4: <= 50 ms above the page baseline)",
+        "ok": true,
+        "detail": "AI windows worst 0 ms · page-only baseline 87 ms"
+      },
+      {
+        "name": "the AI compiles no GL program (rung 3 costs a full recompile)",
+        "ok": true,
+        "detail": "31 -> 31 programs linked"
+      },
+      {
+        "name": "extra AI heap under the desktop budget (§4: <=300 MB)",
+        "ok": true,
+        "detail": "0.8 MB heap delta"
+      }
+    ],
+    "passed": 9,
+    "failed": 0
+  },
+  "provenance": {
+    "jsHeap": "MEASURED (CDP Performance.getMetrics JSHeapUsedSize after HeapProfiler.collectGarbage)",
+    "nodesListeners": "MEASURED (CDP Performance.getMetrics Nodes / JSEventListeners)",
+    "workers": "MEASURED (CDP Target.getTargets)",
+    "frameDeltas": "MEASURED (the app's own gsap ticker, 3 s window per state)",
+    "mainThreadBusy": "ESTIMATED (longtask ms / wall ms; excludes sub-50 ms tasks)",
+    "gaps": "NOT MEASURED: wasm/GPU memory, other tabs, OS pressure (§15.4)"
+  }
+}

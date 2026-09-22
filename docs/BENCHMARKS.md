@@ -5,6 +5,124 @@ is labelled ESTIMATED or NOT TESTED — never rounded up into a pass.
 
 ---
 
+## Resource + lifecycle (§15.3) — 2026-09-22
+
+**Device:** R1 (Intel HD 520, 4 threads, 8 GB, Windows) — **software GL**
+(SwiftShader), which is the only renderer available here and is not what a
+visitor has. **Method:** `node dev-resource-probe.js` (headless Chrome 153 via
+`puppeteer-core`, 1360×860, `npm run probe:resources`), 3 s observation window
+per state, `HeapProfiler.collectGarbage` before every heap reading; raw output
+in `docs/RESOURCES.json`, the panel-closed control in
+`docs/RESOURCES-CONTROL.json`.
+
+**What the heap numbers do not cover:** they are the Chromium JS heap only
+(CDP `Performance.getMetrics`). wasm and GPU memory are invisible to it, which
+is why this is a §15.3 lane and not a total-memory claim.
+
+### The four states, plus close, plus 5 reopen cycles
+
+| State | heap | DOM nodes | listeners | median frame | p95 | long tasks |
+|---|---|---|---|---|---|---|
+| 1 panel closed | 6.7 MB | 1,493 | 127 | 23.1 ms | 28.5 ms | 58 ms (the film's own) |
+| 2 chat idle | 6.8 MB | 1,538 | 140 | 24.2 ms | 27.6 ms | **none** |
+| 3 after five answers | 7.3 MB | 1,605 | 138 | 23.7 ms | 26.6 ms | **none** |
+| 4 hands-free | 7.3 MB | 1,616 | 138 | 23.5 ms | 29.0 ms | **none** |
+| 5 closed again | 7.4 MB | 1,616 | 138 | 20.5 ms | 24.2 ms | **none** |
+| 5 × open/close | — | 1,616 → 1,616 | 138 → 138 | — | — | — |
+
+| Claim | Measured |
+|---|---|
+| Heap growth per reopen | **0 MB/cycle** over 5 cycles |
+| DOM nodes leaked per reopen | **0** (1,616 → 1,616 across 5 reopens) |
+| Listeners leaked per reopen | **0** (138 → 138) |
+| Transcript cost per answer | **13.4 nodes** (bounded, and it is transcript growth, not a leak) |
+| Workers outliving a close | **0 → 0** |
+| Extra AI heap, desktop budget ≤ 300 MB | **0.8 MB** |
+| Median FPS drop with the panel open, ≤ 10 % | **1.7 %** (and −8.5 % … +6.4 % across runs — the sign is not stable on a software renderer) |
+| First open | import + build **221–405 ms**, knowledge + capability probe **285–722 ms** |
+
+### The reopen leak, before and after
+
+`close()` reset `state` to `'closed'`, and `open()` used `state === 'ready'` as
+its "already open" test — so **every reopen after the first re-ran
+`injectStyles()` and `build()` and appended a second panel**, orphaning the
+previous one in the DOM.
+
+| Metric | Before | After |
+|---|---|---|
+| DOM nodes per reopen | **+87** | **0** |
+| Listeners per reopen | **+16** | **0** |
+| Heap per reopen | +0.05 MB (noisy, never the visible symptom) | 0 MB |
+
+`built` now means "the shell exists" and `loadOutcome` remembers the one-time
+load, so a reopen only reveals the shell — and the frame-health monitor is
+re-armed idempotently, because `close()` disarms it.
+
+### The long task that was the AI's fault, and the one that was not
+
+The §4 budget is ≤ 50 ms tasks **during AI interaction**. Two different things
+were being reported as one number:
+
+| | Source | Evidence |
+|---|---|---|
+| ~87 ms tasks | **the film itself** | 4 × 3 s windows with the panel **never opened**: worst 87–91 ms. A software-GL film does this on its own |
+| **1,221–1,794 ms** | **the AI's degrade ladder** | CPU profile inside the task: **1,105 ms of it in `getProgramInfoLog`** (WebGL shader compile), 0 ms in `ai/*`; GL program links jump **31 → 52** during the session |
+
+The causal chain, each link measured rather than argued:
+
+1. The §6.3 ladder was armed for the panel's whole **lifetime**.
+2. Frame health on this device is always "slow" (the film's frames are ~23–33 ms,
+   over `slowFrameMs` 24), so with `minSamples` 30 + `dwellMs` 1,500 it reached
+   **rung 3 at ≈ 4.5 s** after open — while the visitor was reading the greeting.
+3. Rung 3 calls `Film3D.setQuality('low')`, which switches the render path
+   (`composer.render()` → `renderer.render()`) → three.js invalidates its
+   program cache → **21 programs relink**.
+4. Under SwiftShader that relink is **1.2 s of blocked main thread**.
+
+Proven by isolation (`NO_SCENE_DEGRADE=1`, which records `setQuality` calls
+instead of applying them): the ladder **did** ask for `low` (and later
+`normal`), and with the hook inert the same run links **31 → 31** programs and
+the worst AI task is **58 ms**.
+
+| | Before the gate | After the gate |
+|---|---|---|
+| GL programs linked during an AI session | **31 → 52** | **31 → 31** |
+| Worst long task in AI windows | **1,221 ms** | **0 ms** (baseline 87 ms) |
+| §4 long-task verdict | FAIL | PASS, against the page's own baseline |
+
+**The fix is a rule, not a delay:** the ladder exists to make room for the
+assistant's own work, so it is armed around that work (`whileWorking`) instead
+of around the panel being open, and going idle hands the scene back. Rung 3
+with nothing running buys nothing and costs a second of frozen page. The
+governor's unit tests pin both directions, and the gate was mutation-tested
+(removing it fails 7 tests).
+
+### Instrument bugs found while measuring (each one changed a conclusion)
+
+| # | Bug | What it would have reported |
+|---|---|---|
+| **RSP-1** | `qualityCalls` was read 3.6 s after open, but rung 3 fires at ≈ 4.5 s | "the ladder never fired" — a **false negative** that would have sent me looking for another cause. Caught by contradicting the GL-link count |
+| **RSP-2** | CDP profile timestamps were assumed to be on `performance.now()`'s clock | page-clock offsets of −1.79e12 ms. The profile is now bracketed by the page's own clock and mapped proportionally |
+| **RSP-3** | Long tasks were only ever summed per state window | "worst 1,794 ms" with no way to name it. Attribution per task (container + the top functions **inside that interval**) is what turned it into `getProgramInfoLog` |
+
+### NOT MEASURED (the honest gaps)
+
+* **The 10-minute Proactive soak has not been run.** The probe supports it
+  (`SOAK_MS=600000 CYCLES=5 node dev-resource-probe.js`) and no soak is claimed
+  without it. There is also no microphone in this build, so "Proactive" is a
+  mode flag, not a running feature — a soak today would measure an idle panel.
+* **No real GPU.** Every number above is software GL, where shader compilation
+  is pathologically slow. The 1.2 s relink is *expected* to be far smaller on
+  real hardware — **and that is an expectation, not a measurement.**
+* **No phone, no screen reader, no other tabs.**
+* **A 240 s non-response, once.** On the pre-fix path (ladder armed for the
+  panel's lifetime) two runs failed to return a CDP call within the 240 s
+  protocol timeout at the first open; the probe could not complete. Not
+  reproduced on the fixed path, **not explained**, and noted rather than
+  claimed as a symptom.
+
+---
+
 ## Voice + section-following (§10/§12) — 2026-09-21
 
 **Method:** `node dev-anchor-probe.js` against the real portfolio on
@@ -193,9 +311,10 @@ page is GPU-starved. The probe prints `INCONCLUSIVE — needs the §15 reference
 hardware` instead of a fabricated pass.
 
 **NOT TESTED:** the §4 target "median FPS drop ≤ 10 %, p95 ≤ 1.5× baseline" on a real GPU, the
-4×/6× DevTools CPU throttling profiles, `longtask`/`long-animation-frame` observation, and any
-real phone. The ladder's *logic* is unit-tested (`tests/governor.test.mjs`), its *cost* is not
-measured.
+4×/6× DevTools CPU throttling profiles, and any real phone. `longtask` observation and the
+ladder's *cost* were added afterwards by the §15.3 pass above — see
+**Resource + lifecycle (§15.3)** for the measured result, including the 1.2 s
+shader-recompile task the ladder used to cause.
 
 ---
 

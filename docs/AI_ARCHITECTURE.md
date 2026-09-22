@@ -209,6 +209,18 @@ moves a project into a scene of its own — and asks again. **20/20**, including
 `scrollY 0 → 5059` from hands-free mode alone. Resolution costs 14.6–29 ms
 (a bounded walk of ≤800 elements, no layout read) against §4's 50 ms budget.
 
+### The frame ladder is armed around work, not around the panel (§6.3)
+
+`ai/governor/index.mjs` exposes `setActive(on)`, and `ai/ui/chat.mjs` arms the
+ladder only while an answer is being produced. This is a **measured** rule, not
+a preference: every rung exists to make room for the assistant's own work, and
+left running while the visitor merely reads, the ladder reached rung 3 on a
+device the film already struggles on — where rung 3 switches the render path
+and makes three.js recompile every material's program. **21 programs, 1,221 ms
+of blocked main thread, with nothing running** (§15.3 in `BENCHMARKS.md`).
+Going idle clears the monitor and hands the scene back. The disarm is
+promise-aware, because P5 turns answering asynchronous.
+
 ---
 
 ## 6. Browser runtime, export, quantisation (§9) — P6/P7, not started
@@ -228,8 +240,10 @@ Sizes will be measured, never estimated in prose.
 
 ## 7. Dev vs prod — the build (§9.3/§17)
 
-`npm run build` → `dist/` (27 files, **387,696 B**); `npm run preview` serves
-it on `:5580` through the same dev server with `ROOT=dist`.
+`npm run build` → `dist/` (27 files, **391,619 B** — 387,696 B before the
+§15.3 lifecycle fix moved the ladder's arming into the shell);
+`npm run preview` serves it on `:5580` through the same dev server with
+`ROOT=dist`.
 
 | Rule | How |
 |---|---|
@@ -255,6 +269,7 @@ That is an allow-list entry with a reason, not a default.
 | Training loop resumes from a checkpoint | **verified** on CPU: resumed at step 50 from `latest.pt` with the loss history and token count intact, then ran to a PASS. (A GPU Stage A run is still ahead.) |
 | The page follows an answer to the part it came from, after the page is edited | **verified** by `dev-anchor-probe.js` (20/20, renames and moves the page first) |
 | Answers speak as Aashish, refusals included | **verified** — every template, three languages, in `tests/quick-answers.test.mjs` |
+| Opening and closing the panel leaks nothing | **verified** on R1/software GL — 0 nodes, 0 listeners, 0 MB per reopen over 5 cycles, and 0 shader programs compiled; the 10-minute Proactive soak and any real-GPU figure are **NOT TESTED** (`docs/RESOURCES.json`) |
 | Hindi/Hinglish answer quality | **not measurable yet** — no model, and the seed fixture is synthetic |
 | Browser inference and quantisation | not started |
 | **Voice**: microphone, wake word, speech synthesis | **does not exist.** Only the mode flag that makes the page follow an answer, and the honest statement that no audio input or output is implemented anywhere in this build |

@@ -198,6 +198,61 @@ test('§6.3: step 4 is the floor, and the ladder can be capped', () => {
   assert.equal(capped.step, 2, 'a session with no model need not descend past the scene step');
 });
 
+test('§6.3-GATE: an idle ladder never degrades the scene, however slow the page is', () => {
+  /* THE REGRESSION. Opening the panel used to arm the ladder for as long as
+     the panel was open. On a device the film already struggles on, it reached
+     rung 3 after ~4.5 s and called setQuality('low') — which changes the
+     render path and makes three.js recompile every material's program.
+     MEASURED: 21 programs relinked, 1221 ms of blocked main thread, with the
+     assistant doing nothing at all (docs/RESOURCES.json). */
+  const steps = [];
+  const l = createDegradeLadder({ active: false, onStep: (s) => steps.push(s), maxStep: 4 });
+  slow(l, 2000);                                   /* 66 s of 33 ms frames */
+  assert.equal(l.step, 0, 'idle frames are not evidence about work');
+  assert.deepEqual(steps, [], 'rung 3 must not fire just because the page is slow');
+  assert.equal(l.status().active, false);
+  assert.equal(l.monitor.count, 0, 'nothing accumulated while idle');
+
+  /* …and the same ladder still works when it IS armed, so the gate cannot be
+     what makes the ladder look healthy */
+  l.setActive(true);
+  slow(l, 2000);
+  assert.ok(l.step >= 1, 'armed, it still degrades');
+  assert.ok(steps.length >= 1);
+});
+
+test('§6.3-GATE: going idle gives the scene back exactly once', () => {
+  const restored = [];
+  const l = createDegradeLadder({ onRestore: (s) => restored.push(s) });
+  slow(l, 400);
+  assert.ok(l.step >= 1);
+  l.setActive(false);
+  assert.equal(l.step, 0, 'idle resets the ladder');
+  assert.deepEqual(restored, [0], 'quality is handed back');
+  assert.equal(l.status().effect, null);
+
+  /* no scene was taken → no restore is reported, so the caller cannot mistake
+     an idle cycle for a recovery */
+  l.setActive(false);
+  assert.equal(l.setActive(true).changed, true);
+  l.setActive(false);
+  assert.deepEqual(restored, [0], 'nothing to give back means no call');
+
+  /* a re-arm needs its own signal: if the idle reset did not clear the
+     monitor, the frames from the previous round would still satisfy the
+     sample gate and the ladder would degrade on stale evidence */
+  const l2 = createDegradeLadder({});
+  slow(l2, 40);
+  assert.ok(l2.step >= 1, 'armed: it degrades');
+  l2.setActive(false);
+  l2.setActive(true);
+  slow(l2, 25);                                    /* below minSamples alone */
+  assert.equal(l2.step, 0, 'the previous round\'s frames must not count');
+  assert.equal(l2.monitor.count, 25);
+  slow(l2, 10);
+  assert.ok(l2.step >= 1, 'it still degrades on its own signal');
+});
+
 test('§6.3: reset returns to full quality and reports it', () => {
   const restored = [];
   const l = createDegradeLadder({ onRestore: (s) => restored.push(s) });
