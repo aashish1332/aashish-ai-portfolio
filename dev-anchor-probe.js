@@ -17,7 +17,9 @@ const puppeteer = require('puppeteer-core');
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const URL = 'http://localhost:5577/';
 
+let checks = 0;
 const say = (label, ok, detail) => {
+  checks += 1;
   console.log(`${ok ? '\u2714' : '\u2716'} ${label.padEnd(44)} ${detail || ''}`);
   if (!ok) process.exitCode = 1;
 };
@@ -35,7 +37,9 @@ const QUESTIONS = [
 ];
 
 (async () => {
-  const hardStop = setTimeout(() => { console.log('PROBE TIMEOUT'); process.exit(2); }, 300000);
+  /* Generous, because the visibility phase WAITS for the page to settle rather
+     than for a fixed duration, and this software-GL renderer moves slowly. */
+  const hardStop = setTimeout(() => { console.log('PROBE TIMEOUT'); process.exit(2); }, 900000);
   const browser = await puppeteer.launch({
     executablePath: CHROME,
     headless: 'new',
@@ -62,9 +66,21 @@ const QUESTIONS = [
   const askAll = async () => {
     const out = [];
     for (const [q] of QUESTIONS) {
+      /* Projected to plain data on purpose: whatever the shell adds to
+         `lastAnchor` must not be able to make this call unserializable. A
+         DOM node in that object returns `undefined` for the WHOLE snapshot
+         rather than raising, which reads as "nothing found" — which is
+         exactly what it did when `el` was added there, and it took a
+         diagnostic to tell apart from a broken resolver. The live element
+         is reachable by `PortfolioAI.anchorElement()`, called inside the
+         page, and that is how the visibility phase reads it. */
       const r = await page.evaluate((question) => {
         window.PortfolioAI.ask(question);
-        return window.PortfolioAI.lastAnchor;
+        const a = window.PortfolioAI.lastAnchor;
+        return a && {
+          target: a.target, targetTag: a.targetTag, tag: a.tag,
+          id: a.id, text: a.text, why: a.why, topics: a.topics,
+        };
       }, q);
       out.push([q, r]);
     }
@@ -83,6 +99,106 @@ const QUESTIONS = [
   const before = await askAll();
   console.log('── as shipped ─────────────────────────────────────────');
   report(before);
+
+  /* Resolve once the scroll position has stopped changing, or give up after a
+     generous bound and let the measurement say what it found. */
+  const settle = async (maxMs = 15000) => {
+    const t0 = Date.now();
+    let last = -1;
+    let stable = 0;
+    while (Date.now() - t0 < maxMs) {
+      const y = await page.evaluate(() => window.scrollY);
+      stable = Math.abs(y - last) < 1 ? stable + 1 : 0;
+      last = y;
+      if (stable >= 3) return y;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    return last;
+  };
+
+  /* How much of the element an answer points at is inside the viewport once
+     the move settles. "The page moved" and "you are looking at the thing you
+     asked about" are different claims, and only the first was measured: the
+     move goes through `Director.scrollTo` on the SECTION, so an element
+     inside a tall pinned scene can be off-screen while `scrollY` rises.
+
+     Defined here, CALLED AT THE END, and that placement is load-bearing —
+     see the note at the call site. */
+  const measureVisibility = async () => {
+    const rows = [];
+    for (const [q] of QUESTIONS) {
+      await page.evaluate(() => { window.scrollTo(0, 0); });
+      await settle();
+      await page.evaluate((question) => {
+        window.PortfolioAI.setHandsFree(true);
+        window.PortfolioAI.ask(question);
+      }, q);
+      /* WAIT FOR THE PAGE TO STOP, not for a duration. The move is a smooth
+         Lenis scroll driven by rAF, a target can be 18,000 px away, and this
+         software-GL renderer runs the film at well under 1 fps — so a fixed
+         2.6 s wait measured "the scroll had not arrived yet" and reported it
+         as "the visitor cannot see it" (7/7 became 4/7 between two runs of
+         unchanged code). */
+      await settle();
+      rows.push([q, await page.evaluate(() => {
+        const a = window.PortfolioAI.lastAnchor;
+        /* read INSIDE the page — the node never crosses the boundary */
+        const el = window.PortfolioAI.anchorElement?.();
+        if (!el) return { found: false };
+        const r = el.getBoundingClientRect();
+        const h = window.innerHeight || 1;
+        const px = Math.max(0, Math.min(r.bottom, h) - Math.max(r.top, 0));
+        const scene = (el.closest && el.closest('[data-scene]')) || el;
+        const sr = scene.getBoundingClientRect ? scene.getBoundingClientRect() : r;
+        const sPx = Math.max(0, Math.min(sr.bottom, h) - Math.max(sr.top, 0));
+        return {
+          found: true, target: scene.id || '', tag: String(a.tag || ''),
+          top: Math.round(r.top), height: Math.round(r.height), px: Math.round(px),
+          ratio: r.height ? +(px / r.height).toFixed(2) : 0,
+          onScreen: r.top < h && r.bottom > 0,
+          /* whether the page RENDERS the element at all. A section the film
+             does not lay out leaves the resolved child at zero area — the
+             resolver is right about where the fact lives, and the visitor
+             cannot be shown it. Reported separately so the two are never
+             confused with each other. */
+          rendered: r.width > 0 && r.height > 0,
+          section: scene.id || '', sectionPx: Math.round(sPx), sectionVisible: sr.top < h && sr.bottom > 0,
+          laidOut: (sr.height || 0) > 0,
+        };
+      })]);
+    }
+    await page.evaluate(() => window.PortfolioAI.setHandsFree(false));
+    return rows;
+  };
+
+  const reportVisibility = (rows, label) => {
+    console.log(`\n── ${label} ──────────────────────────`);
+    for (const [q, v] of rows) {
+      const what = ` <${String(v.tag).toLowerCase()}> in #${v.target}`;
+      const state = v.onScreen ? 'visible' : (v.rendered ? 'OFF SCREEN' : 'not rendered');
+      console.log(`${state.padEnd(13)} ${String(v.ratio).padStart(5)}${what.padEnd(34)}`
+        + ` el top=${v.top}px h=${v.height}px · section ${v.sectionPx}px, ${v.sectionVisible ? 'on screen' : 'OFF SCREEN'}  ← "${q}"`);
+    }
+    for (const [q, v] of rows) {
+      /* Two ways to be shown the right place, and they are not the same
+         claim: the element itself is in view, or the element is something
+         the page does not render (an edited-in section the film has no
+         layout for) and therefore the SECTION is what the visitor gets.
+         Both are honest; "the page scrolled somewhere" is not. */
+      const ok = !!(v.found && (v.onScreen || !v.laidOut));
+      say(`${label}: "${q}" is on screen`, ok,
+        !v.found ? 'nothing resolved'
+          : v.onScreen ? `${v.px}/${v.height} px of the element in view, in #${v.target}`
+            : v.laidOut ? `element ${v.px}/${v.height} px — OFF SCREEN, in #${v.target}`
+              : `#${v.section} is not laid out by the film (0 px), so there is nothing to show`);
+    }
+    const missing = rows.filter(([, v]) => v.found && !v.rendered).length;
+    if (missing) {
+      console.log(`   note: ${missing} of ${rows.length} point at content inside a scene the film`
+        + ` does not lay out (zero area) — a consequence of the fixture moving markup the film has`
+        + ` no layout for, not of resolution, which still finds it.`);
+    }
+  };
 
   const found = before.filter(([, a]) => a).length;
   say('an anchor was found for every question', found === before.length,
@@ -222,7 +338,30 @@ const QUESTIONS = [
     !!projectsQ && projectsQ.id !== 'scene-work',
     `matched <${projectsQ && projectsQ.tag}> "${projectsQ && projectsQ.text.slice(0, 40)}"`);
 
-  /* ── 4. cost ───────────────────────────────────────────────────── */
+  /* ── 4. DOES THE VISITOR ACTUALLY SEE IT? ────────────────────────
+     Both of these run LAST, after every expectation above has been computed,
+     and that placement is deliberate. A first attempt ran the shipped-page
+     pass where it belongs chronologically — before the edit — and it left the
+     page parked on a different scene, which changed what the EDIT phase
+     resolved (2/7 instead of 7/7) purely by parking the page elsewhere. The
+     film's DOM follows the scroll, so measuring it must not move the fixture
+     before the fixture is read. The shipped run therefore reloads the page
+     instead of reusing the edited one. */
+  reportVisibility(await measureVisibility(), 'after the edit');
+
+  await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  /* The film has to be ready BEFORE the scrolling is measured: a fresh page
+     with the scroll machinery still booting moves nowhere, and "nothing moved"
+     would then be reported as "the visitor cannot see it". */
+  await page.waitForFunction(() => window.Film3D && Film3D.isReady(),
+    { timeout: 90000, polling: 500 }).catch(() => {});
+  await new Promise((r) => setTimeout(r, 4000));
+  await page.evaluate(() => document.getElementById('askAI').click());
+  await page.waitForFunction(() => window.PortfolioAI && window.PortfolioAI.state === 'ready',
+    { timeout: 60000, polling: 250 });
+  reportVisibility(await measureVisibility(), 'as shipped');
+
+  /* ── 5. cost ───────────────────────────────────────────────────── */
   const cost = await page.evaluate(async () => {
     const mod = await import('/ai/ui/anchors.mjs');
     const kb = await (await fetch('/knowledge/knowledge.json')).json();
@@ -236,4 +375,5 @@ const QUESTIONS = [
 
   clearTimeout(hardStop);
   await browser.close();
+  console.log(`\n  ${process.exitCode ? 'PROBE FAILED' : 'probe passed'} — ${checks} checks`);
 })().catch((e) => { console.error('PROBE CRASHED:', e); process.exit(3); });

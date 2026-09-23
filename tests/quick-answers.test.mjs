@@ -434,6 +434,20 @@ test('§12: nothing the shell or the voice layer can say narrates the navigation
     'the panel no longer has a way to turn voice mode on');
   assert.ok(/stopVoice/.test(chatSource) && /function close\(\)/.test(chatSource)
     && /stopVoice\(\);/.test(chatSource), 'the microphone could outlive the closed panel');
+
+  /* `lastAnchor` is read by probes through `page.evaluate`, which serialises
+     the return value BY VALUE. A DOM node in that object makes the WHOLE
+     snapshot unserializable, and puppeteer hands the probe `undefined` rather
+     than raising — every anchor then read as "nothing found", which looks
+     exactly like a resolver catastrophe. It happened, and it took a probe run
+     and a diagnostic to tell apart from a real failure. So the snapshot stays
+     plain data and the element is reachable by a call, read inside the page. */
+  const snapshot = chatSource.slice(chatSource.indexOf('get lastAnchor()'),
+    chatSource.indexOf('anchorElement'));
+  assert.ok(!/\bel\s*:/.test(snapshot),
+    'the lastAnchor snapshot carries a raw DOM node, which breaks every probe that reads it');
+  assert.ok(/anchorElement\s*:/.test(chatSource),
+    'nothing exposes the anchored element, so visibility cannot be measured');
 });
 
 test('QA-11: the identity question discloses instead of joining the voice', () => {

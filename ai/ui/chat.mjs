@@ -686,6 +686,14 @@ let working = 0;
         label: anchorLabel(lastAnchor),
       };
     },
+    /* The live element an answer pointed at, as a CALL because this snapshot
+       crosses `page.evaluate`'s returnByValue boundary: a DOM node in that
+       object makes the whole thing unserializable, and puppeteer hands the
+       probe `undefined` instead of an error — every anchor then reads as
+       "nothing found". That is not hypothetical: putting `el` in the snapshot
+       above did exactly that to dev-anchor-probe.js. A probe calls this
+       INSIDE the page, where the node is just a node. */
+    anchorElement: () => lastAnchor?.el || null,
     onKey: (e) => { if (e.key === 'Escape' && body && !body.hidden) close(); },
   };
 

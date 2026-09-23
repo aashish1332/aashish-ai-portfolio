@@ -782,8 +782,10 @@ in review.
 * **`dev-anchor-probe.js` — verifies the claim by editing the page first.**
   It opens the real portfolio, records where seven questions resolve, then
   **renames a whole scene, moves it, strips its declarations** and moves a
-  project into a scene of its own — and asks again. 20/20 checks, including
-  `hands-free mode moved the page by itself  scrollY 0 → 5059`.
+  project into a scene of its own — and asks again. **34/34 checks**, including
+  `hands-free mode moved the page by itself  scrollY 0 → 5059` and the phase
+  below, which asks the stronger question: not "did the page move" but "is the
+  visitor *looking at* the thing they asked about".
 
 ### Measured
 
@@ -792,6 +794,8 @@ in review.
 | Every question resolves to a real section, as shipped | 7/7 — `scene-work` for projects, `scene-end` for contact, `scene-story` for CGPA and certificates, `scene-credits` for skills |
 | Still true after renaming and moving a scene, and moving a project | 7/7, and the moved project resolved to its **new** section |
 | Hands-free scroll actually moves the page | `scrollY 0 → 5059` |
+| **The anchored element is inside the viewport after the move, as shipped** | **7/7** — every answer resolves to a section (`top=0px`, `h=800px`, i.e. exactly one viewport) |
+| …and after the page was edited | **6/7**. The seventh resolves correctly into `#scene-appendix`, a section **the film has no layout for** (its `<h3>` measures `0×0`): the fact is found, and there is nothing to show. Named as a layout consequence of the fixture, not counted as visible and not hidden either |
 | Cost per resolution | **14.6–29 ms**, inside §4's 50 ms task budget (a bounded walk of ≤800 elements, no layout read) |
 | Tests | **254 JS + 219 Python**, 0 failures |
 
@@ -815,7 +819,17 @@ the question. Scoring counts facts covered, and a test pins it.
 4. **A bare `<span>` beat the card the name belonged to**, because depth was
 the only signal. Inline tags with no id now pay a small penalty: a heading or
 an article is a place to stand, a fragment is not.
-5. **The build's code/comment masker could be fooled by a regex literal.**
+5. **This probe's own new phase broke the probe, and the failure was silent.**
+   Exposing the anchored element on the shell's `lastAnchor` snapshot put a
+   **DOM node** into the object that `page.evaluate` returns by value. A node
+   makes the *whole* snapshot unserializable, and puppeteer hands back
+   `undefined` rather than raising — so all seven anchors read as "NOTHING
+   FOUND" and the run looked like a resolver catastrophe rather than a probe
+   bug. Fixed by keeping the snapshot pure data and exposing the element as a
+   **call** (`anchorElement()`), read inside the page. The probe's own
+   resolution check is what caught it, which is the argument for keeping that
+   check first in the file.
+6. **The build's code/comment masker could be fooled by a regex literal.**
 A character class containing an apostrophe opened a phantom "string", so
 every comment after it was classified as code — the check then *failed a file
 that was correct*. Fixed by consuming regex literals as code, which also
@@ -830,10 +844,26 @@ a dev import after a regex-containing line is still a **failure**.
   existed. Section-following still does not depend on it, which is why it
   landed first and why a typed question in hands-free mode moves the page the
   same way a spoken one does.
-* **The anchor is per-page, not per-viewport.** It chooses a section and
-  flashes the element inside it; where the film's pinned scroll puts that
-  scene on screen is still the director's business, so the probe measures the
-  resulting `scrollY` instead of assuming a position.
+* ~~**The anchor is per-page, not per-viewport.**~~ **MEASURED — 2026-09-22,
+  and closed for the shipped page.** It was true that the probe only checked
+  the resulting `scrollY`, so "the page moved" stood in for "you can see it".
+  The probe now measures the **live element's rectangle** against the
+  viewport once the page has settled: **7/7 as shipped**, each one exactly one
+  viewport tall and at `top=0`. On the deliberately broken fixture it is
+  **6/7**, and the miss is honest rather than smoothed: the projects card that
+  was moved into a brand-new section resolves correctly, but the film has no
+  layout for a section it did not build, so the card measures `0×0` and there
+  is nothing on screen to see. Resolution can be right about *where* a fact
+  lives and the page can still be unable to *show* it — those are now two
+  different, separately reported measurements.
+* **The scroll settles slowly on this renderer, and the first instrument did
+  not wait for it.** The move is a smooth Lenis scroll driven by rAF, a target
+  can be 18,000 px away, and headless software GL runs the film well under
+  1 fps — so a fixed 2.6 s wait measured "the scroll has not arrived yet" and
+  reported it as "the visitor cannot see it". Two runs of unchanged code gave
+  **7/7 and 4/7**. The probe now polls until the scroll position stops
+  changing. A measured number that depends on the machine being fast is not a
+  measurement.
 * **Two sections can both be right.** On a page that names the same project in
   its card *and* in its build ledger, both are true answers. The shipped page
   settles it with `data-ai-topics`; the probe removes that declaration

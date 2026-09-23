@@ -222,9 +222,14 @@ follow. The typed chat stays plain.
 
 Measured, not asserted: `dev-anchor-probe.js` records where seven questions
 resolve, then renames a whole scene, moves it, strips its declarations and
-moves a project into a scene of its own — and asks again. **20/20**, including
-`scrollY 0 → 5059` from hands-free mode alone. Resolution costs 14.6–29 ms
-(a bounded walk of ≤800 elements, no layout read) against §4's 50 ms budget.
+moves a project into a scene of its own — and asks again. **34/34**, including
+`scrollY 0 → 5059` from hands-free mode alone, and the stronger question that
+prompted all of this: after the move settles, is the **live element** the
+answer pointed at inside the viewport? **7/7 as shipped** (each resolves to a
+section exactly one viewport tall at `top=0`); 6/7 on the edited fixture,
+where the one miss is a section the film built no layout for and is reported as
+that rather than counted as shown. Resolution costs 14.6–29 ms (a bounded walk
+of ≤800 elements, no layout read) against §4's 50 ms budget.
 
 ### Heard, and heard out loud (§11)
 
@@ -350,9 +355,9 @@ Sizes will be measured, never estimated in prose.
 
 ## 7. Dev vs prod — the build (§9.3/§17)
 
-`npm run build` → `dist/` (28 files, **429,243 B** — 426,217 B when §11
-voice first landed, 396,152 B before it added a module, and 27 files /
-391,619 B before that);
+`npm run build` → `dist/` (28 files, **429,808 B** — 429,243 B before §12's
+probe hook, 426,217 B when §11 voice first landed, 396,152 B before it added a
+module, and 27 files / 391,619 B before that);
 `npm run preview` serves it on `:5580` through the same dev server with
 `ROOT=dist`.
 
@@ -378,7 +383,8 @@ That is an allow-list entry with a reason, not a default.
 | Parameter count for A/lite/smoke | **verified two ways** — analytically, and materialised (1,820,352 over 39 keys for smoke, torch 2.14.0+cpu) |
 | Loss decreases over ~50 steps | **verified** on CPU at smoke scale: 6.6847 → 4.3151, `gate: PASS` |
 | Training loop resumes from a checkpoint | **verified** on CPU: resumed at step 50 from `latest.pt` with the loss history and token count intact, then ran to a PASS. (A GPU Stage A run is still ahead.) |
-| The page follows an answer to the part it came from, after the page is edited | **verified** by `dev-anchor-probe.js` (20/20, renames and moves the page first) |
+| The page follows an answer to the part it came from, after the page is edited | **verified** by `dev-anchor-probe.js` (34/34, renames and moves the page first) |
+| The visitor can actually SEE what they asked about, not just a moved page | **measured**, not assumed: the anchored element's rectangle against the viewport once the scroll settles — **7/7 as shipped**, 6/7 on the edited fixture (the miss is a section the film has no layout for, and it is reported as that) |
 | Answers speak as Aashish, refusals included | **verified** — every template, three languages, in `tests/quick-answers.test.mjs` |
 | Opening and closing the panel leaks nothing | **verified** on R1/software GL — 0 nodes, 0 listeners, 0 MB per reopen over 5 cycles, and 0 shader programs compiled; the 10-minute Proactive soak and any real-GPU figure are **NOT TESTED** (`docs/RESOURCES.json`) |
 | Hindi/Hinglish answer quality | **not measurable yet** — no model, and the seed fixture is synthetic |

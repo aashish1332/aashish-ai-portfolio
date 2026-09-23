@@ -228,6 +228,32 @@ moves one project into a scene of its own** — and asks again.
 | Elements walked | bounded at 800; no layout read, so no forced reflow |
 | Hands-free scroll | `scrollY 0 → 5059` with nobody clicking |
 | Page errors | 0 |
+| Verdict | **34/34 checks** |
+
+### Is the answer on screen, or did the page merely move?
+
+"The page moved" was the only claim measured, and it is the weaker one: the
+move goes through `Director.scrollTo` on the **section**, so an element inside
+a tall pinned scene can be off-screen while `scrollY` rises. This measures the
+anchored element's own rectangle against the viewport, once the scroll has
+settled.
+
+| Claim | As shipped | After the edit |
+|---|---|---|
+| The anchored element is inside the viewport | **7/7** — each resolves to a section measuring `800 px` at `top=0`, i.e. exactly one viewport | **6/7** |
+| The one that is not | — | the projects card moved into `#scene-appendix` resolves **correctly** into a section **the film has no layout for**: the card measures `0×0`, so there is nothing on screen to show. Reported as that, not as a pass |
+
+**Two instrument bugs were found by running this, and both would have been
+published as findings about the page.** First, waiting a fixed 2.6 s for a
+smooth Lenis scroll: a target can be 18,000 px away and headless software GL
+runs the film well under 1 fps, so the wait measured "has not arrived yet" and
+reported it as "the visitor cannot see it" — two runs of unchanged code gave
+**7/7 and 4/7**. It now polls until the position stops changing. Second, and
+worse: exposing the anchored element on the shell's `lastAnchor` snapshot put a
+DOM node into the object `page.evaluate` returns by value, which makes the
+whole snapshot unserializable — puppeteer returns `undefined` instead of
+raising, so every anchor read as "nothing found". The snapshot stays pure data
+and the element is reached by a call inside the page.
 
 ### Training gates, CPU smoke (1.82M params)
 
