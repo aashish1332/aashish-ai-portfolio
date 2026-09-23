@@ -35,6 +35,7 @@
    ═══════════════════════════════════════════════════════════════ */
 import { tierInfo } from '../governor/index.mjs';
 import { voiceHint } from '../language/detect.mjs';
+import { isPhantom } from './phantoms.mjs';
 
 /* ── the tier table, read rather than restated ─────────────────── */
 
@@ -517,6 +518,16 @@ let failure = null;
    */
   function onFinal(text) {
     if (!enabled) return null;
+    /* §11.2: a recognizer's silence-phantom ("thank you", "you", "okay")
+       must die here, before the wake phrase, the session window or the
+       answer path ever see it. Answering one aloud is the failure this
+       filter exists to prevent, and it is dropped in silence for the same
+       reason an unaddressed sentence is (§12). */
+    const phantom = isPhantom(text, opts.phantomOpts);
+    if (phantom.phantom) {
+      opts.onPhantom?.(phantom);
+      return null;
+    }
     const at = now();
     const { wake: heard, question } = stripWake(text, wake);
 

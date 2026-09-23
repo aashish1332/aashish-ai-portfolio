@@ -1,0 +1,50 @@
+{
+  "version": "1.0.0",
+  "purpose": "§11.2 — decide the STT stack (and honestly report Hindi/Hinglish WER) from real recordings before shipping a voice model.",
+  "instructions": [
+    "Open evaluation/voice/record.html in a browser, allow the microphone, and read each phrase once, naturally.",
+    "Record in a normal room, not a silent booth — a quiet booth makes every recognizer look good and tells you nothing.",
+    "One take per phrase is enough. If you fluff a line, re-record that one.",
+    "Then, for each clip, play it into the portfolio's voice mode and copy the transcript the panel shows into transcripts.json.",
+    "Run: python evaluation/voice/score.py"
+  ],
+  "what_the_numbers_decide": {
+    "under_20_percent_wer": "the tier's STT is usable; ship it and say so in the docs",
+    "20_to_35_percent_wer": "usable with the transcript shown and editable (already built), but say the number out loud in the README",
+    "over_35_percent_wer": "§11.2's honesty rule: voice input for that language is offered only through the browser's own engine (S0) if available, and the UI says voice works best in English — never pretend"
+  },
+  "phrases": [
+    { "id": "en-01", "lang": "en", "text": "What is your CGPA?", "probes": "the single most common recruiter question; the number is the hard part" },
+    { "id": "en-02", "lang": "en", "text": "Tell me about your projects.", "probes": "the most common open question" },
+    { "id": "en-03", "lang": "en", "text": "Which databases have you worked with?", "probes": "a plural technical noun" },
+    { "id": "en-04", "lang": "en", "text": "How can I contact you?", "probes": "contact intent" },
+    { "id": "en-05", "lang": "en", "text": "What is your CGPA out of ten?", "probes": "a number said as words" },
+    { "id": "en-06", "lang": "en", "text": "Did you intern at Google?", "probes": "hallucination bait — the answer must decline, and the transcript must not invent a company" },
+    { "id": "en-07", "lang": "en", "text": "What certifications do you have?", "probes": "a long Latinate noun" },
+    { "id": "en-08", "lang": "en", "text": "Explain the Volunteer OS architecture.", "probes": "a proper noun (the codename) — the class of word recognizers mangle" },
+    { "id": "en-09", "lang": "en", "text": "Are you available for a full-time role?", "probes": "availability" },
+    { "id": "en-10", "lang": "en", "text": "Compare MongoDB and MySQL in your projects.", "probes": "two technology names in one sentence" },
+
+    { "id": "hi-01", "lang": "hi", "text": "आपका सीजीपीए कितना है?", "probes": "the CGPA question in Devanagari" },
+    { "id": "hi-02", "lang": "hi", "text": "आपने कौन से प्रोजेक्ट बनाए हैं?", "probes": "the projects question, with the English loan word 'प्रोजेक्ट'" },
+    { "id": "hi-03", "lang": "hi", "text": "आपकी पढ़ाई कहाँ से हुई है?", "probes": "education; the matra-heavy word पढ़ाई is a tokenizer trap too" },
+    { "id": "hi-04", "lang": "hi", "text": "क्या आपने किसी कंपनी में काम किया है?", "probes": "employment bait — must abstain" },
+    { "id": "hi-05", "lang": "hi", "text": "आपका ईमेल पता क्या है?", "probes": "contact" },
+    { "id": "hi-06", "lang": "hi", "text": "आपको कौन सी तकनीकें आती हैं?", "probes": "skills, plural" },
+    { "id": "hi-07", "lang": "hi", "text": "आपका सबसे अच्छा प्रोजेक्ट कौन सा है?", "probes": "a superlative" },
+    { "id": "hi-08", "lang": "hi", "text": "आपने कौन से सर्टिफिकेट लिए हैं?", "probes": "certifications" },
+    { "id": "hi-09", "lang": "hi", "text": "क्या आप फुल टाइम के लिए उपलब्ध हैं?", "probes": "availability with code-mixed English" },
+    { "id": "hi-10", "lang": "hi", "text": "आप गूगल में इंटर्नशिप करना चाहेंगे?", "probes": "a hypothetical that must not be answered as fact" },
+
+    { "id": "hn-01", "lang": "hinglish", "text": "aapka CGPA kitna hai?", "probes": "the CGPA question in Roman Hinglish" },
+    { "id": "hn-02", "lang": "hinglish", "text": "usne kaun se projects banaye hain?", "probes": "third-person phrasing a recruiter may use" },
+    { "id": "hn-03", "lang": "hinglish", "text": "contact details bata do yaar", "probes": "an informal request" },
+    { "id": "hn-04", "lang": "hinglish", "text": "uska database kaun sa tha?", "probes": "§8.2's pronoun follow-up shape" },
+    { "id": "hn-05", "lang": "hinglish", "text": "kya usne kisi company mein kaam kiya hai?", "probes": "employment bait in Hinglish" },
+    { "id": "hn-06", "lang": "hinglish", "text": "uske skills ke baare mein batao", "probes": "skills" },
+    { "id": "hn-07", "lang": "hinglish", "text": "padhai kahan se ki hai?", "probes": "education, short" },
+    { "id": "hn-08", "lang": "hinglish", "text": "uska strongest project dikhao", "probes": "English loan words inside Hinglish" },
+    { "id": "hn-09", "lang": "hinglish", "text": "kitne api endpoints banaye usne?", "probes": "a number and an acronym in one line — the hardest realistic case" },
+    { "id": "hn-10", "lang": "hinglish", "text": "certificate kaun se hain uske paas?", "probes": "certifications" }
+  ]
+}
