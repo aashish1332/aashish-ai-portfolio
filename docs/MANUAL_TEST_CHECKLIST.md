@@ -1,0 +1,119 @@
+# MANUAL TEST CHECKLIST — the ~10 minute routine
+
+This covers the things **no automated test in this repo can do**: a real
+phone, a real microphone, a real screen reader, a real GPU. §15.2 (R4) and
+§11 both say that when a device is not available the honest label is
+**NOT TESTED** and the steps go here instead. Every scenario in this file is
+currently **NOT TESTED** unless a date is written next to it.
+
+**Run it on:** (a) a real Android or iPhone, (b) one other laptop with a
+different GPU than the dev machine, (c) the dev machine for comparison.
+
+**Take with you:** the deployed URL, and a place to write down a number.
+
+> If something fails, write down **what you were doing** and the **device**.
+> "It felt slow" is not actionable; "opened the panel on the phone, scrolled
+> while answering, the film stuttered" is.
+
+---
+
+## A. Baseline, before touching the AI (~3 min)
+
+Do this **first** — most of what follows is a comparison against it.
+
+| # | Step | Record |
+|---|---|---|
+| A1 | Load the page, let the intro finish | time to interactive, roughly |
+| A2 | Scroll the whole film top to bottom | does it stutter? where? |
+| A3 | Open DevTools → Network, hard-reload | **request count** and **transferred bytes** before any click |
+| A4 | Search the Network list for `.wasm`, `.onnx`, `.gguf`, `model` | must find nothing — this is the §4 "+0" claim |
+
+---
+
+## B. Chat, no microphone (~3 min)
+
+| # | Step | Expected |
+|---|---|---|
+| B1 | Click **Ask Aashish AI** | panel opens immediately, starter chips appear, no spinner |
+| B2 | In Network, look at what just loaded | AI chunk only — **no worker, no wasm** |
+| B3 | Tap a starter chip | an answer appears instantly, badged *Quick answer* |
+| B4 | Type "what is your cgpa" | answers with the CGPA |
+| B5 | Type "did you intern at Google?" | **declines** — must not invent an internship |
+| B6 | Type "नमस्ते" then a Hindi question | answered in Hindi, no selector anywhere |
+| B7 | Type "aapka naam kya hai?" | answered in Hinglish |
+| B8 | Ask "what is your phone number?" | declines, and offers email instead |
+| B9 | Press Esc | panel closes, focus returns to the button |
+| B10 | Reload the page while the panel is open | page still works; nothing AI loads before a click |
+
+**Watch for:** the panel stealing scroll from the film; the chat container
+scrolling the page instead of itself; a stuck spinner.
+
+---
+
+## C. Phone specifics (~2 min)
+
+| # | Step | Expected |
+|---|---|---|
+| C1 | Open the panel | full-screen sheet, **no horizontal scroll**, close button visible, safe-area padding respected |
+| C2 | While the sheet is open, look at the film behind/around it | **paused** (not rendering at full cost) |
+| C3 | Close it | film **resumes** |
+| C4 | Rotate the phone | no clipping, no overflow |
+| C5 | Turn on the OS reduced-motion setting, reload | no long animations; still usable |
+
+---
+
+## D. Voice (~2 min — the part that has never been done by a person)
+
+**Before you start:** know what will happen. Voice mode uses the browser's
+speech recognition, which **sends your audio to the browser's speech service**.
+The panel says this when you turn it on. Typed questions are never sent
+anywhere. If you do not want that, skip section D — it is the honest default.
+
+| # | Step | Expected |
+|---|---|---|
+| D1 | Click the mic button | the disclosure appears **before** it listens; browser asks for permission |
+| D2 | **Deny** the permission | button goes dark, panel says why once, typing still works, and it does **not** ask again |
+| D3 | Turn voice on again and **allow** | button lights; say "what is your CGPA" | 
+| D4 | | the answer is spoken **as Aashish** ("my CGPA"), and the page **moves to the CGPA section** while it speaks |
+| D5 | Say something unrelated: "I'm going to get coffee" | **silence** — no answer, no bubble |
+| D6 | Say "hey Aashish" then ask a follow-up without the name | the follow-up is answered (the turn stays open ~12 s) |
+| D7 | Stay silent for ~15 s, then say something unaddressed | **ignored** — the turn closed by itself |
+| D8 | Speak while the answer is being read | the reading stops (barge-in) |
+| D9 | Press Esc / tap Stop | microphone stops immediately |
+| D10 | Say a question in Hindi, then one in Hinglish | answered in the same language, read by the matching voice |
+| D11 | Leave the tab and use another app, then come back | it must not have been listening while hidden |
+
+**Record:** did D3–D5 work the first time, or did you have to say it twice?
+That number is the whole point of the exercise, and it is mine to fix, not
+yours to work around.
+
+---
+
+## E. Accessibility (~2 min — never measured)
+
+| # | Step | Expected |
+|---|---|---|
+| E1 | Navigate the whole panel with **Tab only** | every control reachable, focus always visible |
+| E2 | Turn on a **screen reader** (VoiceOver / TalkBack / NVDA) | the panel announces itself, and completed messages are announced — **not** token by token |
+| E3 | Ask a question with the screen reader on | the answer is readable and the *Sources* chips make sense aloud |
+| E4 | Zoom to 200% | no clipped text, no overlap |
+
+---
+
+## F. After (~1 min)
+
+| # | Step | Record |
+|---|---|---|
+| F1 | Open/close the panel five times | does the phone get warmer / slower? note it |
+| F2 | Note the OS's memory use for the tab before and after | a growth over five cycles is a bug |
+| F3 | If you have the dev machine: `npm run probe:resources` | paste the tail into the chat — it prints its own tally |
+
+---
+
+## Where the results go
+
+- Device + browser + date next to each section you ran.
+- Numbers into `docs/BENCHMARKS.md` with **MEASURED / ESTIMATED /
+  NOT TESTED** next to them, and the method (§15 rule 5).
+- Anything that failed → tell me; a failure here is worth more than a pass,
+  because none of these paths has ever been run by a human.

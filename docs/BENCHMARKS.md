@@ -556,3 +556,35 @@ string work (no GPU). Both were run on R1.
 **NOT TESTED:** the guard has never been run against a model's output (no
 checkpoint exists), so its false-acceptment rate is unknown; and no model has
 been trained on the Stage B data, so the data's *effect* is unmeasured.
+
+---
+
+## CPU inference, first (§14) — smoke / lite / A, 2026-09-23, R1
+
+`npm run bench:cpu` → `python inference/benchmark/benchmark_cpu.py --config all
+--tokens 16 --prompt-tokens 128 --json docs/CPU_BENCHMARK.json`.
+
+**Weights are random initialisation.** No checkpoint exists, so these are the
+*architecture's* speed numbers, not a trained model's. Quality is neither
+measured nor implied. Device: R1 (i5-6300U, Windows 10, torch 2.14.0+cpu,
+**4 threads** — set by the harness and reported, because a number measured on
+four threads is not comparable to one measured on a single thread).
+
+| Config | Params | Load | Prefill 128 tok | Decode tok/s | state_dict fp32 | KV/token |
+|---|---|---|---|---|---|---|
+| **A** | 37.89M | 1.82 s | 292 ms (440 tok/s) | **28.0** | 144.6 MB | 10.00 KB |
+| lite | 17.70M | 0.82 s | 152 ms (840 tok/s) | 42.0 | 67.5 MB | 6.00 KB |
+| smoke | 1.82M | 96 ms | 34 ms (3,715 tok/s) | 99.0 | 7.0 MB | 1.50 KB |
+
+Reading: config A clears §4's **≥ 8 tok/s minimum** on a 2016 ultrabook
+dual-core with no GPU by 3.5×, and prefill of a 128-token context is under
+300 ms. File sizes are **written**, not computed: fp32 144.6 MB is the raw
+state_dict; the §4 shipping budget applies after INT8/INT4 quantisation
+(P6), which is why the fp16 88.3 MB figure is reported next to it.
+
+**NOT TESTED:** browser wasm speed (P7) — this is Python CPU with torch
+kernels, and the browser runtime is a different implementation of the same
+arithmetic. The §4 budget (≤ 40 MB total download) is a **quantised** figure
+and is not met by any number in this table, which is expected and stated.
+RAM RSS delta is readable on this machine (181.8 MB for config A) and is
+**process RSS including torch's allocator**, not a model-only figure.

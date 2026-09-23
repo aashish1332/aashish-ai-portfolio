@@ -162,13 +162,18 @@ idle page cost a measured 1.2 s of blocked main thread (`docs/BENCHMARKS.md` §1
 | [docs/TRAINING.md](docs/TRAINING.md) | corpus pipeline, tokenizer, model, checkpoints, resume, Kaggle plan |
 | [docs/DATA_LICENSES.md](docs/DATA_LICENSES.md) | what is in the corpus and what may enter it |
 | [docs/BENCHMARKS.md](docs/BENCHMARKS.md) | every measured number, with device and method |
+| [docs/PRIVACY.md](docs/PRIVACY.md) | what leaves the visitor's device, and what never does |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | hosting requirements, build/preview, what ships |
+| [docs/MANUAL_TEST_CHECKLIST.md](docs/MANUAL_TEST_CHECKLIST.md) | the ~10-minute routine for a real phone and microphone |
 | [docs/PROGRESS.md](docs/PROGRESS.md) | phase-by-phase log, including what is unfinished |
 
 ```bash
-npm run test:all     # 327 JS + 244 Python tests
+npm run test:all     # 328 JS + 252 Python tests
 npm run probe:resources  # §15.3: heap, nodes, listeners, long tasks → docs/RESOURCES.json
 npm run calibrate    # sweep the §8.4 retrieval gate against the evaluation set → docs/CALIBRATION.json
 npm run params       # parameter count + §7.1 band gate
+npm run bench:cpu    # §14 CPU inference: load, RAM, prefill/decode tok/s, file size
+npm run sft          # §7.4 Stage B instruction data (40k examples + review sample)
 npm run smoke        # tokenizer contract, shards, data cursor, checkpoints
 npm run build        # production bundle → dist/ (stripped knowledge base, no dev tooling)
 npm run preview      # build + serve dist/ on :5580 to see exactly what ships

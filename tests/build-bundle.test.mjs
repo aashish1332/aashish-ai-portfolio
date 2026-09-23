@@ -24,6 +24,7 @@ import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, write
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gzipSync } from 'node:zlib';
 
 import {
   SHIP_PATHS, SITE_PUBLISHED, blockingLeaks, buildBundle, checkImports,
@@ -310,6 +311,41 @@ test('blockingLeaks keeps exactly the deliberate publications', () => {
     ['js/frames.js', 'ai/ui/chat.mjs']);
   assert.deepEqual(blockingLeaks(found, ['index.html', 'js/terminal.js', 'js/frames.js'])
     .map((l) => l.path), ['ai/ui/chat.mjs']);
+});
+
+/* §14 asks for "bundle-size budget check in CI". There is no CI provider
+   configured, so the check lives here and runs on every `npm test` — which
+   is where a CI pipeline would have put it anyway. */
+const CHAT_CHUNK_GZ_BUDGET = 150 * 1024;   // §4: UI + knowledge + retrieval + language + guard + quick answers
+const TOTAL_GZ_BUDGET = 250 * 1024;        // regression guard, NOT the §4 target
+
+test('§14: the AI chat chunk stays inside its §4 gzip budget', () => {
+  temp((out) => {
+    buildBundle({ out, quiet: true });
+    const files = [];
+    (function walk(dir) {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else files.push({ rel: full.slice(out.length + 1).replaceAll('\\', '/'), abs: full });
+      }
+    }(out));
+
+    const gz = (f) => gzipSync(readFileSync(f.abs)).length;
+    /* everything the click can pull in: the whole ai/ tree plus the KB.
+       Voice is lazy but ships in the same chunk, so including it is the
+       conservative reading of §4's budget, not the flattering one. */
+    const chat = files.filter((f) => f.rel.startsWith('ai/') || f.rel === 'knowledge/knowledge.json');
+    const chatGz = chat.reduce((n, f) => n + gz(f), 0);
+    const totalGz = files.reduce((n, f) => n + gz(f), 0);
+
+    assert.ok(chat.length > 5, 'the chunk is suspiciously small — did the build skip ai/ ?');
+    assert.ok(chatGz <= CHAT_CHUNK_GZ_BUDGET,
+      `AI chunk is ${chatGz} B gz, over §4's ${CHAT_CHUNK_GZ_BUDGET} B budget`);
+    assert.ok(totalGz <= TOTAL_GZ_BUDGET,
+      `bundle is ${totalGz} B gz, over the ${TOTAL_GZ_BUDGET} B regression guard — `
+      + 'something large was added; check it is intended and move the guard deliberately');
+  });
 });
 
 test('npm run build works as a command and exits 0', () => {

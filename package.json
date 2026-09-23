@@ -20,6 +20,8 @@
     "test:all": "npm test && npm run test:py",
     "tokenizer": "python -m ai.tokenizer.train --corpus \"data/raw/seed/*.txt\" --vocab-size 1024 --out ai/tokenizer/artifacts/seed-1k",
     "params": "python inference/count_parameters.py --config all --gate",
+    "bench:cpu": "python inference/benchmark/benchmark_cpu.py --config A --tokens 16 --json docs/CPU_BENCHMARK.json",
+    "sft": "python -m training.scripts.make_instruction_data",
     "smoke": "python -m training.scripts.train_smoke --pipeline-only"
   },
   "engines": {

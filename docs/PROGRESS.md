@@ -1140,3 +1140,67 @@ unblocked correctness work.
 `training/scripts/make_instruction_data.py` · `tests/py/test_instruction.py`
 (25) · `data/instruction/manifest.json` · `evaluation/review_sample.md` ·
 `tools/build.mjs` · `npm run test:all`
+
+---
+
+## CPU inference first, and the missing §17 docs — 2026-09-23
+
+**Gate:** §14's "Python CPU inference first" exists and has been *run*, on all
+three configs, with the numbers written down; and §17's documentation set is
+complete.
+
+### Done
+
+1. **`inference/benchmark/benchmark_cpu.py` (§14)** — load time, process RSS,
+   prefill tok/s, decode tok/s, generation time, and file sizes **written**
+   rather than computed (`state_dict` to a temp file, fp32 and fp16).
+   `--json` writes `docs/CPU_BENCHMARK.json`.
+2. **`npm run bench:cpu`** and **`npm run sft`** added to `package.json`.
+3. **`tests/py/test_benchmark_cpu.py` (8)** — the harness's own contract: the
+   rates equal tokens ÷ seconds, a missing baseline is `None` (not a negative
+   delta), the weights are labelled random, and fp16 is ~half of fp32.
+4. **`docs/PRIVACY.md`** — what leaves the device, stated per path, with the
+   one honest exception (speech recognition is the browser's service) quoted
+   from the disclosure the panel actually shows.
+5. **`docs/DEPLOYMENT.md`** — the static-host requirements, build/preview,
+   the dev/prod split, exactly what ships, and the deploy-time checklist.
+   The host choice is left as an **open owner decision**, not invented.
+6. **`docs/MANUAL_TEST_CHECKLIST.md`** — the ~10-minute routine for a real
+   phone, a real microphone and a real screen reader: the three things no
+   test in this repo can do.
+7. **§14's bundle-size budget check** — `tests/build-bundle.test.mjs` now
+   asserts the AI chat chunk is inside §4's 150 KB gz budget and that the
+   whole bundle stays under a 250 KB regression guard. It runs on `npm test`,
+   which is where a CI pipeline would have put it.
+
+### Measured
+
+| Claim | Result |
+|---|---|
+| Config A, CPU decode | **28.0 tok/s** (R1, torch 2.14.0+cpu, 4 threads) — 3.5× §4's ≥ 8 tok/s floor |
+| Config A, CPU prefill | 128 tokens in 292 ms (440 tok/s) |
+| Config A state_dict | fp32 144.6 MB · fp16 88.3 MB, **written not computed** |
+| AI chat chunk, gzip | **79,555 B** of a 153,600 B (§4) budget |
+| Whole bundle, gzip | 144,259 B of a 256,000 B regression guard |
+| Tests | **328 JS + 252 Python** (was 327 + 244; +1 budget check, +8 benchmark) |
+
+### Still open
+
+* **The weights are random.** Every speed number above is the architecture's,
+  and the JSON says so in a field — no trained-model speed exists yet.
+* **Browser wasm speed is P7** and is a different implementation of the same
+  arithmetic; these Python numbers do not transfer, and are not quoted as if
+  they do.
+* **§14's "worker-terminate frees memory" and "offline-after-cache" tests are
+  not written because there is no worker and no model download to test** —
+  both arrive with P6/P7. Listed here rather than silently skipped.
+* **No CI provider**, so the budget check runs on `npm test`; wiring it into a
+  pipeline is a five-minute job once a host exists (`DEPLOYMENT.md` §6).
+* **The manual checklist has not been run.** Every item in it is NOT TESTED,
+  which is the reason the file exists.
+
+### Evidence
+`inference/benchmark/benchmark_cpu.py` · `npm run bench:cpu` ·
+`docs/CPU_BENCHMARK.json` · `tests/py/test_benchmark_cpu.py` · `docs/PRIVACY.md` ·
+`docs/DEPLOYMENT.md` · `docs/MANUAL_TEST_CHECKLIST.md` ·
+`tests/build-bundle.test.mjs` (16) · `package.json` · `npm run test:all`
