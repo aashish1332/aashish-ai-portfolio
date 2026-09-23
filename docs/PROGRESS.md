@@ -695,21 +695,21 @@ available here. Raw output `docs/RESOURCES.json`, panel-closed control
 | Claim | Result |
 |---|---|
 | Heap growth per reopen | **0 MB/cycle** over 5 cycles |
-| DOM nodes / listeners leaked per reopen | **0 / 0** (1,616 → 1,616 · 138 → 138) |
+| DOM nodes / listeners leaked per reopen | **0 / 0** (1,618 → 1,618 · 139 → 139) |
 | Transcript cost per answer | 13.4 nodes (bounded; it is history, not a leak) |
 | Workers outliving a close | 0 → 0 |
-| Extra AI heap vs the 300 MB desktop budget | **0.8 MB** |
+| Extra AI heap vs the 300 MB desktop budget | **0.2 MB** |
 | GL programs compiled during an AI session | **31 → 31** (was 31 → 52) |
-| Worst long task in AI windows | **0 ms** vs an 87 ms page-only baseline (was 1,221 ms) |
+| Worst long task in AI windows | **69 ms** vs a 90 ms page-only baseline (was 1,221 ms) |
 | First open | import + build **221–405 ms**, load **285–722 ms** |
 
 ### Still open
 
 * ~~**The 10-minute Proactive soak has not been run.**~~ **CLOSED — run
   2026-09-22**, with the microphone ACTIVE rather than the idle panel this note
-  predicted: **0 MB heap, 0 nodes, 0 listeners** over 600 s, 31 utterances
+  predicted: **0 MB heap, 0 nodes, 0 listeners** over 600 s, 36 utterances
   delivered and **0** bubbles produced, and the §6.3 ladder never armed
-  (22/22 checks, `docs/RESOURCES.json`). It measures the lifecycle around a
+  (30/30 checks, `docs/RESOURCES.json`). It measures the lifecycle around a
   **stub** engine, because headless Chrome's real one can only be observed
   refusing — see the *Voice* section under BENCHMARKS §11, which also records
   the rule this run corrected (listening must not arm the ladder).
@@ -858,7 +858,9 @@ Aashish, and the page moves to the part the answer came from — and nothing at
 all is listened to before the visitor asks for it.
 
 **Verdict: built, adapter-first, and browser-verified on R1**
-(`node dev-ai-probe.js`, 27/27). The **listening path itself is NOT TESTED**:
+(`node dev-ai-probe.js`, 26/26 — the probe prints its own tally, and both
+voice branches carry the same number of checks so the count means something).
+The **listening path itself is NOT TESTED**:
 headless Chrome has `webkitSpeechRecognition` and no microphone, so what the
 probe actually exercises is the refusal — which turned out to be worth
 building for on its own.
@@ -867,19 +869,22 @@ building for on its own.
 
 * **`ai/voice/index.mjs`** — the whole decision surface: the tier policy, the
   wake phrase, the recognizer wrapper, the speaker, and the controller. All
-  injected, so `tests/voice.test.mjs` (28) drives it with doubles and no
+  injected, so `tests/voice.test.mjs` (37) drives it with doubles and no
   browser.
 * **The tier column is finally read.** `TIERS[].voice`
   (`none`/`tap`/`both`/`all`) has been declared since P2 and consumed by
   nothing. It now decides: **T0** typed only (which is also where a
   `saveData` visitor lands — and speech recognition sends audio over the
   network, so "off" there is the answer they asked for), **T1**
-  push-to-talk, **T2** + answers spoken aloud, **T3** + continuous listening
+  press-to-talk in a window that closes itself, **T2** + answers spoken
+  aloud, **T3** + continuous listening
   behind a wake phrase. A test recomputes the policy table *from* `TIERS`, and
   an unrecognised level **fails closed** rather than granting.
 * **Nothing is opted in for you.** The engine object is not even constructed
   until the button is pressed, the audio-leaves-the-device disclosure is shown
-  once before anything is listened to, and a refused permission is never
+  once with the click that starts the engine (and in the DOM before any
+  transcript can be handled — see the ordering note in AI_ARCHITECTURE §11),
+  and a refused permission is never
   asked for again — `not-allowed`/`audio-capture`/`service-not-allowed` stop
   the recognizer and abort it rather than riding the normal restart loop.
 * **It is addressed, not eavesdropping.** In continuous mode a sentence with
@@ -909,7 +914,20 @@ building for on its own.
 * **Talking over it takes the turn back.** A partial transcript while the
   answer is being read stops the synthesis. No narration of any kind, checked
   over every string literal in the file by the same §12 guard the panel uses.
-* **Four bugs found while building, each of which would have shipped:**
+* **A press opens a window that CLOSES BY ITSELF.** This was the fifth bug and
+the worst of them (VOC-5 below): "tap" had been implemented as a latch, so a
+single press on VOICE left the engine restarting itself for as long as the
+panel stayed open, and every word in the room was treated as a question —
+**a hotter microphone than continuous mode**, which at least makes you say the
+name. T1/T2 now open a **`tapWindowMs` = 20 s** window: the press IS the
+address, so nothing else is needed to ask, and when the window lapses the
+engine stops, the button goes dark and Proactive mode is given back. That is
+also what makes the button honest — the panel's own CSS comment says a
+permanently-lit microphone icon is a claim that something is being recorded,
+and it was making that claim with the microphone on. The window is **not**
+extended by asking: extending it is precisely how a press turns back into an
+open microphone.
+* **Five bugs found while building, each of which would have shipped:**
 
   | # | Bug | Consequence |
   |---|---|---|
@@ -919,12 +937,25 @@ building for on its own.
   | **VOC-2** | A dead engine left `enabled` true and `hands-free` on — and, because listening armed the ladder in the first version, the scene degraded with it | the button stayed lit over a microphone that could not work. The failure now calls `disable()`, gives Proactive mode back, and keeps the reason for the panel to say once — a button that silently goes back to off is not self-explanatory. The ladder half is moot now: see the correction below, which the soak forced | `dev-ai-probe.js` |
   | **VOC-3** | `stripWake` also trimmed trailing punctuation, so *"what is your name?"* came back as *"what is your name"* — rewording the visitor while its own contract says it returns their sentence | a small lie in the one place a voice layer has to be verbatim | `tests/voice.test.mjs` (the table) |
   | **VOC-4** | The turn's window was extended *after* `ask()` returned — but `ask()` calls `onAnswer` **synchronously**, which is where an abstention closes the turn, so the extension undid the close every time | an unanswerable question would have left the microphone in a conversation it cannot take part in — the exact failure the window exists to prevent, defeated by statement order | `tests/voice.test.mjs` (the abstention case) |
-
-  VOC-2 only exists in a browser: it is a state machine walking off the end
+  | **VOC-5** | "Tap" was a latch: `enable()` started the recognizer with no end, and in push mode every final was a question | **one press left the microphone open indefinitely and answered the room** — on phones and ordinary laptops, i.e. most visitors. Found by reading the mode back against its own name, then fixed and measured: the press now opens a 20 s window that closes itself, and the probe runs both modes on the same sentence to show they differ | reading `push` against its name; pinned by `tests/voice.test.mjs` (5 tests) and `dev-resource-probe.js` |   VOC-2 only exists in a browser: it is a state machine walking off the end
   of a failure the unit tests had no way to produce. The probe's most useful
   run so far is the one where it had **no microphone** — that is the failure a
   visitor with a blocked permission gets, and it is now measured rather than
   assumed.
+* **Two defects in the probe itself, found by re-running it** (they cost the
+  previous "27/27" its meaning, so they are recorded rather than quietly
+  fixed). First, `voice: disclosure shown` **could not pass**: the check
+  searched `textContent.slice(0, 120)` for *"leaves this device"*, and in the
+  rendered bubble that phrase sits at character **151** of 221 (the badge is
+  inside the bubble). Nobody noticed because on this host the *refusal* branch
+  ran for the whole of §11, so the check never executed. Second, the two voice
+  branches carried **different numbers of checks** (3 refused, 2 enabled), so
+  "27/27" was not a stable statement. Both fixed: the whole bubble is searched
+  with the snippet printed separately, both branches carry three checks, and
+  the probe prints its own tally — **26/26** on either branch. The engine's
+  behaviour here is also **not deterministic**: the same host refuses on one
+  run and reports `listening` on the next, which is why the branch is reported
+  in the output instead of assumed.
 
 * **Wiring, not a rewrite.** `close()` stops the microphone, so it cannot
   outlive the panel; enabling voice is what turns Proactive mode on, and
@@ -959,8 +990,9 @@ overlapping *generations* are a real case in P5.
 | After Escape (panel closed) | `enabled=false` — the microphone does not outlive the panel |
 | Console / page errors | **0** |
 | Continuous mode, driven in a browser (`dev-resource-probe.js`) | level `all`, mode `continuous`: unaddressed speech asked **0** questions, the wake phrase asked **1** and opened the turn, a bare follow-up asked **2**, and after 12 s of silence the turn was **closed** and the next unaddressed sentence asked nothing |
+| Tap-to-talk, the same probe, the same sentence | mode `push`, a 20 s window, button lit: the press **is** the address, so that sentence **was** answered (**1** question). After the window: `enabled=false`, `listening=false`, button dark, and the next sentence asked **nothing** |
 | A question through the engine | reached the same answer path and the same anchor a typed one does (anchor `scene-story`) |
-| 10-minute Proactive soak, **continuous** mode | 0 nodes · 0 listeners · heap *down* 0.5 MB, **35** utterances heard, **0** answered |
+| 10-minute Proactive soak, **continuous** mode | 0 nodes · 0 listeners · heap flat 0 MB, **36** utterances heard, **0** answered |
 
 ### Still open
 
@@ -991,6 +1023,6 @@ overlapping *generations* are a real case in P5.
 `ai/voice/index.mjs` (`VOICE_POLICY`, `stripWake`, `createRecognizer`,
 `createSpeaker`, `createVoice`, `SPEECH_DISCLOSURE`) ·
 `ai/ui/chat.mjs` (`toggleVoice`, `voiceButton`, `setWorking`, `close`) ·
-`ai/ui/styles.mjs` (`.ai__mic`) · `tests/voice.test.mjs` (28) ·
+`ai/ui/styles.mjs` (`.ai__mic`) · `tests/voice.test.mjs` (37) ·
 `tests/quick-answers.test.mjs` (§12 guard, now over both files) ·
 `dev-ai-probe.js` (§11 phase) · `npm run test:all`

@@ -137,10 +137,13 @@ the typed chat — the typed chat is a text box that answers, nothing else.
 Press **VOICE** and you can ask out loud: the answer is spoken, and the page
 follows it. Nothing is listened to until you press it, the panel tells you
 beforehand that your browser's speech service receives the audio (typing never
-leaves the device), and saying *"Aashish…"* is what it answers to when it is
-listening continuously — anything else it hears is ignored in silence. Being
-woken is not being on forever: one question buys a **12-second** window for the
-next one (so *"…and your projects?"* needs no name again), and after that it
+leaves the device), and a press opens a **20-second** listening window that
+closes by itself — so a press asks a question, and then the microphone really
+is off (the button says so), rather than staying hot because you clicked once.
+Where a device can afford continuous listening, saying *"Aashish…"* is what it
+answers to, and anything else it hears is ignored in silence; being woken is
+not being on forever, since one question buys a **12-second** window for the
+next one (so *"…and your projects?"* needs no name again) and after that it
 stops answering until it is addressed again. If the microphone is blocked it
 turns itself off and says why, rather than leaving a dead one switched on. The
 voice available here is your browser's, chosen by the answer's language; a
@@ -162,7 +165,7 @@ idle page cost a measured 1.2 s of blocked main thread (`docs/BENCHMARKS.md` §1
 | [docs/PROGRESS.md](docs/PROGRESS.md) | phase-by-phase log, including what is unfinished |
 
 ```bash
-npm run test:all     # 285 JS + 219 Python tests
+npm run test:all     # 295 JS + 219 Python tests
 npm run probe:resources  # §15.3: heap, nodes, listeners, long tasks → docs/RESOURCES.json
 npm run calibrate    # sweep the §8.4 retrieval gate against the evaluation set → docs/CALIBRATION.json
 npm run params       # parameter count + §7.1 band gate

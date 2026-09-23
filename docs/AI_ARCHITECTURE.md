@@ -239,14 +239,24 @@ while it listens, your audio leaves this device. Typed questions never do."*
 The panel's older promise ("what you type stays in your browser") is still
 true, and it is deliberately not stretched to cover speech.
 
+**The order, stated exactly** (the first draft of this doc said "before
+anything is listened to", which the code did not quite do). `enable()` calls
+the engine's `start()` and the disclosure bubble is appended in the **same
+task**, so no transcript can be *handled* before the disclosure is in the DOM:
+results arrive as events, and events queue behind the task that started the
+engine. The bubble is also only shown when the engine actually started — a
+refused microphone gets the reason instead, because telling somebody their
+audio leaves the device when nothing opened would be a false claim about
+their machine.
+
 **§6.2's `voice` column is now read rather than declared.** It has been in the
 tier table since P2 with nothing consuming it:
 
 | Tier | `voice` | What that means |
 |---|---|---|
 | T0 | `none` | typed only. Also where a `saveData` visitor lands, and recognition is a network service — so "off" is the answer they asked for |
-| T1 | `tap` | push-to-talk; nothing played aloud at somebody on a phone |
-| T2 | `both` | push-to-talk **and** answers read aloud |
+| T1 | `tap` | press-to-talk, in a window that closes by itself (20 s); nothing played aloud at somebody on a phone |
+| T2 | `both` | the same window **and** answers read aloud |
 | T3 | `all` | both, plus continuous listening behind a wake phrase — and a turn that has to be *kept* open (below) |
 
 A test recomputes the policy table **from** `TIERS` in both directions (every
@@ -258,6 +268,18 @@ unrecognised level fails **closed** — an unknown capability is not permission.
 dropped in silence. The rest of the sentence is returned as the visitor's own
 words — punctuation included — because the wake splitter must not tidy up the
 question it is about to be judged on.
+
+**A press is a whole question, and it ends by itself.** "Tap" would otherwise
+be a latch: one press on VOICE left the recognizer restarting for as long as
+the panel stayed open, and in push mode every utterance is a question — a
+**hotter** microphone than continuous mode, which at least asks you to say the
+name. So a press opens a `VOICE_TIMING.tapWindowMs` (**20 s**) window: the
+press *is* the address, so nothing else is needed to ask; when the window
+lapses the engine stops, the button goes dark and Proactive mode is given
+back. The window is deliberately **not** extended by answering — extending it
+is exactly how a press turns back into an open microphone — and the expiry
+callback checks it still owns the window, so a surviving timer cannot close a
+session it has nothing to do with.
 
 **And a turn has to be kept open.** Being woken is not the same as being on
 forever: one "hey Aashish" must not leave the assistant answering for the rest
@@ -328,8 +350,9 @@ Sizes will be measured, never estimated in prose.
 
 ## 7. Dev vs prod — the build (§9.3/§17)
 
-`npm run build` → `dist/` (28 files, **426,217 B** — 396,152 B before §11
-voice added a module, and 27 files / 391,619 B before that);
+`npm run build` → `dist/` (28 files, **429,243 B** — 426,217 B when §11
+voice first landed, 396,152 B before it added a module, and 27 files /
+391,619 B before that);
 `npm run preview` serves it on `:5580` through the same dev server with
 `ROOT=dist`.
 
@@ -362,7 +385,7 @@ That is an allow-list entry with a reason, not a default.
 | The §8.4 retrieval gate is calibrated rather than assumed | **bounded, one half measured** — ceiling 4.647 recomputed from the data by test; the floor is **NOT MEASURED** (`docs/CALIBRATION.json`) |
 | Numbers and declared aliases are retrievable | **verified** — "8.28" → `ach.lpu-cgpa`, "who is he" → `person.name`, both regression-tested |
 | Browser inference and quantisation | not started |
-| **Voice**: microphone, wake phrase, speech output | **built, adapter-first, and browser-verified** — 0 AI requests before the tap, the audio disclosure before anything is listened to, a wake phrase in continuous mode, the answer spoken in its own language, and a dead microphone turned off with a stated reason and the scene handed back (`dev-ai-probe.js`, 27/27) |
+| **Voice**: microphone, wake phrase, speech output | **built, adapter-first, and browser-verified** — 0 AI requests before the tap, the audio disclosure in the DOM before any result can be handled, a wake phrase in continuous mode, the answer spoken in its own language, and a dead microphone turned off with a stated reason and the scene handed back (`dev-ai-probe.js`, 26/26 — the probe prints its own tally) |
 | **Voice with a live microphone** | **NOT TESTED.** Headless Chrome ships the API and has no microphone, so the *listening* path is covered by unit tests against doubles (34) and by a browser running a **stub** engine (`dev-resource-probe.js`), never by a real voice. A human saying "hey Aashish" into a laptop, in a noisy room, with an accent, has not happened. Chrome-only in practice; Firefox and Safari get the disabled button and the reason |
 | Continuous mode's turn lifecycle: wake → follow-up → expiry | **verified in a browser with a stub engine** — unaddressed speech asked 0 questions, the wake phrase asked 1 and opened the turn, a bare follow-up asked 2, and after 12 s of silence the turn closed and the next unaddressed sentence asked nothing |
 | A cloned voice (his own) | **not started** — this is the browser's voice, chosen by language |

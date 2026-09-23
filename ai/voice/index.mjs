@@ -71,6 +71,13 @@ export function voicePolicy(tierId) {
    conversation. An answer that made no claim closes the turn immediately. */
 export const VOICE_TIMING = {
   followUpMs: 12000,
+  /* How long a PRESS keeps the microphone open (T1/T2). "Tap" has to mean
+     something: without this, one press left the engine restarting itself for
+     as long as the panel stayed open, and every utterance in the room was
+     treated as a question — a hotter microphone than continuous mode, which
+     at least makes you say the name. The window is the press's responsibility
+     to be over. */
+  tapWindowMs: 20000,
 };
 
 /* ── the disclosure ────────────────────────────────────────────── */
@@ -336,15 +343,26 @@ export function createVoice(env = {}, opts = {}) {
   const wake = opts.wake || WAKE_PHRASES;
   const now = opts.clock || (() => Date.now());
   const followUpMs = Number.isFinite(opts.followUpMs) ? opts.followUpMs : VOICE_TIMING.followUpMs;
+  const tapWindowMs = Number.isFinite(opts.tapWindowMs) ? opts.tapWindowMs : VOICE_TIMING.tapWindowMs;
+  /* The browser's timer, for the one thing that must happen without an
+     utterance to trigger it: closing the microphone at the end of a press. */
+  const after = (fn, ms) => (env?.setTimeout ? env.setTimeout(fn, ms) : setTimeout(fn, ms));
+  const cancel = (id) => {
+    if (id === null) return;
+    if (env?.clearTimeout) env.clearTimeout(id); else clearTimeout(id);
+  };
   let tier = Number.isInteger(opts.tier) ? opts.tier : 0;
 
   let enabled = false;
   let mode = 'push';
-/* Continuous mode only: when the open turn was last extended, or null when
-   there is no open turn and the wake phrase is required again. Expiry is
-   evaluated on read rather than by a timer — a timer would be another thing
-   to leak, and the only moment the answer matters is the next utterance. */
+/* When the open window began, or null when there is none. WHETHER it is still
+   open is evaluated on read, so there is no timer to leak for that part; what
+   needs a timer is only the microphone actually closing (see windowTimer). */
 let sessionAt = null;
+/* The pending end of a press. A handle, not a flag: a stale timer from a
+   finished press must not be able to close the NEXT one — see the test that
+   presses, disables, presses again. */
+let windowTimer = null;
   let nick = opts.recognizer || null;
   let speaker = opts.speaker || null;
   let priorHandsFree = null;
@@ -356,9 +374,14 @@ let sessionAt = null;
 let failure = null;
 
   const policy = () => voicePolicy(tier);
-  const sessionLive = (at) => sessionAt !== null && (at - sessionAt) < followUpMs;
+  /* One window, two reasons: a continuous turn (`followUpMs`, extended by each
+     answer) and a press (`tapWindowMs`, never extended — extending it is how
+     a press turns back into an open microphone). */
+  const windowMs = () => (mode === 'push' ? tapWindowMs : followUpMs);
+  const sessionLive = (at) => sessionAt !== null && (at - sessionAt) < windowMs();
   const openSession = (at) => { sessionAt = at; };
   const closeSession = () => { sessionAt = null; };
+  const cancelWindow = () => { cancel(windowTimer); windowTimer = null; };
 
   function status() {
     const p = policy();
@@ -370,8 +393,12 @@ let failure = null;
       mode: enabled ? mode : null,
       listening: !!(enabled && nick?.listening),
       speaking: !!(enabled && speaker?.speaking),
-      session: enabled && mode === 'continuous' ? sessionLive(now()) : false,
+      session: enabled ? sessionLive(now()) : false,
       followUpMs,
+      tapWindowMs,
+      /* what the button would say if it counted down: 20 s to close, or 12 */
+      sessionEndsInMs: enabled && sessionAt !== null
+        ? Math.max(0, windowMs() - (now() - sessionAt)) : null,
       pushToTalk: p.pushToTalk,
       speakAnswers: p.speakAnswers,
       continuous: p.continuous,
@@ -415,6 +442,7 @@ let failure = null;
     enabled = true;
     closeSession();
     failure = null;
+    cancelWindow();
     /* Remembered, not assumed: if the visitor (or a host) had already turned
        proactive mode on, turning voice off must not take it away. */
     if (priorHandsFree === null) {
@@ -435,6 +463,23 @@ let failure = null;
        arrives at the end of the listen goes through `ask()`, which arms it
        then, exactly as a typed one does. */
     nick.start();
+    /* A press opens a window that CLOSES BY ITSELF. Without this the engine
+       restarts itself for as long as the panel is open and every word in the
+       room is a question — a hotter microphone than continuous mode, which at
+       least asks you to say the name. */
+    if (mode === 'push') {
+      openSession(now());
+      /* The callback verifies it still owns the window before acting: a timer
+         that survived a disable (or a re-press) must not be able to close a
+         session it has nothing to do with. */
+      let id = null;
+      id = after(() => {
+        if (windowTimer !== id) return;
+        windowTimer = null;
+        if (enabled && mode === 'push') disable();
+      }, tapWindowMs);
+      windowTimer = id;
+    }
     opts.onStatus?.(status());
     return status();
   }
@@ -442,6 +487,7 @@ let failure = null;
   function disable() {
     if (!enabled) return status();
     enabled = false;
+    cancelWindow();
     closeSession();
     nick?.stop();
     nick?.release?.();
@@ -487,8 +533,10 @@ let failure = null;
       return { wake: heard, question: asked ? question : '' };
     }
 
-    /* push-to-talk: the button is the wake phrase */
-    if (!question) return null;
+    /* push-to-talk: the press was the address. A final that arrives after the
+       window closed belongs to a microphone that is no longer listening for
+       an answer — it is dropped, not answered. */
+    if (!question || !sessionLive(at)) return null;
     return { wake: heard, question: ask(question) ? question : '' };
   }
 
@@ -528,7 +576,11 @@ let failure = null;
     if (!Number.isInteger(t)) return status();
     tier = t;
     const p = policy();
-    if (enabled && !p.pushToTalk) disable();
+    /* A tier the session is no longer allowed to be in ends the session: a
+       device that has dropped to T0 must not keep a microphone open, and one
+       that can no longer listen continuously must not still be doing it. The
+       visitor presses again, which is cheap and honest. */
+    if (enabled && (!p.pushToTalk || (mode === 'continuous' && !p.continuous))) disable();
     nick?.setLang?.(voiceHint(lang));
     return status();
   }
@@ -538,9 +590,11 @@ let failure = null;
     setLang(l) { if (l) lang = l; nick?.setLang?.(voiceHint(lang)); },
     /** The visitor's own words can never wake it — nothing else can either. */
     isEnabled: () => enabled,
-    isSessionOpen: () => sessionLive(now()),
+    isSessionOpen: () => enabled && sessionLive(now()),
     closeSession,
     get followUpMs() { return followUpMs; },
+    get tapWindowMs() { return tapWindowMs; },
+    get pendingWindow() { return windowTimer !== null; },
     tierInfo: () => tierInfo(tier),
   };
 }

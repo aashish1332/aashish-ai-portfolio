@@ -80,11 +80,22 @@ function makeEnv(over = {}) {
     SpeechRecognition: over.noEngine ? undefined : FakeRecognition,
     speechSynthesis: over.noSpeech ? undefined : synth,
     SpeechSynthesisUtterance: over.noSpeech ? undefined : FakeUtterance,
-    timers: [],
-    setTimeout(fn) { env.timers.push(fn); return env.timers.length; },
+    /* Real timer semantics, including cancellation: the press window closes on
+       a timer, and "was it cancelled" is part of what is being tested. */
+    timers: new Map(),
+    nextTimerId: 0,
+    setTimeout(fn) { const id = ++env.nextTimerId; env.timers.set(id, fn); return id; },
+    clearTimeout(id) { env.timers.delete(id); },
   };
-  /** Run whatever the recognizer deferred (its restart back-off). */
-  const flush = () => { let n = 0; while (env.timers.length && n++ < 50) env.timers.shift()(); };
+  /** Run everything deferred — recognizer back-off, press windows. */
+  const flush = () => {
+    let n = 0;
+    while (env.timers.size && n++ < 50) {
+      const [id, fn] = [...env.timers.entries()][0];
+      env.timers.delete(id);
+      fn();
+    }
+  };
   return { env, events, synth, flush };
 }
 
@@ -418,15 +429,72 @@ test('VOICE-6: an answer that claims nothing ends the turn immediately', () => {
     'the wake phrase is stripped, and the bare name asked nothing');
 });
 
-test('VOICE-6: a T1 tap session has no window to keep — the button is the turn', () => {
-  const { voice, chat, at } = build(1);
+test('VOICE-5: a press opens a window that closes by itself', () => {
+  /* "Tap" has to mean something. Without a closing window, one press left the
+     engine restarting itself for as long as the panel was open and every word
+     in the room was treated as a question — a hotter microphone than
+     continuous mode, which at least makes you say the name. */
+  const { voice, chat, nick, env, flush } = build(2);
+  voice.enable();
+  assert.equal(voice.isSessionOpen(), true, 'the press IS the address');
+  assert.equal(voice.status().sessionEndsInMs, VOICE_TIMING.tapWindowMs);
+  assert.equal(env.timers.size, 1, 'the window closes on a timer, not by luck');
+
+  voice.onFinal('what are your projects');
+  assert.deepEqual(chat.asked, ['what are your projects']);
+
+  flush();                                   /* the window lapses */
+  assert.equal(voice.status().enabled, false, 'a press leaves no microphone open');
+  assert.equal(voice.isSessionOpen(), false);
+  assert.equal(chat.handsFree, false);
+  assert.equal(nick.stopped, 1, 'the engine has to actually stop');
+  assert.equal(nick.released, 1, 'and be released, not left holding a hot track');
+  /* a final already in flight belongs to a microphone that is no longer
+     listening for an answer */
+  voice.onFinal('and your CGPA');
+  assert.deepEqual(chat.asked, ['what are your projects']);
+});
+
+test('VOICE-5: the press window is not extended by asking', () => {
+  /* extending on an answer is exactly how a press turns back into an open mic */
+  const { voice, chat, at, flush } = build(2);
+  voice.enable();
+  at(VOICE_TIMING.tapWindowMs - 1000);
+  voice.onFinal('what are your projects');
+  assert.deepEqual(chat.asked, ['what are your projects']);
+  assert.equal(voice.status().sessionEndsInMs, 1000, 'an answer bought no extra time');
+  flush();
+  assert.equal(voice.status().enabled, false);
+});
+
+test('VOICE-5: a stale press timer cannot close the next press', () => {
+  const { voice, env, at } = build(2);
+  voice.enable();
+  const stale = [...env.timers.values()][0];   /* the first press's close */
+  at(5000);
+  voice.disable();
+  at(6000);
+  voice.enable();                              /* a new press, a new window */
+  assert.equal(env.timers.size, 1, 'windows must not accumulate');
+  stale();                                     /* the old one fires late */
+  assert.equal(voice.status().enabled, true, 'a finished press killed the new session');
+  at(VOICE_TIMING.tapWindowMs + 7000);
+  env.timers.size && [...env.timers.values()][0]();
+  assert.equal(voice.status().enabled, false, '…but its own window still closes');
+});
+
+test('VOICE-5: each press asks its own question at T1, however long the pause', () => {
+  const { voice, chat, nick, at, flush } = build(1);
   voice.enable();
   voice.onFinal('what are your projects');
-  assert.equal(voice.isSessionOpen(), false, 'push-to-talk has no open turn');
-  at(VOICE_TIMING.followUpMs * 10);
+  flush();
+  at(VOICE_TIMING.tapWindowMs * 10);
+  voice.enable();                              /* the visitor presses again */
   voice.onFinal('and your CGPA');
-  assert.deepEqual(chat.asked, ['what are your projects', 'and your CGPA'],
-    'each press is its own question, however long the visitor takes');
+  assert.deepEqual(chat.asked, ['what are your projects', 'and your CGPA']);
+  assert.equal(nick.started, 2, 'the second press starts the microphone again');
+  assert.equal(voice.status().sessionEndsInMs, VOICE_TIMING.tapWindowMs,
+    'and opens a full window of its own');
 });
 
 test('VOICE-6: turning voice off closes the turn, and status reports it', () => {

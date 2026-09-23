@@ -519,6 +519,46 @@ const MB = (b) => +(b / 1048576).toFixed(1);
   console.log(`voice -> answer: "${voiceWiring.text.slice(0, 60)}" (bubbles ${voiceWiring.before} -> ${voiceWiring.after})`);
   const linksAfterWiring = await glLinks();
 
+  /* ── tap-to-talk (§11): a press has to end by itself ───────────────────
+     "Tap" has to mean something. Before this, one press on VOICE left the
+     engine restarting itself for as long as the panel stayed open and treated
+     every word in the room as a question — a hotter microphone than continuous
+     mode, which at least makes you say the name. The contrast is the point of
+     running both modes in the same probe: identical speech, opposite answers. */
+  const tapWindow = await page.evaluate(async () => {
+    window.__voiceAmbient = false;
+    window.PortfolioAI.open();
+    window.PortfolioAI.disableVoice();
+    window.PortfolioAI.setVoiceTier(2);
+    window.PortfolioAI.enableVoice();
+    await new Promise((r) => setTimeout(r, 300));
+    const users = () => document.querySelectorAll('.ai__msg.is-user').length;
+    const before = users();
+    const st = window.PortfolioAI.voice;
+    window.__voiceSay('so anyway I was telling somebody else about that');
+    await new Promise((r) => setTimeout(r, 700));
+    return { mode: st?.mode, windowMs: st?.tapWindowMs, endsInMs: st?.sessionEndsInMs,
+      enabled: st?.enabled, answered: users() - before,
+      pressed: document.querySelector('.ai__mic')?.getAttribute('aria-pressed') };
+  });
+  console.log(`tap-to-talk: mode=${tapWindow.mode} window=${Math.round((tapWindow.windowMs || 0) / 1000)} s`
+    + ` · pressed=${tapWindow.pressed} · unaddressed speech answered: ${tapWindow.answered} (the press IS the address)`);
+
+  await sleep((tapWindow.windowMs || 20000) + 1500);
+  const tapClosed = await page.evaluate(async () => {
+    const users = () => document.querySelectorAll('.ai__msg.is-user').length;
+    const before = users();
+    window.__voiceSay('I am still talking to somebody else');
+    await new Promise((r) => setTimeout(r, 500));
+    const st = window.PortfolioAI.voice;
+    window.__voiceAmbient = true;
+    return { enabled: st?.enabled, listening: st?.listening, session: st?.session,
+      pressed: document.querySelector('.ai__mic')?.getAttribute('aria-pressed'),
+      before, after: users() };
+  });
+  console.log(`after the press window: enabled=${tapClosed.enabled} listening=${tapClosed.listening}`
+    + ` pressed=${tapClosed.pressed} · asked ${tapClosed.before} -> ${tapClosed.after}`);
+
   /* ── continuous mode (§11): the path with no microphone to speak into ──
      Continuous listening is T3-only, and this machine probes as T2 — so this
      phase moves the tier the way §6.2 says a session may ("a starting point")
@@ -720,6 +760,20 @@ const MB = (b) => +(b / 1048576).toFixed(1);
     { name: 'voice: a recognized question reaches the answer path',
       ok: voiceWiring.after > voiceWiring.before,
       detail: `bubbles ${voiceWiring.before} -> ${voiceWiring.after}, anchor ${voiceWiring.anchor || 'none'}` },
+    { name: 'tap-to-talk: a press opens a bounded window',
+      ok: tapWindow.mode === 'push' && tapWindow.enabled === true
+        && tapWindow.windowMs === 20000 && tapWindow.pressed === 'true',
+      detail: `mode=${tapWindow.mode}, window=${tapWindow.windowMs} ms, button lit` },
+    { name: 'tap-to-talk: the press IS the address (it answers without a wake phrase)',
+      ok: tapWindow.answered === 1,
+      detail: `${tapWindow.answered} question asked from one press` },
+    { name: 'tap-to-talk: the microphone closes by itself when the window lapses',
+      ok: tapClosed.enabled === false && tapClosed.listening === false
+        && tapClosed.pressed === 'false' && tapClosed.session === false,
+      detail: `enabled=${tapClosed.enabled} listening=${tapClosed.listening} button=${tapClosed.pressed}` },
+    { name: 'tap-to-talk: nothing is answered once the microphone has closed',
+      ok: tapClosed.after === tapClosed.before,
+      detail: `asked ${tapClosed.before} -> ${tapClosed.after}` },
     { name: 'continuous: unaddressed speech is ignored in silence',
       ok: continuous.mode === 'continuous' && continuous.ignored === 0,
       detail: `mode=${continuous.mode}, questions asked before the wake phrase: ${continuous.ignored}` },
@@ -780,6 +834,8 @@ const MB = (b) => +(b / 1048576).toFixed(1);
     cycles,
     voiceCycles,
     voiceWiring,
+    tapWindow,
+    tapClosed,
     continuous,
     continuousExpired,
     glLinks: { before: linksBefore, beforeVoice: linksBeforeVoice,

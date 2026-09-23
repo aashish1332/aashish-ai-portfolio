@@ -401,8 +401,18 @@ the pre-click promise anything.
 | Tier chosen on this machine | **T2 · STANDARD** → voice level `both` (push-to-talk + spoken answers) |
 | Engine object constructed before the tap | **no** — `createRecognizer` builds nothing until `start()` |
 | Tap, in a browser **with no microphone** | engine refused → voice off in < 1.5 s, `aria-pressed` back to `false`, `handsFree` back to `false`, the §15.3 ladder released, reason stated |
+| Tap, on **the same host in a later run** — engine starts | `enabled=true`, button `aria-pressed=true`, Proactive mode on, and the disclosure bubble shown **once**, badge `VOICE ON` (*"…your audio leaves this device"*). The probe itself took this branch once; `listening=true` was then read in a one-off run of the same page |
 | After Escape (panel closed) | `enabled=false` |
 | Console errors · page errors · failed requests | **0 · 0 · 0** |
+
+**Which of those two rows you get is not deterministic on R1** — the same
+host, same flags, refuses on one run and listens on the next — so the probe
+reports the branch it took and counts its checks per branch rather than
+assuming one. That was not true before: the disclosure check was written
+against a truncated string (the phrase is at character 151 of a 221-character
+bubble) and **could never pass**, which went unnoticed because the refusal
+branch ran instead for the whole of §11. Both branches now carry three checks
+and the probe prints its own total (**26/26**). See PROGRESS §11.
 
 **NOT TESTED, and this is the honest limit of the above:** a **live
 microphone**. Headless Chrome ships `webkitSpeechRecognition` and has no
@@ -423,14 +433,15 @@ below is a claim about hearing.
 
 | Claim | Result (R1 · headless Chrome · 600 s soak · GPU · **continuous** mode, level `all`) |
 |---|---|
-| 10 minutes listening, mic active | **0.5 MB *less* heap · 0 nodes · 0 listeners** (8.1 → 7.6 MB, 1664 → 1664, 139 → 139) |
-| utterances delivered during it | **35** — and **0** bubbles (`20 → 20`): unaddressed speech is not a question |
+| 10 minutes listening, mic active | **0 MB heap · 0 nodes · 0 listeners** (7.7 → 7.7 MB, 1675 → 1675, 139 → 139) |
+| utterances delivered during it | **36** — and **0** bubbles (`22 → 22`): unaddressed speech is not a question |
 | the §6.3 ladder over the whole listen | **never armed** (`active=false`, `step=0`) · GL programs **31 → 31** |
-| 5 voice on/off cycles | 0 nodes · 0 listeners · 0.3 MB; a fresh engine per enable, released on disable |
+| 5 voice on/off cycles | 0 nodes · 0 listeners · 0.2 MB; a fresh engine per enable, released on disable |
 | a question asked through the engine | reached the same answer path and the same anchor a typed one does (`14 → 16` bubbles, anchor `scene-story`) |
 | **continuous mode's whole turn lifecycle**, in a browser | unaddressed speech asked **0** · wake phrase asked **1** and left the turn open · bare follow-up asked **2** · after **12 s** of silence the turn closed and an unaddressed sentence asked **0** more. Tier moved to T3 by the probe, per §6.2 |
-| extra AI heap | 1.2 MB against §4's 300 MB desktop budget |
-| verdict | **22/22 checks** |
+| **tap-to-talk's window**, in a browser | `mode=push`, window **20 s**, button lit: the same unaddressed sentence **was** answered (**1** question — the press is the address). After the window: `enabled=false`, `listening=false`, button dark, and the next sentence asked **0**. Both modes on one sentence, in one run, because the contrast is the point |
+| extra AI heap | **0.2 MB** in this run (0.2–1.2 MB across runs — GC timing, not growth) against §4's 300 MB desktop budget |
+| verdict | **30/30 checks** |
 
 **A correction this run forced.** The §11 work first armed the ladder *while
 listening*, reasoning that answering and listening can overlap. The first soak
@@ -453,6 +464,14 @@ bound*, so it discards every sample and the ladder stays at step 0. That cost
 remains the §15.3 measurement above. And the engine is a stub: what continuous
 mode's phase verifies is the *behaviour* (wake, follow-up, expiry, silence),
 not the recognition — no human voice has reached this build.
+
+**Why tap-to-talk exists at all** (VOC-5): "tap" was first implemented as a
+latch, so a single press left the microphone open for as long as the panel did
+and answered every word in the room. That is a worse leak than continuous
+mode, which requires a wake phrase — and it applied to T1/T2, i.e. phones and
+ordinary laptops. It is now a window that closes itself, and the probe proves
+the closing with the button's own `aria-pressed`, not with the timer's
+existence.
 
 ---
 

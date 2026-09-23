@@ -27,7 +27,11 @@ const AI_ASSET = /\/ai\/|\.wasm(\?|$)|\.gguf|\.onnx|knowledge\.json|model|tokeni
 /* the launcher itself is the documented exception to that rule (§4) */
 const LAUNCHER = /js\/ai\/launcher\.js/;
 
+let checks = 0;
+let failures = 0;
 const say = (label, ok, detail) => {
+  checks += 1;
+  if (!ok) failures += 1;
   console.log(`${ok ? '✔' : '✖'} ${label.padEnd(26)} ${detail || ''}`);
   if (!ok) process.exitCode = 1;
 };
@@ -202,7 +206,14 @@ const say = (label, ok, detail) => {
       st: window.PortfolioAI.voice,
       handsFree: window.PortfolioAI.handsFree,
       badge: last?.querySelector('.ai__badge')?.textContent,
-      text: last?.textContent?.slice(0, 120),
+      /* The WHOLE bubble is searched, and a separate snippet is printed.
+         Truncating before the match was a bug in this probe: the disclosure
+         is 221 chars and "leaves this device" sits at 151, so slicing to 120
+         made a shown disclosure look absent — the check could not pass, and
+         nobody noticed because on this machine the refusal branch ran
+         instead for the whole of §11. */
+      text: last?.textContent,
+      snippet: last?.textContent?.slice(0, 90),
       pressed: document.querySelector('.ai__mic')?.getAttribute('aria-pressed'),
     };
   }) : null;
@@ -212,8 +223,13 @@ const say = (label, ok, detail) => {
     console.log(`  voice state                   level=${st.level} supported=${st.supported} enabled=${st.enabled} mode=${st.mode}`);
     if (st.enabled) {
       say('voice: disclosure shown', /VOICE ON/.test(voiceRun.badge || '')
-        && /leaves this device/i.test(voiceRun.text || ''), `badge="${voiceRun.badge}"`);
+        && /leaves this device/i.test(voiceRun.text || ''), `badge="${voiceRun.badge}" "${(voiceRun.snippet || '').trim()}…"`);
       say('voice: proactive mode on', voiceRun.handsFree === true, `handsFree=${voiceRun.handsFree} mode=${st.mode}`);
+      /* The other branch cannot check this, and it is the browser-only half:
+         the button has to SAY it is live, because a microphone nobody can see
+         is the thing §11 is careful about. */
+      say('voice: the button reflects the live microphone', voiceRun.pressed === 'true',
+        `aria-pressed=${voiceRun.pressed}`);
     } else {
       say('voice: failure is not silent', !!st.reason, `reason="${st.reason || 'NONE — the button just went dead'}"`);
       say('voice: scene handed back', voiceRun.handsFree === false, `handsFree=${voiceRun.handsFree}`);
@@ -248,5 +264,9 @@ const say = (label, ok, detail) => {
 
   clearTimeout(hardStop);
   await browser.close();
-  console.log(`\n  ${process.exitCode ? 'PROBE FAILED' : 'probe passed'}`);
+  /* The voice phase takes one of two branches depending on whether this
+     machine's engine starts (it is not stable here: the same host refuses on
+     one run and listens on the next). Both branches carry the SAME number of
+     checks so the tally means something either way. */
+  console.log(`\n  ${process.exitCode ? 'PROBE FAILED' : 'probe passed'} — ${checks - failures}/${checks} checks`);
 })().catch((e) => { console.log('PROBE CRASH', e.message); process.exit(2); });
