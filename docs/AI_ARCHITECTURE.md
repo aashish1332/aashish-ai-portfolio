@@ -336,6 +336,52 @@ of blocked main thread, with nothing running** (§15.3 in `BENCHMARKS.md`).
 Going idle clears the monitor and hands the scene back. The disarm is
 promise-aware, because P5 turns answering asynchronous.
 
+### Hallucination control, before there is a model (§8.4 / §7.4)
+
+Two of §8.4's five enforcement layers are not training and not data — they
+are code that operates on strings, which means they can be written, tested
+and pinned while there is still no checkpoint. Writing them last is how a
+"guard" becomes a rubber stamp applied to whatever the model produced.
+
+**`ai/guard/index.mjs` — layer 4, the runtime check.** It reads one generated
+answer against the retrieved context and returns every claim it cannot ground:
+URLs, emails, numbers, dates, named entities from the knowledge base's own
+vocabulary, language mismatch, length. It never generates, rewrites or fuzzy-
+matches; grounding is normalization plus containment, so a failure is always
+an ungrounded claim rather than a near-miss accepted.
+
+The design decisions that matter, each with a test:
+
+| Decision | Why |
+|---|---|
+| the vocabulary is **whole names**, never their words | "REST APIs" is a technology; "rest" is an English word, and "Smart Grocery List Generator" must not put *list* into the vocabulary. A guard that fires on ordinary prose rejects every correct answer |
+| his own name is **allowlisted** | the assistant naming its subject is not a claim about the world |
+| a badge is not a claim | placeholders that never resolved are a violation by definition, and the four-digit year check is separate from the number check |
+| §5.1 step 5 is the module's own function | `guardedAnswer()` runs generate → guard → **one greedy retry over a shorter context** → the extractive Quick Answer fallback. Generation is injected, so the whole ladder is tested with doubles and no inference |
+
+**`ai/data/instruction.py` — §7.4, the data half.** 40,000 examples from
+`knowledge.json` in the §7.4 format (`<|sys|> <|ctx|> <|user|> <|asst|> <|end|>`),
+the exact §7.4 mix, and the technique that makes a small model read rather
+than recall: **counterfactual contexts**. For ≥30% of examples the entity
+names and some values *inside the context* are replaced with fictional ones,
+and the answer must follow the passage. A counterfactual example built on a
+topic with no fabricated value in it is not counterfactual at all — it is a
+factual example counted in the 35% — so the topic is chosen from the ones that
+carry a swapped value, and a test asserts the context really differs from the
+real one.
+
+Two honest limits, stated rather than hidden: a fictional value has no
+placeholder token, so a counterfactual answer necessarily contains that
+fabricated string as text (which is the point — the model learns to copy — and
+it is why the share is capped); and the character-based token count is
+**ESTIMATED**, because a real count needs the P4 tokenizer.
+
+The generator writes `data/instruction/sft.jsonl` (build output, ~31 MB at
+40k examples, git-ignored), its exact `manifest.json`, and
+`evaluation/review_sample.md` — ~100 Hindi/Hinglish examples, because a
+generator can produce 25,000 fluent-looking rows and still produce unnatural
+Hindi, and only a speaker can tell you that.
+
 ---
 
 ## 6. Browser runtime, export, quantisation (§9) — P6/P7, not started

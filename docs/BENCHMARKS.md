@@ -531,3 +531,28 @@ Both were invisible in unit tests and in normal operation, and both would have s
 
 P2 adds **+0 requests** to that baseline before the click, so the initial-load numbers are
 unchanged by construction (the launcher's 1.0 KB gz is the only addition).
+
+---
+
+## Faithfulness guard + Stage B data (2026-09-23, R1)
+
+The guard is CPU-only string work (no model), and the generator is Python
+string work (no GPU). Both were run on R1.
+
+| Metric | Value | Method |
+|---|---|---|
+| Guard tests | 32 pass | `node --test tests/guard.test.mjs` |
+| Instruction tests | 25 pass | `python -m unittest tests.py.test_instruction` |
+| Stage B examples | 40,000 | `python -m training.scripts.make_instruction_data --count 40000` |
+| Generation wall clock | ~11 s | `time` on R1 |
+| Stage B characters | 24,707,841 | manifest |
+| Stage B tokens | 7,262,881 | **ESTIMATED** — characters / 3.4; a real count needs the P4 tokenizer |
+| `sft.jsonl` size | 31,186,963 B | build output, git-ignored |
+| Counterfactual share | 0.35 | every counterfactual context asserted to differ from the real rendering |
+| Mix deviation from §7.4 | 0.0 pp | exact by largest-remainder allocation |
+| Build after the guard joined the allow-list | 29 files · **448,578 B** | `npm run build` |
+| JS / Python tests | **327 / 244** | `npm run test:all` |
+
+**NOT TESTED:** the guard has never been run against a model's output (no
+checkpoint exists), so its false-acceptment rate is unknown; and no model has
+been trained on the Stage B data, so the data's *effect* is unmeasured.

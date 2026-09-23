@@ -48,6 +48,7 @@ export const SHIP_PATHS = [
   'css',
   'js',
   'ai/answers',
+  'ai/guard',
   'ai/governor',
   'ai/intent',
   'ai/knowledge',

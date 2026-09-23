@@ -1056,3 +1056,87 @@ overlapping *generations* are a real case in P5.
 `ai/ui/styles.mjs` (`.ai__mic`) · `tests/voice.test.mjs` (37) ·
 `tests/quick-answers.test.mjs` (§12 guard, now over both files) ·
 `dev-ai-probe.js` (§11 phase) · `npm run test:all`
+---
+
+## Faithfulness Guard, and the Stage B data (§8.4 layer 4 / §7.4) — 2026-09-23
+
+**Gate:** the two anti-hallucination layers that are not training are built,
+tested and *able to fail*. Everything else in the plan is either voice work
+(needs a human at a microphone) or training (needs a GPU), so this is the
+unblocked correctness work.
+
+### Done
+
+1. **`ai/guard/index.mjs` — §8.4 layer 4.** One generated answer in, every
+   ungrounded claim out: URLs, emails, numbers, years, months, named entities
+   from the knowledge base's own vocabulary, language mismatch, unresolved
+   placeholders, and the length cap. No embeddings, no fuzzy matching, no
+   rewriting — grounding is normalization plus containment, so the failure
+   direction is always "reject an ungrounded claim", never "accept a
+   near-miss".
+2. **`guardedAnswer()` — §5.1 step 5, dependency-injected.** generate →
+   guard → **one greedy retry over a shorter context** → the extractive Quick
+   Answer fallback → else `guardFailed:true` so the caller abstains rather
+   than ships a bad answer. Generation is a parameter, so the whole ladder is
+   driven with doubles and no inference.
+3. **`ai/data/instruction.py` + `training/scripts/make_instruction_data.py` —
+   §7.4 Stage B data.** 40,000 examples from `knowledge.json` in the §7.4
+   format, at the exact §7.4 mix, including **counterfactual contexts** for
+   35% of examples (floor 30%) and abstention examples that must emit
+   `<|abstain|>`.
+4. **`tests/guard.test.mjs` (32) + `tests/py/test_instruction.py` (25)** —
+   both halves of each component's contract: that it *rejects* the
+   ungrounded, and that it *accepts* the grounded near-misses that keep it
+   usable.
+5. `ai/guard` added to the build allow-list; `data/instruction/sft.jsonl` is a
+   git-ignored build output while the manifest and the review sample are
+   committed.
+
+### Bugs found by the tests, each of which would have shipped
+
+| # | Bug | Consequence |
+|---|---|---|
+| **GUARD-1** | the §8.4 allowlist was the caller's only — `defaultAllowlist` was never applied inside `guard()` | every answer that names Aashish was flagged as a fabricated entity unless the caller remembered to pass his name. Found by the allowlist test; `guard()` now merges the default list itself |
+| **CF-1** | a "counterfactual" example could be built on a topic with **no fabricated value in it** — a contact-email question with a real email in the context | it would have counted in the 35% while teaching nothing, i.e. the requirement "met" and ignored. Topics for counterfactual examples are now restricted to the ones that carry a swapped value, and a test compares the context against the real rendering |
+| **CF-2** | fabricated values were drawn per id with `rng.choice`, so two skills could both become "Django" | the review sample showed *"Rust, Django aur Rust"* — reading like a model bug rather than a swapped context, which defeats the sample's whole purpose. Referenced ids now get distinct replacements |
+| **CF-3** | the skills answer joined names with an English "and" inside Hindi and Hinglish sentences | a small wrongness a reviewer hears immediately; the conjunction is localized |
+| **CF-4** | the review sample's language column was the example's **first** turn's language | a two-turn example that starts in Hindi and ends in English was labelled `hi` while showing an English answer. The column is now the detected language of the answer shown |
+| **CF-5** | `relative_to(REPO_ROOT)` raised when `--out` pointed outside the repo | the CLI crashed after writing every file, so a test (or a scratch run) looked like a failure. The display path now falls back to the absolute one |
+
+### Measured
+
+| Claim | Result |
+|---|---|
+| JS tests | **327** (was 295; +32 guard) |
+| Python tests | **244** (was 219; +25 instruction) |
+| Stage B examples, one run | **40,000** in ~11 s, 24,707,841 characters, **7,262,881 tokens ESTIMATED** (chars/3.4) |
+| §7.4 mix, as generated | factual 14,000 · multi_turn 6,000 · abstention 6,000 · language_switch 4,000 · recruiter 4,000 · greeting 2,000 · adversarial 2,000 · other 2,000 |
+| Counterfactual share | **0.35** (floor 0.30), and every counterfactual context verified to differ from the real one |
+| Languages | en 24,757 · hinglish 9,770 · hi 5,473 |
+| Personas | first 20,054 · third 19,946 |
+| Withheld value in the training text | **0 occurrences** of any `public:false` id |
+| Build | 29 files / **448,578 B**, leak scan clean |
+
+### Still open
+
+* **The guard has never seen a model output.** It is tested against fixtures,
+  which is the only honest option before a checkpoint exists — but the
+  §14 metric it feeds (*unsupported-claim rate post-guard ≤ 1%*) is
+  **NOT TESTED**, and the false-acceptment rate on a real 38M model is
+  unknown. The module is written so that number is measurable the day P5
+  produces an output to measure.
+* **Two known blind spots, recorded not papered over:** a number written in
+  words ("five years") is not caught (the placeholder rule is what makes that
+  rare), and a technology named in a spelling the base does not record is not
+  a vocabulary hit.
+* **The Stage B data is unvalidated by a model.** Nothing here has trained;
+  the mix and the counterfactual share are properties of the *data*, and the
+  review sample exists precisely because a human has to judge naturalness —
+  it is written and waiting, and the Hindi/Hinglish in it is mine to be told
+  is wrong.
+
+### Evidence
+`ai/guard/index.mjs` · `tests/guard.test.mjs` (32) · `ai/data/instruction.py` ·
+`training/scripts/make_instruction_data.py` · `tests/py/test_instruction.py`
+(25) · `data/instruction/manifest.json` · `evaluation/review_sample.md` ·
+`tools/build.mjs` · `npm run test:all`

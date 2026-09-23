@@ -5,6 +5,9 @@
 data/raw/
 data/extracted/
 data/processed/
+# Stage B instruction data is generated (~31 MB at 40k examples). The
+# generator and its manifest are committed; the JSONL is a build output.
+data/instruction/sft.jsonl
 training/checkpoints/
 training/datasets/
 experiments/**/*.safetensors

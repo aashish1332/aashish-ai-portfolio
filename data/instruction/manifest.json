@@ -1,0 +1,42 @@
+{
+  "examples": 40000,
+  "category_counts": {
+    "abstention": 6000,
+    "adversarial": 2000,
+    "factual": 14000,
+    "greeting": 2000,
+    "language_switch": 4000,
+    "multi_turn": 6000,
+    "other": 2000,
+    "recruiter": 4000
+  },
+  "requested_mix_percent": {
+    "factual": 35,
+    "multi_turn": 15,
+    "abstention": 15,
+    "language_switch": 10,
+    "recruiter": 10,
+    "greeting": 5,
+    "adversarial": 5,
+    "other": 5
+  },
+  "language_counts": {
+    "en": 24708,
+    "hi": 5597,
+    "hinglish": 9695
+  },
+  "persona_counts": {
+    "first": 19982,
+    "third": 20018
+  },
+  "counterfactual": 14000,
+  "counterfactual_share": 0.35,
+  "characters": 24694684,
+  "tokens_estimated": 7263142,
+  "token_estimate_method": "ESTIMATED — characters / 3.4; real count needs the P4 tokenizer",
+  "seed": 1337,
+  "share": 0.35,
+  "knowledge": "1.0.0",
+  "sft_bytes": 31186963,
+  "format": "§7.4 <|sys|> <|ctx|> <|user|> <|asst|> <|end|>"
+}
