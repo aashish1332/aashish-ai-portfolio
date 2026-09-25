@@ -205,9 +205,35 @@ test('an alias made only of function words still reaches its fact', () => {
     /* the third-person voice answers with the name, not an identity claim */
     assert.match(a.text, /Aashish Kumar/);
   }
-  /* the declared spelling is what counts: an adjacency is still refused */
-  assert.equal(quickAnswer(KB, 'who is this', {}).abstained, true,
-    'a phrasing the base does not declare must still abstain — declaring it is a data change, not a guess');
+  /* The UNDECLARED-PHRASING rule, narrowed deliberately. It used to be
+     "any phrasing the base does not declare must abstain", pinned on
+     'who is this'. That over-refused, and the cost was the worst kind:
+     "who is this?" is the likeliest first message a recruiter types, and it
+     answered with "I don't have that in my portfolio yet."
+
+     The rule's purpose is to stop the INTENT LAYER from guessing which fact
+     an undeclared phrasing means. It is not needed here, because 'who is
+     this' needs no guess: it is the identity question, and the `meta` answer
+     names Aashish AND discloses that the assistant is speaking — so it
+     covers both readings of the ambiguity at once and asserts nothing new.
+
+     What stays refused is a phrasing aimed at a fact the base genuinely does
+     not hold — that is the real bait surface, and evaluation/portfolio_tests
+     .json's `unknown` set is where it lives (favourite cricketer, shoe size).
+     Reversed 2026-09-23 with a test that pins both halves. */
+  for (const q of ['who is this', 'who is this person', 'is this aashish',
+                   'who is aashish kumar', 'introduce yourself',
+                   'tell me about yourself', 'aap kaun hain',
+                   'अपने बारे में बताइए']) {
+    const a = quickAnswer(KB, q, {});
+    assert.equal(a.abstained, false, `"${q}" was refused`);
+    assert.equal(a.intent, 'meta', `"${q}" → intent ${a.intent}`);
+    assert.match(a.text, /Aashish/, `"${q}" must name him`);
+  }
+  /* an undeclared phrasing aimed at a FACT still abstains — the rule the
+     original test was written to protect, kept and re-pinned here */
+  assert.equal(quickAnswer(KB, 'who is his favourite cricketer', {}).abstained, true,
+    'a phrasing aimed at a fact the base does not hold must still abstain');
 });
 
 test('fuzzy matching survives typos the variant map does not cover', () => {

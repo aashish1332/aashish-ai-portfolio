@@ -168,6 +168,40 @@ test('§8.4: localized safety strings exist in all three languages and stay in t
   }
 });
 
+test('INT-7: the identity question is recognised in the third person and in Hindi', () => {
+  /* "who is this?" is the likeliest FIRST message a recruiter sends, and it
+     used to abstain: this bucket matched only the second person ("who ARE
+     YOU"), and every Devanagari pattern was Latin-only. An abstention here is
+     the worst available first impression, so each of these is pinned. */
+  const identity = [
+    'who is this', "who's this", 'who is this person', 'is this aashish',
+    'who is aashish', 'who is aashish kumar', 'who are you',
+    'introduce yourself', 'tell me about yourself',
+    'aap kaun hain', 'tum kaun ho',
+    'आप कौन हैं', 'तुम कौन हो',
+  ];
+  for (const q of identity) {
+    assert.equal(detectIntent(q).intent, 'meta', `"${q}" → ${detectIntent(q).intent}`);
+  }
+
+  /* And the Devanagari alternatives must match WITHOUT `\b`: JS word
+     boundaries are defined on [A-Za-z0-9_], so a `\b` after a Devanagari
+     cluster never matches — the first version of this fix had the `\b` and
+     silently refused every Hindi identity question. */
+  assert.ok(/कौन (हैं|हो|है|हूँ)/.test('आप कौन हैं'));
+  assert.ok(/कौन (हैं|हो|है|हूँ)/.test('तुम कौन हो'));
+  assert.ok(!/कौन (हैं|हो|है|हूँ)/.test('कौन सा प्रोजेक्ट है'), 'कौन सा = "which", not "who"');
+});
+
+test('INT-8: "introduce" phrasings do not swallow real project questions', () => {
+  /* the new patterns are broad, so this proves they did not over-reach:
+     "tell me about X" without "yourself" is still a fact question. */
+  assert.notEqual(detectIntent('tell me about your projects').intent, 'meta');
+  assert.notEqual(detectIntent('tell me about the grocery project').intent, 'meta');
+  assert.notEqual(detectIntent('introduce the goal tracker').intent, 'meta');
+  assert.notEqual(detectIntent('tell me about your skills').intent, 'meta');
+});
+
 test('topic precedence is fixed and documented', () => {
   /* list_projects wins over project_detail; contact wins over skills */
   assert.equal(detectIntent('what projects has he built', KB).intent, 'list_projects');

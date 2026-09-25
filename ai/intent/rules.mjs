@@ -70,6 +70,27 @@ const PATTERNS = {
     /\bwhat (is|are) (this|you)\b/i,
     /\b(aap|tum|tu) (kaun|kon)\b/i,
     /\bwho am i (talking|chatting) (to|with)\b/i,
+    /* "who is this?" is the likeliest first message a recruiter types, and it
+       abstained until now: this bucket only matched the second person
+       ("who ARE YOU"). Third person and the self-introduction phrasings are
+       the same question, and an abstention here is the worst possible
+       first impression. Found by asking the real pipeline natural phrasings
+       rather than the frozen set — see tests/intent.test.mjs 'identity'. */
+    /\bwho('s| is| se) (this|that|it)\b/i,
+    /\bis (this|that) aashish\b/i,
+    /\bwho is aashish\b/i,
+    /\b(introduce|tell me about|describe|about) (yourself|ur ?self|your ?self)\b/i,
+    /\b(your|ur) (introduction|intro)\b/i,
+    /\b(apna|apne|apni) (introduction|intro|baare|bare|barae)\b/i,
+    /\b(apne|apna) baare mein\b/i,
+    /* Devanagari: every pattern above is Latin-only, so the Hindi identity
+       question — आप कौन हैं — fell through to retrieval and abstained.
+       NO `\b` HERE: JS `\b` is defined on [A-Za-z0-9_], so a boundary after a
+       Devanagari cluster never matches and the whole pattern silently fails.
+       (The first attempt at this fix had the `\b` and did exactly that.) */
+    /कौन (हैं|हो|है|हूँ)/,
+    /अपने? बारे में/,
+    /परिचय/,
   ],
   greeting: [
     /^(hi|hey|hello|yo|hola|sup)\b/i,
