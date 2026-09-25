@@ -22,7 +22,10 @@
 
 /** §6.2 tiers. `context`/`maxNew` are the text-chat budgets for P5+. */
 export const TIERS = [
-  { id: 0, name: 'T0', llm: false, context: 0, maxNew: 0, voice: 'none', label: 'Quick answers', note: 'no model, no download' },
+  /* T0 is "no model may load here", NOT "answer with something cheaper". There
+     is no cheaper answer: the model is the only answer path, so this tier's
+     honest label says what the visitor gets, which is an explanation. */
+  { id: 0, name: 'T0', llm: false, context: 0, maxNew: 0, voice: 'none', label: 'No AI model', note: 'this device cannot run the model' },
   { id: 1, name: 'T1', llm: true, context: 512, maxNew: 96, voice: 'tap', label: 'Lite', note: 'phones, iOS, low benchmark' },
   { id: 2, name: 'T2', llm: true, context: 768, maxNew: 160, voice: 'both', label: 'Standard', note: 'normal laptops, mid phones' },
   { id: 3, name: 'T3', llm: true, context: 1024, maxNew: 256, voice: 'all', label: 'High', note: 'modern desktop, many cores' },

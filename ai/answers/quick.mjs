@@ -765,7 +765,9 @@ export function quickAnswer(kb, query, opts = {}) {
     };
   }
 
-  /* 3. verbatim-fact templates — the Quick Answer proper */
+  /* 3. verbatim-fact templates. Built, because the intent and the sources and
+     the follow-up chips are produced together — but NOT rendered: the model
+     answers. See this file's header. */
   const builder = BUILD[det.intent];
   if (builder) {
     const built = builder(kb, lang, { question, project: det.project, withheld, persona });

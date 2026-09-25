@@ -462,7 +462,7 @@ rather than letting a deploy discover it at runtime.
 
 ## 7. Dev vs prod — the build (§9.3/§17)
 
-`npm run build` → `dist/` (**44 files, 5,727,097 B** with the exported model;
+`npm run build` → `dist/` (**44 files, 5,727,871 B** with the exported model;
 **41 files, 558,954 B** without one — the model is git-ignored build output, so
 a clean checkout measures the second number). Earlier: 28 files / 429,808 B
 before the engine, voice, guard and model answer path landed.
@@ -501,7 +501,7 @@ That is an allow-list entry with a reason, not a default.
 | The §8.4 retrieval gate is calibrated rather than assumed | **bounded, one half measured** — ceiling 4.647 recomputed from the data by test; the floor is **NOT MEASURED** (`docs/CALIBRATION.json`) |
 | Numbers and declared aliases are retrievable | **verified** — "8.28" → `ach.lpu-cgpa`, "who is he" → `person.name`, both regression-tested |
 | Browser inference and quantisation | **built, and run on trained weights** — a module worker runs the graph on int8 weights, shards are SHA-256 verified on load, and three implementations of the same architecture are cross-checked (torch ↔ numpy ↔ JavaScript). Measured on the `local` checkpoint's export: 138 positions, argmax **100 %**, top-16 order **100 %**, worst abs Δ logit **8.82e-06**, load 57–63 ms, prefill 68–71 tok/s, decode **65–74 tok/s** (8–9× §4's floor) on R1's CPU |
-| §4's budgets, with the model in the bundle | **measured** — chat code chunk 127,516 B gz of a 150 KB budget, model payload 4,742,169 B gz, first visit 4,926,379 B gz = **12 %** of §4's 40 MB. Asserted on every `npm test`; the weight budgets are NOT TESTED (loudly skipped) without an export |
+| §4's budgets, with the model in the bundle | **measured** — chat code chunk 127,836 B gz of a 150 KB budget, model payload 4,742,169 B gz, first visit 4,926,379 B gz = **12 %** of §4's 40 MB. Asserted on every `npm test`; the weight budgets are NOT TESTED (loudly skipped) without an export |
 | The export carries no dev path and no test fixture | **verified** — provenance is step/commit/SHA-256, not a directory (the build refused the path); a model version directory ships only its manifest, tokenizer and shards, so the 257 KB parity fixture no longer reaches `dist/` |
 | The same model is not two different sizes | **verified** — 4,984,064 params, and the 5,246,208 a naive `state_dict` sum reads is the **tied** `lm_head.weight` counted twice (`data_ptr()` equal, `tieGap` 0), pinned by test |
 | The model answering from **its own generation**, not a template | **built** — `ai/answers/model.mjs` retrieves context, asks the worker, guards the result and resolves placeholders. Templates are only reached for what must be exact by construction (email/URL/refusal) or when the model is not available, and the badge says which happened. What its answers *say* is **NOT TESTED end to end** — the 4.98M `local` checkpoint is an export exercise, not a quality result, and no browser run of the model path has produced a real answer yet |

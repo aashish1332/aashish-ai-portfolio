@@ -641,7 +641,7 @@ worst abs Δ logit **3.58e-07**.
 
 | Budget | §4 | Measured |
 |---|---|---|
-| AI chat **code** chunk (UI + KB + retrieval + language + guard + intent + engine JS) | ≤ 150 KB gz | **127,516 B** (83 %) |
+| AI chat **code** chunk (UI + KB + retrieval + language + guard + intent + engine JS) | ≤ 150 KB gz | **127,836 B** (83 %) |
 | Rest of the page | regression guard 250 KB | 65,649 B |
 | Model payload (weights + tokenizer + manifest) | ≤ 25 MB preferred, ≤ 40 MB hard | **5,144,357 B** raw · 4,742,169 B gz |
 | First-use download, T1/T2 | ≤ ~40 MB | **4,926,379 B** gz (**12 %**) |

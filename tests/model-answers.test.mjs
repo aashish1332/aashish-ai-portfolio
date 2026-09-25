@@ -236,6 +236,18 @@ test('MODEL-8 the §6.3 knobs reach the session', async () => {
   assert.equal(answerer.stats.maxNewTokens, 64);
 });
 
+test('MODEL-12 the answer path stays on the device — no network, no dynamic import', () => {
+  /* The companion to the same assertion in `tests/quick-answers.test.mjs`,
+     stated for the module that now decides what a visitor reads. The only
+     fetch anywhere in the path is the worker's, for same-origin weights;
+     `docs/PRIVACY.md` rests on both halves of that. */
+  const src = readFileSync(join(HERE, '..', 'ai', 'answers', 'model.mjs'), 'utf8');
+  assert.ok(!/\bfetch\s*\(|XMLHttpRequest|WebSocket|navigator\./.test(src),
+    'network access in the answer path');
+  assert.ok(!/import\s*\(/.test(src), 'dynamic import in the answer path');
+  assert.ok(!/https?:\/\//.test(src), 'a URL is hardcoded in the answer path');
+});
+
 test('MODEL-9 every refusal exists in three languages and states no fact', () => {
   assert.deepEqual([...NO_ANSWER_KINDS],
     ['notFound', 'withheld', 'unverified', 'unsupported', 'loading', 'stopped', 'strained']);

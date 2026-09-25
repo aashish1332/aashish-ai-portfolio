@@ -1,13 +1,12 @@
 /* ═══════════════════════════════════════════════════════════════
    ai/intent/rules.mjs — §5.1 step 2, intent + entity resolution
 
-   Deterministic rules, evaluated in a fixed priority order. This is
-   what lets the assistant route a question to an exact Quick Answer
-   *before* any model exists, and what makes the §8.4 abstention
-   reachable without inference.
-
-   No rule escalates privilege: an intent only ever selects an
-   allow-listed handler. User text never becomes an instruction.
+   Deterministic rules, evaluated in a fixed priority order. This decides,
+   *before* a token exists, which topic a question is about and whether it may
+   be answered at all — the §8.4 abstention, §14's hallucination bait and §9's
+   injection attempts are all reachable with no inference. No rule escalates
+   privilege: an intent only ever selects an allow-listed handler, so user text
+   never becomes an instruction — it only ever chooses which one runs.
    ═══════════════════════════════════════════════════════════════ */
 import { tokenize } from '../language/detect.mjs';
 import { normalize } from '../retrieval/index.mjs';

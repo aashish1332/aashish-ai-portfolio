@@ -20,7 +20,7 @@ can be declined by simply not using it.
 
 | Path | Leaves the device? | Evidence |
 |---|---|---|
-| Typed questions | **No.** There is no backend, no LLM API, no analytics on chat content | `ai/answers/quick.mjs` is asserted by test to contain no `fetch`, no `XMLHttpRequest`, no dynamic `import()`, no URL |
+| Typed questions | **No.** There is no backend, no LLM API, no analytics on chat content | `ai/answers/model.mjs` (the answer path) and `ai/answers/quick.mjs` (the routing and the §8.4 gate) are each asserted by test to contain no `fetch`, no `XMLHttpRequest`, no dynamic `import()` and no URL |
 | Answers | **No.** Composed on the device from `knowledge.json` | same |
 | Voice input (SpeechRecognition) | **Yes — the browser's own speech service.** Disclosed once in the panel, in these words: *"Voice mode uses your browser's speech recognition, which sends what you say to your browser's speech service — so while it listens, your audio leaves this device. Typed questions never do."* | `ai/voice/index.mjs` (`SPEECH_DISCLOSURE`), shown on the click that enables voice |
 | Voice output (speechSynthesis) | **No.** OS voices are local | §11.4 V0 |

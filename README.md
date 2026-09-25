@@ -192,7 +192,7 @@ idle page cost a measured 1.2 s of blocked main thread (`docs/BENCHMARKS.md` §1
 | [docs/PROGRESS.md](docs/PROGRESS.md) | phase-by-phase log, including what is unfinished |
 
 ```bash
-npm run test:all     # 409 JS + 326 Python tests
+npm run test:all     # 411 JS + 326 Python tests
 npm run probe:resources  # §15.3: heap, nodes, listeners, long tasks → docs/RESOURCES.json
 npm run calibrate    # sweep the §8.4 retrieval gate against the evaluation set → docs/CALIBRATION.json
 npm run params       # parameter count + its band gate

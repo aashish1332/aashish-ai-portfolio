@@ -12,7 +12,7 @@
    rewrites and never guesses. It answers one question per claim — *is this
    thing in front of the model?* — and returns every claim it could not
    ground. The caller decides what to do (§5.1 step 5: one greedy retry with
-   a shorter context, then the extractive Quick Answer fallback).
+   a shorter context, and then a refusal — see `fallback` below).
 
    Why it exists before the model does
    -----------------------------------
@@ -41,7 +41,12 @@
    Degrade order (§5.1 step 5), implemented in `guardedAnswer`:
      1. generate over the retrieved context  → guard → ok? done
      2. one greedy retry over a SHORTER context → guard → ok? done
-     3. the extractive Quick Answer fallback (grounded by construction)
+     3. `fallback()`, if the caller gave one — or `guardFailed: true`
+
+   Step 3 is the caller's. It used to be the extractive Quick Answer, and the
+   only caller passed exactly that; the answer path now passes *nothing* and
+   turns `guardFailed` into a refusal, because a template standing in for a
+   rejected generation reads as an answer that passed a check it did not pass.
    ═══════════════════════════════════════════════════════════════ */
 
 import { detectLanguage } from '../language/detect.mjs';
@@ -383,10 +388,10 @@ export function shortenContext(context, keep = 0.6) {
  * ```
  *
  * The contract: 0 violations → that answer. Otherwise ONE greedy retry over
- * a shorter context. Still bad → the extractive fallback (grounded by
- * construction, since every value is copied from knowledge.json). If there
- * is no fallback, the last answer is returned with `guardFailed:true` so the
- * caller abstains rather than shipping it.
+ * a shorter context. Still bad → `fallback()` when the caller supplied one,
+ * and otherwise the last attempt is returned with `guardFailed: true` so the
+ * caller refuses rather than shipping it. The shipped answer path supplies no
+ * fallback: it refuses, which is what the flag is for.
  *
  * `generate` may return a string or `{text}`; the retry is always told it is
  * a retry, so a caller can set greedy decoding without this module knowing

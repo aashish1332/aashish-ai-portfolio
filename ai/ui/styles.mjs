@@ -95,7 +95,7 @@ export const STYLES = `
   display: block; font-family: var(--font-mono); font-size: 8.5px;
   letter-spacing: .16em; color: var(--paper-faint); margin-bottom: 5px;
 }
-.ai__badge.is-quick { color: var(--cyan); }
+
 .ai__badge.is-note { color: var(--gold); }
 
 .ai__sources { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }

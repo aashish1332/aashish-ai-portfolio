@@ -47,7 +47,7 @@ npm run preview        # build, then serve dist/ on :5580 — exactly what ships
    reports anything else it found in there. Copying the directory instead is
    how a 257 KB parity fixture reached `dist/` and every visitor.
 
-Today's measured bundle: **44 files / 5,727,097 B** with the model export,
+Today's measured bundle: **44 files / 5,727,871 B** with the model export,
 **41 files / 558,954 B** without one (the export is git-ignored build output,
 so a clean checkout builds the second). Leak scan clean in both cases. A build
 with no model is legitimate and ships fine, but it is not a working assistant:

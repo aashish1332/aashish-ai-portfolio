@@ -1338,9 +1338,9 @@ prints that arithmetic where the confusion happens, and
 | Prefill | 35 tokens in 491–583 ms (**68–71 tok/s**) |
 | Decode | **65–74 tok/s** over 6 runs — 8–9× §4's ≥ 8 tok/s floor, CPU, on the real trained weights |
 | KV cache | 3,072 KB resident at ctx 512 |
-| Bundle, gzip | chat code **127,516 B** of 153,600 B (§4) · rest of page 65,649 B of a 256,000 B guard |
+| Bundle, gzip | chat code **127,836 B** of 153,600 B (§4) · rest of page 65,649 B of a 256,000 B guard |
 | Model payload, gzip | **4,742,169 B** raw 5,144,357 B — 12 % of §4's 40 MB first-use budget |
-| Tests | **409 JS + 326 Python**, 0 failures (`npm run test:all`) |
+| Tests | **411 JS + 326 Python**, 0 failures (`npm run test:all`) |
 
 Val loss on the `local` run: 2.1917 @100 → 1.1711 @200 → 0.9229 @300 →
 0.6432 @700 → **0.6423 @800 (best)**. This is a pipeline/export exercise at
@@ -1496,12 +1496,12 @@ the case.
 
 ### Measured
 
-* Chat code chunk **127,516 B gz** of the 150 KB §4 budget (**83 %**, up from
+* Chat code chunk **127,836 B gz** of the 150 KB §4 budget (**83 %**, up from
   118,561 B / 77 % — the refusals in three languages, the routing decision and
-  the retry logic around them). Bundle **44 files / 5,727,097 B**.
+  the retry logic around them). Bundle **44 files / 5,727,871 B**.
 * `ai/answers/model.mjs` had **no test coverage at all** before this change. It
   has 12 now (MODEL-1…MODEL-11), plus 1 new retrieval test.
-* Tests **409 JS + 326 Python**, 0 failures. `verify:engine` PASS, unchanged.
+* Tests **411 JS + 326 Python**, 0 failures. `verify:engine` PASS, unchanged.
 
 **NOT TESTED:** a real model answering a real question in a real browser. The
 answer path is now unit-tested end to end against a stub session, and the engine
