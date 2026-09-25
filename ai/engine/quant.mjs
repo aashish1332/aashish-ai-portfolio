@@ -23,6 +23,27 @@
    point of §8.4 is to catch model *lies*, not arithmetic drift.
    ═══════════════════════════════════════════════════════════════ */
 
+/* An optimisation that was tried, measured, and NOT kept - recorded here so it
+   is not tried again on a hunch.
+
+   The inner loop reads an int8 and a float32 and multiplies them as doubles,
+   so every element pays an int8 -> double conversion. Expanding the codes to a
+   float32 copy removes half of that work, and on a **cache-resident** tensor it
+   clearly does: same process, same 768x256 matrix (786 KB), 1500 reps -
+   **65 M MAC/s on int8 vs 148 M MAC/s on float32**, 2.3x.
+
+   End to end it buys nothing. Minimum-of-10 decode steps on the real export,
+   alternating the two engines in one process: **47.6 ms (int8) vs 48.2 ms
+   (float32)** - 0.99x. The full model's copy is 20 MB against a 3 MB L3, so the
+   working set stops being resident and the saved conversions are given back as
+   cache misses. The shipped artifact keeps its int8 codes: they are the bytes
+   the manifest quotes and the thing the corruption check reads, and a 4x
+   resident increase for a measured 0.99x is not a trade (§4).
+
+   The lesson generalises: this kernel is bandwidth- and L3-bound, not bound by
+   arithmetic, which is why the only remaining lever is a different execution
+   engine (WASM SIMD / WebGPU), not a cleverer JavaScript loop. */
+
 /** out[r] = scale[r] * Σ_c codes[r*cols + c] * x[c]  — one weight matrix. */
 export function matvecQ8(out, x, tensor) {
   const { codes, scales, rows, cols } = tensor;
