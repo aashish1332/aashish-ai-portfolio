@@ -26,16 +26,24 @@
                  "voice off" there is the answer they asked for.
      T1 `tap`  — push-to-talk. No always-on listening and no audio played at
                  somebody on a phone.
-     T2 `both` — push-to-talk + answers read aloud.
-     T3 `all`  — both of those, plus continuous listening behind a wake
-                 phrase, because a desktop can afford it. A turn opened that
-                 way has to be KEPT open (`VOICE_TIMING.followUpMs`): one
-                 question buys the next one briefly, and then the wake phrase
-                 is required again.
+     T2 `both` — push-to-talk + answers read aloud + **Proactive**, exactly
+                 as §6.2 licenses it: "Tap & Speak + Proactive (VAD-gated)".
+                 The microphone stays open and `ai/voice/vad.mjs` decides when
+                 speech is actually present, so recognition runs on segments
+                 instead of continuously (§11.2). This is the mode a recruiter
+                 on a laptop wants: ask, hear the answer, ask again.
+     T3 `all`  — the same, on a device with headroom to spare.
+
+   In continuous mode a turn is opened by the wake phrase and then has to be
+   KEPT open (`VOICE_TIMING.followUpMs`): one question buys the next one
+   briefly, and then the wake phrase is required again. That rule predates
+   the VAD and survives it — an open microphone is not an assistant that
+   answers the room.
    ═══════════════════════════════════════════════════════════════ */
 import { tierInfo } from '../governor/index.mjs';
 import { voiceHint } from '../language/detect.mjs';
 import { isPhantom } from './phantoms.mjs';
+import { createMicVad } from './vad.mjs';
 
 /* ── the tier table, read rather than restated ─────────────────── */
 
@@ -46,7 +54,10 @@ export const VOICE_POLICY = {
     reason: 'This device\'s tier keeps answers typed.',
   },
   tap: { pushToTalk: true, speakAnswers: false, continuous: false, reason: null },
-  both: { pushToTalk: true, speakAnswers: true, continuous: false, reason: null },
+  /* §6.2 grants T2 Proactive "(VAD-gated)" — the gate is real, it lives in
+     `ai/voice/vad.mjs`, and it is what makes an always-open microphone
+     something other than an always-running recognizer. */
+  both: { pushToTalk: true, speakAnswers: true, continuous: true, reason: null },
   all: { pushToTalk: true, speakAnswers: true, continuous: true, reason: null },
 };
 
@@ -371,10 +382,29 @@ let windowTimer = null;
 /* Why the last session ended BY ITSELF — a refused microphone, or an engine
    that would not stay up. Kept separate from `enabled`, because "the visitor
    turned it off" and "it died" look identical from the button otherwise, and
-   one of them deserves telling. */
-let failure = null;
+   one of them deserves telling. */  let failure = null;
+/* ── §11.3's VAD (Proactive only) ───────────────────────────────
+   `vad` is the microphone-side detector; `vadGated` says whether the
+   recognizer is being switched by it. Both stay null/false unless the
+   visitor is in continuous mode — Tap & Speak is a press, and a press needs
+   no detector. `vadReason` is why it is not running, when it is not. */
+let vad = null;
+let vadGated = false;
+let vadReason = null;
+/* §11.1's hard rule: "never speaks/listens while the tab is hidden". A tab
+   the visitor is not looking at is not a tab that should be recording, and
+   `visibilitychange` is the only signal the browser gives for it. */
+let suspended = false;
+const tabHidden = () => (typeof env.document?.hidden === 'boolean'
+  ? env.document.hidden
+  : env.document?.visibilityState === 'hidden');
 
   const policy = () => voicePolicy(tier);
+  /* Whether this browser can host the detector at all. Checked before the
+     VAD is constructed, so a unit test (or an unsupported browser) keeps the
+     old synchronous path instead of racing an async permission request. */
+  const vadCapable = () => !!(env.navigator?.mediaDevices?.getUserMedia
+    && (env.AudioContext || env.webkitAudioContext));
   /* One window, two reasons: a continuous turn (`followUpMs`, extended by each
      answer) and a press (`tapWindowMs`, never extended — extending it is how
      a press turns back into an open microphone). */
@@ -392,11 +422,25 @@ let failure = null;
       supported: support.supported,
       enabled,
       mode: enabled ? mode : null,
-      listening: !!(enabled && nick?.listening),
-      speaking: !!(enabled && speaker?.speaking),
+      /* suspended = the tab is hidden: still enabled, deliberately not
+         listening until it comes back (§11.1) */
+      suspended,
+      listening: !!(enabled && !suspended && nick?.listening),
+      speaking: !!(enabled && !suspended && speaker?.speaking),
       session: enabled ? sessionLive(now()) : false,
       followUpMs,
       tapWindowMs,
+      /* §11.3's VAD: `gated` means the recognizer is switched by detected
+         speech rather than left running, `speaking` is the segment state,
+         and `level` is the 0–1 number §11.5's orb is drawn from. */
+      vad: {
+        available: vad ? vad.available : null,
+        gated: !!vad && vadGated,
+        speaking: !!vad?.speaking,
+        gateOpen: !!vad?.gateOpen,
+        level: vad ? vad.level() : 0,
+        reason: vadReason,
+      },
       /* what the button would say if it counted down: 20 s to close, or 12 */
       sessionEndsInMs: enabled && sessionAt !== null
         ? Math.max(0, windowMs() - (now() - sessionAt)) : null,
@@ -444,6 +488,37 @@ let failure = null;
     closeSession();
     failure = null;
     cancelWindow();
+    env.document?.addEventListener?.('visibilitychange', onVisibility);
+    suspended = tabHidden();
+    /* §11.3: Proactive is VAD-gated. Started before the recognizer, so the
+       gate is live for the first thing said. If it cannot start — no
+       microphone permission, no Web Audio, an injection-blocked context —
+       the recognizer falls back to its restart loop, which still works, and
+       the status says which of the two this is rather than pretending. */
+    if (mode === 'continuous' && opts.vad !== false && vadCapable()) {
+      vad = createMicVad(env, {
+        trackerOpts: opts.vadOpts,
+        onGateOpen: () => { if (enabled && mode === 'continuous') nick?.start?.(); },
+        onGateClose: () => { if (enabled && mode === 'continuous') nick?.stop?.(); },
+        onFrame: (frame) => opts.onVadFrame?.(frame),
+        onError: (message) => { vadReason = message; },
+      });
+      /* Optimistic on purpose: `enable()` is called from a click handler and
+         has to return the status synchronously (the panel paints from it).
+         The gate is wired before permission is granted, so the first thing
+         said is not missed — `vad.ts`'s own settler covers the gap — and a
+         refusal falls back to the recognizer's restart loop, reported. */
+      vadGated = true;
+      Promise.resolve(vad.start()).then((ok) => {
+        if (!ok) {
+          vadGated = false;
+          vadReason = vad?.reason || 'the microphone could not be opened';
+          /* the fallback the module already had: listening unconditionally */
+          if (enabled && mode === 'continuous') nick?.start?.();
+          opts.onStatus?.(status());
+        }
+      });
+    }
     /* Remembered, not assumed: if the visitor (or a host) had already turned
        proactive mode on, turning voice off must not take it away. */
     if (priorHandsFree === null) {
@@ -463,7 +538,10 @@ let failure = null;
        thread) to protect a generation that is not running. The answer that
        arrives at the end of the listen goes through `ask()`, which arms it
        then, exactly as a typed one does. */
-    nick.start();
+    /* In a gated session the VAD decides when the recognizer runs; starting
+       it here as well would run it from the moment voice is switched on,
+       which is the cost the gate exists to avoid. */
+    if (!vadGated) nick.start();
     /* A press opens a window that CLOSES BY ITSELF. Without this the engine
        restarts itself for as long as the panel is open and every word in the
        room is a question — a hotter microphone than continuous mode, which at
@@ -485,11 +563,36 @@ let failure = null;
     return status();
   }
 
+  /** Hiding the tab suspends listening and cancels any speech; showing it
+   *  resumes — but only if the visitor had voice on, and never re-opens a turn
+   *  that had already expired. */
+  function onVisibility() {
+    if (!enabled) return;
+    if (tabHidden()) {
+      suspended = true;
+      speaker?.stop();
+      nick?.stop?.();
+    } else if (suspended) {
+      suspended = false;
+      if (!vadGated) nick?.start?.();
+    }
+    opts.onStatus?.(status());
+  }
+
   function disable() {
     if (!enabled) return status();
     enabled = false;
     cancelWindow();
     closeSession();
+    env.document?.removeEventListener?.('visibilitychange', onVisibility);
+    suspended = false;
+    /* §6.4: the microphone is released with the mode. For the VAD that means
+       the MediaStream tracks stop and the AudioContext closes, which is the
+       only thing that turns the browser's recording indicator off. */
+    vad?.stop?.();
+    vad = null;
+    vadGated = false;
+    vadReason = null;
     nick?.stop();
     nick?.release?.();
     nick = opts.recognizer || null;     /* never keep a hot engine */
@@ -503,7 +606,7 @@ let failure = null;
 
   /** Barge-in: the visitor talking over the answer takes the turn back. */
   function onPartial(text) {
-    if (!enabled || !String(text || '').trim()) return false;
+    if (!enabled || suspended || !String(text || '').trim()) return false;
     if (!speaker?.speaking) return false;
     speaker.stop();
     return true;
@@ -517,7 +620,7 @@ let failure = null;
    * @returns {{wake:boolean, question:string}|null} null when nothing was asked
    */
   function onFinal(text) {
-    if (!enabled) return null;
+    if (!enabled || suspended) return null;
     /* §11.2: a recognizer's silence-phantom ("thank you", "you", "okay")
        must die here, before the wake phrase, the session window or the
        answer path ever see it. Answering one aloud is the failure this
@@ -564,7 +667,7 @@ let failure = null;
    * — the same words, the same facts, the same section of the page.
    */
   function onAnswer(res, { lang: turnLang } = {}) {
-    if (!enabled) return false;
+    if (!enabled || suspended) return false;
     if (turnLang) lang = turnLang;
     /* The turn's length is decided by what the answer WAS, not by the fact
        that something was heard: one question that landed on the portfolio
@@ -598,6 +701,8 @@ let failure = null;
 
   return {
     enable, disable, status, setTier, onFinal, onPartial, onAnswer,
+    onVisibility,
+    get suspended() { return suspended; },
     setLang(l) { if (l) lang = l; nick?.setLang?.(voiceHint(lang)); },
     /** The visitor's own words can never wake it — nothing else can either. */
     isEnabled: () => enabled,

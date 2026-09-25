@@ -145,12 +145,15 @@ test('PH-10: a phantom final asks nothing, and is never spoken', () => {
 test('PH-11: a phantom is dropped before the wake phrase, in every mode', () => {
   for (const tier of [2, 3]) {
     const { voice, chat } = build(tier);
-    voice.enable();
+    /* `{continuous: false}`: this is about the phantom filter, and a press is
+       the mode where an utterance needs no wake phrase — so a dropped phantom
+       cannot be confused with "the turn was not open". */
+    voice.enable({ continuous: false });
     assert.equal(voice.onFinal('you'), null);
     assert.deepEqual(chat.asked, [], `tier ${tier} answered a phantom`);
     /* and the very next real question still works — the filter must not
        leave the session in a state where nothing is answered */
-    const r = voice.onFinal(tier === 3 ? 'hey aashish, what are your projects' : 'what are your projects');
+    const r = voice.onFinal('what are your projects');
     assert.equal(r?.question, 'what are your projects');
     assert.deepEqual(chat.asked, ['what are your projects']);
   }
@@ -167,7 +170,7 @@ test('PH-12: the filter runs without the reporting hook', () => {
   const voice = createVoice(env, {
     tier: 2, chat, recognizer: fakeRecognizer(), speaker: fakeSpeaker(), clock: () => 0,
   });
-  voice.enable();
+  voice.enable({ continuous: false });
   assert.equal(voice.onFinal('okay'), null);
   assert.deepEqual(chat.asked, []);
   voice.onFinal('what is your name');

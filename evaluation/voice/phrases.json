@@ -2,7 +2,7 @@
   "version": "1.0.0",
   "purpose": "§11.2 — decide the STT stack (and honestly report Hindi/Hinglish WER) from real recordings before shipping a voice model.",
   "instructions": [
-    "Open evaluation/voice/record.html in a browser, allow the microphone, and read each phrase once, naturally.",
+    "Run `npm run dev`, open http://localhost:5577/evaluation/voice/record.html (not the file directly — a file:// page cannot read phrases.json), allow the microphone, and read each phrase once, naturally.",
     "Record in a normal room, not a silent booth — a quiet booth makes every recognizer look good and tells you nothing.",
     "One take per phrase is enough. If you fluff a line, re-record that one.",
     "Then, for each clip, play it into the portfolio's voice mode and copy the transcript the panel shows into transcripts.json.",

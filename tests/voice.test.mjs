@@ -221,7 +221,10 @@ test('VOICE-2: the ladder is tap → +spoken → +continuous, and T0 is typed on
     'T1 is a phone: push-to-talk, and nothing played at somebody in public');
 
   const p2 = voicePolicy(2);
-  assert.deepEqual([p2.pushToTalk, p2.speakAnswers, p2.continuous], [true, true, false]);
+  /* §6.2's own table grants T2 "Tap & Speak + Proactive (VAD-gated)" — the
+     gate is ai/voice/vad.mjs, and without it this line would be a claim about
+     a microphone left running. */
+  assert.deepEqual([p2.pushToTalk, p2.speakAnswers, p2.continuous], [true, true, true]);
 
   const p3 = voicePolicy(3);
   assert.deepEqual([p3.pushToTalk, p3.speakAnswers, p3.continuous], [true, true, true]);
@@ -298,8 +301,11 @@ test('VOICE-4: the longest wake phrase wins, and the name is not eaten twice', (
 /* ── VOICE-5 · push-to-talk ─────────────────────────────────────── */
 
 test('VOICE-5: press-to-talk answers the question and lets the page follow', () => {
+  /* T2's default is Proactive now (§6.2), so a press has to be asked for —
+     which is what this test is about. */
   const { voice, chat, nick } = build(2);
-  voice.enable();
+  voice.enable({ continuous: false });
+  assert.equal(voice.status().mode, 'push');
   assert.equal(chat.handsFree, true, 'proactive mode is the point of the button');
   assert.equal(nick.started, 1);
 
@@ -434,8 +440,11 @@ test('VOICE-5: a press opens a window that closes by itself', () => {
      engine restarting itself for as long as the panel was open and every word
      in the room was treated as a question — a hotter microphone than
      continuous mode, which at least makes you say the name. */
+  /* `{continuous: false}` asks for the press on a tier whose default is now
+     Proactive — the press is still a mode, and this is it. */
   const { voice, chat, nick, env, flush } = build(2);
-  voice.enable();
+  voice.enable({ continuous: false });
+  assert.equal(voice.status().mode, 'push');
   assert.equal(voice.isSessionOpen(), true, 'the press IS the address');
   assert.equal(voice.status().sessionEndsInMs, VOICE_TIMING.tapWindowMs);
   assert.equal(env.timers.size, 1, 'the window closes on a timer, not by luck');
@@ -458,7 +467,7 @@ test('VOICE-5: a press opens a window that closes by itself', () => {
 test('VOICE-5: the press window is not extended by asking', () => {
   /* extending on an answer is exactly how a press turns back into an open mic */
   const { voice, chat, at, flush } = build(2);
-  voice.enable();
+  voice.enable({ continuous: false });
   at(VOICE_TIMING.tapWindowMs - 1000);
   voice.onFinal('what are your projects');
   assert.deepEqual(chat.asked, ['what are your projects']);
@@ -469,12 +478,12 @@ test('VOICE-5: the press window is not extended by asking', () => {
 
 test('VOICE-5: a stale press timer cannot close the next press', () => {
   const { voice, env, at } = build(2);
-  voice.enable();
+  voice.enable({ continuous: false });
   const stale = [...env.timers.values()][0];   /* the first press's close */
   at(5000);
   voice.disable();
   at(6000);
-  voice.enable();                              /* a new press, a new window */
+  voice.enable({ continuous: false });         /* a new press, a new window */
   assert.equal(env.timers.size, 1, 'windows must not accumulate');
   stale();                                     /* the old one fires late */
   assert.equal(voice.status().enabled, true, 'a finished press killed the new session');
@@ -485,7 +494,7 @@ test('VOICE-5: a stale press timer cannot close the next press', () => {
 
 test('VOICE-5: each press asks its own question at T1, however long the pause', () => {
   const { voice, chat, nick, at, flush } = build(1);
-  voice.enable();
+  voice.enable({ continuous: false });
   voice.onFinal('what are your projects');
   flush();
   at(VOICE_TIMING.tapWindowMs * 10);
@@ -499,17 +508,19 @@ test('VOICE-5: each press asks its own question at T1, however long the pause', 
 
 test('VOICE-6: turning voice off closes the turn, and status reports it', () => {
   const { voice } = build(3);
-  voice.enable();
+  voice.enable({ continuous: true });
   voice.onFinal('aashish');
   assert.equal(voice.status().session, true, 'status has to expose an open turn');
   voice.disable();
   assert.equal(voice.isSessionOpen(), false);
-  voice.enable();
+  /* a fresh Proactive session starts with no turn open — being woken is not
+     being on forever (the cost this test exists to keep honest) */
+  voice.enable({ continuous: true });
   assert.equal(voice.isSessionOpen(), false, 'a fresh session starts closed');
 });
 
-test('VOICE-6: T1/T2 cannot be forced into always-on listening', () => {
-  const { voice, chat } = build(2);
+test('VOICE-6: T1 cannot be forced into always-on listening', () => {
+  const { voice, chat } = build(1);
   voice.enable({ continuous: true });
   assert.equal(voice.status().mode, 'push', 'a phone may not hold the microphone open');
   assert.equal(voice.status().continuous, false);
@@ -518,6 +529,41 @@ test('VOICE-6: T1/T2 cannot be forced into always-on listening', () => {
   assert.deepEqual(voice.onFinal('what are your skills').question, 'what are your skills');
   assert.deepEqual(chat.asked, ['what are your skills']);
 });
+
+test('VOICE-6b: T2 Proactive switches the recognizer from the VAD, not from a timer',
+  async () => {
+    /* The whole point of §6.2's "(VAD-gated)": the microphone is open and the
+       recognizer is NOT. It starts when `ai/voice/vad.mjs` says a segment
+       began and stops when the segment ends — pinned here with a stub VAD so
+       the wiring is tested without a microphone. */
+    const stubs = [];
+    const env = makeEnv().env;
+    env.navigator = { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [] }) } };
+    env.AudioContext = class {
+      createMediaStreamSource() { return { connect() {} }; }
+      createAnalyser() {
+        return { fftSize: 512, smoothingTimeConstant: 0,
+                 getFloatTimeDomainData: (b) => b.fill(0) };
+      }
+      close() {}
+    };
+    const nick = fakeRecognizer();
+    const voice = createVoice(env, {
+      tier: 2, chat: fakeChat(), recognizer: nick, speaker: fakeSpeaker(),
+      clock: () => 0,
+      /* a deterministic stand-in for the energy detector */
+      vad: undefined,
+      onVadFrame: null,
+    });
+    voice.enable({ continuous: true });
+    assert.equal(voice.status().mode, 'continuous');
+    assert.equal(voice.status().vad.gated, true, 'continuous mode is gated');
+    assert.equal(nick.started, 0, 'nothing is transcribed before speech is detected');
+    stubs.push(nick);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(voice.status().vad.available, true);
+    voice.disable();
+  });
 
 /* ── VOICE-7 · barge-in, and speaking the answer itself ─────────── */
 
@@ -721,4 +767,69 @@ test('VOICE-10: the module carries no string that narrates its own navigation', 
   const literals = src.match(/'[^'\n]*'|"[^"\n]*"|`[^`]*`/gs) || [];
   const offenders = literals.filter((s) => NAV.test(s));
   assert.deepEqual(offenders, [], `the voice layer would say something about the page:\n  ${offenders.join('\n  ')}`);
+});
+
+/* ── VOICE-11 · a hidden tab is not a listening tab (§11.1) ──────── */
+
+test('VOICE-11: hiding the tab stops listening and speaking, showing it resumes', () => {
+  const nick = fakeRecognizer();
+  const spk = fakeSpeaker();
+  const listeners = [];
+  const env = {
+    timers: new Map(), nextTimerId: 0,
+    setTimeout(fn) { const id = ++env.nextTimerId; env.timers.set(id, fn); return id; },
+    clearTimeout(id) { env.timers.delete(id); },
+    document: {
+      hidden: false,
+      addEventListener: (name, fn) => listeners.push({ name, fn }),
+      removeEventListener: (name, fn) => {
+        const i = listeners.findIndex((l) => l.name === name && l.fn === fn);
+        if (i >= 0) listeners.splice(i, 1);
+      },
+    },
+  };
+  const chat = fakeChat();
+  const voice = createVoice(env, { tier: 2, chat, recognizer: nick, speaker: spk, clock: () => 0 });
+  voice.enable({ continuous: false });
+  assert.equal(listeners.length, 1);
+  assert.equal(listeners[0].name, 'visibilitychange');
+  assert.equal(voice.status().suspended, false);
+
+  env.document.hidden = true;
+  listeners[0].fn();
+  assert.equal(voice.status().suspended, true);
+  assert.ok(nick.stopped >= 1, 'the recognizer must stop when the tab goes away');
+  assert.equal(voice.status().listening, false);
+  /* and an answer arriving while hidden is not spoken into an empty room */
+  assert.equal(voice.onAnswer({ text: 'my CGPA is 8.28' }), false);
+  assert.deepEqual(spk.spoken, []);
+  /* a final from a segment that was already in flight is dropped, not asked */
+  assert.equal(voice.onFinal('what are your skills'), null);
+  assert.deepEqual(chat.asked, []);
+
+  env.document.hidden = false;
+  listeners[0].fn();
+  assert.equal(voice.status().suspended, false);
+  assert.ok(nick.started >= 2, 'showing the tab starts listening again');
+
+  voice.disable();
+  assert.equal(listeners.length, 0, 'a disabled session must not keep the listener');
+});
+
+test('VOICE-11b: Proactive resumes into its gate, not into an open recognizer', () => {
+  const nick = fakeRecognizer();
+  const env = {
+    timers: new Map(), nextTimerId: 0,
+    setTimeout(fn) { const id = ++env.nextTimerId; env.timers.set(id, fn); return id; },
+    clearTimeout(id) { env.timers.delete(id); },
+    document: { hidden: false, addEventListener() {}, removeEventListener() {} },
+  };
+  const voice = createVoice(env, {
+    tier: 3, chat: fakeChat(), recognizer: nick, speaker: fakeSpeaker(), clock: () => 0,
+  });
+  voice.enable({ continuous: true });
+  const before = nick.started;
+  voice.onVisibility();
+  assert.equal(voice.status().suspended, false);
+  assert.equal(nick.started, before, 'a visible tab does not restart what was never stopped');
 });
