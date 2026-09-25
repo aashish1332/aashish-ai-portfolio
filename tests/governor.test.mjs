@@ -11,16 +11,24 @@
            validated against V8 itself, which is the same engine Chrome ships.
      GOV-2 the ladder could move more than one step per window, and could
            oscillate between degrade and restore on alternating frames.
+     GOV-3 the shell acted on a rung key (`budget`) that LADDER does not have
+           (`shorten`), and handed `paceMs` to nobody — so rungs 1 and 2 were
+           silent no-ops. Pinned by comparing the shell's keys to LADDER.
 
    THRESHOLDS is a documented "starting heuristic" (§6.2), not a measured
    constant — these tests pin the DECISION RULES, not the tuning.
    ═══════════════════════════════════════════════════════════════ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import {
   TIERS, THRESHOLDS, tierInfo, probeCapabilities, chooseTier, hasSimd,
   SIMD_PROBE_BYTES, probeWebGPU, createFrameMonitor, createDegradeLadder, LADDER,
 } from '../ai/governor/index.mjs';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** A fake `globalThis`-shaped environment. */
 function fakeEnv(over = {}) {
@@ -88,7 +96,7 @@ test('§6.1: WebGPU is probed asynchronously and an absent adapter is false', as
 });
 
 /* ── §6.2 tiers ─────────────────────────────────────────────────── */
-test('§6.2: hard blockers fall to T0 (Quick Answers still work)', () => {
+test('§6.2: hard blockers fall to T0, where no model may load at all', () => {
   const passing = { worker: true, wasm: true, wasmSimd: true, threads: 8, memory: 8, memoryReported: true, coarsePointer: false, saveData: false, effectiveType: '4g', storageBytes: 500e6, benchmarkMs: 3 };
   assert.equal(chooseTier(passing), 3, 'the happy path must reach T3');
   assert.equal(chooseTier({ ...passing, worker: false }), 0);
@@ -196,6 +204,31 @@ test('§6.3: step 4 is the floor, and the ladder can be capped', () => {
   const capped = createDegradeLadder({ maxStep: 2 });
   slow(capped, 400);
   assert.equal(capped.step, 2, 'a session with no model need not descend past the scene step');
+});
+
+test('§6.3: the shell acts on rung keys that exist — and on all of them', () => {
+  /* GOV-3, and it is the same bug twice. `applyLadderStep()` matched a key
+     called `budget` while the ladder's key is `shorten`, and set a `paceMs` the
+     answerer never received — so rungs 1 and 2 were silent no-ops, and nothing
+     noticed because the shell needs a DOM to run. `LADDER` is the contract, so
+     the check is simply that the two agree in both directions: a rung key the
+     shell does not know silently does nothing, and a key the shell invents can
+     never fire. */
+  const src = readFileSync(join(HERE, '..', 'ai', 'ui', 'chat.mjs'), 'utf8');
+  const keys = LADDER.map((r) => r.key);
+  /* only the comparisons in `applyLadderStep` — the shell also reads
+     `e.key === 'Enter'`, which is an event field, not a rung */
+  const used = [...src.matchAll(/key === '([a-z][a-z-]*)'/g)].map((m) => m[1]);
+  assert.ok(used.length >= keys.length, 'the shell must act on the rungs it is given');
+  for (const k of new Set(used)) {
+    assert.ok(keys.includes(k),
+      `ai/ui/chat.mjs compares a ladder key to '${k}', which LADDER does not have — ` +
+      'that branch can never run');
+  }
+  for (const k of keys) {
+    assert.ok(used.includes(k),
+      `LADDER rung '${k}' is never acted on by ai/ui/chat.mjs — it silently does nothing`);
+  }
 });
 
 test('§6.3-GATE: an idle ladder never degrades the scene, however slow the page is', () => {
