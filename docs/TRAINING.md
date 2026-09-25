@@ -157,7 +157,7 @@ directory, because a fixture inside it is a fixture served to visitors).
 
 Measured on this laptop: **4,984,064 params**, val loss **2.1917 @100 → 0.6423
 @800 (best)**, export **5,059,584 B** q8 in one shard, worst per-row
-quantisation error **0.001146**, and **73.5 tok/s** decode in the browser
+quantisation error **0.001146**, and **65–74 tok/s** decode in the browser
 engine. Full numbers in [BENCHMARKS.md](BENCHMARKS.md#the-browser-engine-on-trained-weights-9--2026-09-25-r1).
 
 This is a **pipeline/export** result, not a quality one: 4.98M params on a

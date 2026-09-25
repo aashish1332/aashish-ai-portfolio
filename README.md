@@ -144,7 +144,7 @@ forward pass fails the build instead of a visitor's question.
 Today's shipped weights are from a **local CPU run** — 4,984,064 params,
 config `local`, 800 steps on this laptop — that exists so the whole path
 (train → export → download → worker → stream → guard) is real end to end. It
-runs at **73 tok/s decode** on a 2016 ultrabook with no GPU, 9× the ≥ 8 tok/s
+runs at **65–74 tok/s decode** on a 2016 ultrabook with no GPU, 8–9× the ≥ 8 tok/s
 floor §4 asks for. The §7.1 shipping target is still config A (37.9M) trained
 on a GPU in P4/P5; nothing about the runtime changes when it lands, only the
 weights. Until then the quality is visibly a small model's, and the panel never

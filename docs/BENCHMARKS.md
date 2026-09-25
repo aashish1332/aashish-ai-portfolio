@@ -613,12 +613,15 @@ L=6 heads=8/4 ffn=768 ctx=512 tied`, **4,984,064 params**, step 800, val loss
 | Positions checked | 138 · **argmax 100 %** · **top-16 order 100 %** |
 | Worst abs Δ logit | **8.82e-06** against a 0.02 tolerance |
 | Prefill | 35 tokens in 491–583 ms (**68–71 tok/s**) |
-| Decode | **73.5 tok/s** (218 ms / 16 tokens) |
+| Decode | **65–74 tok/s** over 6 runs (245–218 ms / 16 tokens; 73.5 in the reporting run) |
 | KV cache | 3,072 KB resident at ctx 512 |
 | torch ↔ numpy | **PASS**, max abs Δ **8.58e-06** |
 
-Decode clears §4's **≥ 8 tok/s** floor by **9.2×** on a 2016 ultrabook with no
-GPU, with the portfolio's WebGL scene running elsewhere on the same machine.
+Decode clears §4's **≥ 8 tok/s** floor by **8–9×** on a 2016 ultrabook with no
+GPU, with the portfolio's WebGL scene running elsewhere on the same machine. The
+range is the spread across runs of the same command on the same idle machine —
+worth stating rather than quoting the most flattering one: it is a wall-clock
+number on a shared CPU, and the low end is what a visitor would see.
 
 ### The gate was wrong before the weights were
 

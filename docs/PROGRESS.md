@@ -1336,7 +1336,7 @@ prints that arithmetic where the confusion happens, and
 | torch ↔ numpy | **PASS** — 8.58e-06 on the checkpoint, 2.09e-07 on the fixture |
 | Browser load | **57–63 ms** for 5.1 MB of shards, hashes verified |
 | Prefill | 35 tokens in 491–583 ms (**68–71 tok/s**) |
-| Decode | **73.5 tok/s** — 9× §4's ≥ 8 tok/s floor, CPU, on the real trained weights |
+| Decode | **65–74 tok/s** over 6 runs — 8–9× §4's ≥ 8 tok/s floor, CPU, on the real trained weights |
 | KV cache | 3,072 KB resident at ctx 512 |
 | Bundle, gzip | chat code **118,561 B** of 153,600 B (§4) · rest of page 65,649 B of a 256,000 B guard |
 | Model payload, gzip | **4,742,169 B** raw 5,144,357 B — 12 % of §4's 40 MB first-use budget |
