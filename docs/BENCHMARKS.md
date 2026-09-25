@@ -588,3 +588,67 @@ arithmetic. The §4 budget (≤ 40 MB total download) is a **quantised** figure
 and is not met by any number in this table, which is expected and stated.
 RAM RSS delta is readable on this machine (181.8 MB for config A) and is
 **process RSS including torch's allocator**, not a model-only figure.
+
+---
+
+## The browser engine, on trained weights (§9) — 2026-09-25, R1
+
+Same device as above (i5-6300U, 8 GB, Intel HD 540, **software GL**). These
+are the numbers a visitor's machine produces, not Python's: `ai/engine/*` in
+Node, reading the shards the browser reads.
+
+**The weights are trained.** `training/checkpoints/local` — `vocab=1,024 d=256
+L=6 heads=8/4 ffn=768 ctx=512 tied`, **4,984,064 params**, step 800, val loss
+0.6423 on a short CPU schedule. This is a **pipeline/export** exercise at
+4.98M params; it is not config A and it is not a quality result.
+
+### `npm run verify:engine` — the parity gate, on the shipping export
+
+| Metric | Value |
+|---|---|
+| Shards | 1 × 5,059,584 B q8 (fp32 equivalent 19,936,256 B) · gzip **4,732,964 B** · brotli 4,713,956 B |
+| Tokenizer | 66,667 B, vocab 1,024 |
+| Worst per-row q8 error | **0.001146** |
+| Load | **57–63 ms**, every shard's SHA-256 verified |
+| Positions checked | 138 · **argmax 100 %** · **top-16 order 100 %** |
+| Worst abs Δ logit | **8.82e-06** against a 0.02 tolerance |
+| Prefill | 35 tokens in 491–583 ms (**68–71 tok/s**) |
+| Decode | **73.5 tok/s** (218 ms / 16 tokens) |
+| KV cache | 3,072 KB resident at ctx 512 |
+| torch ↔ numpy | **PASS**, max abs Δ **8.58e-06** |
+
+Decode clears §4's **≥ 8 tok/s** floor by **9.2×** on a 2016 ultrabook with no
+GPU, with the portfolio's WebGL scene running elsewhere on the same machine.
+
+### The gate was wrong before the weights were
+
+The first run of this gate **failed**, and the failure was worth more than the
+pass: the reference was built from the **float** checkpoint while the engine
+runs the **int8** shards, so the comparison was between two different models.
+
+| Reference reads | argmax | worst abs Δ logit | Verdict |
+|---|---|---|---|
+| float checkpoint (wrong) | 98.6 % | **1.63e-01** | FAIL |
+| exported int8 shards (fixed) | **100 %** | **8.82e-06** | PASS |
+
+The committed random-init fixture, same fix: 138 positions, argmax 100 %,
+worst abs Δ logit **3.58e-07**.
+
+### Bundle budgets (§4)
+
+| Budget | §4 | Measured |
+|---|---|---|
+| AI chat **code** chunk (UI + KB + retrieval + language + guard + quick answers + engine JS) | ≤ 150 KB gz | **118,561 B** (77 %) |
+| Rest of the page | regression guard 250 KB | 65,649 B |
+| Model payload (weights + tokenizer + manifest) | ≤ 25 MB preferred, ≤ 40 MB hard | **5,144,357 B** raw · 4,742,169 B gz |
+| First-use download, T1/T2 | ≤ ~40 MB | **4,926,379 B** gz (**12 %**) |
+| Any single AI asset | ≤ ~100 MB | 5,059,584 B raw / 4,732,964 B gz |
+| Files | — | 44 |
+
+The chat **code** chunk is 77 % of its budget and worth watching: it grew from
+79,555 B when this log last recorded it, as the engine, voice, guard and model
+answer path landed. The weights are deliberately **not** in that number —
+folding a 5 MB artifact into a 150 KB limit makes both budgets unmeasurable.
+**NOT TESTED:** brotli is measured (4,713,956 B) but nothing yet negotiates it,
+so the effective transfer is the gzip figure; and no CDN or real network was
+involved, so these are file sizes, not load times.

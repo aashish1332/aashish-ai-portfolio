@@ -135,6 +135,44 @@ gate 'loss decreases': PASS (window 5: 6.9 → 5.5)
 `--gate` exits non-zero if the loss did not decrease — the smoke test is a
 gate, not a demo.
 
+### 4.1 The `local` config — a real run on a laptop (§7.1 shape, CPU)
+
+The smoke config proves the pipeline. `local` is the largest model this
+developer machine trains **for real**, and it exists so the whole path —
+train → export → download → worker → stream → guard — is exercised on trained
+weights instead of random ones:
+
+```bash
+npm run train:local        # vocab 1,024 · d 256 · L 6 · heads 8/4 · ffn 768 · ctx 512
+                           # 4,984,064 params, 1,100 steps at block 256
+
+npm run export:model       # checkpoint → ai/model-export/aashish-ai-1/
+npm run verify:engine      # §9.2: the JS engine against the numpy reference, on THESE weights
+```
+
+`export:model` writes a quantised browser artifact (per-row int8 shards ≤ 8 MB,
+a `manifest.json` with per-file `sha256`, the tokenizer, and a parity fixture
+in `ai/model-export/reference/` — deliberately *outside* the shipped version
+directory, because a fixture inside it is a fixture served to visitors).
+
+Measured on this laptop: **4,984,064 params**, val loss **2.1917 @100 → 0.6423
+@800 (best)**, export **5,059,584 B** q8 in one shard, worst per-row
+quantisation error **0.001146**, and **73.5 tok/s** decode in the browser
+engine. Full numbers in [BENCHMARKS.md](BENCHMARKS.md#the-browser-engine-on-trained-weights-9--2026-09-25-r1).
+
+This is a **pipeline/export** result, not a quality one: 4.98M params on a
+synthetic seed corpus is not the shipping target, which is still config A
+(37.9M) with Stage A/B data on a GPU.
+
+### 4.2 Two numbers for the same model is a convention, not a bug
+
+`4,984,064` and `5,246,208` both describe the `local` model. The second is
+`sum(p.numel() for p in state_dict().values())`, which visits the **tied**
+`lm_head.weight` a second time (it shares storage with
+`model.embed_tokens.weight` — `data_ptr()` equal, `tieGap` 0).
+`4,984,064 + 262,144 = 5,246,208`. `npm run params` prints that arithmetic
+where the confusion happens, and `tests/py/test_model_schema.py` pins it.
+
 ## 5. Checkpoints and resume (§7.5)
 
 | Requirement | Implementation | Verified how |
@@ -284,9 +322,11 @@ run on.
 Run everything (no torch required, ~15 s):
 
 ```bash
-npm run test:all          # 328 JS tests + 252 Python tests (0 skip: torch is installed)
-npm run params            # analytic parameter counts + §7.1 band gate
+npm run test:all          # 393 JS tests + 326 Python tests (0 skip: torch is installed)
+npm run params            # analytic parameter counts + each config's own band gate
 npm run smoke             # tokenizer contract, shards, cursor, checkpoints
+npm run export:model      # checkpoint → browser artifact + parity fixture
+npm run verify:engine     # §9.2 gate on the exported weights (exit 1 on any disagreement)
 ```
 
 | Claim | Evidence | Status |
@@ -295,11 +335,13 @@ npm run smoke             # tokenizer contract, shards, cursor, checkpoints
 | Placeholder grammar identical in browser and tokenizer | 16-case fixture × 2 runtimes | ✅ |
 | Corpus pipeline drops what it claims (PII, dupes, leakage) | `tests/py/test_pipeline.py` (16 tests, incl. the negative cases) | ✅ |
 | Language tags agree with the runtime detector | 49-case fixture × 2 runtimes | ✅ |
-| Params: A 37,890,560 · lite 17,701,248 · smoke 1,820,352 | `inference/count_parameters.py --config all --gate` | ✅ analytic · ⏳ materialised (needs torch) |
+| Params: A 37,890,560 · lite 17,701,248 · smoke 1,820,352 · local 4,984,064 | `inference/count_parameters.py --config all --gate` | ✅ analytic **and** materialised (torch 2.14.0+cpu: `MATCH`, 39 keys at smoke) |
 | KV cache 10.00 KB/token at config A | `test_model_schema.test_kv_cache_matches_the_spec_claim` | ✅ |
 | HF Llama key set + shapes | `test_key_set_matches_hf_llama` (21 keys for a 2-layer config), 93 keys at config A | ✅ |
 | RoPE is a rotation; GQA grouping; RMSNorm formula | `test_model_schema.RopeMath` / `GqaHeadMap` / `ReferenceMath` | ✅ |
-| **Loss decreases over ~50 steps** | `train_smoke.py --gate` | ❌ **UNVERIFIED — needs torch** |
-| **Training loop resumes** | `train_smoke.py --resume auto` | ❌ **UNVERIFIED — needs torch** |
+| **Loss decreases over ~50 steps** | `train_smoke.py --gate` | ✅ 6.9452 → 4.5294 over 50 steps (13.6 s, 1,879 tok/s); `gate 'loss decreases': PASS` |
+| **Training loop resumes** | `train_smoke.py --resume auto --gate` | ✅ `resumed from latest.pt at step 50` with the loss history (50 entries) and token count (27,648) intact |
 | The *data stream* and *state* resume exactly | `test_checkpoint.py` (17 tests) | ✅ without torch |
-| Model quality of any kind | — | ❌ not measured; §7.5's smoke test is not a quality result |
+| A real run at §7.1 shape trains on CPU | `npm run train:local` → 4,984,064 params, val loss 2.1917 → **0.6423** | ✅ but see [4.1](#41-the-local-config--a-real-run-on-a-laptop-71-shape-cpu): pipeline, not quality |
+| The checkpoint survives export and round-trips into the browser engine | `npm run export:model` + `npm run verify:engine` | ✅ 138 positions, argmax **100 %**, worst abs Δ logit **8.82e-06** |
+| Model quality of any kind | — | ❌ not measured; §7.5's smoke test is not a quality result, and neither is the 4.98M `local` run |

@@ -115,3 +115,26 @@ leaves the device.
   decision rather than an oversight.
 - **No privacy review by anyone else.** This is the author's own analysis
   against the brief's rules, and it says so.
+
+## The microphone, in Proactive mode
+
+Proactive mode opens the microphone **and keeps it open**, which is a bigger
+statement than Tap & Speak's press and has to be said plainly.
+
+* **Nothing is transcribed until speech is detected.** An energy VAD
+  (`ai/voice/vad.mjs`) measures ~30 ms frames on the audio thread's own
+  `AnalyserNode` and switches the recognizer on at a speech onset and off a
+  hang-over after it ends. The room is being *measured*, not transcribed, in
+  between — and the measurement never leaves the page (it is a number).
+* **The microphone is released** when the visitor turns voice off, closes the
+  panel, switches tabs (a hidden tab is never listened to), or when the session
+  goes idle. `disable()` stops the `MediaStream` tracks and closes the
+  `AudioContext`, which is what turns the browser's recording indicator off.
+* **The recognizer is still the browser's.** When a segment *is* transcribed,
+  the audio goes to whatever the browser's speech service is — the panel says
+  so in the disclosure before voice is switched on, and it is the one thing in
+  this project that leaves the device. Everything else (the model, the
+  retrieval, the guard, the answers) is local, and the model's weights were
+  downloaded from the same site the page came from.
+* **The VAD is a detector, not an ear**: it reports speech start/end and a
+  loudness level. It has no model, no vocabulary and no network.

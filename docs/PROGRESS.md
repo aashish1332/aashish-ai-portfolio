@@ -1204,3 +1204,185 @@ complete.
 `docs/CPU_BENCHMARK.json` · `tests/py/test_benchmark_cpu.py` · `docs/PRIVACY.md` ·
 `docs/DEPLOYMENT.md` · `docs/MANUAL_TEST_CHECKLIST.md` ·
 `tests/build-bundle.test.mjs` (16) · `package.json` · `npm run test:all`
+
+---
+
+## P6 engine on a real checkpoint, and everything that had to be true first — 2026-09-25
+
+**Gate:** §9.2's parity test passes **on the shipping export** — not on a
+fixture — and `npm run build` produces a bundle that clears §4's budgets with
+the model in it.
+
+This entry covers the whole stretch from "CPU inference measured" to that
+gate, including the pieces that had no entry of their own: the JS tokenizer
+port, the worker/session boundary, the model answer path, the proactive VAD,
+the voice eval kit, and the export pipeline.
+
+### Done
+
+1. **`local` training run, for real.** `npm run train:local` — the largest
+   §7.1-shaped model this laptop trains: `vocab=1,024 d=256 L=6 heads=8/4
+   ffn=768 ctx=512 tied`, **4,984,064 params**, 1,100 steps at block 256.
+   `training/checkpoints/local/` holds `best/latest/step_600/700/800`.
+2. **JS byte-level BPE port** (`ai/engine/bpe.mjs`, moved from
+   `ai/tokenizer/bpe.mjs`) — the encoder that runs in the visitor's worker,
+   checked id-for-id against the Python one on the committed fixture
+   (`tests/tokenizer-parity.test.mjs`, `inference/encode_fixture.py`).
+3. **The engine** — `quant.mjs` (per-row int8 kernels), `llama.mjs` (the
+   graph, KV cache, explicit positions), `manifest.mjs` (shards + sha256),
+   `prompt.mjs` (+ `prompt_contract.json` generated from the Python prompt
+   code), `index.mjs` (`ScratchLlamaEngine`, the `LLMEngine` seam).
+4. **The worker boundary** — `worker.mjs` + `session.mjs`
+   (`prepare|generate|abort|dispose`; `progress|token|ready|done|error`).
+   Nothing loads before `prepare()`, so N6 holds by construction; `dispose()`
+   is the only path that hands memory back.
+5. **The model answer path** — `ai/answers/model.mjs`, in §5.1's order:
+   retrieve → abstain below the gate *without* a model call → generate →
+   `guardedAnswer` (§8.4 layer 4) with one greedy retry on shortened context
+   → extractive fallback → `resolveFacts`/`renderFact` for `<|fact:x|>`.
+   `ai/ui/chat.mjs` was wired to it (badges, progress, Stop, Retry).
+6. **The export pipeline** — `inference/export_browser.py` (checkpoint →
+   quantised shards + manifest + parity fixture; `--random-init` for the
+   committed fixture), `inference/reference.py` (the numpy reference),
+   `tools/verify-engine.mjs` (`npm run verify:engine`), and
+   `inference/export_prompt_contract.py`.
+7. **Proactive voice** — `ai/voice/vad.mjs` (energy VAD, adaptive floor,
+   hysteresis, max segment, post-cut cooldown) so an always-open microphone
+   only wakes the recognizer on speech; visibility handling stops listening
+   and speaking when the tab is hidden and resumes into the gate.
+8. **The §11.2 voice eval kit** — `evaluation/voice/record.html`,
+   `evaluation/voice/score.py` (corpus WER per language, worst clips, and the
+   three bands `<20% ship · 20–35% disclose · >35% English-only`) and
+   `evaluation/voice/phrases.json` (30 phrases, en/hi/hn).
+9. **§14's synthetic-portfolio swap** — `tests/synthetic.test.mjs` (8).
+10. **The two failure modes below, each found by the gate that exists to find
+    it, each now pinned by a test.**
+
+### Bugs found while measuring (each one would have shipped)
+
+**1. The parity gate was comparing two different models.**
+`reference_fixture()` built its numpy reference from the **float** checkpoint
+while the engine runs the **int8** shards, so the only thing the gate could
+measure was how much quantisation moved the logits — and it failed, loudly,
+on the real export:
+
+| | argmax | worst \|Δlogit\| | verdict |
+|---|---|---|---|
+| before (float reference vs int8 engine) | 98.6 % | **1.63e-01** | FAIL |
+| after (both read the same int8 codes) | **100 %** | **8.82e-06** | PASS |
+
+The module's own docstring already claimed the reference ran on the exported
+weights; the code did not. `tests/py/test_export_browser.py` EX-20 now
+round-trips the shard bytes and refuses a shard whose hash disagrees.
+
+**2. The shipped manifest embedded a dev path, and the build caught it.**
+`source.runDir = "training/checkpoints/local"` tripped `DEV_ONLY_PATTERNS`, so
+`npm run build` refused — correctly. Provenance in a *public* manifest is now
+content, not a location: run name, `which`, step, ISO timestamp, git commit
+and the checkpoint's **SHA-256**. A path can be re-pointed at different
+weights; a hash cannot. (`tests/py/test_export_browser.py` EX-21 asserts no
+provenance value contains a separator, so no value can name a tree.)
+
+**3. The parity fixture was being served to visitors.**
+`--reference-out` defaulted into the directory `tools/build.mjs` copies
+wholesale, so **257,452 B** of `reference.json` — a test artifact of logits —
+shipped in `dist/`. The bundle is now an **allow-list** (`manifest.json`,
+`tokenizer.json`, `model-\d{5}.bin`) and reports anything else it skipped;
+the fixture is written to `ai/model-export/reference/` instead, beside the
+version directory rather than inside it. Bundle: 45 files / 5,960,763 B →
+**44 files / 5,703,311 B**.
+
+**4. `npm run params` exited 1 for a config that was correct.**
+`target_verdict` had no branch for `local`, so 4,984,064 params were judged
+against §7.5's *smoke* band and printed `FAIL at 4.98M` — failing the `--gate`
+run over every config. Every config now gets its own band, or `NOT TESTED`
+rather than somebody else's band.
+
+**5. A flaky benchmark assertion, not a flaky benchmark.**
+`test_benchmark_cpu` required the stored tok/s to match `tokens ÷ seconds`
+within ±2, but the rate is computed from the **unrounded** wall time and the
+time is stored rounded to 4 dp — at ~1,200 tok/s that rounding is worth
+±9 tok/s. It failed on this machine for no reason. The tolerance is now
+*derived* from the roundings instead of guessed, so it stays strict about what
+it actually tests (a wrong divisor is out by orders) and stable across runs
+(5/5 consecutive passes).
+
+### The parameter-count question, settled by measurement
+
+Two numbers were in circulation for the same model, and the difference is a
+convention, not a bug:
+
+| Figure | What it counts |
+|---|---|
+| **4,984,064** | the model's parameters — `plan.counts`/`table_total`, confirmed by building the torch module and comparing (`MATCH`) |
+| 5,246,208 | `sum(p.numel() for p in state_dict())` — which visits the **tied** `lm_head.weight` a second time |
+
+`4,984,064 + 262,144 = 5,246,208`, and `lm_head.weight` shares storage with
+`model.embed_tokens.weight` (`data_ptr()` equal, `tieGap` 0). The report now
+prints that arithmetic where the confusion happens, and
+`tests/py/test_model_schema.py` pins it.
+
+### Measured (R1: i5-6300U, 8 GB, Intel HD 540, software GL)
+
+`npm run verify:engine` on `ai/model-export/aashish-ai-1`:
+
+| Claim | Result |
+|---|---|
+| Weights | **5,059,584 B** q8 (fp32 equivalent 19,936,256 B) · gzip 4,732,964 B · brotli 4,713,956 B |
+| Worst per-row quantisation error | **0.001146** |
+| Tokenizer | 66,667 B, vocab 1,024 |
+| Parity, shipping export | 138 positions · **argmax 100 % · top-16 order 100 %** · worst \|Δlogit\| **8.82e-06** (tolerance 0.02) |
+| Parity, committed fixture | 138 positions · argmax 100 % · worst \|Δlogit\| **3.58e-07** |
+| torch ↔ numpy | **PASS** — 8.58e-06 on the checkpoint, 2.09e-07 on the fixture |
+| Browser load | **57–63 ms** for 5.1 MB of shards, hashes verified |
+| Prefill | 35 tokens in 491–583 ms (**68–71 tok/s**) |
+| Decode | **73.5 tok/s** — 9× §4's ≥ 8 tok/s floor, CPU, on the real trained weights |
+| KV cache | 3,072 KB resident at ctx 512 |
+| Bundle, gzip | chat code **118,561 B** of 153,600 B (§4) · rest of page 65,649 B of a 256,000 B guard |
+| Model payload, gzip | **4,742,169 B** raw 5,144,357 B — 12 % of §4's 40 MB first-use budget |
+| Tests | **393 JS + 326 Python**, 0 failures (`npm run test:all`) |
+
+Val loss on the `local` run: 2.1917 @100 → 1.1711 @200 → 0.9229 @300 →
+0.6432 @700 → **0.6423 @800 (best)**. This is a pipeline/export exercise at
+4.98M params, **not** a quality result — the shipping target is still
+config A + Stage A/B data on a GPU.
+
+### Still open
+
+* **The parity gate is now honest, but the weights it gates are a 4.98M CPU
+  run.** No Stage A/B model exists; `verify:engine` must be re-run against it
+  before any quality claim.
+* **Kaggle/GPU training and P4's licence gate** remain the owner's job (9 of 9
+  corpus sources await `--verify`), so P5 tuning is still ahead.
+* **No live microphone, no real GPU, no iPhone, no screen reader.** Every item
+  in `docs/MANUAL_TEST_CHECKLIST.md` §D is still NOT TESTED; headless Chrome
+  has no microphone and can only be observed *refusing*.
+* **The exported weights are step 800** of an 1,100-step schedule, because
+  `latest.pt` is step 800 and the older step files were pruned by `keep_last`.
+  Re-running to the end is cheap, but nothing in the pipeline depends on it —
+  what was being verified is the architecture and the export, not the step
+  count.
+* **Deployment host undecided** (`docs/DEPLOYMENT.md` §6) and no CI provider,
+  so the budget checks run on `npm test`.
+* **PII open questions stand:** C4 (bootcamp provider unknown, excluded from
+  answers) and C5 (which of two CV files is current).
+* **§14's "offline-after-cache" e2e test is still not written, and will not
+  arrive by itself.** The 2026-09-23 entry deferred it (with
+  "worker-terminate frees memory") to P6/P7 on the grounds that there was no
+  worker and no download to test. P6/P7 have now landed: worker-terminate is
+  covered by `tests/engine.test.mjs` ENG-14, but **nothing here implements or
+  tests an offline path** — there is no HTTP cache layer, the engine's `fetch`
+  is injected, and every load in the suite is a filesystem stub. So this is an
+  honest remaining gap for P7/P8, not a pending arrival. Recording it here
+  because the older entry now reads as a promise rather than an open item.
+* **§12's test counts in this log are per-entry snapshots.** The current
+  numbers are the 393 + 326 above; earlier entries quote their own totals.
+
+### Evidence
+`ai/engine/` · `ai/answers/model.mjs` · `ai/voice/vad.mjs` ·
+`inference/export_browser.py` · `inference/reference.py` · `tools/verify-engine.mjs` ·
+`evaluation/voice/` · `ai/model-export/aashish-ai-1/{manifest.json,model-00000.bin,tokenizer.json}` ·
+`tests/engine.test.mjs` · `tests/tokenizer-parity.test.mjs` · `tests/vad.test.mjs` ·
+`tests/synthetic.test.mjs` · `tests/build-bundle.test.mjs` (19) ·
+`tests/py/test_export_browser.py` (21) · `tests/py/test_model_schema.py` (34) ·
+`npm run export:model` · `npm run verify:engine` · `npm run build` · `npm run test:all`

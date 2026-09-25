@@ -35,14 +35,20 @@ Do this **first** — most of what follows is a comparison against it.
 | # | Step | Expected |
 |---|---|---|
 | B1 | Click **Ask Aashish AI** | panel opens immediately, starter chips appear, no spinner |
-| B2 | In Network, look at what just loaded | AI chunk only — **no worker, no wasm** |
-| B3 | Tap a starter chip | an answer appears instantly, badged *Quick answer* |
+| B2 | In Network, look at what just loaded | the AI chunk, then the model (manifest + `model-*.bin` + tokenizer) — the **size is stated in the panel before the download** |
+| B2b | Watch the tier badge while it loads | `PREPARING MODEL…` → `MODEL READY`; a failure says so and leaves Quick Answers working |
+| B2c | Reload the page and open the panel again | the model loads from cache — **Network shows no new shard requests** |
+| B3 | Tap a starter chip | an answer appears, badged *AI ANSWER · ON-DEVICE MODEL*, and text **streams in** rather than appearing all at once |
 | B4 | Type "what is your cgpa" | answers with the CGPA |
 | B5 | Type "did you intern at Google?" | **declines** — must not invent an internship |
 | B6 | Type "नमस्ते" then a Hindi question | answered in Hindi, no selector anywhere |
 | B7 | Type "aapka naam kya hai?" | answered in Hinglish |
 | B8 | Ask "what is your phone number?" | declines, and offers email instead |
+| B7b | Ask something the portfolio does not cover, e.g. "where did you intern?" | **declines**; it must not invent an employer, and it may not answer from general knowledge |
+| B7c | In DevTools, look at the `[id] value` lines the answer used (`window.PortfolioAI.model.last.context`) | every claim in the sentence is traceable to one of those lines |
+| B8b | Press **Stop** mid-answer | generation stops within a token or two; the partial text stays and the badge does not claim a finished answer |
 | B9 | Press Esc | panel closes, focus returns to the button |
+| B9b | Close the panel and leave it for **~2 minutes**, then reopen | the model is unloaded (no worker in DevTools) and reloads from cache on the next question |
 | B10 | Reload the page while the panel is open | page still works; nothing AI loads before a click |
 
 **Watch for:** the panel stealing scroll from the film; the chat container
@@ -71,6 +77,7 @@ anywhere. If you do not want that, skip section D — it is the honest default.
 
 | # | Step | Expected |
 |---|---|---|
+| D0 | Click the mic button on a laptop/desktop (T2+) | **Proactive** mode: the button reads LISTENING and the microphone stays open — `window.PortfolioAI.voice.vad` should report `gated: true`, `available: true` |
 | D1 | Click the mic button | the disclosure appears **before** it listens; browser asks for permission |
 | D2 | **Deny** the permission | button goes dark, panel says why once, typing still works, and it does **not** ask again |
 | D3 | Turn voice on again and **allow** | button lights; say "what is your CGPA" | 
@@ -81,7 +88,8 @@ anywhere. If you do not want that, skip section D — it is the honest default.
 | D8 | Speak while the answer is being read | the reading stops (barge-in) |
 | D9 | Press Esc / tap Stop | microphone stops immediately |
 | D10 | Say a question in Hindi, then one in Hinglish | answered in the same language, read by the matching voice |
-| D11 | Leave the tab and use another app, then come back | it must not have been listening while hidden |
+| D11 | Leave the tab and use another app, then come back | it must not have been listening while hidden (`voice.status().suspended === true` while hidden), and listening resumes on return |
+| D12 | Keep the mic on through **a quiet room with a fan/TV** for ~2 minutes | it must not open a segment on the room tone alone, and a normal speaking voice must still open one within ~1.5 s |
 
 **Record:** did D3–D5 work the first time, or did you have to say it twice?
 That number is the whole point of the exercise, and it is mine to fix, not

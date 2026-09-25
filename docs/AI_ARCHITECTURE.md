@@ -4,10 +4,14 @@ One document for how the assistant is put together, what is verified, and
 what is not. It is written per phase and updated as phases land; anything
 not yet built says so instead of describing the plan as if it existed.
 
-Status: **P1 complete · P2 complete · P3 complete (all three gates verified,
-on CPU at smoke scale — see [TRAINING.md](TRAINING.md)) · §10 voice, §11 voice
-input and §12 section-following landed.** P4–P11 not started. Voice input
-exists and is browser-verified, but it has never been run with a live
+Status: **P1 · P2 · P3 complete (all three gates verified on CPU at smoke
+scale — see [TRAINING.md](TRAINING.md)) · §10 voice, §11 voice input, §12
+section-following landed · P6 export + P7 browser runtime built and gated ·
+P8 voice built, Proactive VAD-gated.** A model genuinely trained on this
+laptop runs in the browser today (config `local`, ~5M params); P4's Stage A
+and P5's Stage B at config A still need a GPU, and P9–P11 (hardening, ternary,
+final QA) are open. Voice input is browser-verified with a stub engine and
+unit-tested against doubles, but it has **never** been run with a live
 microphone — see §5.
 
 ---
@@ -384,26 +388,75 @@ Hindi, and only a speaker can tell you that.
 
 ---
 
-## 6. Browser runtime, export, quantisation (§9) — P6/P7, not started
+## 6. Browser runtime, export, quantisation (§9) — P6/P7, built
 
-Nothing here is built yet. What P3 fixes in advance:
+The runtime exists and is gated by parity tests. The pipeline, in the order a
+visitor's click walks through it:
 
-* the config exports as an HF-shaped `config.json` (`ModelConfig.to_hf_config()`),
-* the parameter list is asserted against the HF Llama key set, and
-* the tokenizer artifact is a plain `tokenizer.json` with its own version
-  hash, which is what llama.cpp's converter expects.
+```
+click → ai/ui/chat.mjs (chunk)  → knowledge.json, retrieval, guard, Quick Answers
+             │  startModel()                     §6.5: the size is shown first
+             ▼
+   ai/engine/session.mjs ── postMessage ──► ai/engine/worker.mjs   (module Worker)
+             │                                  ai/engine/index.mjs   ScratchLlamaEngine
+             │                                  ai/engine/manifest.mjs  shards + sha256
+             │                                  ai/engine/llama.mjs     the graph
+             │                                  ai/engine/quant.mjs     int8 kernels
+             ▼                                  ai/engine/bpe.mjs       our tokenizer
+   ai/answers/model.mjs   retrieval context → guardedAnswer → placeholders
+```
 
-Intended pipeline (per §9.2, unchanged): checkpoint → fp16 → **Python CPU
-inference first** → parity check → GGUF and/or ONNX → quantise → measure.
-Sizes will be measured, never estimated in prose.
+| Piece | Decision | Why |
+|---|---|---|
+| Runtime | **our own JavaScript**, in a module worker | §9.1 asks for the smallest runtime that meets the needs; at ~5M params a wasm runtime would be a second binary to download and a second thing to trust. The `LLMEngine` seam (`ai/engine/index.mjs`) is where wllama/ORT-Web would go if a benchmark ever favours them |
+| Weights | **per-row int8** (`q8-row`), norms float32 | 4× smaller than fp32 and no activation quantization: an activation scale chosen per token is invisible when wrong (see `quant.mjs`) |
+| RAM | int8 codes **stay** int8; the matvec multiplies them by float32 activations | expanding to fp32 at load would cost 152 MB on config A for nothing (§4) |
+| Sharding | ≤ 8 MB per shard, SHA-256 each, immutable names | §6.5 |
+| Tokenizer | our artifact, ported to JS, **no wasm** | 66 KB of JSON; the port is checked id-for-id against the Python encoder on 21 fixture cases / 394 ids (`tests/tokenizer-parity.test.mjs`) |
+| Prompt | generated from `ai/data/instruction.py` into `ai/engine/prompt_contract.json` | two copies of a prompt format is how a model "breaks" after a deploy that changed nothing |
+| Streaming | one writer, flushed every 64 ms (§10) | re-rendering per token is the jank §10 forbids |
+| Guard failure | the bubble's text is **replaced**, not silently retracted | a visitor sees the final text and a badge that says where it came from |
+
+### The three-way parity gate (§9.2)
+
+One implementation checked against itself proves nothing, so the same §7.1
+graph exists three times and each edge is measured:
+
+| Edge | Command | Result |
+|---|---|---|
+| PyTorch ↔ numpy | run during `npm run export:model` | **PASS** — max abs Δ **8.58e-06** on the checkpoint, 2.09e-07 on the fixture |
+| numpy ↔ JavaScript, committed fixture | `npm test` (`tests/engine.test.mjs`) | **138 positions**, argmax **100%**, worst abs Δ logit **3.58e-07** against a 0.02 tolerance |
+| numpy ↔ JavaScript, **the shipping export** | `npm run verify:engine` | **138 positions**, argmax **100%**, top-16 order **100%**, worst abs Δ logit **8.82e-06**; exit code 1 on any disagreement |
+
+`inference/export_browser.py` writes the parity fixture **from the exported,
+quantized weights** — it dequantises the shard bytes it just wrote, hash-checked
+on the way in — so the numbers are the quantization's own and not a float32
+ideal.
+
+That distinction is not academic: the gate's first run on real weights
+**failed** at worst abs Δ logit 1.63e-01 with argmax agreement 98.6 %, because
+the reference was reading the float checkpoint while the engine reads the int8
+shards. Both sides now read the same codes and the disagreement drops to
+8.82e-06 — float32 accumulation order and nothing else. A gate that compares
+two different models can only measure its own bug.
+
+### What the export reports, every time
+
+`manifest.json` carries the measured sizes (q8, fp32 and fp16 equivalents,
+gzip and brotli when available), the tokenizer hash and version, the worst
+per-row quantization error, and the source checkpoint. `tools/build.mjs`
+copies the export into `dist/` when it exists and prints which of the two
+builds it produced — a build **without** a model is legitimate (Quick Answers
+only) and is labelled as such, instead of a deploy discovering it at runtime.
 
 ---
 
 ## 7. Dev vs prod — the build (§9.3/§17)
 
-`npm run build` → `dist/` (28 files, **429,808 B** — 429,243 B before §12's
-probe hook, 426,217 B when §11 voice first landed, 396,152 B before it added a
-module, and 27 files / 391,619 B before that);
+`npm run build` → `dist/` (**44 files, 5,703,311 B** with the exported model;
+**41 files, 558,954 B** without one — the model is git-ignored build output, so
+a clean checkout measures the second number). Earlier: 28 files / 429,808 B
+before the engine, voice, guard and model answer path landed.
 `npm run preview` serves it on `:5580` through the same dev server with
 `ROOT=dist`.
 
@@ -413,7 +466,9 @@ module, and 27 files / 391,619 B before that);
 | A withheld value must not appear anywhere in the bundle | the build scans every shipped file, comparing numbers digit-wise (`+91 62802875` in any format); a hit fails the build unless the file is an allow-listed *decision* |
 | No dev tooling ships | executable references to `dev-*.js`, `shots/`, `training/checkpoints`, `data/raw|processed`, `localhost:5577` fail the build; a mention inside a comment is reported as a note instead. The code/comment split consumes **regex literals** as code, because a character class containing an apostrophe otherwise opened a phantom string and mis-classified every comment after it |
 | Every module in the bundle resolves | relative imports and `<script src>` targets are checked against the file list |
-| Nothing training-side ships | the allow-list is per-path: no `ai/tokenizer`, `ai/model`, `ai/data`, no `knowledge/*.md`, no `tests/`, `data/`, `docs/` |
+| Nothing training-side ships | the allow-list is per-path: no `ai/tokenizer`, `ai/model/`, `ai/data/`, no `knowledge/*.md`, no `tests/`, `data/`, `docs/`. The trailing slash matters — `ai/model-export/` is the browser artifact and *must* ship |
+| A model version directory ships **only** §9.3 files | `manifest.json`, `tokenizer.json`, `model-\d{5}.bin`; anything else in there is reported and left out. `--reference-out` used to default into this directory, which shipped a 257 KB parity fixture to every visitor |
+| A model manifest without a shard is a refusal | a manifest that ships alone would serve a loader that 404s |
 
 Known, deliberate, and reported on every build: `index.html` and
 `js/terminal.js` publish the phone number because the *portfolio* publishes it
@@ -436,7 +491,12 @@ That is an allow-list entry with a reason, not a default.
 | Hindi/Hinglish answer quality | **not measurable yet** — no model, and the seed fixture is synthetic |
 | The §8.4 retrieval gate is calibrated rather than assumed | **bounded, one half measured** — ceiling 4.647 recomputed from the data by test; the floor is **NOT MEASURED** (`docs/CALIBRATION.json`) |
 | Numbers and declared aliases are retrievable | **verified** — "8.28" → `ach.lpu-cgpa`, "who is he" → `person.name`, both regression-tested |
-| Browser inference and quantisation | not started |
+| Browser inference and quantisation | **built, and run on trained weights** — a module worker runs the graph on int8 weights, shards are SHA-256 verified on load, and three implementations of the same architecture are cross-checked (torch ↔ numpy ↔ JavaScript). Measured on the `local` checkpoint's export: 138 positions, argmax **100 %**, top-16 order **100 %**, worst abs Δ logit **8.82e-06**, load 57–63 ms, prefill 68–71 tok/s, decode **73.5 tok/s** (9× §4's floor) on R1's CPU |
+| §4's budgets, with the model in the bundle | **measured** — chat code chunk 118,561 B gz of a 150 KB budget, model payload 4,742,169 B gz, first visit 4,926,379 B gz = **12 %** of §4's 40 MB. Asserted on every `npm test`; the weight budgets are NOT TESTED (loudly skipped) without an export |
+| The export carries no dev path and no test fixture | **verified** — provenance is step/commit/SHA-256, not a directory (the build refused the path); a model version directory ships only its manifest, tokenizer and shards, so the 257 KB parity fixture no longer reaches `dist/` |
+| The same model is not two different sizes | **verified** — 4,984,064 params, and the 5,246,208 a naive `state_dict` sum reads is the **tied** `lm_head.weight` counted twice (`data_ptr()` equal, `tieGap` 0), pinned by test |
+| The model answering from **its own generation**, not a template | **built** — `ai/answers/model.mjs` retrieves context, asks the worker, guards the result and resolves placeholders. Templates are only reached for what must be exact by construction (email/URL/refusal) or when the model is not available, and the badge says which happened. What its answers *say* is **NOT TESTED end to end** — the 4.98M `local` checkpoint is an export exercise, not a quality result, and no browser run of the model path has produced a real answer yet |
+| An always-open microphone that still only transcribes speech | **built, unit-tested** — `ai/voice/vad.mjs` (energy VAD, adaptive floor, hysteresis, max segment, post-cut cooldown) opens a gate the recognizer is switched by. Whether it survives a real room is **NOT TESTED** |
 | **Voice**: microphone, wake phrase, speech output | **built, adapter-first, and browser-verified** — 0 AI requests before the tap, the audio disclosure in the DOM before any result can be handled, a wake phrase in continuous mode, the answer spoken in its own language, and a dead microphone turned off with a stated reason and the scene handed back (`dev-ai-probe.js`, 26/26 — the probe prints its own tally) |
 | **Voice with a live microphone** | **NOT TESTED.** Headless Chrome ships the API and has no microphone, so the *listening* path is covered by unit tests against doubles (34) and by a browser running a **stub** engine (`dev-resource-probe.js`), never by a real voice. A human saying "hey Aashish" into a laptop, in a noisy room, with an accent, has not happened. Chrome-only in practice; Firefox and Safari get the disabled button and the reason |
 | Continuous mode's turn lifecycle: wake → follow-up → expiry | **verified in a browser with a stub engine** — unaddressed speech asked 0 questions, the wake phrase asked 1 and opened the turn, a bare follow-up asked 2, and after 12 s of silence the turn closed and the next unaddressed sentence asked nothing |

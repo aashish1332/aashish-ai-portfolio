@@ -119,12 +119,36 @@ A scratch-built assistant that answers questions about this portfolio in
 **English, Hindi or Roman Hinglish** — automatically, with no language
 selector, **no backend, no LLM API and no API key**.
 
-Click the chip bottom-right to open it. Today every answer is produced by a
-deterministic engine over a verified knowledge base, and the panel says so
-per answer: *"Quick answer — no AI model on this device"*. A scratch model
-(37.9M params, config A) has its tokenizer, architecture, parameter schema
-and training pipeline built and tested; the browser runtime arrives in
-P6–P7, and Stage A training runs on Kaggle in P4.
+Click the chip bottom-right to open it. Answers come from two places, and the
+panel says which one you got: an **on-device model trained from scratch for
+this portfolio**, reading only the verified facts it was given, and the
+deterministic **Quick Answers** engine for the things that must be exact by
+construction — an email address, a repository URL, a refusal. There is no
+backend to call and no API key anywhere in the repository.
+
+The model runs **in your browser**, in a web worker, from a quantized copy
+downloaded once and cached: **5.14 MB** raw / **4.74 MB** gzip for the model
+that ships today (5,059,584 B of int8 weights, a 66 KB tokenizer, a 18 KB
+manifest) — 12 % of the 40 MB §4 allows for a first visit. The weights are
+int8 (~4× smaller than fp32), the quantization's cost is measured rather than
+assumed (worst per-row error 0.001146), and the JavaScript engine that runs
+them is checked against an independent numpy implementation of the same
+architecture, which is itself checked against the trained PyTorch graph. All
+three agree on the shipping weights: 138 positions, **identical argmax and
+identical top-16 ordering**, worst absolute logit difference **8.8e-06**.
+`npm run verify:engine` re-runs that gate on whatever is currently exported and
+exits non-zero on any disagreement. A second parity gate runs on every
+`npm test`, against a committed tiny fixture, so a change that breaks the
+forward pass fails the build instead of a visitor's question.
+
+Today's shipped weights are from a **local CPU run** — 4,984,064 params,
+config `local`, 800 steps on this laptop — that exists so the whole path
+(train → export → download → worker → stream → guard) is real end to end. It
+runs at **73 tok/s decode** on a 2016 ultrabook with no GPU, 9× the ≥ 8 tok/s
+floor §4 asks for. The §7.1 shipping target is still config A (37.9M) trained
+on a GPU in P4/P5; nothing about the runtime changes when it lands, only the
+weights. Until then the quality is visibly a small model's, and the panel never
+pretends otherwise.
 
 The answers are written **as Aashish** — "my CGPA", not "his CGPA" — because
 the visitor is being introduced to him, and in **Proactive mode** the page
@@ -168,16 +192,23 @@ idle page cost a measured 1.2 s of blocked main thread (`docs/BENCHMARKS.md` §1
 | [docs/PROGRESS.md](docs/PROGRESS.md) | phase-by-phase log, including what is unfinished |
 
 ```bash
-npm run test:all     # 328 JS + 252 Python tests
+npm run test:all     # 393 JS + 326 Python tests
 npm run probe:resources  # §15.3: heap, nodes, listeners, long tasks → docs/RESOURCES.json
 npm run calibrate    # sweep the §8.4 retrieval gate against the evaluation set → docs/CALIBRATION.json
-npm run params       # parameter count + §7.1 band gate
+npm run params       # parameter count + its band gate
 npm run bench:cpu    # §14 CPU inference: load, RAM, prefill/decode tok/s, file size
 npm run sft          # §7.4 Stage B instruction data (40k examples + review sample)
 npm run smoke        # tokenizer contract, shards, data cursor, checkpoints
+npm run train:local  # the largest model this laptop trains for real → training/checkpoints/local
+npm run export:model # checkpoint → the browser artifact: q8 shards + manifest + parity fixture
+npm run verify:engine # §9.2: does the JavaScript engine match the numpy reference, on the SHIPPING weights?
 npm run build        # production bundle → dist/ (stripped knowledge base, no dev tooling)
 npm run preview      # build + serve dist/ on :5580 to see exactly what ships
 ```
+
+`npm run verify:engine` is the one to run after touching the model, the export or
+`ai/engine/`: it fails (exit 1) if the engine's logits disagree with the
+reference, and it prints decode speed on this machine.
 
 **Deploy `dist/`, not the repository root.** `npm run build` reduces
 `knowledge.json` to its public view (the withheld phone number is removed from
