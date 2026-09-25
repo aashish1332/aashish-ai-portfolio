@@ -153,7 +153,7 @@ def ffn_size(hidden_size: int, multiple_of: int = FFN_MULTIPLE) -> int:
     return int(multiple_of * ((raw + multiple_of - 1) // multiple_of))
 
 
-# ── The three configs ────────────────────────────────────────────────
+# ── The configs ──────────────────────────────────────────────────────
 CONFIG_A = ModelConfig(
     name="A",
     vocab_size=16384, hidden_size=512, num_hidden_layers=10,
@@ -184,7 +184,22 @@ CONFIG_SMOKE = ModelConfig(
           "pipeline, resume, export and browser load. Never a quality result.",
 )
 
-CONFIGS = {"A": CONFIG_A, "lite": CONFIG_LITE, "smoke": CONFIG_SMOKE}
+CONFIG_LOCAL = ModelConfig(
+    name="local",
+    vocab_size=1024, hidden_size=256, num_hidden_layers=6,
+    num_attention_heads=8, num_key_value_heads=4,
+    intermediate_size=768, max_position_embeddings=512,
+    tie_word_embeddings=True,
+    notes="The largest §7.1-shaped model this laptop (R1: i5-6300U, no GPU) trains "
+          "for real: 4,984,064 params at the measured ~850 tok/s of the CPU loop, so a "
+          "run finishes in tens of minutes instead of days. Same architecture and "
+          "same tokenizer as config A, so it exercises the whole export/engine "
+          "path; it is NOT the shipping quality target — that is Stage A + B at "
+          "config A on a GPU (§16 P4-P5).",
+)
+
+CONFIGS = {"A": CONFIG_A, "lite": CONFIG_LITE, "smoke": CONFIG_SMOKE,
+           "local": CONFIG_LOCAL}
 
 
 def smoke_config(vocab_size: int | None = None) -> ModelConfig:

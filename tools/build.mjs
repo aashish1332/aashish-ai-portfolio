@@ -48,6 +48,11 @@ export const SHIP_PATHS = [
   'css',
   'js',
   'ai/answers',
+  /* The engine and the tokenizer *encoder* ship (they are what runs in the
+     visitor's worker); `ai/tokenizer/artifacts` and `ai/model` do not — the
+     artifact is copied in by the export step under `ai/model-export/`, and
+     the Python side of `ai/tokenizer` stays out. */
+  'ai/engine',
   'ai/guard',
   'ai/governor',
   'ai/intent',
@@ -59,9 +64,40 @@ export const SHIP_PATHS = [
   'knowledge/knowledge.json',
 ];
 
+/** Where `inference/export_browser.py --out ai/model-export/<version>` leaves
+ *  the model. Copied when it exists; a build without it ships Quick Answers
+ *  only, which is §6.2's T0 path and not an error — but the build summary
+ *  says which of the two it produced. */
+export const MODEL_EXPORT_DIR = 'ai/model-export';
+export const MODEL_EXPORT_VERSION = 'aashish-ai-1';
+
+/** The only files a model version directory may contribute to the bundle.
+ *
+ * An allow-list, not a copy of the directory. The export step also drops a
+ * *parity fixture* beside the weights by default (`--reference-out`, the
+ * numpy logits `tests/engine.test.mjs` compares against), and "whatever is in
+ * the folder" shipped that 257 KB test artifact to every visitor. §9.3 ships
+ * a runtime, weights and a tokenizer; nothing else belongs in there, and a
+ * stray file is reported rather than served. */
+export const MODEL_EXPORT_FILES = ['manifest.json', 'tokenizer.json'];
+export const MODEL_EXPORT_SHARD = /^model-\d{5}\.bin$/;
+
 /** Files the *site itself* publishes a withheld value in, on purpose.
  *  Each entry is a decision, not a default — see knowledge/PII_REVIEW.md. */
 export const SITE_PUBLISHED = ['index.html', 'js/terminal.js'];
+
+/** A refusal, with the reasons attached.
+ *
+ * The message stays short because it is also what `npm run build` prints; the
+ * numbered reasons are on `.problems` so a test can assert *why* the build
+ * refused instead of only that it did. */
+export class BuildRefused extends Error {
+  constructor(problems) {
+    super('build refused: the bundle would ship something it must not');
+    this.name = 'BuildRefused';
+    this.problems = problems;
+  }
+}
 
 /** Dev-only references that must never reach a shipped file. */
 export const DEV_ONLY_PATTERNS = [
@@ -380,6 +416,35 @@ export function buildBundle({ root = ROOT, out = join(ROOT, 'dist'), quiet = fal
     }
   }
 
+  /* The exported model (§9.3), when one has been built. It is a build
+     *output*, not a source file — `ai/model-export/` is git-ignored and
+     produced by `inference/export_browser.py` — so a build without it is
+     legitimate (Quick Answers only) and the summary says which one this is,
+     instead of a deploy discovering it at runtime. */
+  const modelDir = join(root, MODEL_EXPORT_DIR);
+  const modelVersionDir = join(modelDir, MODEL_EXPORT_VERSION);
+  const modelShipped = existsSync(join(modelVersionDir, 'manifest.json'));
+  let modelBytes = 0;
+  let modelSkipped = [];
+  let modelIncomplete = false;
+  if (modelShipped) {
+    const dest = join(out, MODEL_EXPORT_DIR, MODEL_EXPORT_VERSION);
+    const present = readdirSync(modelVersionDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile()).map((entry) => entry.name);
+    const ship = present.filter((name) => MODEL_EXPORT_FILES.includes(name)
+      || MODEL_EXPORT_SHARD.test(name));
+    modelSkipped = present.filter((name) => !ship.includes(name)).sort();
+    modelIncomplete = !ship.some((name) => MODEL_EXPORT_SHARD.test(name));
+    mkdirSync(dest, { recursive: true });
+    for (const name of ship) {
+      const target = join(dest, name);
+      cpSync(join(modelVersionDir, name), target);
+      copied.push({ abs: target,
+                    rel: [MODEL_EXPORT_DIR, MODEL_EXPORT_VERSION, name].join('/') });
+    }
+    modelBytes = ship.reduce((n, name) => n + statSync(join(dest, name)).size, 0);
+  }
+
   /* the shipped knowledge base is the stripped one, and nothing else */
   const shippedRel = 'knowledge/knowledge.json';
   const shippedAbs = join(out, shippedRel);
@@ -414,6 +479,12 @@ export function buildBundle({ root = ROOT, out = join(ROOT, 'dist'), quiet = fal
   /* 4. every shipped module must resolve inside the bundle */
   problems.push(...checkImports([knowledgeFile, ...other]));
 
+  /* 4b. a model manifest with no shard would serve a loader that 404s */
+  if (modelIncomplete) {
+    problems.push(`${MODEL_EXPORT_DIR}/${MODEL_EXPORT_VERSION} has a manifest but no `
+      + 'model shard — the export is incomplete');
+  }
+
   /* 5. the strip must have done something, and left structure behind */
   if (removed.length === 0) {
     problems.push('the knowledge base has no public:false facts — the strip is unverifiable, '
@@ -432,6 +503,14 @@ export function buildBundle({ root = ROOT, out = join(ROOT, 'dist'), quiet = fal
   log(`  files            ${files.length}`);
   log(`  bytes            ${bytes.toLocaleString()}`);
   log(`  knowledge.json   ${serialized.length.toLocaleString()} B  sha256 ${sha256.slice(0, 16)}…`);
+  log(modelShipped
+    ? `  model            ${MODEL_EXPORT_VERSION} · ${modelBytes.toLocaleString()} B `
+      + `(${(modelBytes / 1e6).toFixed(2)} MB) — served from ${MODEL_EXPORT_DIR}/`
+    : '  model            none exported — this build answers from Quick Answers only (§6.2 T0)');
+  if (modelSkipped.length) {
+    log(`  not shipped      ${modelSkipped.join(', ')} — in the export dir, but §9.3 ships `
+      + 'only a manifest, a tokenizer and shards');
+  }
   log(`  withheld facts   ${removed.map((f) => f.id).join(', ') || 'none'} (ids + aliases kept, values removed)`);
   for (const d of deliberate) {
     log(`  note             ${d.path} publishes ${d.id} deliberately (site content, allow-listed)`);
@@ -442,11 +521,18 @@ export function buildBundle({ root = ROOT, out = join(ROOT, 'dist'), quiet = fal
   if (problems.length) {
     console.error(`\nBUILD FAILED — ${problems.length} problem(s):`);
     for (const p of problems) console.error(`  · ${p}`);
-    throw new Error('build refused: the bundle would ship something it must not');
+    throw new BuildRefused(problems);
   }
   log('  verdict          clean — no withheld value, no dev tooling');
 
-  return { out, files: files.map((f) => f.rel), bytes, sha256, removed, deliberate, notes: devNotes };
+  return {
+    out, files: files.map((f) => f.rel), bytes, sha256, removed, deliberate,
+    notes: devNotes, modelBytes, modelShipped, modelSkipped,
+    /* the two budgets that matter for a first visit: what the page pulls
+       before the click (0 AI bytes — asserted by the e2e probe) and what the
+       click pulls (§4: ≤ ~40 MB first-use, one-time) */
+    modelDownloadBytes: modelShipped ? modelBytes : 0,
+  };
 }
 
 export function main(argv = process.argv.slice(2)) {

@@ -19,6 +19,7 @@ it to this schema; `tests/py/test_model_torch.py` covers the module itself.
 
 from __future__ import annotations
 
+import io
 import sys
 import unittest
 from dataclasses import replace
@@ -31,8 +32,9 @@ sys.path.insert(0, str(ROOT))
 
 from ai.model import plan  # noqa: E402
 from ai.model.config import (  # noqa: E402
-    CONFIG_A, CONFIG_LITE, CONFIG_SMOKE, ModelConfig, ffn_size,
+    CONFIG_A, CONFIG_LITE, CONFIG_LOCAL, CONFIG_SMOKE, ModelConfig, ffn_size,
 )
+from inference import count_parameters as params  # noqa: E402
 
 try:
     import torch  # noqa: F401
@@ -140,6 +142,65 @@ class ConfigArithmetic(unittest.TestCase):
         untied = replace(CONFIG_A, tie_word_embeddings=False)
         self.assertEqual(plan.counts(untied)["total"],
                          counts["total"] + CONFIG_A.vocab_size * CONFIG_A.hidden_size)
+
+    def test_the_state_dict_sum_double_counts_the_tied_alias(self):
+        """Why the same model is quoted at two sizes, and which one is right.
+
+        A materialised `state_dict()` carries `lm_head.weight` as a second key
+        over the embedding's storage, so `sum(p.numel())` visits those weights
+        twice. That is the only difference between the 4,984,064 a count tool
+        reports and the 5,246,208 a naive sum over a checkpoint reports —
+        measured on `training/checkpoints/local`, not reasoned about — and
+        pinning it here stops the pair being re-investigated as a bug.
+        """
+        counts = plan.counts(CONFIG_LOCAL)
+        table = plan.param_table(CONFIG_LOCAL)
+        self.assertIn("lm_head.weight", table)
+        naive = sum(plan.size(shape) for shape in table.values())
+        alias = CONFIG_LOCAL.vocab_size * CONFIG_LOCAL.hidden_size
+        self.assertEqual(plan.table_total(CONFIG_LOCAL), counts["total"])
+        self.assertEqual(naive - plan.table_total(CONFIG_LOCAL), alias)
+        self.assertEqual(naive, counts["total"] + alias)
+        # Untied, the two numbers coincide — which is the tell that the gap is
+        # the tie and not a missing or mis-shaped tensor.
+        untied = replace(CONFIG_LOCAL, tie_word_embeddings=False)
+        self.assertEqual(sum(plan.size(s) for s in plan.param_table(untied).values()),
+                         plan.table_total(untied))
+
+    def test_every_config_is_judged_against_its_own_band(self):
+        """A config must not be failed for missing a band it was never in.
+
+        `local` used to fall through to the §7.5 smoke band and print FAIL at
+        4.98M, which then failed `npm run params` (`--gate`) for every config
+        even though nothing was wrong.
+        """
+        quiet = io.StringIO()
+        for cfg in (CONFIG_A, CONFIG_LITE, CONFIG_SMOKE, CONFIG_LOCAL):
+            verdict = params.target_verdict(cfg, plan.counts(cfg)["total"], stream=quiet)
+            self.assertTrue(verdict["tested"], cfg.name)
+            self.assertTrue(verdict["pass"], (cfg.name, verdict))
+        smoke = params.target_verdict(CONFIG_SMOKE, plan.counts(CONFIG_SMOKE)["total"],
+                                      stream=quiet)
+        local = params.target_verdict(CONFIG_LOCAL, plan.counts(CONFIG_LOCAL)["total"],
+                                      stream=quiet)
+        self.assertIn("§7.5 smoke", smoke["band"])
+        self.assertNotIn("§7.5", local["band"])
+        # An unknown config gets no verdict rather than somebody else's band,
+        # and must not be reported as a failure it cannot be.
+        stranger = ModelConfig(**{**CONFIG_LOCAL.__dict__, "name": "experiment"})
+        unknown = params.target_verdict(stranger, plan.counts(stranger)["total"],
+                                        stream=quiet)
+        self.assertFalse(unknown["tested"])
+        self.assertIsNone(unknown["band"])
+        self.assertTrue(unknown["pass"])
+
+    def test_the_local_run_notes_quote_its_real_size(self):
+        """The prose in `config.py` and the arithmetic must not drift apart.
+
+        The notes said "~4.6M" for a config that counts 4,984,064; a rounded
+        figure is fine, an inconsistent one is a claim nobody can check.
+        """
+        self.assertIn(f"{plan.counts(CONFIG_LOCAL)['total']:,}", CONFIG_LOCAL.notes)
 
     def test_ffn_ratio(self):
         self.assertEqual(ffn_size(512), 1536)   # 8/3 × 512 = 1365 → rounded to 1536

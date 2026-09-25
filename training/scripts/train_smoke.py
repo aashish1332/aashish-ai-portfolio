@@ -435,8 +435,8 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--scope", default=None, help="free-text label recorded in the manifest")
     ap.add_argument("--shards", default="data/processed/seed/shards")
     ap.add_argument("--run-dir", default="training/checkpoints/smoke")
-    ap.add_argument("--config", default="smoke", choices=["smoke", "A", "lite"],
-                    help="smoke (default, §7.5) or a real config from §7.1")
+    ap.add_argument("--config", default="smoke", choices=["smoke", "A", "lite", "local"],
+                    help="smoke (default, §7.5), local (the largest config this laptop trains for real), or a §7.1 config")
     ap.add_argument("--steps", type=int, default=50)
     ap.add_argument("--batch", type=int, default=4)
     ap.add_argument("--block", type=int, default=128)

@@ -35,6 +35,11 @@ from ai.model.config import CONFIGS, CONFIG_A, ModelConfig  # noqa: E402
 # §7.1: "target 30–50M, ~40M preferred".
 TARGET_MIN, TARGET_MAX, TARGET_PREFERRED = 30_000_000, 50_000_000, 40_000_000
 LITE_MIN, LITE_MAX = 12_000_000, 22_000_000
+# §7.5 smoke, and the `local` run — neither is a §7.1 band, and the `local`
+# band is deliberately wide: it is a pipeline/export exercise on CPU, not a
+# quality target, so pinning it tightly would only create churn.
+SMOKE_MIN, SMOKE_MAX = 1_000_000, 3_000_000
+LOCAL_MIN, LOCAL_MAX = 3_000_000, 8_000_000
 
 
 def fmt(n: int) -> str:
@@ -69,6 +74,16 @@ def report(cfg: ModelConfig, stream=sys.stdout) -> dict:
 
     print(f"\n  state-dict keys: {len(table)} "
           f"(lm_head {'tied' if cfg.tie_word_embeddings else 'not tied'})", file=stream)
+    if cfg.tie_word_embeddings:
+        # Stated here because it is the one arithmetic mistake this report
+        # invites: `sum(p.numel() for p in model.state_dict().values())` visits
+        # the tied alias twice, so the same model gets quoted at two different
+        # sizes and looks like a contradiction instead of a convention.
+        alias = cfg.vocab_size * cfg.hidden_size
+        print(f"    state_dict() holds lm_head.weight as a second key over the "
+              f"embedding's storage,\n    so summing numel() over it reads "
+              f"{fmt(c['total'] + alias)} — {fmt(c['total'])} + {fmt(alias)}. "
+              f"The model has {fmt(c['total'])}.", file=stream)
 
     print(f"\n  KV cache  {kv_token / 1024:.2f} KB/token @fp16 → "
           f"{kv_ctx / 1024 / 1024:.1f} MB at ctx {cfg.max_position_embeddings}", file=stream)
@@ -77,7 +92,7 @@ def report(cfg: ModelConfig, stream=sys.stdout) -> dict:
           f"GFLOP/token @ctx {cfg.max_position_embeddings} (estimate)", file=stream)
 
     parity = verify(cfg, stream)
-    target = target_verdict(cfg, c["total"])
+    target = target_verdict(cfg, c["total"], stream=stream)
     return {"config": cfg.name, "params": c["total"], "counts": c,
             "table_total": table_total, "kv_per_token": kv_token,
             "kv_at_ctx": kv_ctx, "flops": flops, "torch": parity,
@@ -113,20 +128,36 @@ def verify(cfg: ModelConfig, stream=sys.stdout) -> dict:
             "torch": torch.__version__, "match": True}
 
 
-def target_verdict(cfg: ModelConfig, total: int) -> dict:
-    """Is this config inside the band §7.1 asks for?"""
+def target_verdict(cfg: ModelConfig, total: int, stream=sys.stdout) -> dict:
+    """Is this config inside the band it was sized for?
+
+    Every config gets *its own* band or no verdict at all. A config that fell
+    through to somebody else's band used to print a FAIL for a size no spec
+    ever asked it to hit — which then failed `npm run params` (`--gate`, every
+    config) for the one config that was behaving correctly.
+    """
     if cfg.name == "A":
-        ok = TARGET_MIN <= total <= TARGET_MAX
+        lo, hi = TARGET_MIN, TARGET_MAX
         note = (f"§7.1 target {TARGET_MIN / 1e6:.0f}–{TARGET_MAX / 1e6:.0f}M "
                 f"(~{TARGET_PREFERRED / 1e6:.0f}M preferred)")
     elif cfg.name == "lite":
-        ok = LITE_MIN <= total <= LITE_MAX
+        lo, hi = LITE_MIN, LITE_MAX
         note = f"§7.1 lite contingency ~{LITE_MIN / 1e6:.0f}–{LITE_MAX / 1e6:.0f}M"
+    elif cfg.name == "smoke":
+        lo, hi = SMOKE_MIN, SMOKE_MAX
+        note = f"§7.5 smoke band {SMOKE_MIN / 1e6:.0f}–{SMOKE_MAX / 1e6:.0f}M"
+    elif cfg.name == "local":
+        lo, hi = LOCAL_MIN, LOCAL_MAX
+        note = (f"local-run band {LOCAL_MIN / 1e6:.0f}–{LOCAL_MAX / 1e6:.0f}M (the "
+                f"largest §7.1-shaped model this laptop trains for real)")
     else:
-        ok = 1_000_000 <= total <= 3_000_000
-        note = "§7.5 smoke band 1–3M"
-    print(f"\n  {note}: {'PASS' if ok else 'FAIL'} at {total / 1e6:.2f}M", )
-    return {"band": note, "pass": ok}
+        print(f"\n  no stated band for config {cfg.name!r}: NOT TESTED "
+              f"at {total / 1e6:.2f}M", file=stream)
+        return {"band": None, "pass": True, "tested": False}
+
+    ok = lo <= total <= hi
+    print(f"\n  {note}: {'PASS' if ok else 'FAIL'} at {total / 1e6:.2f}M", file=stream)
+    return {"band": note, "pass": ok, "tested": True}
 
 
 def main(argv: list[str] | None = None) -> int:

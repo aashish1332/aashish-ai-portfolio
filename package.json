@@ -22,7 +22,12 @@
     "params": "python inference/count_parameters.py --config all --gate",
     "bench:cpu": "python inference/benchmark/benchmark_cpu.py --config A --tokens 16 --json docs/CPU_BENCHMARK.json",
     "sft": "python -m training.scripts.make_instruction_data",
-    "smoke": "python -m training.scripts.train_smoke --pipeline-only"
+    "smoke": "python -m training.scripts.train_smoke --pipeline-only",
+    "train:local": "python -m training.scripts.train_smoke --config local --tokenizer ai/tokenizer/artifacts/seed-1k --shards data/processed/seed/shards --run-dir training/checkpoints/local --steps 1100 --batch 8 --block 256 --lr 1.5e-3 --warmup 100 --eval-every 100 --save-every 100 --log-every 25",
+    "export:model": "python inference/export_browser.py --run-dir training/checkpoints/local --out ai/model-export/aashish-ai-1 --reference-out ai/model-export/reference/aashish-ai-1.json",
+    "verify:engine": "node tools/verify-engine.mjs ai/model-export/aashish-ai-1 ai/model-export/reference/aashish-ai-1.json",
+    "fixture:engine": "python inference/export_browser.py --random-init --out tests/fixtures/tiny-model --reference-out tests/fixtures/engine_reference.json",
+    "contract:prompt": "python inference/export_prompt_contract.py"
   },
   "engines": {
     "node": ">=18"

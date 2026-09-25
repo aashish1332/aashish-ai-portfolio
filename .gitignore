@@ -24,6 +24,14 @@ experiments/**/*.safetensors
 ai/tokenizer/artifacts/*
 !ai/tokenizer/artifacts/seed-1k/
 
+# ── The exported browser model (§9.3) ────────────────────────────────
+# Build output: `inference/export_browser.py --out ai/model-export/<version>`
+# quantizes a checkpoint into shards + manifest + tokenizer. It ships from
+# `dist/` (tools/build.mjs copies it when present) but is never committed —
+# it is derivable from the checkpoint, and a stale copy in the repo would
+# silently disagree with the weights it claims to be.
+ai/model-export/
+
 # ── Python (training + inference side) ───────────────────────────────
 __pycache__/
 *.py[cod]
@@ -56,6 +64,8 @@ shots/
 dev-fps-last.png
 probe.out.txt
 probe.err.txt
+# a redirected `npm run test:py > py-tests.txt`
+*-tests.txt
 .tmp-body.json
 
 # ── One-off recovery leftovers from the corrupt freebuff session ─────
@@ -64,6 +74,10 @@ film3d_firsthalf_f_001ac2.txt
 
 # Agent/tooling state (holds only a project id, never anything to ship)
 .freebuff/
+# Host linkage, same category — and no host has been chosen yet
+# (docs/DEPLOYMENT.md §6). Keeping it out of git is reversible: the file
+# stays on disk, and committing it later is `git add -f .vercel`.
+.vercel/
 
 # OS / editor
 Thumbs.db

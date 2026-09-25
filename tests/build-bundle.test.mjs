@@ -19,7 +19,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync }
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync }
   from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -226,12 +226,16 @@ test('the build produces a clean bundle, and refuses a dirty one', () => {
     assert.ok(summary.files.includes('index.html'));
     assert.ok(summary.files.includes('ai/answers/quick.mjs'));
 
-    /* the training side must not ship */
-    for (const prefix of ['ai/tokenizer', 'ai/model', 'ai/data', 'knowledge/PII_REVIEW',
+    /* the training side must not ship. The trailing slash on `ai/model/` is
+       load-bearing: `ai/model-export/` is the *browser* artifact the export
+       step produces and is exactly what must ship (§9.2), so a bare prefix
+       would fail the build for including the thing it is supposed to serve. */
+    for (const prefix of ['ai/tokenizer', 'ai/model/', 'ai/data/', 'knowledge/PII_REVIEW',
                           'knowledge/CONFLICTS', 'tests/', 'data/', 'docs/']) {
       assert.ok(!summary.files.some((f) => f.startsWith(prefix)),
         `${prefix} shipped in the production bundle`);
     }
+    assert.ok(!summary.files.includes('ai/model'), 'the torch model package shipped');
     assert.ok(!summary.files.some((f) => /dev-.*\.(js|mjs)$/.test(f)), 'dev tooling shipped');
 
     /* the withheld number is in no shipped file... */
@@ -300,6 +304,65 @@ test('a shipped file that starts publishing a withheld value fails the build', (
   });
 });
 
+/* The export directory is git-ignored build output that the export step also
+   drops a parity fixture into (and a developer may drop scratch files into),
+   so "copy the folder" is how a 257 KB test artifact reaches visitors. Only a
+   §9.3 file ships; anything else is reported. */
+function fakeRootWithModel(files) {
+  const fakeRoot = mkdtempSync(join(tmpdir(), 'model-export-'));
+  for (const entry of SHIP_PATHS) {
+    cpSync(join(ROOT, entry), join(fakeRoot, entry), { recursive: true });
+  }
+  cpSync(join(ROOT, 'knowledge', 'knowledge.json'),
+    join(fakeRoot, 'knowledge', 'knowledge.json'));
+  const versionDir = join(fakeRoot, 'ai', 'model-export', 'aashish-ai-1');
+  mkdirSync(versionDir, { recursive: true });
+  for (const [name, body] of Object.entries(files)) {
+    writeFileSync(join(versionDir, name), body);
+  }
+  return fakeRoot;
+}
+
+test('a stray file in the model export is not served, and is reported', () => {
+  const fakeRoot = fakeRootWithModel({
+    'manifest.json': '{}\n',
+    'tokenizer.json': '{}\n',
+    'model-00000.bin': 'weights',
+    'reference.json': '{"cases": []}\n',   // what --reference-out used to write here
+    'notes.txt': 'scratch\n',
+  });
+  try {
+    const summary = buildBundle({ root: fakeRoot, out: join(fakeRoot, 'out'), quiet: true });
+    assert.deepEqual(summary.modelSkipped, ['notes.txt', 'reference.json']);
+    for (const name of ['manifest.json', 'tokenizer.json', 'model-00000.bin']) {
+      assert.ok(summary.files.includes(`ai/model-export/aashish-ai-1/${name}`), name);
+    }
+    for (const name of ['reference.json', 'notes.txt']) {
+      assert.ok(!summary.files.some((f) => f.endsWith(`/${name}`)),
+        `${name} shipped — a model-export file that is not §9.3 must not reach a visitor`);
+    }
+  } finally {
+    rmSync(fakeRoot, { recursive: true, force: true });
+  }
+});
+
+test('a model manifest with no shard is refused, not served', () => {
+  const fakeRoot = fakeRootWithModel({
+    'manifest.json': '{}\n',
+    'tokenizer.json': '{}\n',
+  });
+  try {
+    assert.throws(() => buildBundle({ root: fakeRoot, out: join(fakeRoot, 'out'), quiet: true }),
+      (error) => {
+        assert.ok(error.problems.some((p) => /no model shard/.test(p)),
+          `expected a missing-shard reason, got ${JSON.stringify(error.problems)}`);
+        return true;
+      });
+  } finally {
+    rmSync(fakeRoot, { recursive: true, force: true });
+  }
+});
+
 test('blockingLeaks keeps exactly the deliberate publications', () => {
   const found = [
     { path: 'index.html', id: 'contact.phone', value: PHONE },
@@ -315,13 +378,25 @@ test('blockingLeaks keeps exactly the deliberate publications', () => {
 
 /* §14 asks for "bundle-size budget check in CI". There is no CI provider
    configured, so the check lives here and runs on every `npm test` — which
-   is where a CI pipeline would have put it anyway. */
-const CHAT_CHUNK_GZ_BUDGET = 150 * 1024;   // §4: UI + knowledge + retrieval + language + guard + quick answers
-const TOTAL_GZ_BUDGET = 250 * 1024;        // regression guard, NOT the §4 target
+   is where a CI pipeline would have put it anyway.
+
+   §4 splits this into two budgets and they must stay separate. The *code*
+   chunk (§4 line 73's "runtime") is what the click pulls before any weights
+   and is budgeted in hundreds of KB; the *weights + tokenizer* are a
+   one-time download budgeted in tens of MB (§4: ≤ ~25 MB preferred, ≤ ~40 MB
+   hard; one asset ≤ ~100 MB). Folding the two together makes the code budget
+   unmeetable — a 5 MB artifact would always blow a 150 KB limit — so a
+   regression in either direction stops being visible. */
+const CHAT_CHUNK_GZ_BUDGET = 150 * 1024;      // §4: UI + knowledge + retrieval + language + guard + quick answers
+const SITE_GZ_BUDGET = 250 * 1024;            // the rest of the page; regression guard, NOT the §4 target
+const FIRST_USE_GZ_BUDGET = 40 * 1024 * 1024; // §4: first-use download, T1/T2 (runtime + weights + tokenizer)
+const SINGLE_ASSET_GZ_BUDGET = 100 * 1024 * 1024; // §4: any single AI asset, hard cap
+
+const MODEL_EXPORT_PREFIX = 'ai/model-export/';
 
 test('§14: the AI chat chunk stays inside its §4 gzip budget', () => {
   temp((out) => {
-    buildBundle({ out, quiet: true });
+    const summary = buildBundle({ out, quiet: true });
     const files = [];
     (function walk(dir) {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -332,19 +407,79 @@ test('§14: the AI chat chunk stays inside its §4 gzip budget', () => {
     }(out));
 
     const gz = (f) => gzipSync(readFileSync(f.abs)).length;
-    /* everything the click can pull in: the whole ai/ tree plus the KB.
-       Voice is lazy but ships in the same chunk, so including it is the
-       conservative reading of §4's budget, not the flattering one. */
-    const chat = files.filter((f) => f.rel.startsWith('ai/') || f.rel === 'knowledge/knowledge.json');
-    const chatGz = chat.reduce((n, f) => n + gz(f), 0);
-    const totalGz = files.reduce((n, f) => n + gz(f), 0);
+    /* Voice is lazy but ships in the same chunk, so including it is the
+       conservative reading of §4's budget, not the flattering one. The
+       weights are excluded and asserted on their own below. */
+    const chat = files.filter((f) => !f.rel.startsWith(MODEL_EXPORT_PREFIX)
+      && (f.rel.startsWith('ai/') || f.rel === 'knowledge/knowledge.json'));
+    const site = files.filter((f) => !chat.includes(f)
+      && !f.rel.startsWith(MODEL_EXPORT_PREFIX));
+
+    const sum = (list) => list.reduce((n, f) => n + gz(f), 0);
+    const chatGz = sum(chat);
 
     assert.ok(chat.length > 5, 'the chunk is suspiciously small — did the build skip ai/ ?');
     assert.ok(chatGz <= CHAT_CHUNK_GZ_BUDGET,
       `AI chunk is ${chatGz} B gz, over §4's ${CHAT_CHUNK_GZ_BUDGET} B budget`);
-    assert.ok(totalGz <= TOTAL_GZ_BUDGET,
-      `bundle is ${totalGz} B gz, over the ${TOTAL_GZ_BUDGET} B regression guard — `
+    assert.ok(sum(site) <= SITE_GZ_BUDGET,
+      `the rest of the page is ${sum(site)} B gz, over the ${SITE_GZ_BUDGET} B regression guard — `
       + 'something large was added; check it is intended and move the guard deliberately');
+
+    /* The model is the one thing §4 sizes in MB, so it must be the *only*
+       thing that is: this is what catches weights being inlined into a JS
+       chunk instead of fetched as a shard. */
+    for (const f of files.filter((x) => !x.rel.startsWith(MODEL_EXPORT_PREFIX))) {
+      assert.ok(gz(f) <= SINGLE_ASSET_GZ_BUDGET,
+        `${f.rel} is ${gz(f)} B gz — a non-model file that large is a bug`);
+    }
+  });
+});
+
+/* §4's weight budgets need an export to measure, and the export is built from
+   a git-ignored checkpoint, so an absent one is NOT TESTED rather than a
+   pass. Kept separate from the code budget above so that a machine with no
+   export still enforces the code budget instead of skipping both. */
+test('§14: the exported model fits §4\'s weight and first-use budgets', (t) => {
+  temp((out) => {
+    const summary = buildBundle({ out, quiet: true });
+    if (!summary.modelShipped) {
+      t.skip('no ai/model-export/ — run `npm run export:model` to measure the '
+        + '§4 weight, tokenizer and first-use budgets');
+      return;
+    }
+
+    const files = [];
+    (function walk(dir) {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else files.push({ rel: full.slice(out.length + 1).replaceAll('\\', '/'), abs: full });
+      }
+    }(out));
+
+    const gz = (f) => gzipSync(readFileSync(f.abs)).length;
+    const weights = files.filter((f) => f.rel.startsWith(MODEL_EXPORT_PREFIX));
+    const runtime = files.filter((f) => !f.rel.startsWith(MODEL_EXPORT_PREFIX));
+    const weightsGz = weights.reduce((n, f) => n + gz(f), 0);
+
+    assert.ok(weights.length >= 3, 'the export is missing its shard or tokenizer');
+    assert.equal(summary.modelBytes,
+      weights.reduce((n, f) => n + statSync(f.abs).size, 0),
+      'the summary and the served bytes disagree');
+    /* §4 line 73: the first-use download is runtime + weights + tokenizer. */
+    assert.ok(weightsGz <= FIRST_USE_GZ_BUDGET,
+      `the weights are ${weightsGz} B gz, over §4's ${FIRST_USE_GZ_BUDGET} B `
+      + 'T1/T2 first-use budget');
+    /* §4 line 74: any single AI asset, hard cap. */
+    for (const asset of weights) {
+      assert.ok(gz(asset) <= SINGLE_ASSET_GZ_BUDGET,
+        `${asset.rel} is ${gz(asset)} B gz, over §4's ${SINGLE_ASSET_GZ_BUDGET} B per-asset cap`);
+    }
+    /* §4 line 74's real target is the whole first visit, not the weights
+       alone; measuring only the shard would let the runtime grow unbounded. */
+    const firstUseGz = weightsGz + runtime.reduce((n, f) => n + gz(f), 0);
+    assert.ok(firstUseGz <= FIRST_USE_GZ_BUDGET,
+      `the first visit pulls ${firstUseGz} B gz, over §4's ${FIRST_USE_GZ_BUDGET} B budget`);
   });
 });
 

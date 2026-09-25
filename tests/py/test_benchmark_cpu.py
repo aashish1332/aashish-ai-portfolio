@@ -55,15 +55,34 @@ class Measurement(unittest.TestCase):
                     "kv_cache_bytes_per_token"):
             self.assertIn(key, r)
 
+    @staticmethod
+    def _rate_bounds(tokens: int, seconds: float) -> tuple[float, float]:
+        """Where `tokens / seconds` may legitimately land, from the roundings.
+
+        The report computes the rate from the *unrounded* wall time and then
+        stores the time rounded to 4 dp and the rate to 1 dp, so the two
+        numbers cannot agree more closely than the rounding of `seconds`
+        allows: at ~1200 tok/s, 5e-5 s is worth ±9 tok/s. A fixed ±2 delta
+        therefore failed on a fast machine for no reason and passed on a slow
+        one for every reason — this derives the interval instead, so the
+        assertion stays strict about what it is actually testing (a wrong
+        token count or divisor is out by orders, not by 1).
+        """
+        half = 5e-5  # round(seconds, 4)
+        low = tokens / (seconds + half)
+        high = tokens / (seconds - half) if seconds > half else float("inf")
+        return low - 0.05, high + 0.05  # plus round(rate, 1)
+
     def test_the_rates_are_consistent_with_the_times(self):
-        # the stored seconds are rounded to 4dp and the rates to 1dp, so the
-        # tolerance allows both roundings rather than hiding a real mismatch:
-        # a wrong token count or a wrong divisor is out by orders, not by ~1
         r = self._run()
-        self.assertAlmostEqual(r["decode_tokens_per_second"],
-                               4 / r["decode_seconds"], delta=2.0)
-        self.assertAlmostEqual(r["prefill_tokens_per_second"],
-                               8 / r["prefill_seconds"], delta=2.0)
+        for tokens, seconds, rate in (
+                (4, r["decode_seconds"], r["decode_tokens_per_second"]),
+                (8, r["prefill_seconds"], r["prefill_tokens_per_second"])):
+            low, high = self._rate_bounds(tokens, seconds)
+            self.assertTrue(low <= rate <= high,
+                            f"{rate} tok/s sits outside [{low:.1f}, {high:.1f}], "
+                            f"which is everything the 4-dp rounding of {seconds} s "
+                            f"permits — the token count or the divisor is wrong")
 
     def test_the_weights_are_labelled_as_random(self):
         """No checkpoint exists. A speed number without that label reads as a
