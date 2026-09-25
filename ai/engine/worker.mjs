@@ -11,7 +11,7 @@
    A **module** worker (`type: 'module'`) so the engine modules are shared
    with the tests instead of being copied into a string. Safari 15+,
    Firefox 114+ and Chrome 80+ support it; where they do not, the session
-   reports `unsupported` and the chat answers from Quick Answers, which is
+   reports `unsupported` and the chat says so plainly, which is
    §6.2's T0 path — a real tier, not an error.
 
    The protocol is deliberately tiny and every request carries an `id`, so

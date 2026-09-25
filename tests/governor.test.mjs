@@ -191,7 +191,7 @@ test('§6.3: step 4 is the floor, and the ladder can be capped', () => {
   slow(l, 400);
   assert.equal(l.step, LADDER.length, 'it descends to the last rung and stops');
   assert.equal(LADDER.length, 4);
-  assert.deepEqual(LADDER.map((x) => x.key), ['pace', 'shorten', 'scene', 'extractive']);
+  assert.deepEqual(LADDER.map((x) => x.key), ['pace', 'shorten', 'scene', 'stop']);
 
   const capped = createDegradeLadder({ maxStep: 2 });
   slow(capped, 400);

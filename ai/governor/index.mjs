@@ -134,7 +134,7 @@ export function chooseTier(caps, opts = {}) {
   const t = { ...THRESHOLDS, ...opts };
   if (!caps) return 0;
 
-  /* hard blockers → T0: Quick Answers still work, a model cannot run */
+  /* hard blockers → T0: this device may not run a model at all (§6.2) */
   if (!caps.worker || !caps.wasm) return 0;
   if (caps.wasmSimd === false) return 0;                    /* SIMD is required, not optional */
   if (caps.storageBytes !== null && caps.storageBytes < t.minStorageBytes) return 0;
@@ -211,13 +211,20 @@ export function createFrameMonitor(opts = {}) {
  *   1 pace generation (needs a model; a no-op until P5)
  *   2 lower max_new_tokens / context
  *   3 ask the scene for temporary low quality / pause  (§12)
- *   4 extractive Quick Answers for the rest of the session, and say so
+ *   4 stop generating answers for the rest of the session, and say so
+ *
+ * Step 4 was §6.3's "extractive Quick Answers", which meant answering built
+ * sentences from `knowledge.json` instead of generating. Those are retired as
+ * answers (see `ai/answers/model.mjs`), so the rung does the same job the only
+ * honest way left: it stops the generation that the frames cannot afford, and
+ * the panel says plainly why. The load reduction is what the rung was for; the
+ * wording of the fallback was the part that changed.
  */
 export const LADDER = [
   { step: 1, key: 'pace', label: 'Pace generation' },
   { step: 2, key: 'shorten', label: 'Shorten the answer budget' },
   { step: 3, key: 'scene', label: 'Temporarily lower scene quality' },
-  { step: 4, key: 'extractive', label: 'Quick answers only' },
+  { step: 4, key: 'stop', label: 'Stop generating answers' },
 ];
 
 export function createDegradeLadder(opts = {}) {

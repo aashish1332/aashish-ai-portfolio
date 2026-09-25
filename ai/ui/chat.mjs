@@ -3,22 +3,22 @@
 
    This is the file the launcher dynamic-imports, so nothing here exists on
    the initial page load. It carries: the panel, the §6 governor wiring, the
-   Quick Answers engine and the §8.3 language tracker.
+   on-device model session and the §8.3 language tracker.
 
-   P2 scope — deliberately honest about what is not built yet:
-     · every answer comes from the deterministic Quick Answers engine, so
-       the panel is fully usable on a T0 device with nothing downloaded;
-     · there is NO model in this build, so there is nothing to download and
-       no spinner pretending otherwise. When a model plan is passed in via
-       `modelPlan`, the real preparing → progress → ready states render. The
-       visitor is told which kind of answer they got, always (§3).
+   **There is exactly one answer path: the on-device model.** The
+   deterministic Quick Answers were retired as answers by the owner, so when
+   the model cannot answer, the panel refuses and says which refusal it is —
+   it never substitutes a built sentence. The visitor is told which kind of
+   answer they got, always (§3).
 
    Rendering is text-only (`textContent`, never innerHTML). Answers are whole
    messages, so `aria-live` announces them once, completed — no per-token
    announcements (§10).
    ═══════════════════════════════════════════════════════════════ */
 import { quickAnswer } from '../answers/quick.mjs';
-import { MODEL_BADGES, createModelAnswerer } from '../answers/model.mjs';
+import {
+  MODEL_BADGES, createModelAnswerer, noAnswerLine, routeQuestion,
+} from '../answers/model.mjs';
 import { createModelSession } from '../engine/session.mjs';
 import { resolveAnchor, anchorLabel } from './anchors.mjs';
 import { createLanguageTracker } from '../language/detect.mjs';
@@ -159,6 +159,10 @@ let working = 0;
      are the knobs the degrade ladder turns; the model itself is unchanged. */
   let maxNewTokens = null;
   let paceMs = 0;
+  /* §6.3's last rung used to drop to extractive Quick Answers. Those are
+     retired, so the rung now STOPS the generation and says why — the same load
+     reduction without a canned sentence standing in for an answer. */
+  let generationStopped = false;
   let voice = null;            /* built on the first tap, never on open */
   let micBtn = null;
   let disclosureSpoken = false;
@@ -445,10 +449,10 @@ let working = 0;
     if (badge) res.badge = badge;
     if (badgeClass) res.badgeClass = badgeClass;
     lastAnswer = {
-      kind: res.model ? 'model'
-        : res.extractive ? 'quick-extractive'
-          : res.abstained ? 'quick-abstain'
-            : res.injection ? 'quick-safety' : 'quick',
+      /* Which path produced this, so the probe can assert it rather than infer
+         it from the words: 'model' is the only kind that IS an answer by the
+         model. The rest are refusals, and each says which refusal it is. */
+      kind: res.kind || (res.model ? 'model' : 'unknown'),
       badge: res.badge || null,
       text: res.text ?? null,
       sources: res.sources || [],
@@ -472,32 +476,45 @@ let working = 0;
     return res;
   }
 
-  /** The deterministic path (§5.1 step 4): verbatim facts, refusals and
-   *  instruction-change attempts. Exact by construction — never labelled as
-   *  an AI answer, because it is not one. */
-  function presentQuick(res, lang, anchor) {
-    const badge = res.injection ? 'SAFE REPLY'
-      : res.abstained ? 'NO CLAIM MADE'
-        : res.extractive ? 'QUICK ANSWER · VERBATIM FROM PORTFOLIO'
-          : modelState === 'ready' ? 'QUICK ANSWER · EXACT, NOT THE MODEL'
-            : 'QUICK ANSWER · NO AI MODEL ON THIS DEVICE';
-    bubble('bot', res.text, {
-      badge,
-      badgeClass: res.abstained || res.injection ? 'is-note' : 'is-quick',
-      sources: res.sources,
-    });
-    return finish(res, lang, anchor, { badge, badgeClass: null });
+  /** Swap the badge on a bubble that is already on screen — a streamed answer
+   *  the guard then rejected, or a model that stopped mid-sentence. */
+  function setBadge(line, text) {
+    const node = line?.node?.querySelector?.('.ai__badge');
+    if (node) node.textContent = text;
+  }
+
+  /** A refusal, rendered as itself — never dressed up as an answer. `text` is
+   *  one of the fixed, localized sentences that claim nothing about Aashish,
+   *  and the badge names which refusal it is (§15.5). `base` carries only what
+   *  the turn still needs — the §8.2 focus and the follow-up chips — because
+   *  the panel made no claim and must not offer a source for one, nor move the
+   *  page to where a claim it did not make came from. */
+  function presentRefusal(base, text, badge, lang, { kind = 'no-answer', abstained = true } = {}) {
+    bubble('bot', text, { badge, badgeClass: 'is-note' });
+    /* `abstained` is what the voice layer reads to decide whether the turn is
+       over, so a disclosure — which is not a refusal — keeps the conversation
+       open while still claiming no portfolio fact. */
+    return finish({ ...(base || {}), text, badge, abstained, kind, sources: [] },
+      lang, null, { badge });
   }
 
   /**
-   * One question, one answer.
+   * One question, one answer — and exactly one answer path.
    *
-   * The routing is §5.1's, and the split is deliberate: an email address, a
-   * repository URL or a refusal is produced from the knowledge base, because
-   * "exact by construction" beats "the model probably gets it right" for
-   * the facts that must never be wrong; everything a person would call a
-   * *sentence* — explanations, comparisons, follow-ups, Hinglish phrasing —
-   * is the model's own generation, with no template consulted.
+   * `quickAnswer()` still runs, but it is **not an answer source**. This build
+   * retired the deterministic Quick Answers (§5.1 step 4) as an answer, so its
+   * templates are computed and discarded. What is used is everything else it
+   * knows: the intent, the §8.2 focus entity, the retrieved fact ids that §12
+   * resolves to a place on the page, the §9 injection verdict, and the
+   * follow-up chips.
+   *
+   * Three things short-circuit before the model, and none of them is an
+   * answer: an instruction-change attempt (§9, refused outright), a question
+   * that presumes an employer the CV does not have (§14's adversarial set —
+   * the guard cannot catch an invented employer, because the knowledge base
+   * never names one, so nothing but a pre-model rule can), and a field the
+   * base marks private. Everything else goes to the model, which either
+   * answers or refuses — and always says which.
    *
    * Async since P7: the model runs in a worker, tokens arrive over time, and
    * `whileWorking()` arms the §6.3 ladder around the whole of it.
@@ -513,53 +530,74 @@ let working = 0;
     const res = quickAnswer(kb, text, { lang, focus });
     focus = res.focus || focus;
 
-    /* where on THIS page the answer came from — resolved by content, every
+    /* where on THIS page the facts came from — resolved by content, every
        time, so an edited page resolves to the same facts */
     const anchor = resolveAnchor(doc, { kb, ids: res.sources });
     lastAnchor = anchor;
 
-    if (res.injection || res.abstained || res.extractive || !answerer
-        || answerer.status !== 'ready') {
-      return presentQuick(res, lang, anchor);
+    /* §5.1's routing, as ONE decision that can be tested without a DOM
+       (`routeQuestion` in ai/answers/model.mjs — the same chain, inline, used
+       to be reachable only by driving a whole fake browser). Four of its
+       outcomes refuse before the model is reached, and none of them answers. */
+    const route = routeQuestion({
+      res, lang, generationStopped, modelState,
+      hasModel: !!answerer && answerer.status === 'ready',
+    });
+    if (route.path === 'safety') {
+      return presentRefusal(res, res.text, 'SAFE REPLY', lang, { kind: route.kind });
+    }
+    if (route.path === 'disclosure') {
+      /* "who are you?" asks about the assistant, not about Aashish, and a
+         generated answer could claim to be him — which nothing in §8.4 can
+         check, because the guard grounds claims about Aashish. */
+      return presentRefusal(res, res.text, 'DISCLOSURE', lang,
+        { kind: route.kind, abstained: false });
+    }
+    if (route.path === 'no-data' || route.path === 'withheld') {
+      const badge = route.path === 'withheld' ? MODEL_BADGES.withheld : MODEL_BADGES.notFound;
+      return presentRefusal(res, route.noAnswer, badge, lang, { kind: route.kind });
+    }
+    if (route.path === 'no-model') {
+      return presentRefusal(res, route.noAnswer, MODEL_BADGES.noModel, lang,
+        { kind: route.kind });
     }
 
     const line = streamBubble(MODEL_BADGES.model, 'is-ai', null);
     let out;
     try {
       out = await answerer.ask({
-        question: text, lang, focus: res.focus || null, quick: res,
+        question: text, lang, focus: res.focus || null,
+        /* The topic's own facts, for the questions retrieval cannot reach
+           because the intent rules consumed their only content token — see
+           `ask()`'s note. And a greeting has no facts by design: the frame's
+           RULES answer it. */
+        intentIds: res.sources,
+        contextless: res.intent === 'greeting',
         onToken: (chunk) => line.push(chunk),
         onReplace: (text_) => line.set(text_),
       });
     } catch (err) {
-      /* A model that died mid-answer is not an answer. Fall back to the
-         portfolio's own words and say why, once. */
-      line.set(res.text);
-      line.node.querySelector('.ai__badge').textContent = 'QUICK ANSWER · THE MODEL STOPPED';
-      noticeOnce(`The on-device model stopped (${escape(err?.message || err)}); answers `
-        + 'fall back to my portfolio data.');
-      return finish({ ...res, badge: 'QUICK ANSWER · THE MODEL STOPPED' }, lang, anchor);
+      /* A model that died mid-answer is not an answer. */
+      line.set(noAnswerLine('stopped', lang));
+      setBadge(line, MODEL_BADGES.noModel);
+      noticeOnce(`The on-device model stopped (${escape(err?.message || err)}).`);
+      return finish({ text: line.text, abstained: true, kind: 'no-model',
+        badge: MODEL_BADGES.noModel, focus, followups: res.followups },
+        lang, null, { badge: MODEL_BADGES.noModel });
     }
 
-    if (out.kind === 'abstain') {
-      /* The model was not asked (retrieval below the gate) or chose
-         <|abstain|>. Either way the honest sentence is the portfolio's, and
-         the visitor is told which kind of answer this is. */
-      line.set(res.abstained || !res.text ? out.text || res.text || '' : res.text);
-      line.node.querySelector('.ai__badge').textContent = MODEL_BADGES.abstain;
-      lastAnchor = resolveAnchor(doc, { kb, ids: res.sources }) || lastAnchor;
-      return finish({ ...res, abstained: true, text: line.text,
-        badge: MODEL_BADGES.abstain }, lang, lastAnchor);
-    }
-
-    if (out.kind === 'fallback') {
+    if (out.kind !== 'model') {
+      /* The model ran and made no claim: either the question is not in the
+         portfolio (below the retrieval gate, or the model chose
+         `<|abstain|>`), or the guard rejected both attempts. Both are
+         refusals, and the badge says which one. */
+      const badge = out.kind === 'notFound' ? MODEL_BADGES.notFound : MODEL_BADGES.unverified;
       line.set(out.text);
-      line.node.querySelector('.ai__badge').textContent = MODEL_BADGES.fallback;
-      const fbAnchor = resolveAnchor(doc, { kb, ids: out.sources });
-      /* the model's text was rejected, so the page follows the portfolio's */
-      lastAnchor = fbAnchor || lastAnchor;
-      return finish({ ...res, text: out.text, sources: out.sources,
-        badge: MODEL_BADGES.fallback }, lang, lastAnchor);
+      setBadge(line, badge);
+      return finish({ ...res, text: out.text, sources: [], abstained: true,
+        kind: 'no-answer', badge, context: out.context,
+        guard: { attempts: out.attempts, failed: out.guardFailed } },
+        lang, null, { badge, badgeClass: 'is-note' });
     }
 
     line.finish(out.text);
@@ -568,14 +606,14 @@ let working = 0;
       for (const id of out.sources) src.appendChild(el('span', 'ai__source', id));
       line.node.appendChild(src);
     }
-    /* §6.3 step 4: if the governor has already given up on the model, this
-       is still the model's answer — but the panel says what got it here. */
+    /* §6.3 steps 1–2: if the governor has already shortened this session, the
+       answer is still the model's — the panel just says why it is shorter. */
     if (paceMs || ladder?.status?.().step >= 2) {
       noticeOnce('The scene was struggling, so answers are kept shorter for this session.');
     }
     lastAnchor = resolveAnchor(doc, { kb, ids: out.sources }) || lastAnchor;
     return finish({
-      ...res, text: out.text, sources: out.sources, model: true,
+      ...res, text: out.text, sources: out.sources, model: true, kind: 'model',
       badge: MODEL_BADGES.model, context: out.context,
       guard: { attempts: out.attempts, failed: out.guardFailed },
     }, lang, lastAnchor, { badge: MODEL_BADGES.model, badgeClass: 'is-ai' });
@@ -683,25 +721,39 @@ let working = 0;
   }
 
   /* ── section: governor wiring ─────────────────────────────────── */
+  /* §6.3's rungs, applied to the thing that can actually act on them.
+
+     The keys here MUST match `LADDER` in `ai/governor/index.mjs`, and two of
+     them did not: step 2's key is `shorten` while this matched `budget`, and
+     `paceMs` was set on the shell while the answerer kept its own copy — so
+     rungs 1 and 2 silently did nothing at all. Both are wired now. Nothing
+     automated covers this wiring (the chat shell needs a DOM), which is
+     exactly how it stayed wrong; `tests/governor.test.mjs` pins the ladder,
+     not the hand that turns its knobs. */
   function applyLadderStep(step) {
     if (!step) return;
     const key = LADDER[step - 1]?.key;
     if (key === 'scene') {
       /* §12 step 3: temporary low quality, restored when the device recovers */
       hooks.setSceneQuality?.('low');
-    } else if (key === 'extractive') {
-      hooks.setSceneQuality?.('low');
-      noticeOnce('Frames were struggling, so answers stay quick for this session.');
+    } else if (key === 'stop') {
+      /* §6.3 step 4: the frames cannot afford a generation, so there is no
+         longer one to afford. The panel says why instead of substituting a
+         built sentence — those are retired (see `ai/answers/model.mjs`). */
+      generationStopped = true;
+      noticeOnce('The frames were struggling, so I have stopped generating answers '
+        + 'for this session.');
     } else if (key === 'pace') {
       /* §6.3 step 1: yield between tokens. The arithmetic is unchanged, so
-         the answer is the same one — measured in tests/engine.test.mjs — the
+         the answer is the same one — pinned in tests/engine.test.mjs — the
          main thread simply gets its frames back. */
       paceMs = 24;
-    } else if (key === 'budget') {
+      answerer?.setPaceMs?.(paceMs);
+    } else if (key === 'shorten') {
       /* §6.3 step 2: shorter answers. Applied to the answerer, which owns
          the token budget for the session. */
       maxNewTokens = Math.max(32, Math.round((maxNewTokens || 96) / 2));
-      if (answerer) answerer.setMaxNewTokens?.(maxNewTokens);
+      answerer?.setMaxNewTokens?.(maxNewTokens);
     }
   }
 
@@ -717,9 +769,13 @@ let working = 0;
         hooks.setSceneQuality?.('normal');
         /* §6.3: "restore when idle" — the pacing and the shortened budget
            existed for the frames that were struggling, and the frames
-           recovered. */
+           recovered. Every knob a rung turned is put back, including the two
+           the answerer owns a copy of. */
         paceMs = 0;
+        answerer?.setPaceMs?.(0);
+        generationStopped = false;
         maxNewTokens = tier === 1 ? 96 : tier === 3 ? 256 : 160;
+        answerer?.setMaxNewTokens?.(maxNewTokens);
         if (step < 3) noticeShown = false;
       },
     });
@@ -761,10 +817,13 @@ let working = 0;
     const badge = body?.querySelector('.ai__tier');
     if (badge && tier != null) {
       const info = tierInfo(tier);
+      /* No tier says "quick answers" any more — there are none. A device
+         without the model answers nothing, and the badge says so rather than
+         advertising a capability that is gone. */
       const suffix = next === 'ready' ? 'MODEL READY'
         : next === 'loading' ? 'PREPARING MODEL…'
-          : next === 'unsupported' ? 'QUICK ANSWERS ONLY'
-            : next === 'error' ? 'MODEL UNAVAILABLE · QUICK ANSWERS'
+          : next === 'unsupported' ? 'NO AI MODEL HERE'
+            : next === 'error' ? 'MODEL STOPPED'
               : 'NO MODEL YET';
       badge.textContent = `T${tier} · ${suffix}`;
       badge.title = `${info.name} (${info.note}) — ${caps?.threads || '?'} threads`
@@ -827,10 +886,9 @@ let working = 0;
         setModelState(unsupported ? 'unsupported' : 'error', err?.message);
         if (label) {
           label.textContent = unsupported
-            ? 'This browser cannot run the on-device model, so I will answer from '
-              + 'my portfolio data directly.'
+            ? noAnswerLine('unsupported', 'en')
             : `The on-device model could not start (${escape(err?.message || err)}). `
-              + 'Quick Answers still work and nothing else on the site is affected.';
+              + 'Nothing else on the site is affected; reloading the page starts it again.';
         }
         return false;
       });
@@ -867,12 +925,15 @@ let working = 0;
        decides how long an answer may be and how hard the device is pushed. */
     maxNewTokens = tier === 1 ? 96 : tier === 0 ? 48 : tier === 2 ? 160 : 256;
 
-    /* 
+    /*
        §6.5: the size is stated BEFORE anything is fetched, and the download
        only starts by itself on a device that is not saving data and is not
-       on a slow connection. Otherwise the visitor chooses. Either way Quick
-       Answers already work, so this is never a blocking decision. */
+       on a slow connection. Otherwise the visitor chooses. */
     if (tier > 0) startModel();
+    /* T0 is the tier that may not have an LLM at all (§6.2), so this is not a
+       failure to report later — it is the answer to "why did nothing happen".
+       Recorded now so `answer()` can say it instead of "still loading". */
+    else setModelState('unsupported', `tier T${tier} does not run an LLM`);
 
     const info = tierInfo(tier);
     const badge = body.querySelector('.ai__tier');
@@ -904,17 +965,25 @@ let working = 0;
       await prepareModel();
       loadOutcome = 'ready';
       state = 'ready';
-      bubble('bot', modelState === 'ready'
-        ? 'Ask me about my projects, skills, education, certifications or how to '
-          + 'reach me. Answers are generated on your device by a model trained for this '
-          + 'portfolio, reading only its verified data.'
-        : 'Ask me about my projects, skills, education, certifications, or how to '
-          + 'reach me. Exact facts come from my portfolio data while the on-device '
-          + 'model gets ready.',
-        {
-          badge: modelState === 'ready' ? 'ON-DEVICE MODEL READY' : 'QUICK ANSWERS READY',
-          badgeClass: modelState === 'ready' ? 'is-ai' : 'is-quick',
-        });
+      /* The opening line states the truth about THIS device rather than
+         promising answers it may not be able to give. */
+      const opening = modelState === 'ready'
+        ? { badge: 'ON-DEVICE MODEL READY',
+          text: 'Ask me about my projects, skills, education, certifications or how to '
+            + 'reach me. Answers are generated on your device by a model trained for '
+            + 'this portfolio, reading only its verified data.' }
+        : modelState === 'unsupported'
+          ? { badge: MODEL_BADGES.noModel, text: noAnswerLine('unsupported', 'en') }
+          : modelState === 'error'
+            ? { badge: MODEL_BADGES.noModel, text: noAnswerLine('stopped', 'en') }
+            : { badge: 'PREPARING ON-DEVICE MODEL',
+              text: 'Aashish AI is downloading its on-device model now — that happens '
+                + 'once, and then it stays in your browser. Ask away; I will answer as '
+                + 'soon as it is ready.' };
+      bubble('bot', opening.text, {
+        badge: opening.badge,
+        badgeClass: modelState === 'ready' ? 'is-ai' : 'is-note',
+      });
       renderChips(starterChips());
       voiceButton();
       input?.focus();

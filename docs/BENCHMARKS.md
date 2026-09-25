@@ -475,7 +475,7 @@ reported `active=true` for the full 600 s with `step=0` — which passed only
 because this renderer's frames are healthy, and a pass for the wrong reason is
 the exact mistake RSRC-2 was. Every rung acts on the **model** or the
 **scene** — pace generation, shorten the answer budget, lower scene quality,
-quick answers only — and none of them on speech, so arming for a listen holds
+stop generating — and none of them on speech, so arming for a listen holds
 the film down and, where the ladder fires, pays rung 3's measured price (**21
 programs, 1221 ms**) to protect a generation that is not running. Listening now
 arms nothing; the answer at the end of the listen goes through `ask()`, which
@@ -641,16 +641,19 @@ worst abs Δ logit **3.58e-07**.
 
 | Budget | §4 | Measured |
 |---|---|---|
-| AI chat **code** chunk (UI + KB + retrieval + language + guard + quick answers + engine JS) | ≤ 150 KB gz | **118,561 B** (77 %) |
+| AI chat **code** chunk (UI + KB + retrieval + language + guard + intent + engine JS) | ≤ 150 KB gz | **127,516 B** (83 %) |
 | Rest of the page | regression guard 250 KB | 65,649 B |
 | Model payload (weights + tokenizer + manifest) | ≤ 25 MB preferred, ≤ 40 MB hard | **5,144,357 B** raw · 4,742,169 B gz |
 | First-use download, T1/T2 | ≤ ~40 MB | **4,926,379 B** gz (**12 %**) |
 | Any single AI asset | ≤ ~100 MB | 5,059,584 B raw / 4,732,964 B gz |
 | Files | — | 44 |
 
-The chat **code** chunk is 77 % of its budget and worth watching: it grew from
-79,555 B when this log last recorded it, as the engine, voice, guard and model
-answer path landed. The weights are deliberately **not** in that number —
+The chat **code** chunk is 83 % of its budget and worth watching: it grew from
+118,561 B when this log last recorded it, as the model-only answer path landed
+— the three refusal sentences in three languages, the routing decision, and the
+retry logic around them. It grew from 79,555 B before that, as the engine,
+voice, guard and model answer path landed. The weights are deliberately **not**
+in that number —
 folding a 5 MB artifact into a 150 KB limit makes both budgets unmeasurable.
 **NOT TESTED:** brotli is measured (4,713,956 B) but nothing yet negotiates it,
 so the effective transfer is the gzip figure; and no CDN or real network was

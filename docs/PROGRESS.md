@@ -1338,9 +1338,9 @@ prints that arithmetic where the confusion happens, and
 | Prefill | 35 tokens in 491–583 ms (**68–71 tok/s**) |
 | Decode | **65–74 tok/s** over 6 runs — 8–9× §4's ≥ 8 tok/s floor, CPU, on the real trained weights |
 | KV cache | 3,072 KB resident at ctx 512 |
-| Bundle, gzip | chat code **118,561 B** of 153,600 B (§4) · rest of page 65,649 B of a 256,000 B guard |
+| Bundle, gzip | chat code **127,516 B** of 153,600 B (§4) · rest of page 65,649 B of a 256,000 B guard |
 | Model payload, gzip | **4,742,169 B** raw 5,144,357 B — 12 % of §4's 40 MB first-use budget |
-| Tests | **396 JS + 326 Python**, 0 failures (`npm run test:all`) |
+| Tests | **409 JS + 326 Python**, 0 failures (`npm run test:all`) |
 
 Val loss on the `local` run: 2.1917 @100 → 1.1711 @200 → 0.9229 @300 →
 0.6432 @700 → **0.6423 @800 (best)**. This is a pipeline/export exercise at
@@ -1429,3 +1429,84 @@ unflattering to the obvious suspects:
 `tests/py/test_export_browser.py` (21) · `tests/py/test_model_schema.py` (34) ·
 `dev-prefill-batch-probe.js` · `dev-answer-latency-probe.js` ·
 `npm run export:model` · `npm run verify:engine` · `npm run build` · `npm run probe:latency` · `npm run test:all`
+
+---
+
+## The model is the only answer path — 2026-09-25
+
+**An owner decision that overrides §5.1 step 4.** The deterministic Quick
+Answers were an *answer source*: exact-fact templates for an email or a URL,
+extractive prose for a project, and — the part that forced the change — the
+fallback behind a guard failure. They are retired. Where the model cannot
+answer, the panel refuses in one fixed, localized sentence and says which
+refusal it is. Nothing in the panel is a canned sentence standing in for a
+generated one any more.
+
+### What changed
+
+| Before | Now |
+|---|---|
+| an email / URL / refusal → an exact template | the model answers it, guard-checked |
+| a project or workflow question → extractive prose | the model answers it |
+| the guard rejected both attempts → extractive Quick Answer | a refusal: `NO ANSWER · COULD NOT VERIFY IT` |
+| retrieval produced nothing → a localized template | a refusal: `NO ANSWER · NOT IN THE PORTFOLIO` |
+| no model on this device → Quick Answers | a refusal that says why, three ways |
+| §6.3 rung 4 → "quick answers only" | rung 4 stops the generation and says why |
+
+Two fixed replies remain, and both are statements about the *assistant* rather
+than about Aashish: the §9 injection reply, and the identity disclosure.
+Neither can safely be generated — the guard grounds claims about Aashish, so it
+cannot check "yes, I am him".
+
+### Four defects the change surfaced
+
+All four were invisible for as long as a template could answer the same question.
+
+1. **The most common question a recruiter asks was about to be refused.**
+   `skills` is in the retrieval stop set on purpose (R3: it lives in every skill
+   chunk and used to hijack the score), so "what are his skills?" has no content
+   token left and BM25 returns **nothing**. With the template path gone that
+   became "I don't have that in my portfolio yet" — not merely unhelpful, but
+   false. The fix is to the *context*, not the answer: when retrieval comes back
+   empty, the topic's own facts are read instead (the intent's sources, filtered
+   through `renderFact`, so a withheld id still cannot get in). MODEL-10.
+2. **The model's `<|abstain|>` was unreachable.** It decodes to the empty string
+   (`skipSpecial`), which the guard reports as `empty_answer`, so the branch that
+   read it *after* the guard had never once run and every abstention was
+   reported as "could not verify". Reordered. MODEL-5.
+3. **§6.3 rung 2 never shortened anything.** `applyLadderStep` matched a key
+   called `budget`; the ladder's key is `shorten`. It was a no-op.
+4. **§6.3 rung 1 never paced anything either.** The shell set its own `paceMs`
+   while the answerer kept its own copy, and nothing handed one to the other.
+
+3 and 4 are the same shape and both live in the wiring between
+`ai/governor/index.mjs` and `ai/ui/chat.mjs`, which **no automated test covers**
+— the chat shell needs a DOM. The routing decision was therefore pulled out of
+the shell into a pure `routeQuestion()` and is covered now; the ladder's wiring
+into the shell still is not.
+
+### The gate, restated
+
+§8.4 layer 1 was `MIN_TOP_SCORE`. It is now "retrieval produced nothing to
+read", and that is only safe because the two are **provably the same set** on
+the §14 corpus: 13 of the 60 cases sit below the floor and all 13 have zero
+hits. `tests/retrieval.test.mjs` measures that rather than asserting it, so
+raising the floor past a case that does retrieve now fails the suite and names
+the case.
+
+### Measured
+
+* Chat code chunk **127,516 B gz** of the 150 KB §4 budget (**83 %**, up from
+  118,561 B / 77 % — the refusals in three languages, the routing decision and
+  the retry logic around them). Bundle **44 files / 5,727,097 B**.
+* `ai/answers/model.mjs` had **no test coverage at all** before this change. It
+  has 12 now (MODEL-1…MODEL-11), plus 1 new retrieval test.
+* Tests **409 JS + 326 Python**, 0 failures. `verify:engine` PASS, unchanged.
+
+**NOT TESTED:** a real model answering a real question in a real browser. The
+answer path is now unit-tested end to end against a stub session, and the engine
+is parity-gated — but no trained-for-quality checkpoint exists, so nothing here
+says whether the model gives a *good* answer to "what are his skills?". It says
+that it is asked, that the facts it is handed are the right ones, and that
+anything it says is checked before a visitor reads it. The chat shell's ladder
+wiring (§6.3 rungs 1–4) is likewise still uncovered by automation.

@@ -1,24 +1,30 @@
 /* ═══════════════════════════════════════════════════════════════
-   ai/answers/quick.mjs — §5.1 step 4, the deterministic Quick Answers engine
+   ai/answers/quick.mjs — §5.1 step 2's deterministic half, and the §8.4
+   layer-1 gate. **It is no longer an answer source.**
 
-   No model, no network, no inference of any kind. Every sentence is
-   either a fixed template or a value copied out of `knowledge.json`,
-   so a Quick Answer is exact by construction: it cannot hallucinate
-   because it never generates anything.
+   The owner retired Quick Answers as answers: a template presented in the same
+   bubble as a generated sentence teaches a visitor nothing about which one
+   they are reading. So the model is now the only thing that answers, and this
+   module is what the *routing* still needs — the things a question can be
+   decided by without generating:
 
-   This is what makes the assistant *usable standalone* — the P1 gate —
-   and it stays the first responder even after a model exists, because
-   "what is his email?" should never cost an inference.
+     · the intent (§5.1 step 2) and the named project,
+     · the §8.4 layer-1 verdict: is this question even in the base?,
+     · the §9 injection verdict, and §14's hallucination-bait verdict,
+     · the §8.2 focus entity a pronoun follow-up resolves against,
+     · the public fact ids the §12 "show me where" resolver anchors, and
+     · the §5.1 step-7 follow-up chips.
 
-   Routing (§5.1):
-     handled:true                     → a Quick Answer IS the final answer
-     handled:false, extractive:true   → verbatim KB text; use it when no
-                                        model is available, otherwise the
-                                        model may phrase it better
+   `text` is still built for every path, because the intent decides the chips
+   and the sources and the two are produced together — but the chat shell
+   discards it. If you are looking for what a visitor reads, it is
+   `ai/answers/model.mjs`, not here.
 
-   Values are never hardcoded here. If a fact changes in knowledge.json,
-   every language changes with it. `tests/quick-answers.test.mjs` asserts
-   that against the real base, in all three languages.
+   What has NOT changed: every read goes through the §1 public view, a
+   `public:false` fact is unreachable from any path, and no value is hardcoded
+   — change a fact in `knowledge.json` and every language changes with it.
+   `tests/quick-answers.test.mjs` asserts that against the real base in all
+   three languages.
    ═══════════════════════════════════════════════════════════════ */
 import { detectIntent, abstainFor, INJECTION_REPLY } from '../intent/rules.mjs';
 import { detectLanguage } from '../language/detect.mjs';
@@ -766,8 +772,12 @@ export function quickAnswer(kb, query, opts = {}) {
     /* a declined (private) field asserts nothing about the visitor's question,
        so it reports as an abstention with no sources — but with a useful,
        published next step instead of the generic abstention string */
+    /* `private` is carried out, not just collapsed into `abstained`: the chat
+       shell refuses a withheld-field question with a sentence about
+       publication, which is a different thing to say than "I don't have
+       that", and the difference has to survive this return. */
     const shape = built.private
-      ? { abstained: true, sources: [] }
+      ? { abstained: true, sources: [], private: true }
       : { sources: built.sources };
     return {
       ...base, handled: true, text: built.text,

@@ -531,7 +531,7 @@ const tabHidden = () => (typeof env.document?.hidden === 'boolean'
     chat.setHandsFree?.(true);
     /* Deliberately NOT `chat.setWorking(true)`. Listening is not work: every
        §6.3 rung acts on the model or the scene — pace generation, shorten the
-       answer budget, lower the scene quality, quick answers only — and not one
+       answer budget, lower the scene quality, stop generating — and not one
        of them makes speech recognition faster. Arming the ladder for a listen
        only holds the film down, and on a device where it fires it pays rung
        3's cost (MEASURED: 21 shader programs relinked, 1221 ms of blocked main

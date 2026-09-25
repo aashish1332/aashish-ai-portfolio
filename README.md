@@ -119,12 +119,12 @@ A scratch-built assistant that answers questions about this portfolio in
 **English, Hindi or Roman Hinglish** — automatically, with no language
 selector, **no backend, no LLM API and no API key**.
 
-Click the chip bottom-right to open it. Answers come from two places, and the
-panel says which one you got: an **on-device model trained from scratch for
-this portfolio**, reading only the verified facts it was given, and the
-deterministic **Quick Answers** engine for the things that must be exact by
-construction — an email address, a repository URL, a refusal. There is no
-backend to call and no API key anywhere in the repository.
+Click the chip bottom-right to open it. Every answer is the **on-device model
+trained from scratch for this portfolio**, reading only the verified facts it
+was given — and where it cannot answer, the panel *refuses* and says which
+refusal it is, rather than substituting a canned sentence. Every answer carries
+a badge saying which of those two happened. There is no backend to call and no
+API key anywhere in the repository.
 
 The model runs **in your browser**, in a web worker, from a quantized copy
 downloaded once and cached: **5.14 MB** raw / **4.74 MB** gzip for the model
@@ -192,7 +192,7 @@ idle page cost a measured 1.2 s of blocked main thread (`docs/BENCHMARKS.md` §1
 | [docs/PROGRESS.md](docs/PROGRESS.md) | phase-by-phase log, including what is unfinished |
 
 ```bash
-npm run test:all     # 393 JS + 326 Python tests
+npm run test:all     # 409 JS + 326 Python tests
 npm run probe:resources  # §15.3: heap, nodes, listeners, long tasks → docs/RESOURCES.json
 npm run calibrate    # sweep the §8.4 retrieval gate against the evaluation set → docs/CALIBRATION.json
 npm run params       # parameter count + its band gate

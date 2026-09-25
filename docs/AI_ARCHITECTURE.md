@@ -22,13 +22,13 @@ microphone — see §5.
 visitor types ──▶ language detector (§8.3)  ──▶ intent router  ──▶ retrieval (BM25 + aliases)
                         │                            │                    │
                         ▼                            ▼                    ▼
-                  reply language            Quick Answers        top ≤3 chunks, ≤300 tokens
-                  (EN/HI/Hinglish)          (deterministic)              │
+                  reply language            intent + safety       top ≤3 chunks, ≤300 tokens
+                  (EN/HI/Hinglish)          verdicts only                 │
                         └────────────────────────────┬───────────────────┘
                                                      ▼
-                                       placeholder resolution (§7.2/§8.4)
+                                       the on-device model proposes text
                                                      │
-                                       [ P4+ : scratch model proposes text ]
+                                       guard (§8.4 layer 4) → refused? say so
                                                      ▼
                                        Faithfulness Guard (§8.4 layer 4)
 ```
@@ -153,9 +153,16 @@ record that P3's "param count printed" is *analytic only* here.
 BM25 + alias/transliteration map + char-n-gram fuzzy matching + a focus
 entity, top-k ≤ 3 chunks. Deterministic language detection from script
 ratio + a function-word lexicon (no ML, no selector), with turn smoothing.
-Quick Answers are template-built from `knowledge.json`, so every sentence
-is exact by construction and works with **no model present** — which is
-what makes the shipped panel honest today.
+
+**There is one answer path: the on-device model.** The deterministic Quick
+Answers were retired as *answers* — a template in the same bubble as a
+generated sentence teaches a reader nothing about which one they are reading.
+The intent router and the retrieval gate survive because decisions have to be
+made before a token exists: which topic this is, whether it is bait that must
+abstain (§14), whether it is an instruction-change attempt (§9), and whether
+retrieval produced anything to read at all. Where the model cannot answer, the
+panel refuses and says which refusal it is; it never substitutes a sentence.
+See `ai/answers/model.mjs` and `docs/PROGRESS.md`.
 
 **Voice (§10).** The answers are written as Aashish talking about himself —
 "my CGPA", not "his CGPA" on a page he wrote. `persona: 'first'` is the
@@ -361,7 +368,7 @@ The design decisions that matter, each with a test:
 | the vocabulary is **whole names**, never their words | "REST APIs" is a technology; "rest" is an English word, and "Smart Grocery List Generator" must not put *list* into the vocabulary. A guard that fires on ordinary prose rejects every correct answer |
 | his own name is **allowlisted** | the assistant naming its subject is not a claim about the world |
 | a badge is not a claim | placeholders that never resolved are a violation by definition, and the four-digit year check is separate from the number check |
-| §5.1 step 5 is the module's own function | `guardedAnswer()` runs generate → guard → **one greedy retry over a shorter context** → the extractive Quick Answer fallback. Generation is injected, so the whole ladder is tested with doubles and no inference |
+| §5.1 step 5 is the module's own function | `guardedAnswer()` runs generate → guard → **one greedy retry over a shorter context** → and then reports the failure. The extractive fallback is gone (it was a template standing in for the model); the caller turns `guardFailed` into a refusal. Generation is injected, so the whole ladder is tested with doubles and no inference |
 
 **`ai/data/instruction.py` — §7.4, the data half.** 40,000 examples from
 `knowledge.json` in the §7.4 format (`<|sys|> <|ctx|> <|user|> <|asst|> <|end|>`),
@@ -394,7 +401,7 @@ The runtime exists and is gated by parity tests. The pipeline, in the order a
 visitor's click walks through it:
 
 ```
-click → ai/ui/chat.mjs (chunk)  → knowledge.json, retrieval, guard, Quick Answers
+click → ai/ui/chat.mjs (chunk)  → knowledge.json, retrieval, guard, intent/routing
              │  startModel()                     §6.5: the size is shown first
              ▼
    ai/engine/session.mjs ── postMessage ──► ai/engine/worker.mjs   (module Worker)
@@ -446,14 +453,16 @@ two different models can only measure its own bug.
 gzip and brotli when available), the tokenizer hash and version, the worst
 per-row quantization error, and the source checkpoint. `tools/build.mjs`
 copies the export into `dist/` when it exists and prints which of the two
-builds it produced — a build **without** a model is legitimate (Quick Answers
-only) and is labelled as such, instead of a deploy discovering it at runtime.
+builds it produced. A build **without** a model is a legitimate bundle but not a
+working assistant: since the answer path *is* the model, the panel says so
+plainly instead of pretending, and the build prints which of the two it produced
+rather than letting a deploy discover it at runtime.
 
 ---
 
 ## 7. Dev vs prod — the build (§9.3/§17)
 
-`npm run build` → `dist/` (**44 files, 5,703,311 B** with the exported model;
+`npm run build` → `dist/` (**44 files, 5,727,097 B** with the exported model;
 **41 files, 558,954 B** without one — the model is git-ignored build output, so
 a clean checkout measures the second number). Earlier: 28 files / 429,808 B
 before the engine, voice, guard and model answer path landed.
@@ -492,7 +501,7 @@ That is an allow-list entry with a reason, not a default.
 | The §8.4 retrieval gate is calibrated rather than assumed | **bounded, one half measured** — ceiling 4.647 recomputed from the data by test; the floor is **NOT MEASURED** (`docs/CALIBRATION.json`) |
 | Numbers and declared aliases are retrievable | **verified** — "8.28" → `ach.lpu-cgpa`, "who is he" → `person.name`, both regression-tested |
 | Browser inference and quantisation | **built, and run on trained weights** — a module worker runs the graph on int8 weights, shards are SHA-256 verified on load, and three implementations of the same architecture are cross-checked (torch ↔ numpy ↔ JavaScript). Measured on the `local` checkpoint's export: 138 positions, argmax **100 %**, top-16 order **100 %**, worst abs Δ logit **8.82e-06**, load 57–63 ms, prefill 68–71 tok/s, decode **65–74 tok/s** (8–9× §4's floor) on R1's CPU |
-| §4's budgets, with the model in the bundle | **measured** — chat code chunk 118,561 B gz of a 150 KB budget, model payload 4,742,169 B gz, first visit 4,926,379 B gz = **12 %** of §4's 40 MB. Asserted on every `npm test`; the weight budgets are NOT TESTED (loudly skipped) without an export |
+| §4's budgets, with the model in the bundle | **measured** — chat code chunk 127,516 B gz of a 150 KB budget, model payload 4,742,169 B gz, first visit 4,926,379 B gz = **12 %** of §4's 40 MB. Asserted on every `npm test`; the weight budgets are NOT TESTED (loudly skipped) without an export |
 | The export carries no dev path and no test fixture | **verified** — provenance is step/commit/SHA-256, not a directory (the build refused the path); a model version directory ships only its manifest, tokenizer and shards, so the 257 KB parity fixture no longer reaches `dist/` |
 | The same model is not two different sizes | **verified** — 4,984,064 params, and the 5,246,208 a naive `state_dict` sum reads is the **tied** `lm_head.weight` counted twice (`data_ptr()` equal, `tieGap` 0), pinned by test |
 | The model answering from **its own generation**, not a template | **built** — `ai/answers/model.mjs` retrieves context, asks the worker, guards the result and resolves placeholders. Templates are only reached for what must be exact by construction (email/URL/refusal) or when the model is not available, and the badge says which happened. What its answers *say* is **NOT TESTED end to end** — the 4.98M `local` checkpoint is an export exercise, not a quality result, and no browser run of the model path has produced a real answer yet |

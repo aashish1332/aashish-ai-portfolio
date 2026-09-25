@@ -170,6 +170,38 @@ test('MIN_TOP_SCORE sits below the weakest alias a fact declares about itself', 
   assert.ok(MIN_TOP_SCORE > 0, 'a gate that refuses nothing is not a gate');
 });
 
+/* The gate the model path uses is "retrieval produced nothing to read", not the
+   score floor — because a question can have facts and still score nothing.
+   "what are his skills?" is the flagship case: `skills` is in the stop set (R3),
+   so the query has no content token left and BM25 returns an empty list while
+   the portfolio answers it in full (`tests/model-answers.test.mjs`, MODEL-10).
+
+   Stating the gate that way is only safe because the two are the SAME SET on
+   the §14 corpus, which this measures instead of asserting: every below-floor
+   case has zero hits, so the floor never fires alone. If someone raises
+   MIN_TOP_SCORE past a case that does retrieve, this fails and names the case —
+   the floor and the model path would then disagree about the same question. */
+test('the score floor and "zero hits" classify the §14 corpus identically', () => {
+  const cases = JSON.parse(
+    readFileSync(join(HERE, '..', 'evaluation', 'portfolio_tests.json'), 'utf8'));
+  const rows = cases.map((c) => {
+    const r = search(IDX, c.question);
+    return { id: c.id, q: c.question, low: r.lowConfidence, hits: r.hits.length };
+  });
+  const belowFloor = rows.filter((r) => r.low);
+  assert.ok(belowFloor.length > 0, 'the corpus must exercise the gate at all');
+  for (const r of belowFloor) {
+    assert.equal(r.hits, 0,
+      `${r.id} "${r.q}" is below the floor but retrieved ${r.hits} chunk(s): the floor is now `
+      + 'doing work the model path does not repeat, and the two gates answer differently');
+  }
+  for (const r of rows.filter((x) => x.hits === 0)) {
+    assert.equal(r.low, true, `${r.id} retrieved nothing and is not below the floor`);
+  }
+  assert.equal(search(IDX, 'What are his skills?').hits.length, 0,
+    'the case this exists for: facts the portfolio has, a query retrieval cannot use');
+});
+
 /* ── numbers are content (found by the calibration sweep) ────
    `tokenize()` is the language detector's and drops digits on purpose. The
    index used it, so every number in the base was invisible: the CGPA fact

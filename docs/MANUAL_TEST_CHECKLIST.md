@@ -36,7 +36,7 @@ Do this **first** — most of what follows is a comparison against it.
 |---|---|---|
 | B1 | Click **Ask Aashish AI** | panel opens immediately, starter chips appear, no spinner |
 | B2 | In Network, look at what just loaded | the AI chunk, then the model (manifest + `model-*.bin` + tokenizer) — the **size is stated in the panel before the download** |
-| B2b | Watch the tier badge while it loads | `PREPARING MODEL…` → `MODEL READY`; a failure says so and leaves Quick Answers working |
+| B2b | Watch the tier badge while it loads | `PREPARING MODEL…` → `MODEL READY`; a failure says so, and a question asked meanwhile gets an honest refusal rather than a template |
 | B2c | Reload the page and open the panel again | the model loads from cache — **Network shows no new shard requests** |
 | B3 | Tap a starter chip | an answer appears, badged *AI ANSWER · ON-DEVICE MODEL*, and text **streams in** rather than appearing all at once |
 | B4 | Type "what is your cgpa" | answers with the CGPA |

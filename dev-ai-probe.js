@@ -5,8 +5,8 @@
        no ai/** module, no knowledge.json, no wasm/gguf/onnx, no worker.
        This is the single most important promise in the whole brief, so it
        is checked by watching every request the page makes.
-     · FLOW: click → panel opens → Quick Answers answers a starter chip →
-       the badge says no model is loaded.
+     · FLOW: click → panel opens → the on-device model answers a starter
+       chip, or the panel says plainly why it cannot.
      · A11Y: focus moves into the panel, Escape closes and returns focus.
      · SCENE (§12): opening on a phone pauses the film; closing resumes it.
      · JANK: frame deltas with the panel open vs closed, and horizontal
@@ -160,9 +160,10 @@ const say = (label, ok, detail) => {
     };
   });
   say('answered a question', !!answered.text && !/could not start/i.test(answered.text), `"${(answered.text || '').slice(0, 70)}…"`);
-  /* Either engine is legitimate; what matters is that the visitor is told
-     which one produced the sentence. */
-  say('answer is labelled', /QUICK ANSWER|AI ANSWER/.test(answered.badge || ''),
+  /* There is one answer path now, so a badge either names the model or says
+     which refusal this was. What must never happen is a sentence with no
+     label at all — the visitor has to be able to tell them apart. */
+  say('answer is labelled', /AI ANSWER|NO ANSWER|SAFE REPLY/.test(answered.badge || ''),
     `badge="${answered.badge}"`);
   if (/AI ANSWER/.test(answered.badge || '')) {
     const modelState = await page.evaluate(() => window.PortfolioAI?.model || null);
