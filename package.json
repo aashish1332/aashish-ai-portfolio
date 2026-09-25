@@ -14,6 +14,7 @@
     "baseline": "node dev-baseline-probe.js",
     "probe:anchor": "node dev-anchor-probe.js",
     "probe:resources": "node dev-resource-probe.js",
+    "probe:latency": "node dev-answer-latency-probe.js",
     "calibrate": "node tools/calibrate-retrieval.mjs",
     "test": "node --test \"tests/*.test.mjs\"",
     "test:py": "python -m unittest discover -s tests/py -t .",

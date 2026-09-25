@@ -104,6 +104,9 @@ export class LlamaEngine {
     this.kCache = new Float32Array(this.layers * this.maxSeq * this.headDim * this.nKv);
     this.vCache = new Float32Array(this.layers * this.maxSeq * this.headDim * this.nKv);
     this.pos = 0;
+    /* Set only by `rememberPrefix`: the ids whose K/V is known to occupy
+       positions 0…P-1. Null means "the cache holds no reusable prefix". */
+    this.prefixIds = null;
   }
 
   get kvBytes() {
@@ -112,6 +115,36 @@ export class LlamaEngine {
 
   reset() {
     this.pos = 0;
+    /* A reset means the caller may write any position next, so the cached
+       prefix is no longer known to be intact. Dropping the claim here is what
+       keeps reuse honest: it is never assumed, only taken when the exact ids
+       are re-presented. */
+    this.prefixIds = null;
+  }
+
+  /** Record that positions 0…ids.length-1 now hold `ids`, so the next
+   *  generation can skip re-prefilling them. Called by the engine after a
+   *  full prefill, never by a caller. */
+  rememberPrefix(ids) {
+    this.prefixIds = ids.length ? Int32Array.from(ids) : null;
+    return this.prefixIds;
+  }
+
+  /** Rewind to a previously-prefilled prefix, when it is exactly `ids`.
+   *
+   * This is a latency optimisation with no effect on what is computed: the
+   * attention window is position-indexed, so K/V at positions 0…P-1 does not
+   * depend on how many times it was computed. Rewinding `pos` and feeding only
+   * the remainder produces bit-identical logits to a full prefill, which
+   * `tests/engine.test.mjs` asserts rather than assumes. */
+  reusePrefix(ids) {
+    const cached = this.prefixIds;
+    if (!cached || cached.length !== ids.length) return false;
+    for (let i = 0; i < cached.length; i++) {
+      if (cached[i] !== ids[i]) return false;
+    }
+    this.pos = ids.length;
+    return true;
   }
 
   /** One token at `this.pos`, appending to the KV cache. Returns the

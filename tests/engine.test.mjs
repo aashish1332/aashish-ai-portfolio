@@ -22,7 +22,8 @@ import { ScratchLlamaEngine, createEngine, LLMEngine } from '../ai/engine/index.
 import { LlamaEngine, applyRope, ropeCache } from '../ai/engine/llama.mjs';
 import { manifestIssues, parseManifest, sha256hex } from '../ai/engine/manifest.mjs';
 import { dequantiseQ8, matvecQ8, rmsNorm, rowQ8 } from '../ai/engine/quant.mjs';
-import { defaultStopIds, frame, promptIds } from '../ai/engine/prompt.mjs';
+import { defaultStopIds, frame, frameParts, framePrefix, promptIds }
+  from '../ai/engine/prompt.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = resolve(HERE, 'fixtures/tiny-model');
@@ -375,3 +376,88 @@ async function collect(iterator) {
 // The rules text is pinned by the generated contract, not copied here.
 const PROMPT_RULES = JSON.parse(
   readFileSync(resolve(HERE, '../ai/engine/prompt_contract.json'), 'utf8')).rules;
+
+/* ── the prompt-prefix cache ──────────────────────────────────────── */
+
+/* The specials and the rules are 125 tokens of a typical 135–300 token prompt
+   and identical on every question, so the engine keeps their K/V and prefills
+   only what changed. It is a latency optimisation, which means the only thing
+   worth testing is that it changes *nothing* the visitor can see — the
+   alternative would be a fast wrong answer. */
+test('ENG-15 the prompt-prefix cache changes nothing, and only fires on a real match',
+  async () => {
+    const engine = await loadEngine();
+    const prefix = engine.tokenizer.encode(framePrefix({ rules: 'first' }));
+
+    /* The mechanism. Reuse requires the exact ids, so a caller that wrote the
+       cache itself can never be handed K/V for a different prompt. */
+    engine.model.rememberPrefix(prefix);
+    assert.equal(engine.model.reusePrefix(prefix), true, 'the exact prefix must reuse');
+    assert.equal(engine.model.pos, prefix.length);
+    assert.equal(engine.model.reusePrefix(engine.tokenizer.encode(framePrefix({ rules: 'third' }))),
+      false, 'the third-person prefix must not reuse the first-person one');
+    assert.equal(engine.model.reusePrefix(prefix.slice(0, -1)), false,
+      'a prefix that is one token short must not reuse');
+    engine.model.reset();
+    assert.equal(engine.model.reusePrefix(prefix), false,
+      'reset() must invalidate the claim, since the caller may write any position next');
+
+    /* The equivalence, at the level that cannot be vacuous: the logits after a
+       warm prefill must equal the logits after a cold one.
+
+       Comparing generated *ids* would look like the stronger test and be the
+       weaker one — this random 2-layer fixture emits NO tokens at all for
+       these prompts (measured: 0 ids, `stopReason: 'end-token'`), so the
+       comparison would be `[]` against `[]` and pass while proving nothing.
+       The logits are produced on every forward, so they always disagree if the
+       shortcut is wrong. */
+    const context = '[person.name] Aashish';
+    const question = 'What is your name?';
+    const all = engine.tokenizer.encode(frame({ question, context, rules: 'first' }));
+
+    engine.model.reset();
+    for (const id of all) engine.model.forward(id);
+    const cold = Float32Array.from(engine.model.logits);
+
+    engine.model.reset();
+    for (const id of prefix) engine.model.forward(id);
+    engine.model.rememberPrefix(prefix);
+    assert.equal(engine.model.reusePrefix(prefix), true);
+    for (let i = prefix.length; i < all.length; i++) engine.model.forward(all[i]);
+    const warm = Float32Array.from(engine.model.logits);
+
+    assert.equal(warm.length, cold.length);
+    for (let i = 0; i < cold.length; i++) {
+      assert.equal(warm[i], cold[i],
+        `logit ${i} differs after reusing the prefix (${warm[i]} vs ${cold[i]})`);
+    }
+
+    /* And `generate()` must actually engage it. If this fails, the split
+       (`framePrefix() + rest`) no longer lines up with the tokens being
+       prefilled and the latency win silently never happens - the kind of
+       regression no other test would notice. */
+    engine.model.reset();
+    await collect(engine.generate({ question, context, maxNewTokens: 4 }));
+    assert.deepEqual([...engine.model.prefixIds], prefix,
+      'generate() did not remember the constant prefix, so nothing is reused');
+
+    engine.dispose();
+  });
+
+test('ENG-16 frame() is exactly framePrefix() + rest, so the split cannot drift', () => {
+  const cases = [
+    { question: 'hi', context: '', rules: 'first' },
+    { question: 'hi', context: '[skill.python] Python', rules: 'third' },
+    { question: 'aap kaun hain', context: 'x', rules: 'first',
+      history: [['q1', 'a1'], ['q2', 'a2']] },
+  ];
+  for (const args of cases) {
+    const { prefix, rest } = frameParts(args);
+    assert.equal(frame(args), prefix + rest, JSON.stringify(args));
+    assert.ok(prefix.startsWith('<|sys|>'), 'the prefix starts with the system frame');
+    assert.ok(prefix.endsWith(' '), 'the prefix must end where the context begins');
+  }
+  assert.equal(framePrefix({ rules: 'first' }), framePrefix({ rules: 'first' }));
+  assert.notEqual(framePrefix({ rules: 'first' }), framePrefix({ rules: 'third' }));
+  assert.throws(() => framePrefix({ rules: 'nope' }), /unknown rules key/);
+});

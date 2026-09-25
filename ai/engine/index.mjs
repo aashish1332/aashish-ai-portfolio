@@ -31,7 +31,7 @@
 import { ByteLevelBPE, loadTokenizer } from './bpe.mjs';
 import { LlamaEngine } from './llama.mjs';
 import { manifestIssues, loadWeights, parseManifest } from './manifest.mjs';
-import { abstainId, defaultStopIds, frame } from './prompt.mjs';
+import { abstainId, defaultStopIds, frame, framePrefix } from './prompt.mjs';
 
 /** The interface. Subclasses implement `generate`; `load` is a static. */
 export class LLMEngine {
@@ -138,8 +138,28 @@ export class ScratchLlamaEngine extends LLMEngine {
         `exceeds the ${this.model.maxSeq}-token context`);
     }
 
-    this.model.reset();
-    for (const id of promptTokens) this.model.forward(id);
+    /* Prefill. The specials and the rules are the same tokens on every
+       question and they are 125 of a typical 135-300 token prompt, so their
+       K/V is kept and only the part that changed is fed. This is most of the
+       wait a visitor feels (measured: `npm run probe:latency`).
+
+       `frame()` is defined as `framePrefix() + rest`, so the two cannot drift
+       as strings - but the *tokenizer* can still merge across the seam, so the
+       alignment is checked element-wise and a mismatch falls back to a full
+       prefill instead of to a wrong answer. */
+    const prefixIds = this.tokenizer.encode(framePrefix({ rules }));
+    const aligned = prefixIds.length > 0 && prefixIds.length < promptTokens.length
+      && prefixIds.every((token, index) => promptTokens[index] === token);
+
+    if (aligned && this.model.reusePrefix(prefixIds)) {
+      for (let index = prefixIds.length; index < promptTokens.length; index++) {
+        this.model.forward(promptTokens[index]);
+      }
+    } else {
+      this.model.reset();
+      for (const id of promptTokens) this.model.forward(id);
+      this.model.rememberPrefix(aligned ? prefixIds : []);
+    }
 
     // Greedy decode. The prefill above consumed the prompt, so each step
     // feeds back the token it just chose — one `forward` per generated token,
