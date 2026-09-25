@@ -379,27 +379,32 @@ const PROMPT_RULES = JSON.parse(
 
 /* ── the prompt-prefix cache ──────────────────────────────────────── */
 
-/* The specials and the rules are 125 tokens of a typical 135–300 token prompt
-   and identical on every question, so the engine keeps their K/V and prefills
-   only what changed. It is a latency optimisation, which means the only thing
-   worth testing is that it changes *nothing* the visitor can see — the
-   alternative would be a fast wrong answer. */
+/* The cache keeps the K/V of the prompt it was last given and a new prompt
+   reuses however many leading token ids it shares with that. Every question
+   shares at least the specials and the rules (125 tokens of a typical 135–300
+   token prompt), and a repeat question shares all of it. It is a latency
+   optimisation, which means the only thing worth testing is that it changes
+   *nothing* the visitor can see — the alternative would be a fast wrong
+   answer. */
 test('ENG-15 the prompt-prefix cache changes nothing, and only fires on a real match',
   async () => {
     const engine = await loadEngine();
     const prefix = engine.tokenizer.encode(framePrefix({ rules: 'first' }));
 
-    /* The mechanism. Reuse requires the exact ids, so a caller that wrote the
-       cache itself can never be handed K/V for a different prompt. */
+    /* The mechanism. The match is element-wise on the ids, so the skip can only
+       ever be as long as the ids genuinely agree: a caller cannot be handed
+       K/V for a token it did not itself feed at that position. */
     engine.model.rememberPrefix(prefix);
-    assert.equal(engine.model.reusePrefix(prefix), true, 'the exact prefix must reuse');
+    assert.equal(engine.model.reusePrefix(prefix), prefix.length,
+      'the exact prefix must reuse in full');
     assert.equal(engine.model.pos, prefix.length);
-    assert.equal(engine.model.reusePrefix(engine.tokenizer.encode(framePrefix({ rules: 'third' }))),
-      false, 'the third-person prefix must not reuse the first-person one');
-    assert.equal(engine.model.reusePrefix(prefix.slice(0, -1)), false,
-      'a prefix that is one token short must not reuse');
+    assert.ok(engine.model.reusePrefix(engine.tokenizer.encode(framePrefix({ rules: 'third' })))
+      < prefix.length,
+      'the third-person rules must not reuse the first-person ones in full');
+    assert.equal(engine.model.reusePrefix(prefix.slice(0, -1)), prefix.length - 1,
+      'a prefix one token short still reuses every position before the one that differs');
     engine.model.reset();
-    assert.equal(engine.model.reusePrefix(prefix), false,
+    assert.equal(engine.model.reusePrefix(prefix), 0,
       'reset() must invalidate the claim, since the caller may write any position next');
 
     /* The equivalence, at the level that cannot be vacuous: the logits after a
@@ -419,11 +424,17 @@ test('ENG-15 the prompt-prefix cache changes nothing, and only fires on a real m
     for (const id of all) engine.model.forward(id);
     const cold = Float32Array.from(engine.model.logits);
 
+    /* Warm: the cache holds a prefix of the prompt, the rest is fed.
+       `reusePrefix` returning 0 here would mean the shortcut silently never
+       engages and the latency win evaporates without any test noticing. */
+    const cut = all.length - 2;
+    assert.ok(cut > 0 && cut < all.length);
     engine.model.reset();
-    for (const id of prefix) engine.model.forward(id);
-    engine.model.rememberPrefix(prefix);
-    assert.equal(engine.model.reusePrefix(prefix), true);
-    for (let i = prefix.length; i < all.length; i++) engine.model.forward(all[i]);
+    for (let i = 0; i < cut; i++) engine.model.forward(all[i]);
+    engine.model.rememberPrefix(all.slice(0, cut));
+    assert.equal(engine.model.reusePrefix(all), cut,
+      'a warm prefix must be reused up to the first token that differs');
+    for (let i = cut; i < all.length; i++) engine.model.forward(all[i]);
     const warm = Float32Array.from(engine.model.logits);
 
     assert.equal(warm.length, cold.length);
@@ -432,14 +443,54 @@ test('ENG-15 the prompt-prefix cache changes nothing, and only fires on a real m
         `logit ${i} differs after reusing the prefix (${warm[i]} vs ${cold[i]})`);
     }
 
-    /* And `generate()` must actually engage it. If this fails, the split
-       (`framePrefix() + rest`) no longer lines up with the tokens being
-       prefilled and the latency win silently never happens - the kind of
-       regression no other test would notice. */
+    /* And `generate()` must actually engage it, by remembering the prompt it
+       fed. If the wrong thing is remembered, nothing is ever reused and the
+       latency win silently never happens. */
     engine.model.reset();
     await collect(engine.generate({ question, context, maxNewTokens: 4 }));
-    assert.deepEqual([...engine.model.prefixIds], prefix,
-      'generate() did not remember the constant prefix, so nothing is reused');
+    assert.deepEqual([...engine.model.prefixIds], all,
+      'generate() did not remember the prompt it prefilled, so nothing is reused');
+
+    engine.dispose();
+  });
+
+test('ENG-17 a follow-up that shares facts skips more than the constant rules block',
+  async () => {
+    const engine = await loadEngine();
+    const context = '[project.x] Goal Tracker — a habit tracker built with React.';
+
+    /* Two different questions over the SAME retrieved facts: the prompts share
+       the specials, the rules AND the whole context block, so a follow-up
+       should skip past the rules block. That is the case this generalisation
+       exists for — the old exact-length match could only ever skip the rules. */
+    const first = engine.tokenizer.encode(
+      frame({ question: 'Tell me about that project', context, rules: 'first' }));
+    const second = engine.tokenizer.encode(
+      frame({ question: 'What did he build it with?', context, rules: 'first' }));
+    const rulesLen = engine.tokenizer.encode(framePrefix({ rules: 'first' })).length;
+
+    engine.model.reset();
+    for (const id of first) engine.model.forward(id);
+    const cold = (() => {
+      engine.model.reset();
+      for (const id of second) engine.model.forward(id);
+      return Float32Array.from(engine.model.logits);
+    })();
+
+    engine.model.reset();
+    for (const id of first) engine.model.forward(id);
+    engine.model.rememberPrefix(first);
+    const reused = engine.model.reusePrefix(second);
+    assert.ok(reused > rulesLen,
+      `shared only ${reused} tokens, no more than the rules block (${rulesLen}) — ` +
+      'the shared facts were not reused');
+    for (let i = reused; i < second.length; i++) engine.model.forward(second[i]);
+    const warm = Float32Array.from(engine.model.logits);
+
+    for (let i = 0; i < cold.length; i++) {
+      assert.equal(warm[i], cold[i],
+        `logit ${i} differs after reusing the shared facts (${warm[i]} vs ${cold[i]})`);
+    }
 
     engine.dispose();
   });

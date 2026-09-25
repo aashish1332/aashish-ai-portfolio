@@ -31,7 +31,7 @@
 import { ByteLevelBPE, loadTokenizer } from './bpe.mjs';
 import { LlamaEngine } from './llama.mjs';
 import { manifestIssues, loadWeights, parseManifest } from './manifest.mjs';
-import { abstainId, defaultStopIds, frame, framePrefix } from './prompt.mjs';
+import { abstainId, defaultStopIds, frame } from './prompt.mjs';
 
 /** The interface. Subclasses implement `generate`; `load` is a static. */
 export class LLMEngine {
@@ -138,28 +138,23 @@ export class ScratchLlamaEngine extends LLMEngine {
         `exceeds the ${this.model.maxSeq}-token context`);
     }
 
-    /* Prefill. The specials and the rules are the same tokens on every
-       question and they are 125 of a typical 135-300 token prompt, so their
-       K/V is kept and only the part that changed is fed. This is most of the
-       wait a visitor feels (measured: `npm run probe:latency`).
+    /* Prefill. The specials and the rules are identical tokens on every
+       question (125 of a typical 135–300 token prompt), so no question ever
+       pays for them; and a repeat or a same-topic follow-up shares its
+       retrieved facts too, which is most of what the first pass cost. The
+       cache keeps the K/V for the prefix it was last given and this feeds
+       only what actually differs — measured at 35% of the wait for the rules
+       alone, and close to all of it for a question asked twice
+       (`npm run probe:latency`).
 
-       `frame()` is defined as `framePrefix() + rest`, so the two cannot drift
-       as strings - but the *tokenizer* can still merge across the seam, so the
-       alignment is checked element-wise and a mismatch falls back to a full
-       prefill instead of to a wrong answer. */
-    const prefixIds = this.tokenizer.encode(framePrefix({ rules }));
-    const aligned = prefixIds.length > 0 && prefixIds.length < promptTokens.length
-      && prefixIds.every((token, index) => promptTokens[index] === token);
-
-    if (aligned && this.model.reusePrefix(prefixIds)) {
-      for (let index = prefixIds.length; index < promptTokens.length; index++) {
-        this.model.forward(promptTokens[index]);
-      }
-    } else {
-      this.model.reset();
-      for (const id of promptTokens) this.model.forward(id);
-      this.model.rememberPrefix(aligned ? prefixIds : []);
+       The match is element-wise on the token ids (`LlamaEngine.reusePrefix`),
+       so a tokenizer that merges across a seam can only shorten the skip. */
+    const reused = this.model.reusePrefix(promptTokens);
+    if (reused === 0) this.model.reset();
+    for (let index = reused; index < promptTokens.length; index++) {
+      this.model.forward(promptTokens[index]);
     }
+    this.model.rememberPrefix(promptTokens);
 
     // Greedy decode. The prefill above consumed the prompt, so each step
     // feeds back the token it just chose — one `forward` per generated token,

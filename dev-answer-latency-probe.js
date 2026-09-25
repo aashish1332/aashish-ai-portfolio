@@ -29,7 +29,7 @@ import { fileURLToPath } from 'node:url';
 import { ScratchLlamaEngine } from './ai/engine/index.mjs';
 import { buildIndex, search } from './ai/retrieval/index.mjs';
 import { contextLines } from './ai/answers/model.mjs';
-import { frame, framePrefix, defaultStopIds } from './ai/engine/prompt.mjs';
+import { frame, defaultStopIds } from './ai/engine/prompt.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const dir = resolve(HERE, process.argv[2] || 'ai/model-export/aashish-ai-1');
@@ -145,43 +145,16 @@ console.log(`\n  slowest  ${worst.totalMs.toFixed(0)} ms  "${worst.question}"  `
   + `(${worst.ids} prompt tokens, ${worst.lines} facts)`);
 console.log(`  fastest  ${best.totalMs.toFixed(0)} ms  "${best.question}"  (${best.ids} prompt tokens)`);
 
-/* Is the cost per *question* or per *process*? A fixed cost that appears only
-   on the first generation of a process is JIT warm-up, and a visitor never pays
-   it twice; a cost that repeats on every question is real and has to be
-   designed around. The difference decides whether there is anything to fix, so
-   it is measured rather than assumed. */
-const REPEAT = Number(process.env.REPEAT || 3);
-console.log(`\n  same question ${REPEAT}x (is the fixed part warm-up or per-question?)`);
-{
-  const question = worst.question;
-  const context = contextLines(KB, search(index, question).hits);
-  const ids = engine.tokenizer.encode(frame({ question, context, history: [], rules: 'first' }));
-  for (let run = 1; run <= REPEAT; run++) {
-    model.reset();
-    let t = process.hrtime.bigint();
-    for (const id of ids) model.forward(id);
-    const prefillMs = ms(t);
-    let previous = ids.at(-1);
-    let count = 0;
-    t = process.hrtime.bigint();
-    for (let step = 0; step < cap; step++) {
-      const id = model.argmax(model.forward(previous));
-      if (stops.has(id)) break;
-      count += 1;
-      previous = id;
-    }
-    const decodeMs = ms(t);
-    console.log(`  run ${run}  prompt ${String(ids.length).padStart(4)} tok`
-      + `${prefillMs.toFixed(0).padStart(10)} ms prefill`
-      + `${decodeMs.toFixed(0).padStart(9)} ms decode (${count} tok)`);
-  }
-}
+/* What the cache is worth, measured on the path the chat actually takes.
+   `generate()` remembers the prompt it prefilled and reuses whatever leading
+   token ids the next prompt shares with it (`LlamaEngine.reusePrefix`), so the
+   cost of a question depends on how much of the previous question it repeats.
+   An average over questions would hide exactly that, so this reports a repeat
+   and a different question separately.
 
-/* Cold vs warm, through `generate()` rather than through a hand-rolled
-   forward loop, because that is the path the chat takes and the only one where
-   the prefix cache can fire. `cold` resets first, which invalidates the cache
-   claim; `warm` is the next question in the same session, which is what a
-   visitor asking two things actually does. */
+   Run 1 is also where the visitor pays JIT warm-up, so nothing is compared
+   against it as if the whole difference were the cache — the repeat is
+   compared against run 1, and the point is that it is far below it. */
 async function timeToFirstToken(args) {
   const t = process.hrtime.bigint();
   const iterator = engine.generate(args);
@@ -193,22 +166,43 @@ async function timeToFirstToken(args) {
   return ms(t);
 }
 
-console.log('\n  cold vs warm prefill, through generate() (what the chat does)');
+/** How many leading ids two arrays agree on — the same rule `reusePrefix` uses,
+ *  so a reader can check the claim rather than take it. */
+function sharedPrefix(a, b) {
+  if (!a) return 0;
+  const max = Math.min(a.length, b.length);
+  let n = 0;
+  while (n < max && a[n] === b[n]) n += 1;
+  return n;
+}
+
+console.log('\n  time to first token, through generate() (the path the chat takes)');
 {
-  const question = worst.question;
-  const context = contextLines(KB, search(index, question).hits);
-  const args = { question, context, maxNewTokens: 8 };
+  const cold = { question: worst.question,
+    context: contextLines(KB, search(index, worst.question).hits) };
+  const other = { question: best.question,
+    context: contextLines(KB, search(index, best.question).hits) };
+  const otherIds = engine.tokenizer.encode(
+    frame({ ...other, history: [], rules: 'first' }));
+
   engine.model.reset();
-  const coldMs = await timeToFirstToken(args);
-  const warmMs = await timeToFirstToken(args);
-  const prefixTok = engine.tokenizer.encode(framePrefix({ rules: 'first' })).length;
-  console.log(`  cold (full prefill, ${rulesTok} tok of it prefix)`
-    + `${coldMs.toFixed(0).padStart(12)} ms`);
-  console.log(`  warm (prefix reused, ${prefixTok} tok skipped)`
-    + `${warmMs.toFixed(0).padStart(13)} ms`);
-  console.log(`  saved per question after the first`
-    + `${(coldMs - warmMs).toFixed(0).padStart(9)} ms`
-    + `  (${(100 * (coldMs - warmMs) / Math.max(coldMs, 1)).toFixed(0)}% of the wait)`);
+  const coldMs = await timeToFirstToken({ ...cold, maxNewTokens: 8 });
+  const repeatMs = await timeToFirstToken({ ...cold, maxNewTokens: 8 });
+  /* read the cache BEFORE the next generation overwrites it */
+  const otherShared = sharedPrefix(engine.model.prefixIds, otherIds);
+  const otherMs = await timeToFirstToken({ ...other, maxNewTokens: 8 });
+
+  const savedPct = (100 * (coldMs - repeatMs) / Math.max(coldMs, 1)).toFixed(0);
+  console.log(`  cold    (no cache, full prefill)`
+    + `${coldMs.toFixed(0).padStart(11)} ms`);
+  console.log(`  repeat  (same question again)`
+    + `${repeatMs.toFixed(0).padStart(13)} ms   ${savedPct}% of the first wait saved`);
+  console.log(`  other   (shares ${String(otherShared).padStart(3)} of ${String(otherIds.length).padStart(3)} prompt ids)`
+    + `${otherMs.toFixed(0).padStart(6)} ms`);
+  console.log('\n  A repeat costs almost nothing because the whole prompt is reused; a\n'
+    + '  different question still skips the constant rules block. That is the same\n'
+    + '  bit-identical mechanism (the K/V at a position depends only on the tokens\n'
+    + '  before it), so the saving is free and cannot change an answer.');
 }
 
 /* The sweep that decides the cap: same question, same prompt, only the number

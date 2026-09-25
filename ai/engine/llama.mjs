@@ -155,28 +155,44 @@ export class LlamaEngine {
   }
 
   /** Record that positions 0…ids.length-1 now hold `ids`, so the next
-   *  generation can skip re-prefilling them. Called by the engine after a
-   *  full prefill, never by a caller. */
+   *  generation can skip re-prefilling whatever prefix it shares with them.
+   *  Called by the engine after every prefill, with the prompt it just fed,
+   *  never by a caller. */
   rememberPrefix(ids) {
     this.prefixIds = ids.length ? Int32Array.from(ids) : null;
     return this.prefixIds;
   }
 
-  /** Rewind to a previously-prefilled prefix, when it is exactly `ids`.
+  /** Rewind to the longest prefix of `ids` the cache is already known to hold.
    *
    * This is a latency optimisation with no effect on what is computed: the
-   * attention window is position-indexed, so K/V at positions 0…P-1 does not
-   * depend on how many times it was computed. Rewinding `pos` and feeding only
-   * the remainder produces bit-identical logits to a full prefill, which
-   * `tests/engine.test.mjs` asserts rather than assumes. */
+   * attention window is position-indexed and strictly causal, so K/V at
+   * position t depends on tokens 0…t and on nothing else. Rewinding `pos` to
+   * the length of the shared prefix and feeding only the remainder therefore
+   * produces bit-identical logits to a full prefill, which
+   * `tests/engine.test.mjs` asserts rather than assumes.
+   *
+   * The prefix is matched on the *token ids*, not on a string or a length, so
+   * a tokenizer that merges differently across the frame's seams can only ever
+   * make the match SHORTER (a full prefill, the safe direction) — never wrong.
+   * That is why the caller no longer has to re-check an alignment it computed
+   * from the string form.
+   *
+   * This replaced an exact-length match against the constant rules block. Every
+   * question shares at least that block, so the new form can only ever skip
+   * more: a repeat question shares the facts and the question too, and its
+   * prefill collapses to nothing (measured in `npm run probe:latency`).
+   *
+   * @returns {number} how many leading positions are already correct (0 = none)
+   */
   reusePrefix(ids) {
     const cached = this.prefixIds;
-    if (!cached || cached.length !== ids.length) return false;
-    for (let i = 0; i < cached.length; i++) {
-      if (cached[i] !== ids[i]) return false;
-    }
-    this.pos = ids.length;
-    return true;
+    if (!cached) { this.pos = 0; return 0; }
+    const max = Math.min(cached.length, ids.length);
+    let n = 0;
+    while (n < max && cached[n] === ids[n]) n += 1;
+    this.pos = n;
+    return n;
   }
 
   /** One token at `this.pos`, appending to the KV cache. Returns the

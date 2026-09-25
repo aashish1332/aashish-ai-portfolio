@@ -655,3 +655,84 @@ folding a 5 MB artifact into a 150 KB limit makes both budgets unmeasurable.
 **NOT TESTED:** brotli is measured (4,713,956 B) but nothing yet negotiates it,
 so the effective transfer is the gzip figure; and no CDN or real network was
 involved, so these are file sizes, not load times.
+
+---
+
+## What one question costs a visitor, and what the wait is made of (§4/§10)
+
+`npm run probe:latency`. Same device (R1: i5-6300U, 8 GB, Intel HD 540,
+software GL), same trained export as above.
+
+**This machine's load moves wall-clock numbers 2–3× between runs.** Every figure
+below is therefore either the **minimum** of an interleaved A/B in one process
+(where the two arms see the same load, so the *ratio* survives) or explicitly
+labelled as a spread. An absolute number from this laptop, quoted alone, is
+worth about a factor of two.
+
+### The wait is prefill, and prefill is prompt length
+
+A prompt is `specials + rules + retrieved facts + question`, and the first two
+are **125 tokens on every question** — 46 % of a typical prompt, and identical
+every time.
+
+| Prompt shape | Prompt tokens | Prefill | Decode | Total |
+|---|---|---|---|---|
+| 1 fact, short question | 135 | 2.6 s | 0.2 s | 2.7 s |
+| 2 facts, long question | 298 | 5.4 s | 0.5 s | 5.9 s |
+
+Prefill is **90–95 % of the wait** before any text appears; decode is 19–25 ms
+per token. So "the model is slow" is really "the prompt is long", and the two
+levers are prompt length and tokens-per-second.
+
+### The prefix cache, generalised to the longest shared prefix
+
+The engine remembers the token ids it last prefilled and, on the next question,
+rewinds to the longest leading run the new prompt shares with them — the K/V at
+a position depends only on the tokens before it, so the skipped positions are
+**bit-identical**, not approximately equal (`tests/engine.test.mjs` ENG-15/ENG-17
+compare the logits, not the generated ids). Every question shares at least the
+125-token rules block; a repeat shares the facts and the question too.
+
+| Case | Time to first token |
+|---|---|
+| cold — no cache, full prefill | **5,193 ms** |
+| **repeat** — the same question again | **17 ms** (100 % of the wait saved) |
+| a different question — 120 of 142 ids shared | **407 ms** |
+
+This replaced an earlier version that matched the rules block by exact length.
+That could only ever skip 125 tokens; the generalisation strictly dominates it
+and is the same mechanism, so it costs nothing and can change no answer. It is
+*not* a smaller model, fewer facts or a shorter prompt — those are the levers
+that trade quality, and they are still open.
+
+### Three optimisations that were measured and refused
+
+Recorded so they are not retried on a hunch. All three are minimum-of-N,
+interleaved, same-process.
+
+| Attempt | Cache-resident | End to end | Kept? |
+|---|---|---|---|
+| Expand int8 codes to float32 at load | **2.3×** faster (65 → 148 M MAC/s) | **0.99×** (47.6 vs 48.2 ms/token) | **No** — the 20 MB copy stops being L3-resident |
+| Batch B prompt positions per weight row (prefill weight reuse) | — | B=1 0.94–1.01×, B=2 0.83–0.94×, B=4 1.09–1.38×, B=8 0.86–1.01× | **No** — no trend, and the kernel is not weight-traffic-bound |
+| Cache the weight-map lookups per token | — | 0.013 ms of a 22.75 ms step | Kept, but not as a speed claim |
+
+### Why the kernel is where it is, and what is left
+
+A plain `s += a[i] * b[i]` loop over `Float32Array`s runs at **97 M MAC/s** on
+this box and the shipped kernel at **121 M MAC/s** — so the scalar JavaScript
+is already at *this machine's* ceiling, and unrolling (128 M) does not move it.
+A plain JS float loop should reach 1–2 G MAC/s on an i5-6300U, which means this
+box measures JavaScript **~10× below its specification** under its current load.
+
+**The consequence, stated plainly:** the only remaining lever is a different
+execution engine (WASM SIMD or WebGPU), and its payoff **cannot be measured
+here** — a box that is 10× slow for reasons of its own says nothing trustworthy
+about SIMD throughput. Implementing it would mean shipping a numeric change
+(SIMD accumulates in 32-bit lanes, not float64) behind an ESTIMATED speed claim
+that no gate on this machine can confirm. It is left unimplemented and open,
+rather than implemented and unverifiable.
+
+**NOT TESTED:** first-token latency in a real browser tab with the WebGL film
+running, on a device that is not this laptop. Every figure above is Node on R1.
+The measured numbers also depend on the *retrieved* fact count, so they move
+with the knowledge base, not only with the code.

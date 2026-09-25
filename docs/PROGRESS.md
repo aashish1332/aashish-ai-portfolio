@@ -1340,15 +1340,57 @@ prints that arithmetic where the confusion happens, and
 | KV cache | 3,072 KB resident at ctx 512 |
 | Bundle, gzip | chat code **118,561 B** of 153,600 B (§4) · rest of page 65,649 B of a 256,000 B guard |
 | Model payload, gzip | **4,742,169 B** raw 5,144,357 B — 12 % of §4's 40 MB first-use budget |
-| Tests | **393 JS + 326 Python**, 0 failures (`npm run test:all`) |
+| Tests | **396 JS + 326 Python**, 0 failures (`npm run test:all`) |
 
 Val loss on the `local` run: 2.1917 @100 → 1.1711 @200 → 0.9229 @300 →
 0.6432 @700 → **0.6423 @800 (best)**. This is a pipeline/export exercise at
 4.98M params, **not** a quality result — the shipping target is still
 config A + Stage A/B data on a GPU.
 
+### Per-question latency: what a visitor actually waits for
+
+§4's floor says the model *can* answer; it says nothing about the wait before
+the first word. `npm run probe:latency` measures that, and the answer is
+unflattering to the obvious suspects:
+
+* The prompt is `specials + rules + facts + question`, and the first two are
+  **125 tokens on every question**. Prefill of that prompt is **2.6–5.4 s** and
+  is **90–95 %** of the wait; decode is 19–25 ms/token. So the cost is prompt
+  length, not decode, and `maxNewTokens` was never the lever.
+* The prefix cache was generalised from an exact-length match on the rules
+  block to the **longest shared prefix** of the token ids (`reusePrefix`). It is
+  bit-identical — the K/V at a position depends only on what precedes it — and
+  `tests/engine.test.mjs` ENG-15/ENG-17 now compare *logits*, because the
+  random-init fixture emits no tokens at all and an ids comparison would have
+  been `[]` against `[]`. Measured: **5,193 ms cold → 17 ms for a repeat**, and
+  407 ms for a different question (120 of 142 ids shared).
+* Three optimisations were measured and refused, and are recorded in
+  `BENCHMARKS.md` so they are not retried on a hunch: float32 code expansion
+  (2.3× cache-resident, **0.99× end to end**), batched prefill
+  (`dev-prefill-batch-probe.js`; no trend across B=1…8, worst |Δ| exactly 0), and
+  per-token weight-map lookup caching (0.013 ms of a 22.75 ms step).
+* **The kernel is at this box's ceiling and the box is the problem.** Plain
+  scalar JavaScript measures **97 M MAC/s** here against the kernel's 121 M — and
+  an i5-6300U should do **1–2 G** for the same loop. This machine measures JS
+  ~10× below its specification, so a WASM SIMD kernel's payoff **cannot be
+  established here**, only assumed. That is why it is not implemented: see
+  "Still open".
+
 ### Still open
 
+* **WASM SIMD (or WebGPU) matvec — the one remaining real lever, deliberately
+  not taken yet.** The measurement above says scalar JavaScript has no headroom
+  left on this box, so the next step is a different execution engine. It is
+  unbuilt because (a) its speedup cannot be verified on a machine that is 10×
+  slow for unrelated reasons, and (b) SIMD accumulates in 32-bit lanes instead of
+  float64, so it is a *numeric* change that would have to be re-gated rather than
+  a drop-in replacement. Doing it blind would trade a verifiable 0× for an
+  ESTIMATED 2–4×. Recorded as the open item, not quietly dropped.
+* **Prompt length is the remaining lever that does not need new hardware**, and
+  every way to shorten it trades quality: fewer retrieved facts means more guard
+  rejections, and shrinking the 125-token rules block means **retraining**
+  (the rules are baked into the training data via `prompt_contract.json`). Both
+  are open and both are the owner's call.
 * **The parity gate is now honest, but the weights it gates are a 4.98M CPU
   run.** No Stage A/B model exists; `verify:engine` must be re-run against it
   before any quality claim.
@@ -1382,7 +1424,8 @@ config A + Stage A/B data on a GPU.
 `ai/engine/` · `ai/answers/model.mjs` · `ai/voice/vad.mjs` ·
 `inference/export_browser.py` · `inference/reference.py` · `tools/verify-engine.mjs` ·
 `evaluation/voice/` · `ai/model-export/aashish-ai-1/{manifest.json,model-00000.bin,tokenizer.json}` ·
-`tests/engine.test.mjs` · `tests/tokenizer-parity.test.mjs` · `tests/vad.test.mjs` ·
+`tests/engine.test.mjs` (17) · `tests/tokenizer-parity.test.mjs` · `tests/vad.test.mjs` ·
 `tests/synthetic.test.mjs` · `tests/build-bundle.test.mjs` (19) ·
 `tests/py/test_export_browser.py` (21) · `tests/py/test_model_schema.py` (34) ·
-`npm run export:model` · `npm run verify:engine` · `npm run build` · `npm run test:all`
+`dev-prefill-batch-probe.js` · `dev-answer-latency-probe.js` ·
+`npm run export:model` · `npm run verify:engine` · `npm run build` · `npm run probe:latency` · `npm run test:all`
