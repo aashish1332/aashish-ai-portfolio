@@ -53,8 +53,17 @@ const say = (label, ok, detail) => {
   const consoleErrors = [];
   const pageErrors = [];
   const failed = [];
+  /* Assets a real model download consists of: the manifest, the shards and
+     the tokenizer. Recorded separately because the P7 checks below assert
+     that a "MODEL READY" badge had something on the wire behind it — a badge
+     is not evidence. */
+  const modelRequests = [];
+  const MODEL_ASSET = /manifest\.json|model-\d+\.bin|tokenizer\.json/;
 
-  page.on('request', (r) => requests.push(r.url()));
+  page.on('request', (r) => {
+    requests.push(r.url());
+    if (MODEL_ASSET.test(r.url())) modelRequests.push(r.url());
+  });
   page.on('workercreated', (w) => requests.push(`WORKER:${w.url() || 'blob'}`));
   page.on('console', (m) => {
     if (m.type() === 'error' || m.type() === 'warning') consoleErrors.push(`[${m.type()}] ${m.text()}`);
@@ -126,8 +135,16 @@ const say = (label, ok, detail) => {
   if (opened.lenisStopped === null) console.log('⚠ page scroll lock            Lenis API not introspectable here — NOT verified');
   else say('page scroll locked', opened.lenisStopped === true, `lenis.isStopped=${opened.lenisStopped}`);
   say('starter chips rendered', opened.chipCount >= 3, `${opened.chipCount} chips`);
-  say('no fake model state', !/download|preparing|%/i.test(opened.tierBadge || ''),
-    `badge is honest: "${opened.tierBadge}"`);
+  /* P7: a model exists now, so the badge may legitimately say PREPARING — what
+     it may never do is claim a model that was not fetched. `modelRequests` is
+     filled by the response listener above, so a "MODEL READY" badge with no
+     shard on the wire is caught here rather than believed. */
+  const badge = opened.tierBadge || '';
+  const claimsModel = /MODEL READY|AI ANSWER/i.test(badge);
+  say('model state is honest', !claimsModel || modelRequests.length > 0,
+    `badge="${badge}" model requests=${modelRequests.length}`);
+  say('a percent only appears with real progress',
+    !/%/.test(badge) || modelRequests.length > 0, `badge="${badge}"`);
 
   /* ── 4. an answer, end to end ────────────────────────────────────── */
   await page.evaluate(() => document.querySelector('.ai__chip')?.click());
@@ -143,7 +160,19 @@ const say = (label, ok, detail) => {
     };
   });
   say('answered a question', !!answered.text && !/could not start/i.test(answered.text), `"${(answered.text || '').slice(0, 70)}…"`);
-  say('answer is labelled', /QUICK ANSWER/.test(answered.badge || ''), `badge="${answered.badge}"`);
+  /* Either engine is legitimate; what matters is that the visitor is told
+     which one produced the sentence. */
+  say('answer is labelled', /QUICK ANSWER|AI ANSWER/.test(answered.badge || ''),
+    `badge="${answered.badge}"`);
+  if (/AI ANSWER/.test(answered.badge || '')) {
+    const modelState = await page.evaluate(() => window.PortfolioAI?.model || null);
+    say('an AI answer came from the real model',
+      modelState?.state === 'ready' && modelState?.last?.kind === 'model',
+      `state=${modelState?.state} kind=${modelState?.last?.kind}`);
+    say('the model answer is grounded in retrieved facts',
+      !!modelState?.last?.context || (modelState?.last?.sources || []).length > 0,
+      `${(modelState?.last?.sources || []).length} sources`);
+  }
   say('sources cited', answered.sources > 0, `${answered.sources} chips`);
   say('no markup in answers', answered.hasMarkup === false, '');
 
