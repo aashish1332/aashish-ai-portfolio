@@ -240,33 +240,127 @@ const say = (label, ok, detail) => {
   });
   say('phone withheld in UI', !/6280/.test(pii), pii.slice(0, 60));
 
-  /* ── 4b. the question that broke the window ────────────────────────
+  /* ── 4b. §10's Stop and Retry, on the question that broke the window ──
      "What are your skills?" has NO retrieval hits at all — `skills` is in the
      retrieval stop set on purpose (it lives in every skill chunk and used to
      hijack the score) — so it is answered from the intent's own fact list.
      That is the one path whose "top-k" is a whole topic rather than a BM25
      ranking, and uncapped it handed the model 38 facts and a 764-token prompt
      against a 512-token window: `forward()` threw and the visitor was told the
-     model had stopped. It is the most common question a recruiter asks, so it
-     is asked here by name instead of being left to the unit tests. */
-  const skills = await page.evaluate(async () => {
-    try { await window.PortfolioAI.ask('What are your skills?'); }
-    catch (e) { return { error: String(e && e.message || e) }; }
-    const s = window.PortfolioAI.model;
-    return {
-      state: s.state,
-      kind: s.last?.kind,
-      badge: s.last?.badge,
+     model had stopped.
+
+     It is also the most common question a recruiter asks AND a long
+     generation, which makes it the right place to press the two controls §10
+     asks for and no unit test can reach: **Stop** (an abort must keep the
+     partial and label it as one) and **Retry** (a fresh generation — checked
+     by the Stop button coming back).
+
+     The controls are found by their own labels, so this cannot pass by
+     reaching into the shell's internals. */
+
+  /* which of Stop / Retry / Clear exist, and which are OFFERED right now */
+  const chatControls = () => page.evaluate(() => {
+    const find = (label) => [...document.querySelectorAll('.ai__controls .ai__link')]
+      .find((b) => b.textContent.trim() === label) || null;
+    const seen = (label) => {
+      const b = find(label);
+      return b
+        ? { present: true, hidden: !!b.hidden, label: b.getAttribute('aria-label') }
+        : { present: false };
+    };
+    return { stop: seen('STOP'), retry: seen('RETRY'), clear: seen('CLEAR') };
+  });
+  const streamedProse = (ms) => page.waitForFunction(() => {
+    const bots = [...document.querySelectorAll('.ai__msg.is-bot')];
+    const last = bots[bots.length - 1];
+    return !!last
+      && /AI ANSWER/.test(last.querySelector('.ai__badge')?.textContent || '')
+      && (last.querySelector('span:not(.ai__badge)')?.textContent || '').length > 20;
+  }, { timeout: ms, polling: 100 }).then(() => true).catch(() => false);
+
+  if (modelPhase === 'ready') {
+    const idle = await chatControls();
+    say('§10 message controls exist',
+      idle.stop.present && idle.retry.present && idle.clear.present,
+      `stop=${idle.stop.present}(${idle.stop.label}) retry=${idle.retry.present} clear=${idle.clear.present}`);
+    say('Stop is offered only while answering', idle.stop.hidden === true,
+      `hidden=${idle.stop.hidden}`);
+
+    /* Ask AND press Stop from inside the page, in one round trip. The press has
+       to land while the model is working, and the window for that is the
+       PREFILL (seconds), not the decode — this checkpoint emits a handful of
+       tokens and stops. Pressing from Node lost the race every time: by the
+       time the call crossed the wire the answer had finished, and the probe
+       reported `stop()=false` on a button that works. */
+    const stopped = await page.evaluate(async () => {
+      const find = () => [...document.querySelectorAll('.ai__controls .ai__link')]
+        .find((b) => b.textContent.trim() === 'STOP') || null;
+      window.__skillsAsk = window.PortfolioAI.ask('What are your skills?');
+      const t0 = Date.now();
+      while (Date.now() - t0 < 60000) {
+        const btn = find();
+        if (btn && !btn.hidden) {
+          return { offered: true, ok: window.PortfolioAI.stop(), ms: Date.now() - t0 };
+        }
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      return { offered: false, ok: false, ms: -1 };
+    });
+    say('Stop is offered while answering', stopped.offered === true,
+      `offered after ${stopped.ms} ms`);
+    say('Stop takes effect', stopped.ok === true, `stop()=${stopped.ok}`);
+    await new Promise((r) => setTimeout(r, 800));
+    const partial = await page.evaluate(() => {
+      const bots = [...document.querySelectorAll('.ai__msg.is-bot')];
+      const last = bots[bots.length - 1];
+      return {
+        badge: last?.querySelector('.ai__badge')?.textContent || '',
+        text: (last?.querySelector('span:not(.ai__badge)')?.textContent || ''),
+      };
+    });
+    /* Finished and labelled: the guard never ran (it runs when
+       generation ENDS), so this may not wear the verified badge — and may not
+       be dressed as a refusal either. */
+    say('a stopped answer is kept and labelled PARTIAL',
+      /PARTIAL ANSWER/.test(partial.badge) && partial.text.trim().length > 0,
+      `badge="${partial.badge}" "${partial.text.trim().slice(0, 56)}…"`);
+    say('no placeholder leaks in a stopped answer',
+      !/<\|/.test(partial.text), partial.text.includes('<|') ? partial.text.slice(0, 56) : 'clean');
+
+    const stoppedState = await chatControls();
+    say('Retry appears after a non-answer', stoppedState.retry.hidden === false,
+      `hidden=${stoppedState.retry.hidden}`);
+
+    /* Retry really re-asks — proved by a fresh generation (Stop offered again)
+       that streams, not by a log line */
+    const retried = await page.evaluate(() => window.PortfolioAI.retry());
+    const again = await streamedProse(Number(process.env.WAIT_ANSWER || 180000));
+    const retryState = await chatControls();
+    say('tokens stream in before the answer is finished', again === true, '');
+    say('Retry starts a fresh generation',
+      retried === true && again === true && retryState.stop.hidden === false,
+      `retry()=${retried} streamed=${again} stopOffered=${retryState.stop.hidden === false}`);
+
+    /* let this one FINISH: the completed-answer checks below run on it. The
+       signal is the shell's own — a final `model.last` that is not the partial
+       we already have, and Stop gone again. */
+    const finished = await page.waitForFunction((stoppedText) => {
+      const m = window.PortfolioAI?.model;
+      const stop = [...document.querySelectorAll('.ai__controls .ai__link')]
+        .find((b) => b.textContent.trim() === 'STOP');
+      return !!m?.last?.text && m.last.text !== stoppedText && !!stop && stop.hidden === true;
+    }, { timeout: Number(process.env.WAIT_ANSWER || 180000), polling: 250 }, partial.text)
+      .then(() => true).catch(() => false);
+
+    const s = await page.evaluate(() => window.PortfolioAI.model);
+    const skills = {
+      state: s.state, kind: s.last?.kind, badge: s.last?.badge,
       sources: (s.last?.sources || []).length,
       facts: (s.last?.context || '').split('\n').filter(Boolean).length,
       text: (s.last?.text || '').slice(0, 90),
     };
-  });
-  if (skills.error) {
-    say('a topic-only question does not throw', false, skills.error);
-  } else if (skills.state === 'ready') {
     console.log(`  skills answer                kind=${skills.kind} ${skills.facts} facts ` +
-      `${skills.sources} sources "${(skills.text || '').trim()}…"`);
+      `${skills.sources} sources "${(skills.text || '').trim()}…" (finished=${finished})`);
     /* The failure that is being pinned is the REFUSAL, not a bad sentence: a
        random-init checkpoint answers poorly, and that is a training problem
        (P5), not a routing one. What must not happen is "no AI model on this
@@ -276,7 +370,7 @@ const say = (label, ok, detail) => {
     say('its context is capped to the window, not the whole topic',
       skills.facts > 0 && skills.facts <= 12, `${skills.facts} facts read`);
   } else {
-    console.log(`  (skills question skipped — model state ${skills.state})`);
+    console.log(`  (§10 controls not exercised — model state ${modelPhase})`);
   }
 
   /* ── 5. jank with the panel open ───────────────────────────────────
