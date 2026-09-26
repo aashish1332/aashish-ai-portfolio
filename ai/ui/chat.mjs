@@ -17,7 +17,7 @@
    ═══════════════════════════════════════════════════════════════ */
 import { quickAnswer } from '../answers/quick.mjs';
 import {
-  MODEL_BADGES, createModelAnswerer, noAnswerLine, routeQuestion,
+  MODEL_BADGES, createModelAnswerer, noAnswerLine, partialAnswer, routeQuestion,
 } from '../answers/model.mjs';
 import { createModelSession } from '../engine/session.mjs';
 import { resolveAnchor, anchorLabel } from './anchors.mjs';
@@ -127,6 +127,13 @@ let loadOutcome = null;
   let input = null;
   let focus = null;            /* §8.2 carried focus entity */
   let lastQuestion = '';
+  /* §10's Stop. One in-flight generation at a time is the only thing this
+     panel offers — the composer is not disabled while answering, but a second
+     question replaces the first, so keeping the newest controller is exactly
+     right and keeping a list would be keeping a bug. */
+  let activeAbort = null;
+  let stopBtn = null;
+  let retryBtn = null;
   /* What the last answer actually was, verbatim enough for the e2e probe to
      assert it: which path produced it, and the context the model read. */
   let lastAnswer = null;
@@ -255,15 +262,39 @@ let working = 0;
     const foot = el('footer', 'ai__foot');
     foot.appendChild(el('p', 'ai__trust',
       'Runs on your device. What you type stays in your browser.'));
+
+    /* §10's message controls: **Stop**, **Retry**, **Clear**. Each one is a
+       real `<button>` and none of them narrates itself. They live together so
+       that "which of these is available right now" is one decision
+       (`syncControls`) instead of three buttons independently guessing. */
+    const controls = el('div', 'ai__controls');
+
+    stopBtn = el('button', 'ai__link', 'STOP');
+    stopBtn.type = 'button';
+    stopBtn.hidden = true;
+    stopBtn.setAttribute('aria-label', 'Stop answering');
+    stopBtn.addEventListener('click', () => stop());
+
+    retryBtn = el('button', 'ai__link', 'RETRY');
+    retryBtn.type = 'button';
+    retryBtn.hidden = true;
+    retryBtn.setAttribute('aria-label', 'Ask the last question again');
+    retryBtn.addEventListener('click', () => retry());
+
     const clear = el('button', 'ai__link', 'CLEAR');
     clear.type = 'button';
+    clear.setAttribute('aria-label', 'Clear this conversation');
     clear.addEventListener('click', () => {
       while (log.firstChild) log.removeChild(log.firstChild);
       focus = null;
       track.reset('en');
       renderChips(starterChips());
+      syncControls();
     });
-    foot.appendChild(clear);
+
+    controls.append(stopBtn, retryBtn, clear);
+    foot.appendChild(controls);
+    syncControls();
 
     panel.append(head, log, chips, form, foot);
     body.append(scrim, panel);
@@ -469,6 +500,7 @@ let working = 0;
        words the bubble shows, never a description of the bubble */
     voice?.onAnswer(res, { lang });
     renderChips(res.followups?.length ? res.followups : starterChips());
+    syncControls();
     if (res.intent === 'injection_suspect') {
       /* the only case where the panel says something about itself */
       noticeOnce('That request stayed off the instruction path.');
@@ -477,10 +509,61 @@ let working = 0;
   }
 
   /** Swap the badge on a bubble that is already on screen — a streamed answer
-   *  the guard then rejected, or a model that stopped mid-sentence. */
+   *  the guard then rejected, a model that stopped mid-sentence, or one the
+   *  visitor stopped. */
   function setBadge(line, text) {
     const node = line?.node?.querySelector?.('.ai__badge');
     if (node) node.textContent = text;
+  }
+
+  /** §10's Stop, as a rendered state. What is on screen is the model's own
+   *  words, so it is KEPT — but the two things that normally happen to a
+   *  stream never will: the guard does not run (it runs when generation ends,
+   *  which is the whole reason it can check the finished text) and neither
+   *  does the placeholder resolver. So this resolves the placeholders itself,
+   *  drops the incomplete one at the cut, and badges the result as PARTIAL.
+   *  An unfinished, unverified sentence must not wear the badge a verified one
+   *  wears, and it must not be presented as a refusal either.
+   *
+   *  Stopped before the first token: there is no partial to keep, and the
+   *  `cancelled` line says that — rather than "the model stopped", which would
+   *  blame the machine for a click. */
+  function presentPartial(line, lang, res = {}) {
+    const text = partialAnswer(kb, line.text, lang);
+    line.set(text);
+    setBadge(line, MODEL_BADGES.partial);
+    return finish({ text, sources: [], abstained: true, kind: 'stopped',
+      badge: MODEL_BADGES.partial, context: null,
+      focus: res.focus || focus, followups: res.followups },
+      lang, null, { badge: MODEL_BADGES.partial, badgeClass: 'is-note' });
+  }
+
+  /** Which of §10's controls exist right now, decided in ONE place. Stop is
+   *  there while a generation is; Retry is there when the last turn did not
+   *  answer the question — a good answer does not need repeating, and a
+   *  control that is usually useless teaches people to ignore the row. */
+  function syncControls() {
+    if (stopBtn) stopBtn.hidden = !activeAbort;
+    if (retryBtn) {
+      retryBtn.hidden = !lastQuestion || !!activeAbort || lastAnswer?.kind === 'model';
+    }
+  }
+
+  /** §10's Stop. Aborting rejects the in-flight `generate`, so `answer()`'s
+   *  catch sees `signal.aborted` and renders the partial. The session itself
+   *  stays 'ready' — a Stop must not cost the visitor the model. */
+  function stop() {
+    if (!activeAbort) return false;
+    activeAbort.abort();
+    return true;
+  }
+
+  /** §10's Retry: the last question, asked again. Nothing is cached, so this
+   *  is a fresh generation — which is the point of it after a refusal. */
+  function retry() {
+    if (activeAbort || !lastQuestion) return false;
+    ask(lastQuestion);
+    return true;
   }
 
   /** A refusal, rendered as itself — never dressed up as an answer. `text` is
@@ -563,6 +646,12 @@ let working = 0;
     }
 
     const line = streamBubble(MODEL_BADGES.model, 'is-ai', null);
+    /* §10's Stop, wired to the generation and to nothing else. `AbortController`
+       is not in every environment this shell runs under (and not in the tests'
+       doubles), so its absence is a missing control rather than an error. */
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    activeAbort = controller;
+    syncControls();
     let out;
     try {
       out = await answerer.ask({
@@ -573,10 +662,17 @@ let working = 0;
            RULES answer it. */
         intentIds: res.sources,
         contextless: res.intent === 'greeting',
+        signal: controller?.signal || null,
         onToken: (chunk) => line.push(chunk),
         onReplace: (text_) => line.set(text_),
       });
     } catch (err) {
+      if (controller?.signal?.aborted) {
+        /* The visitor pressed Stop. That is not the model dying, and saying
+           "the on-device model stopped" would blame the machine for a click —
+           see `stop()` for what is kept and why. */
+        return presentPartial(line, lang, res);
+      }
       /* A model that died mid-answer is not an answer. */
       line.set(noAnswerLine('stopped', lang));
       setBadge(line, MODEL_BADGES.noModel);
@@ -584,6 +680,12 @@ let working = 0;
       return finish({ text: line.text, abstained: true, kind: 'no-model',
         badge: MODEL_BADGES.noModel, focus, followups: res.followups },
         lang, null, { badge: MODEL_BADGES.noModel });
+    } finally {
+      /* The generation is over either way, so there is nothing left to
+         abort — a Stop button that outlived its stream would abort the NEXT
+         answer. The ladder is disarmed separately, by `whileWorking`. */
+      activeAbort = null;
+      syncControls();
     }
 
     if (out.kind !== 'model') {
@@ -634,6 +736,7 @@ let working = 0;
   function setWorking(on) {
     working = Math.max(0, working + (on ? 1 : -1));
     ladder?.setActive(working > 0);
+    syncControls();
     return working;
   }
 
@@ -1036,6 +1139,9 @@ let working = 0;
   /* ── public API (also used by dev-ai-probe.js) ────────────────── */
   const api = {
     open, close, toggle, ask, showAnchor,
+    /* §10's message controls, exposed so the e2e probe can press them the way
+       a person would rather than reaching into the shell's internals */
+    stop, retry,
     /* the voice layer flips this on; nothing else has to change */
     setHandsFree(on) { handsFree = !!on; return handsFree; },
     enableVoice: toggleVoice,

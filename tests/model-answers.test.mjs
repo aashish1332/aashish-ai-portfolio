@@ -28,7 +28,7 @@ import { dirname, join } from 'node:path';
 
 import {
   createModelAnswerer, routeQuestion, noAnswerLine, NO_ANSWER_KINDS, MODEL_BADGES,
-  MAX_INTENT_FACTS,
+  MAX_INTENT_FACTS, partialAnswer,
 } from '../ai/answers/model.mjs';
 import { quickAnswer, renderFact } from '../ai/answers/quick.mjs';
 
@@ -44,15 +44,25 @@ function stubSession(reply) {
     calls,
     status: 'ready',
     reason: null,
-    async generate(args) {
+    async generate(args, { signal } = {}) {
       calls.push({
         question: args.question,
         context: args.context,
         maxNewTokens: args.maxNewTokens,
         paceMs: args.paceMs,
+        signal: signal || null,
       });
+      /* The real session REJECTS on abort rather than resolving with what it
+         had (ai/engine/session.mjs `request`), so the double rejects too — a
+         stub that resolves here would let a wrong shell pass. */
+      if (signal?.aborted) throw new Error('aborted before it started');
       const r = typeof reply === 'function' ? reply(args) : reply;
       if (r?.throw) throw new Error(r.throw);
+      if (r?.waitForAbort) {
+        await new Promise((resolve, reject) => {
+          signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+        });
+      }
       return {
         text: r?.text ?? '',
         abstained: !!r?.abstained,
@@ -251,7 +261,8 @@ test('MODEL-12 the answer path stays on the device — no network, no dynamic im
 
 test('MODEL-9 every refusal exists in three languages and states no fact', () => {
   assert.deepEqual([...NO_ANSWER_KINDS],
-    ['notFound', 'withheld', 'unverified', 'unsupported', 'loading', 'stopped', 'strained']);
+    ['notFound', 'withheld', 'unverified', 'unsupported', 'loading', 'stopped',
+      'strained', 'cancelled']);
 
   for (const kind of NO_ANSWER_KINDS) {
     for (const lang of ['en', 'hi', 'hinglish']) {
@@ -270,10 +281,16 @@ test('MODEL-9 every refusal exists in three languages and states no fact', () =>
 
   /* No refusal badge may be mistaken for an answer. */
   assert.match(MODEL_BADGES.model, /AI ANSWER/);
+  assert.match(MODEL_BADGES.partial, /PARTIAL/,
+    'a stopped answer must SAY it is unfinished — see the loop below');
   for (const [key, badge] of Object.entries(MODEL_BADGES)) {
     if (key === 'model') continue;
     assert.ok(!/AI ANSWER/.test(badge), `${key} is labelled as an AI answer`);
-    assert.match(badge, /NO ANSWER/, key);
+    /* `partial` is the one thing that is neither: it is the model's own words,
+       unfinished, and unguarded — the guard runs when generation ends — so it
+       may not claim the verification the model badge claims. */
+    if (key === 'partial') assert.ok(!/NO ANSWER/.test(badge), 'a partial is not a refusal');
+    else assert.match(badge, /NO ANSWER/, key);
   }
 });
 
@@ -382,6 +399,90 @@ test('MODEL-13 the intent fallback is capped, and the sources are the facts it r
     const grounded = probe.retrieve(TOPIC_ONLY);
     assert.equal(grounded.hits.length, 0, 'TOPIC_ONLY must still defeat retrieval');
   });
+
+test('MODEL-15 §10\u2019s Stop reaches the worker, and an abort is not an answer',
+  async () => {
+    /* The shell's Stop button is one call to `AbortController.abort()`, so the
+       contract it rests on lives here: the signal is forwarded all the way to
+       the session, and an aborted generation REJECTS. If the answer path
+       swallowed that rejection and returned the partial as `kind: 'model'`,
+       the panel would badge an unfinished, unguarded sentence as a verified
+       answer — the one thing the badge exists to prevent. */
+    const session = stubSession({ text: 'half a sentence', waitForAbort: true });
+    const answerer = answererWith(session);
+    const controller = new AbortController();
+
+    const pending = answerer.ask({
+      question: ANSWERABLE, lang: 'en', signal: controller.signal,
+    });
+    /* Wait until the generation is genuinely in flight, then press Stop. */
+    for (let i = 0; i < 50 && !session.calls.length; i++) await Promise.resolve();
+    assert.equal(session.calls.length, 1, 'the model was never asked');
+    assert.equal(session.calls[0].signal, controller.signal,
+      'the abort signal did not reach the session');
+
+    controller.abort();
+    await assert.rejects(() => pending, /aborted/,
+      'an aborted generation must reject, so the shell keeps the partial and badges it');
+
+    /* And an already-aborted signal never starts a generation at all. */
+    const dead = new AbortController();
+    dead.abort();
+    await assert.rejects(
+      () => answererWith(stubSession({ text: 'x' })).ask({
+        question: ANSWERABLE, lang: 'en', signal: dead.signal,
+      }), /aborted/);
+  });
+
+test('MODEL-16 a stopped answer has two honest outcomes and no third', () => {
+  /* The shell renders a Stop from two inputs: nothing streamed yet (the
+     `cancelled` line, because "the model stopped" would blame the machine for
+     a click) and a partial guarded by nothing (the `partial` badge, which is
+     neither an answer nor a refusal). Both must exist, in three languages,
+     and neither may claim a verification that never happened. */
+  for (const lang of ['en', 'hi', 'hinglish']) {
+    const line = noAnswerLine('cancelled', lang);
+    assert.ok(line && !/\d/.test(line), `cancelled/${lang} is not a clean refusal: ${line}`);
+    assert.ok(!/model stopped/i.test(line), `${lang} blames the model for the visitor's click`);
+  }
+  assert.match(MODEL_BADGES.partial, /PARTIAL/);
+  assert.ok(!/AI ANSWER/.test(MODEL_BADGES.partial),
+    'an unfinished, unguarded sentence must not wear the verified badge');
+  assert.notEqual(MODEL_BADGES.partial, MODEL_BADGES.unverified);
+});
+
+test('MODEL-17 a stopped answer is finished, placeholder-free, or honestly empty', () => {
+  /* §10's Stop. The guard and the placeholder resolver both run at the END of
+     a generation, so neither has run when a visitor stops one — the shell
+     cannot just leave the streamed string on screen. This is the pure half:
+     what the bubble is allowed to show. */
+
+  /* A complete placeholder resolves, exactly as it would have at the end. */
+  const email = renderFact(KB, 'contact.email', 'en');
+  assert.ok(email && email.includes('@'));
+  assert.equal(partialAnswer(KB, `You can reach me at <|fact:contact.email|>`, 'en'),
+    `You can reach me at ${email}`);
+
+  /* One CUT IN HALF is dropped, not printed: a stream can end mid-placeholder,
+     and `replacePlaceholders` cannot match an incomplete one. */
+  assert.equal(partialAnswer(KB, 'My email is <|fact:cont', 'en'), 'My email is');
+  assert.ok(!/<\|/.test(partialAnswer(KB, 'x <|fact:', 'en')));
+
+  /* An unknown id is dropped as well — the allowlist does not loosen for a
+     stop (and the guard never saw it either). */
+  assert.equal(partialAnswer(KB, 'phone: <|fact:not.a.fact|>', 'en'), 'phone:');
+
+  /* Stop before a single token (during prefill — most of the wait) is the
+     cancelled line, never a partial claim and never "the model stopped". */
+  for (const empty of ['', '   ', null, undefined]) {
+    assert.equal(partialAnswer(KB, empty, 'en'), noAnswerLine('cancelled', 'en'));
+  }
+  assert.equal(partialAnswer(KB, '<|fact:em', 'en'), noAnswerLine('cancelled', 'en'),
+    'a bare cut placeholder leaves nothing to keep');
+  for (const lang of ['hi', 'hinglish']) {
+    assert.equal(partialAnswer(KB, '', lang), noAnswerLine('cancelled', lang));
+  }
+});
 
 test('MODEL-14 a prompt that overflows the window is impossible, not an error the visitor reads',
   () => {

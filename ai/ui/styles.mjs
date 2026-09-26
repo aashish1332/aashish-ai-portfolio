@@ -156,6 +156,16 @@ export const STYLES = `
   color: var(--paper-dim); text-decoration: underline; text-underline-offset: 3px;
 }
 .ai__link:hover, .ai__link:focus-visible { color: var(--accent); }
+/* §10's message controls (Stop / Retry / Clear) sit together at the right of
+   the footer. They are revealed by the hidden attribute, so the stylesheet
+   has to let that win — a display rule from this file would otherwise keep an
+   unavailable control on screen and clickable. */
+.ai__controls { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+.ai__controls .ai__link { margin-left: 0; }
+.ai__controls .ai__link[hidden] { display: none; }
+@media (prefers-reduced-motion: no-preference) {
+  .ai__controls .ai__link { transition: color .18s ease; }
+}
 
 .ai__sr {
   position: absolute; width: 1px; height: 1px; overflow: hidden;

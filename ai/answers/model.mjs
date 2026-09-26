@@ -69,6 +69,13 @@ export const MODEL_BADGES = Object.freeze({
   unverified: 'NO ANSWER · COULD NOT VERIFY IT',
   withheld: 'NO ANSWER · NOT PUBLISHED',
   noModel: 'NO ANSWER · NO AI MODEL ON THIS DEVICE',
+  /* §10's Stop. The one badge that is neither an answer nor a refusal: the
+     text is the model's own, it is unfinished, and the guard never saw it,
+     because the guard runs when generation ENDS. It therefore may not carry
+     the verification the `model` badge carries — hence a third shape rather
+     than either of the two. `tests/model-answers.test.mjs` MODEL-9 holds
+     that line. */
+  partial: 'PARTIAL ANSWER · STOPPED BY YOU',
 });
 
 /* ── the sentences that are not answers (§15.5) ─────────────────
@@ -113,12 +120,21 @@ const NO_ANSWER_TEXT = {
     hinglish: 'Ye device page render karne mein struggle kar raha hai, isliye maine abhi jawab dena band kar diya hai. '
       + 'Theek hone par wapas aa jayenge.',
   },
+  /* §10's Stop, pressed before the first token arrived: there is no partial to
+     keep, and telling the visitor "the model stopped" would be a lie about the
+     machine in response to their own click. */
+  cancelled: {
+    en: 'Stopped before I had written anything. Ask again whenever you like.',
+    hi: 'कुछ लिखने से पहले ही रोक दिया गया। जब चाहें फिर पूछ सकते हैं।',
+    hinglish: 'Kuch likhne se pehle hi rok diya gaya. Jab chahein phir pooch sakte hain.',
+  },
 };
 
 /** Every way this build can decline to answer, as data, so the caller and the
  *  tests name them identically and no translation can be forgotten. */
 export const NO_ANSWER_KINDS = Object.freeze([
   'notFound', 'withheld', 'unverified', 'unsupported', 'loading', 'stopped', 'strained',
+  'cancelled',
 ]);
 
 /**
@@ -139,6 +155,30 @@ export function noAnswerLine(kind, lang = 'en') {
 /** The context the model reads: `[id] value`, exactly the layout
  *  `ai/data/instruction.py` trains on. One line per retrieved fact, in
  *  retrieval order, deduplicated, newest-first trimmed by the caller's k. */
+/**
+ * What a stopped answer shows (§10's Stop), as a pure function.
+ *
+ * Two things normally happen to a stream that will never happen here: the
+ * guard does not run (it runs when generation *ends* — that is how it can
+ * check the finished text) and neither does the placeholder resolver at the
+ * end of `ask()`. So this resolves placeholders itself and drops the one that
+ * was cut in half, because a partial `<|fact:em` on screen is an angle bracket
+ * shown to a visitor.
+ *
+ * Nothing painted yet — Stop during prefill, which is most of the wait — is the
+ * `cancelled` line, not a partial: there is nothing to keep, and "the model
+ * stopped" would blame the machine for the visitor's own click.
+ *
+ * Pure, so the awkward half is testable without a DOM or a checkpoint: the
+ * shell only decides *when* to call it (see `presentPartial` in
+ * `ai/ui/chat.mjs`).
+ */
+export function partialAnswer(kb, text, lang = 'en') {
+  const kept = resolveFacts(kb, String(text ?? ''), lang).text
+    .replace(/<\|[^|]*$/, '').trim();
+  return kept || noAnswerLine('cancelled', lang);
+}
+
 export function contextLines(kb, hits, lang = 'en') {
   const seen = new Set();
   const lines = [];
