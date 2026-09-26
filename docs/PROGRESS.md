@@ -1705,3 +1705,70 @@ removed. It costs 1.0 s.
 Tests **432 JS + 326 Python**, 0 failures. Chat code chunk **136,409 B gz**
 (**88.8 %** of the 150 KB §4 budget, up from 133,891 / 87 %) — the §10 controls
 cost ~2.5 KB gz, and the headroom is now 17 KB. Bundle 44 files / 5,750,918 B.
+
+---
+
+## Re-measuring §15.3 with a model that actually answers — 2026-09-26
+
+`npm run probe:resources` had a property nobody had noticed: every one of its
+questions was a **refusal**. The session bug meant no browser had ever loaded a
+model, so the probe's resource numbers were the numbers of an *idle panel* —
+including the row everyone would quote, "0 shader programs compiled". Re-run
+with five real answers (13.9 s, 19.5 s, 24.3 s, 25.3 s, 36.7 s on R1) plus one
+hands-free answer, the answer to the question a visitor's device actually asks
+is: **the AI adds nothing measurable to the main thread.**
+
+| | measured |
+|---|---|
+| worst long task in the AI windows | **65 ms** |
+| the page's own worst long task, panel never opened | **88 ms** (software-GL film) |
+| median frame time, panel open vs closed | 25.2 ms vs 24.7 ms — **2 %** FPS drop (§4 allows 10 %) |
+| GL programs compiled while answering | **0** (31 → 31) |
+| §6.3 ladder peak across five answers | **1** (pace) — rung 3 never fired |
+| quality changes the ladder asked the scene for | **0** |
+| extra JS heap, five answers on top of the panel | **1.3 MB** (§4 allows 300 MB) |
+| heap / nodes / listeners over 5 reopens | **0 / 0 / 0** |
+| the model after 130 s closed (§6.4) | **released** (worker 1 → 0) |
+
+That is the worker boundary doing exactly what it exists for: the whole
+generation — prefill included — happens off the main thread, and the film's
+frame time does not move.
+
+### Three probe bugs this exposed, each of which had been hiding a result
+
+1. **"no AI worker outlives a close" was measuring the wrong moment.** §6.4
+   *deliberately* keeps the model for ~2 minutes after a close, so a sample
+   taken seconds after one cannot tell the window from a leak. It had been
+   passing for the wrong reason: the worker had been terminated by an earlier
+   close's timer while the probe was still spending minutes on refusals. It now
+   waits the window out (`UNLOAD_WAIT`, 130 s) and samples again — **released,
+   1 → 0** — with the warm state asserted separately.
+2. **"the AI compiles no GL program" compared the wrong two instants** — before
+   the click against after the *entire answering section* — so it read as the
+   AI rendering something of its own. The idle claim it makes is now measured
+   where it is true (31 → 31 on open and idle), and the answering window is
+   reported separately with the ladder's own `qualityCalls` counter beside it.
+3. **the tap-to-talk section asserted push-to-talk at T2.** At T2 voice is
+   `both`, which means Proactive — clicking the button starts continuously, and
+   the manual checklist says so. It was reading `mode=continuous` while
+   asserting `mode=push`, and failing three checks for it. "Tap & Speak" is the
+   T1 mode (§6.2), and the section now sets T1: **all four tap checks pass**,
+   and the continuous section still passes at T3.
+
+### Two things left as open measurements, not explained away
+
+* Two *earlier* runs showed a **+21-program** material recompile during
+  answering; two showed none. The ladder asked for no quality change in any run
+  (`qualityCalls: 0`), so rung 3 did not fire. In the run where the count moved
+  outside the typed questions it landed exactly in the hands-free window — the
+  one the §12 anchor scroll runs in, where the film switches scene and three.js
+  compiles that scene's programs. A scene change is the page's own cost, but
+  this has not been isolated.
+* The panel's ready time has been measured at **390 ms** and at **20–22 s** on
+  this box within the same hour, by two probes with two different wait
+  conditions. That 50× spread is machine load, and neither number is
+  quotable alone.
+
+The two remaining probe failures are the voice section's wake-phrase pair,
+which flips between runs on a host with no real microphone (§11 has always been
+NOT TESTED for exactly this reason). Neither is a resource figure.

@@ -648,6 +648,45 @@ worst abs Δ logit **3.58e-07**.
 | Any single AI asset | ≤ ~100 MB | 5,059,584 B raw / 4,732,964 B gz |
 | Files | — | 44 |
 
+### With a model that actually answers (§15.3, 2026-09-26)
+
+`npm run probe:resources`. Until the session bug above was fixed, every one of
+this probe's questions was a *refusal* — no generation, no anchor, no ladder
+pressure — so its resource numbers were the numbers of an idle panel. Re-run
+with five real answers (13.9 s, 19.5 s, 24.3 s, 25.3 s, 36.7 s on R1) and one
+hands-free answer:
+
+| | |
+|---|---|
+| worst main-thread long task in the AI windows | **65 ms** |
+| the page's own worst long task, panel never opened | **88 ms** |
+| median frame time, panel open vs closed | 25.2 ms vs 24.7 ms (**2 %** FPS drop, §4 allows 10 %) |
+| GL programs compiled while answering | **0** (31 → 31) |
+| §6.3 ladder peak across the five answers | **1** (pace), never rung 3 |
+| quality changes the ladder asked the scene for | **0** |
+| extra JS heap, 5 answers on top of the panel | **1.3 MB** (§4 allows 300 MB) |
+| heap / nodes / listeners over 5 reopens | **0 / 0 / 0** |
+| worker after 130 s idle-closed (§6.4) | **released** (1 → 0) |
+| probe | **24/26** |
+
+The two failures are the voice section's wake-phrase pair, which flips between
+runs on this host (`asked=0`/`asked=1` in one run, `1`/`2` in another, with the
+stub engine and no real microphone) — the same instability `docs/PROGRESS.md`
+already records for §11. Nothing above is a resource figure.
+
+**The honest uncertainty.** Two *earlier* runs of the same probe showed a
+**+21-program** material recompile during answering, and two showed none. The
+ladder asked for a quality change in none of them (`qualityCalls: 0` in every
+run), so rung 3 — which is what recompiles every material — did not fire; in
+the run where the count moved outside the typed questions it landed exactly in
+the hands-free window, which is where the §12 anchor scroll runs and the film
+switches scene. That is a normal scene-change cost any scroll to that section
+incurs, but it has not been isolated and is recorded as an open observation
+rather than explained away. **Also unresolved:** the panel's own ready time has
+been measured at **390 ms** and at **20–22 s** on this box in the same hour, by
+two probes with two different wait conditions; the 50× spread is a machine-load
+artifact and neither number should be quoted alone.
+
 The chat **code** chunk is **88.8 %** of its budget — 17 KB of headroom left —
 and this is the number to watch. It grew from 133,891 B (87 %) as §10's Stop and
 Retry landed (the two controls, their styles, the `partial` badge and the
