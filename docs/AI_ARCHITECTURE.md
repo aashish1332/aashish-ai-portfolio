@@ -154,6 +154,19 @@ BM25 + alias/transliteration map + char-n-gram fuzzy matching + a focus
 entity, top-k ≤ 3 chunks. Deterministic language detection from script
 ratio + a function-word lexicon (no ML, no selector), with turn smoothing.
 
+**The context budget is priced against what the model reads, and the window is
+enforced by the real tokenizer.** `estimateTokens` used a generic
+4-chars-per-token rule of thumb, which is wrong for a 1,024-token vocabulary by
+~2.5×: a "300-token" context was really ~750, and 14 of the 60 evaluation
+questions built a prompt past `max_position_embeddings` — where `forward()`
+throws, so the visitor was told the model had stopped. `CHARS_PER_TOKEN` is the
+measured **1.5**, `search()` prices nothing unless the caller declares a cost
+model (`contextSizer` — the budget is about the rendered fact, not the index
+chunk), and `fitToBudget` in `ai/engine/prompt.mjs` drops the weakest evidence
+from the tail with the real tokenizer rather than hoping an estimate was
+conservative. `generate()` reports the context it actually read, and the guard
+and the sources follow that. Numbers: `docs/BENCHMARKS.md`.
+
 **There is one answer path: the on-device model.** The deterministic Quick
 Answers were retired as *answers* — a template in the same bubble as a
 generated sentence teaches a reader nothing about which one they are reading.
@@ -501,10 +514,10 @@ That is an allow-list entry with a reason, not a default.
 | The §8.4 retrieval gate is calibrated rather than assumed | **bounded, one half measured** — ceiling 4.647 recomputed from the data by test; the floor is **NOT MEASURED** (`docs/CALIBRATION.json`) |
 | Numbers and declared aliases are retrievable | **verified** — "8.28" → `ach.lpu-cgpa`, "who is he" → `person.name`, both regression-tested |
 | Browser inference and quantisation | **built, and run on trained weights** — a module worker runs the graph on int8 weights, shards are SHA-256 verified on load, and three implementations of the same architecture are cross-checked (torch ↔ numpy ↔ JavaScript). Measured on the `local` checkpoint's export: 138 positions, argmax **100 %**, top-16 order **100 %**, worst abs Δ logit **8.82e-06**, load 57–63 ms, prefill 68–71 tok/s, decode **65–74 tok/s** (8–9× §4's floor) on R1's CPU |
-| §4's budgets, with the model in the bundle | **measured** — chat code chunk 127,836 B gz of a 150 KB budget, model payload 4,742,169 B gz, first visit 4,926,379 B gz = **12 %** of §4's 40 MB. Asserted on every `npm test`; the weight budgets are NOT TESTED (loudly skipped) without an export |
+| §4's budgets, with the model in the bundle | **measured** — chat code chunk **133,891 B gz (87 %)** of a 150 KB budget, model payload 4,742,169 B gz, first visit 4,926,379 B gz = **12 %** of §4's 40 MB. Asserted on every `npm test`; the weight budgets are NOT TESTED (loudly skipped) without an export |
 | The export carries no dev path and no test fixture | **verified** — provenance is step/commit/SHA-256, not a directory (the build refused the path); a model version directory ships only its manifest, tokenizer and shards, so the 257 KB parity fixture no longer reaches `dist/` |
 | The same model is not two different sizes | **verified** — 4,984,064 params, and the 5,246,208 a naive `state_dict` sum reads is the **tied** `lm_head.weight` counted twice (`data_ptr()` equal, `tieGap` 0), pinned by test |
-| The model answering from **its own generation**, not a template | **built** — `ai/answers/model.mjs` retrieves context, asks the worker, guards the result and resolves placeholders. Templates are only reached for what must be exact by construction (email/URL/refusal) or when the model is not available, and the badge says which happened. What its answers *say* is **NOT TESTED end to end** — the 4.98M `local` checkpoint is an export exercise, not a quality result, and no browser run of the model path has produced a real answer yet |
+| The model answering from **its own generation**, not a template | **built, and answered in a real browser** — `ai/answers/model.mjs` retrieves context, asks the worker, guards the result and resolves placeholders. MEASURED on R1 headless Chrome: `dev-ai-probe.js` 31/31, panel ready 20.0 s, first answer 91.6 s, `AI ANSWER · ON-DEVICE MODEL` with 2 sources, "what is his phone number?" → `NO ANSWER · NOT PUBLISHED`, and the intent-fallback question ("what are your skills?") reading **12 capped facts**. What its answers *SAY* is still **NOT TESTED as quality** — the 4.98M `local` checkpoint is an export exercise, and it answers with garbage |
 | An always-open microphone that still only transcribes speech | **built, unit-tested** — `ai/voice/vad.mjs` (energy VAD, adaptive floor, hysteresis, max segment, post-cut cooldown) opens a gate the recognizer is switched by. Whether it survives a real room is **NOT TESTED** |
 | **Voice**: microphone, wake phrase, speech output | **built, adapter-first, and browser-verified** — 0 AI requests before the tap, the audio disclosure in the DOM before any result can be handled, a wake phrase in continuous mode, the answer spoken in its own language, and a dead microphone turned off with a stated reason and the scene handed back (`dev-ai-probe.js`, 26/26 — the probe prints its own tally) |
 | **Voice with a live microphone** | **NOT TESTED.** Headless Chrome ships the API and has no microphone, so the *listening* path is covered by unit tests against doubles (34) and by a browser running a **stub** engine (`dev-resource-probe.js`), never by a real voice. A human saying "hey Aashish" into a laptop, in a noisy room, with an accent, has not happened. Chrome-only in practice; Firefox and Safari get the disabled button and the reason |

@@ -641,23 +641,96 @@ worst abs Δ logit **3.58e-07**.
 
 | Budget | §4 | Measured |
 |---|---|---|
-| AI chat **code** chunk (UI + KB + retrieval + language + guard + intent + engine JS) | ≤ 150 KB gz | **127,836 B** (83 %) |
+| AI chat **code** chunk (UI + KB + retrieval + language + guard + intent + engine JS) | ≤ 150 KB gz | **133,891 B** (87 %) |
 | Rest of the page | regression guard 250 KB | 65,649 B |
 | Model payload (weights + tokenizer + manifest) | ≤ 25 MB preferred, ≤ 40 MB hard | **5,144,357 B** raw · 4,742,169 B gz |
 | First-use download, T1/T2 | ≤ ~40 MB | **4,926,379 B** gz (**12 %**) |
 | Any single AI asset | ≤ ~100 MB | 5,059,584 B raw / 4,732,964 B gz |
 | Files | — | 44 |
 
-The chat **code** chunk is 83 % of its budget and worth watching: it grew from
-118,561 B when this log last recorded it, as the model-only answer path landed
-— the three refusal sentences in three languages, the routing decision, and the
-retry logic around them. It grew from 79,555 B before that, as the engine,
-voice, guard and model answer path landed. The weights are deliberately **not**
+The chat **code** chunk is 87 % of its budget and worth watching: it grew from
+127,836 B (83 %) as the §8.2 window work landed — `fitToBudget`, the retry
+that shortens a context correctly, and the honest chars-per-token accounting.
+Before that, from 118,561 B as the model-only answer path landed (three refusal
+sentences in three languages, the routing decision, the retry logic), and from
+79,555 B before that as the engine, voice and guard landed. **The next feature
+that lands in `ai/` should be paired with a look at what could move out of this
+chunk.** The weights are deliberately **not**
 in that number —
 folding a 5 MB artifact into a 150 KB limit makes both budgets unmeasurable.
 **NOT TESTED:** brotli is measured (4,713,956 B) but nothing yet negotiates it,
 so the effective transfer is the gzip figure; and no CDN or real network was
 involved, so these are file sizes, not load times.
+
+---
+
+## The context budget, and the 512-token window it was drowning (§8.2/§9)
+
+`npm run probe:tokens` (alias `node dev-token-budget-probe.js`), shipping
+tokenizer, real knowledge base, real §14 corpus. Measured with the exported
+`tokenizer.json` — the weights are not loaded.
+
+### Why 4 characters per token was wrong
+
+`estimateTokens` used a generic English rule of thumb. `aashish-ai-1` has a
+**1,024-token vocabulary**, so its BPE cannot merge long runs the way a 32k one
+does, and real text costs far more tokens per character:
+
+| String class | n | min | median | max |
+|---|---|---|---|---|
+| frame prefix (specials + rules) | 1 | 2.66 | **2.66** | 2.66 |
+| question | 60 | 1.06 | **1.82** | 3.14 |
+| retrieval context (the string that is budgeted) | 43 | 1.29 | **1.60** | 2.39 |
+| index chunk text (the string that is *not* budgeted) | 60 | 1.08 | 1.56 | 2.83 |
+| single fact line | 28 | 1.00 | **1.47** | 2.70 |
+| answer prose | 60 | 1.26 | 1.63 | 2.26 |
+
+At 4, a "300-token" context was really ~750, and a prompt one token past
+`max_position_embeddings` is not a slow answer: `forward()` throws, and the
+visitor is told the model stopped. `CHARS_PER_TOKEN` is now **1.5**. It is not
+set to the *worst* measured value on purpose — at 1.25 a single 1,175-character
+project chunk prices at over the whole budget, is skipped, and the question
+stops retrieving anything, which converts a token budget into a relevance
+filter (see below). The hard limit is no longer an estimate at all: `fitToBudget`
+enforces it with the real tokenizer.
+
+### What the old budget admitted, and what fits now
+
+| Case | 4 chars/token (old) | measured now |
+|---|---|---|
+| Retrieval-path prompts over 512 tokens | **14 of 60** | **0 of 60** |
+| Prompts over 512 with NO token budget at all | 3 of 60 (worst 525 tok) | 3 of 60 — the question and the frame alone are that long |
+| Retrieval-path prompts needing any trimming | — | **0** |
+| Intent fallback, "What are his skills?" | 38 facts / **764 tokens** | 18 facts fit; capped at **12** |
+| Intent fallback, facts that fit at all | — | min 1 · median 2 · max 18 |
+
+The intent fallback is the one path whose "top-k" is a whole topic instead of a
+BM25 ranking, and it had no cap at all. `MAX_INTENT_FACTS = 12` is the measured
+18 with headroom for a conversation turn or two.
+
+### Pricing the wrong string
+
+`search()` no longer prices anything by default. The budget is about the string
+the *model reads*, which is `contextLines()` — one compact rendered value per
+fact. The index's chunk text is a different, much larger string: a project
+chunk is 1,175 characters of name, codename, summary, tech, role, status,
+dates, highlights, links and attribution, while `renderFact` sends the
+300-character summary. Priced by its chunk text at an honest ratio, the best
+chunk for "goal tracker" blew the budget on its own and was skipped, so the
+question returned **nothing** and `lowConfidence` reported it out of base. A
+relevance claim is a calibrated score threshold (`MIN_TOP_SCORE`, see
+`docs/CALIBRATION.json`); a token budget belongs to a caller that declares a
+cost model, and `search()` now leaves the two decisions apart.
+
+The `docs/CALIBRATION.json` sweep is why this matters beyond the bug: it calls
+`search()` without a sizer, exactly as it did when 4-chars-per-token admitted
+everything under 1,200 characters. Making the default budget bite would have
+silently edited the conditions the gate was calibrated under.
+
+**NOT TESTED:** the ratio on a retrained tokenizer. `tests/token-budget.test.mjs`
+re-derives it from the shipping artifact on every run, so a vocabulary change
+fails the suite and points at `npm run probe:tokens` rather than silently
+invalidating these numbers.
 
 ---
 

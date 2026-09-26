@@ -36,7 +36,7 @@ Do this **first** — most of what follows is a comparison against it.
 |---|---|---|
 | B1 | Click **Ask Aashish AI** | panel opens immediately, starter chips appear, no spinner |
 | B2 | In Network, look at what just loaded | the AI chunk, then the model (manifest + `model-*.bin` + tokenizer) — the **size is stated in the panel before the download** |
-| B2b | Watch the tier badge while it loads | `PREPARING MODEL…` → `MODEL READY`; a failure says so, and a question asked meanwhile gets an honest refusal rather than a template |
+| B2b | Watch the banner while it loads | `PREPARING ON-DEVICE MODEL` → `ON-DEVICE MODEL READY`; a failure says so, and a question asked meanwhile gets an honest refusal rather than a template |
 | B2c | Reload the page and open the panel again | the model loads from cache — **Network shows no new shard requests** |
 | B3 | Tap a starter chip | an answer appears, badged *AI ANSWER · ON-DEVICE MODEL*, and text **streams in** rather than appearing all at once |
 | B4 | Type "what is your cgpa" | answers with the CGPA |
@@ -53,6 +53,19 @@ Do this **first** — most of what follows is a comparison against it.
 
 **Watch for:** the panel stealing scroll from the film; the chat container
 scrolling the page instead of itself; a stuck spinner.
+
+**Already covered without a person (2026-09-26).** `dev-ai-probe.js` opens the
+panel in headless Chrome and asserts the flow mechanically — 0 AI requests
+before the click, the panel becoming ready (20.0 s on R1), an answer badged
+*AI ANSWER · ON-DEVICE MODEL* with its sources, the withheld phone number
+declined, "what are your skills?" answered from the capped intent fallback (12
+facts), Escape closing, focus returning — **31/31**, and the same probe covers
+B3, B4, B8 and the pre-click promise of B10. What it cannot do is judge the
+*sentence*: the only checkpoint that exists is a 4.98 M CPU export exercise
+whose answers are coherent-ish and wrong ("work reviewed cor byandeeer why"), so
+B3–B7 still need a person **as soon as there is a trained-for-quality model**.
+B2c (cache hit on reload), B9b (unload after ~2 min) and B8b (Stop) remain
+uncovered by automation.
 
 ---
 

@@ -80,7 +80,8 @@ the PII list is **approved by the owner** (2026-09-20): phone `public:false`, pr
 4. **`ai/retrieval/index.mjs`** — §8.2, no model, no network: BM25 (k1 1.2 / b 0.75) + a
    transliteration/variant map + char-trigram fuzzy matching (Dice ≥ 0.62) + an entity index +
    the conversation's **focus entity** with pronoun lock-on. Enforces the §8.2 budget in code:
-   `MAX_CHUNKS = 3`, `MAX_CONTEXT_TOKENS = 300` (4-chars-per-token approximation), and a
+   `MAX_CHUNKS = 3`, `MAX_CONTEXT_TOKENS = 300` (4-chars-per-token approximation —
+   **superseded**, see "The window" below: the measured ratio is 1.5), and a
    `MIN_TOP_SCORE` retrieval gate that abstains *without* calling a model (§8.4 layer 1).
    Chunks are written so they can be pasted straight into model context in Phase 5+.
 5. **`ai/language/detect.mjs`** — §8.3, no selector, no ML: Devanagari ratio + a Roman-Hinglish
@@ -1424,7 +1425,7 @@ unflattering to the obvious suspects:
 `ai/engine/` · `ai/answers/model.mjs` · `ai/voice/vad.mjs` ·
 `inference/export_browser.py` · `inference/reference.py` · `tools/verify-engine.mjs` ·
 `evaluation/voice/` · `ai/model-export/aashish-ai-1/{manifest.json,model-00000.bin,tokenizer.json}` ·
-`tests/engine.test.mjs` (17) · `tests/tokenizer-parity.test.mjs` · `tests/vad.test.mjs` ·
+`tests/engine.test.mjs` (18) · `tests/tokenizer-parity.test.mjs` · `tests/vad.test.mjs` ·
 `tests/synthetic.test.mjs` · `tests/build-bundle.test.mjs` (19) ·
 `tests/py/test_export_browser.py` (21) · `tests/py/test_model_schema.py` (34) ·
 `dev-prefill-batch-probe.js` · `dev-answer-latency-probe.js` ·
@@ -1510,3 +1511,117 @@ says whether the model gives a *good* answer to "what are his skills?". It says
 that it is asked, that the facts it is handed are the right ones, and that
 anything it says is checked before a visitor reads it. The chat shell's ladder
 wiring (§6.3 rungs 1–4) is likewise still uncovered by automation.
+
+---
+
+## The window: two bugs that hid each other — 2026-09-26
+
+The previous entry ends with the honest note that no real model had ever
+answered a real question in a real browser. Chasing that note down found two
+defects, and the second one was invisible *because* of the first.
+
+### 1. The browser model path was dead, on every device
+
+`createModelSession`'s `worker.onmessage` kept a list of replies that must not
+settle the request that asked for them. `progress` and `token` belong there —
+they stream. `ready` does not: **`ready` IS the answer to `prepare`.** It was in
+that list, so `prepare()`'s promise never resolved, `state` never left
+`'loading'`, and `prepareModel()` never returned. The panel could download all
+five megabytes, verify every hash, build the KV cache — and still show
+"PREPARING ON-DEVICE MODEL" forever, on any browser, on any device.
+
+Reproduced in headless Chrome: the worker posts `ready`, the session reports
+`loading` thirty seconds later. **Every test passed anyway**, because the engine
+suite calls `ScratchLlamaEngine.load` directly and nothing drove this protocol
+at all. `tests/session.test.mjs` (SESSION-1…8) drives it with a fake Worker; put
+the old behaviour back and that suite hangs until it times out.
+
+### 2. The context budget was wrong by ~2.5×, so prompts overflowed the window
+
+With the model finally loading, "What are your skills?" was answered with
+*"The on-device model stopped, so I can't answer right now."* It had not
+stopped. `estimateTokens` assumed **4 characters per token**, a generic English
+rule of thumb, and `aashish-ai-1` has a **1,024-token vocabulary** — its BPE
+cannot merge long runs the way a 32k one does. `npm run probe:tokens`:
+
+| String class | n | chars/token min | median | max |
+|---|---|---|---|---|
+| frame prefix (specials + rules) | 1 | 2.66 | 2.66 | 2.66 |
+| question | 60 | 1.06 | 1.82 | 3.14 |
+| retrieval context | 43 | 1.29 | 1.60 | 2.39 |
+| single fact line | 28 | 1.00 | 1.47 | 2.70 |
+
+At 4, a "300-token" context was really ~750 tokens, and a prompt one token past
+`max_position_embeddings` does not degrade — `forward()` **throws**. Measured
+before the fix: **14 of the 60** evaluation questions assembled a prompt over
+512 tokens, and the intent fallback handed the model **764 tokens** for the most
+common question a recruiter asks.
+
+Three changes, each measured:
+
+* **`CHARS_PER_TOKEN = 1.5`**, the measured median of the classes the budget
+  prices. Deliberately *not* lower: at 1.25 — below every measured minimum —
+  a single long project chunk is priced over the whole budget, gets skipped, and
+  the question stops retrieving anything. A budget that refuses the best
+  evidence is not safer, it is wrong in the other direction.
+* **`search()` prices nothing by default.** Pricing the index's chunk text
+  prices the wrong string (a project chunk is 1,175 characters; the model reads
+  the 300-character summary), and the error was not neutral — the widest chunk
+  blew the budget on its own and was skipped, so "goal tracker" returned
+  nothing and `lowConfidence` called it out-of-base. A **relevance** claim
+  belongs to the calibrated `MIN_TOP_SCORE`; a **token** budget belongs to a
+  caller that declares a cost model, which is what `contextSizer` is. It also
+  keeps `docs/CALIBRATION.json` honest: the sweep still runs under the
+  conditions it was measured in.
+* **The window is enforced where the real tokenizer lives.** `fitToBudget` in
+  `ai/engine/prompt.mjs` drops context lines from the tail (weakest evidence
+  first, and it leaves the longest shared prefix for the KV reuse), then
+  conversation turns oldest-first, and a question too long to fit on its own
+  still throws. `generate()` reports the context it **actually read**, so the
+  guard and the §12 sources follow the trimmed form.
+
+Also capped: the intent fallback is bounded by `MAX_INTENT_FACTS` (18 of the 38
+skill facts fit that prompt; 12 leaves room for history), and `shortenContext`
+now returns the shape it was given — a two-line context came back from the
+§5.1 step-5 retry comma-joined, because `[a, b].join(' ')` is `"a,b"`. That went
+unnoticed while the function always returned a one-element array, which is
+another way of saying the retry had never really shortened anything.
+
+### MEASURED: a real model answering a real question in a real browser
+
+`dev-ai-probe.js`, R1, headless Chrome, software GL — the first time this has
+ever been true in this project:
+
+| | |
+|---|---|
+| pre-click AI requests | **0** (only `js/ai/launcher.js`) |
+| panel ready after the click | **20.0 s** (5.1 MB download + SHA-256 + dequantise) |
+| first answer | **91.6 s** |
+| answer | `AI ANSWER · ON-DEVICE MODEL`, 2 sources |
+| "What are your skills?" | `kind=model`, **12 facts read**, 12 sources |
+| "what is his phone number?" | `NO ANSWER · NOT PUBLISHED` |
+| probe | **31/31 checks** |
+
+The probe itself was measuring the wrong thing and is fixed: it clicked a
+starter chip 400 ms after opening the panel and called that "an answer, end to
+end", which on this machine is the *loading* state. It now waits for
+`model.state` to settle, waits for `model.last.text`, prints both timings, asks
+the skills question by name, and requires sources for an answer and forbids them
+for a refusal.
+
+### Measured
+
+* Chat code chunk **133,891 B gz** of the 150 KB §4 budget (**87 %**, up from
+  127,836 B / 83 %). Bundle **44 files / 5,743,270 B**; rest of the page 65,649 B.
+* Tests **428 JS + 326 Python**, 0 failures. New: `tests/session.test.mjs` (8),
+  `tests/token-budget.test.mjs` (4, BUDGET-1…4), ENG-18, MODEL-13/14,
+  GUARD-31b, plus the retrieval contract for a priced vs unpriced search.
+* `verify:engine` PASS: argmax 100 %, worst |Δlogit| 8.82e-6, unchanged.
+
+**Still open, unchanged:** no trained-for-quality checkpoint, so the answers are
+coherent-ish and wrong (`"work reviewed cor byandeeer why"`) — a 4.98 M CPU
+pipeline run, and the Kaggle/P4/P5 gates are the owner's job. WASM SIMD/WebGPU
+unimplemented; live microphone, real phone, iPhone and screen reader never
+tested; the chat shell's ladder wiring still has no runtime test. **New:** the
+chat chunk is at **87 %** of a hard budget — the next feature that lands in
+`ai/` should be paired with a look at what could move out of it.
