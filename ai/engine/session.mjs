@@ -50,21 +50,36 @@ export function createModelSession(opts = {}) {
       // Firefox before 114 and any browser with a strict CSP land here.
       return unsupported(`The AI worker could not start (${error?.message || error}).`);
     }
+    /* Which replies settle the request that asked for them, and which do not.
+
+       `progress` and `token` are streamed and must NOT settle it — a generation
+       resolves once, on `done`. `ready` is the opposite: it IS the answer to
+       `prepare`. It was in the do-not-settle list, which left that promise
+       pending *forever*, so `state` never left 'loading' and the model never
+       finished loading in any browser, on any device. Every test passed
+       anyway, because the engine tests call `ScratchLlamaEngine.load`
+       directly and nothing drove this protocol at all — see
+       `tests/session.test.mjs`, which is the test that would have caught it. */
     worker.onmessage = (event) => {
       const { id, type } = event.data || {};
       const entry = pending.get(id);
-      if (type === 'progress' || type === 'token' || type === 'ready') {
-        if (type === 'progress') onProgress?.({ stage: event.data.stage,
-          loaded: event.data.loaded || 0, total: event.data.total || 0, shard: event.data.shard });
-        if (type === 'ready') config = event.data.config;
-        if (type === 'token' && entry?.onToken) entry.onToken(event.data.text, event.data.index);
-        if (type === 'ready' || type === 'progress' || type === 'token') return;
+      if (type === 'progress') {
+        onProgress?.({ stage: event.data.stage, loaded: event.data.loaded || 0,
+          total: event.data.total || 0, shard: event.data.shard });
+        return;
+      }
+      if (type === 'token') {
+        entry?.onToken?.(event.data.text, event.data.index);
+        return;
       }
       pending.delete(id);
       if (!entry) return;
       if (type === 'error') entry.reject(new Error(event.data.message));
       else if (type === 'done') entry.resolve(event.data.summary);
-      else entry.resolve(event.data);
+      else {
+        if (type === 'ready') config = event.data.config;
+        entry.resolve(event.data);
+      }
     };
     worker.onerror = (event) => fail(`The AI worker failed: ${event?.message || 'unknown error'}`);
     return true;
