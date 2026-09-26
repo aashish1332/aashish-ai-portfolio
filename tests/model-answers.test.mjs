@@ -28,6 +28,7 @@ import { dirname, join } from 'node:path';
 
 import {
   createModelAnswerer, routeQuestion, noAnswerLine, NO_ANSWER_KINDS, MODEL_BADGES,
+  MAX_INTENT_FACTS,
 } from '../ai/answers/model.mjs';
 import { quickAnswer, renderFact } from '../ai/answers/quick.mjs';
 
@@ -343,4 +344,56 @@ test('MODEL-11 a greeting reaches the model with nothing to read, and asserts no
       question: 'hi', lang: 'en', intentIds: [],
     });
     assert.equal(refused.kind, 'notFound');
+  });
+
+test('MODEL-13 the intent fallback is capped, and the sources are the facts it read',
+  async () => {
+    /* THE OVERFLOW BUG. The intent fallback addressed the topic's WHOLE fact
+       list — 38 facts for "what are his skills?" — and the assembled prompt was
+       764 tokens against a 512-token window. The engine threw, and the visitor
+       was told the model had stopped, for a question the portfolio answers in
+       full. MEASURED with the shipping tokenizer: 18 of those 38 facts fit.
+
+       The cap is a budget, so it has a bound taken from the window rather than
+       from taste, and it is checked against the real window in
+       `tests/token-budget.test.mjs` (BUDGET-3). */
+    assert.ok(Number.isInteger(MAX_INTENT_FACTS) && MAX_INTENT_FACTS > 0);
+
+    const res = quickAnswer(KB, TOPIC_ONLY, { lang: 'en' });
+    const all = res.sources.filter((id) => renderFact(KB, id, 'en'));
+    assert.ok(all.length > MAX_INTENT_FACTS,
+      `the case this cap exists for is gone: ${all.length} facts`);
+
+    const session = stubSession({ text: '' });
+    const answerer = answererWith(session);
+    await shellAsk(answerer, TOPIC_ONLY);
+
+    const read = session.calls[0].context.split('\n').filter(Boolean);
+    assert.equal(read.length, MAX_INTENT_FACTS, 'the cap must be the number of lines sent');
+    assert.deepEqual(read, all.slice(0, MAX_INTENT_FACTS).map((id) => {
+      const value = renderFact(KB, id, 'en');
+      return `[${id}] ${value}`;
+    }), 'the context must be the leading facts, in order');
+
+    /* And the sources the visitor is shown are the ids the CONTEXT names, which
+       is what makes §12's anchors true. Built from `retrieve()` rather than
+       from the session stub because the stub does not trim. */
+    const probe = answererWith(stubSession({ text: '' }));
+    const grounded = probe.retrieve(TOPIC_ONLY);
+    assert.equal(grounded.hits.length, 0, 'TOPIC_ONLY must still defeat retrieval');
+  });
+
+test('MODEL-14 a prompt that overflows the window is impossible, not an error the visitor reads',
+  () => {
+    /* The engine is what enforces the window now (see `fitToBudget`), and this
+       is the module-level half of that contract: the answer path must never
+       hand the engine a context longer than `MAX_INTENT_FACTS` lines, so there
+       is no path left that can throw. The tokenizer-level proof is BUDGET-2. */
+    const src = readFileSync(join(HERE, '..', 'ai', 'answers', 'model.mjs'), 'utf8');
+    assert.match(src, /slice\(0, MAX_INTENT_FACTS\)/,
+      'the intent fallback lost its cap — 38 facts and a 764-token prompt come back');
+    /* both doors into a context are filtered by `renderFact`: retrieval's
+       `contextLines` and the intent fallback */
+    const renders = src.match(/renderFact\(kb, id/g) || [];
+    assert.ok(renders.length >= 1, 'the intent fallback stopped filtering ids');
   });

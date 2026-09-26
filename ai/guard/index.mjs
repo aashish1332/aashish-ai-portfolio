@@ -369,11 +369,31 @@ export function guard(text, opts = {}) {
 
 /* ── the §5.1 step-5 orchestration ────────────────────────────── */
 
-/** Drop the weakest tails of a context so a retry sees less to over-fit. */
+/** Drop the weakest tails of a context so a retry sees less to over-fit.
+ *
+ * Two shapes arrive here. A caller that passes an *array* of chunks gets the
+ * leading `keep` fraction of them. The shipped answer path passes ONE string
+ * of `[id] value` lines, and treating that as a one-element array returned it
+ * unchanged — so §5.1 step 5's "one greedy retry over a SHORTER context" was a
+ * retry over the same context, and the whole degrade step did nothing. A
+ * string is therefore split into its lines and the leading fraction kept.
+ *
+ * A single line has nothing weaker to drop, and is returned as-is; shortening
+ * it would cut a fact in half, and half a fact is a wrong fact.
+ *
+ * The SHAPE is preserved: an array in gives an array out, a string in gives a
+ * string out. It has to be, because the caller hands the result straight back
+ * to `generate()`, and a `frame()` built from an array does not join on
+ * newlines — `[a, b].join(' ')` is `"a,b"`, so a two-line context came back as
+ * one comma-mangled line. That survived unnoticed while the function always
+ * returned a single-element array (`[x].toString()` is `x`), which is another
+ * way of saying the retry never really shortened anything before. */
 export function shortenContext(context, keep = 0.6) {
-  const parts = (Array.isArray(context) ? context : [context]).filter(Boolean);
-  const n = Math.max(1, Math.round(parts.length * keep));
-  return parts.slice(0, n);
+  const wasArray = Array.isArray(context);
+  const parts = (wasArray ? context : String(context ?? '').split('\n')).filter(Boolean);
+  const n = parts.length < 2 ? parts.length : Math.max(1, Math.round(parts.length * keep));
+  const kept = parts.slice(0, n);
+  return wasArray ? kept : kept.join('\n');
 }
 
 /**
@@ -397,8 +417,13 @@ export function shortenContext(context, keep = 0.6) {
  * a retry, so a caller can set greedy decoding without this module knowing
  * what a decoder is.
  *
- * @returns {Promise<{text:string, attempts:number, guardFailed:boolean,
- *            fallback:boolean, violations:object[], guard:object}>}
+ * `context` in the result is what the *generator* read on the accepted
+ * attempt — the engine narrows it to fit the model's window, and this is the
+ * value the guard was run against, so a caller can report it honestly.
+ *
+ * @returns {Promise<{text:string, context:Array|string, attempts:number,
+ *            guardFailed:boolean, fallback:boolean, violations:object[],
+ *            guard:object}>}
  */
 export async function guardedAnswer(opts = {}) {
   const { generate, fallback, lang, kb, allow, maxChars, context } = opts;
@@ -408,31 +433,44 @@ export async function guardedAnswer(opts = {}) {
   const once = async (ctx, greedy) => {
     const produced = await generate(ctx, { greedy });
     const text = typeof produced === 'string' ? produced : String(produced?.text ?? '');
-    return { text, result: guard(text, { context: ctx, lang, kb, allow, maxChars, vocabulary }) };
+    /* A generator may read LESS than it was offered: the engine drops the tail
+       of the context to fit the model's window, and reports what it kept in
+       `context`. The guard has to check against THAT, not against what was
+       offered — a claim resting on a line the model never saw is exactly the
+       hallucination §8.4 exists to catch, and checking the offered context
+       would wave it through. */
+    const read = (produced && typeof produced === 'object' && produced.context !== undefined)
+      ? produced.context : ctx;
+    return {
+      text, context: read,
+      result: guard(text, { context: read, lang, kb, allow, maxChars, vocabulary }),
+    };
   };
 
   const first = await once(context, false);
   if (first.result.ok) {
-    return { text: first.text, attempts: 1, guardFailed: false, fallback: false, violations: [], guard: first.result };
+    return { text: first.text, context: first.context, attempts: 1, guardFailed: false,
+      fallback: false, violations: [], guard: first.result };
   }
 
   const retry = await once(shortenContext(context), true);
   if (retry.result.ok) {
-    return { text: retry.text, attempts: 2, guardFailed: false, fallback: false, violations: [], guard: retry.result };
+    return { text: retry.text, context: retry.context, attempts: 2, guardFailed: false,
+      fallback: false, violations: [], guard: retry.result };
   }
 
   if (typeof fallback === 'function') {
     const fb = await fallback();
     const text = typeof fb === 'string' ? fb : String(fb?.text ?? '');
     return {
-      text, attempts: 2, guardFailed: false, fallback: true,
+      text, context: retry.context, attempts: 2, guardFailed: false, fallback: true,
       violations: retry.result.violations.concat(first.result.violations),
       guard: retry.result,
     };
   }
 
   return {
-    text: retry.text, attempts: 2, guardFailed: true, fallback: false,
+    text: retry.text, context: retry.context, attempts: 2, guardFailed: true, fallback: false,
     violations: retry.result.violations.concat(first.result.violations),
     guard: retry.result,
   };

@@ -338,11 +338,45 @@ const ENTITY_KINDS = new Set(['project', 'education', 'certification', 'experien
 export const MIN_TOP_SCORE = 1.0;
 
 /* Context budget (§8.2): top-k ≤ 3 chunks AND ≤ ~300 tokens together.
-   Token count is approximated at 4 chars/token — good enough for a cap
-   and far cheaper than a real tokenizer on the main thread. */
+
+   Token count is approximated rather than tokenized — a real BPE encode of
+   every candidate chunk on the main thread is exactly the kind of per-
+   keystroke cost §4 forbids, and this module runs before a model exists.
+
+   The ratio was 4 chars/token, which is a *generic English* rule of thumb and
+   is wrong for this model by a factor of ~2.5. `aashish-ai-1` has a
+   1,024-token vocabulary, so its BPE cannot merge long runs the way a 32k
+   vocabulary does. MEASURED on the shipping tokenizer over the real
+   knowledge base and the whole evaluation corpus (`npm run probe:tokens`):
+
+     retrieval context   1.30 … 2.35 chars/token, median 1.59
+     single fact line    1.00 … 2.70 chars/token, median 1.47
+     question            1.06 … 3.14 chars/token, median 1.82
+
+   At 4, a "300-token" context was really ~750 tokens: 14 of the 60 evaluation
+   questions assembled a prompt past the model's 512-token window and threw.
+   At 1.25 — below every measured minimum, the "safe" direction — the opposite
+   failure appears: a single long project chunk is priced at over 300 tokens on
+   its own, so it is skipped entirely and the question that chunk answers stops
+   retrieving anything at all. A budget that refuses the best evidence is not
+   safer than one that over-spends; it is just wrong in the other direction.
+
+   1.5 is the measured median of the classes this actually budgets, so
+   `MAX_CONTEXT_TOKENS` means roughly what §8.2 wrote it to mean, to within
+   ±20% either way. The HARD limit is not here at all any more: it is enforced
+   where the real tokenizer lives, by `fitToBudget` in `ai/engine/prompt.mjs`,
+   against `max_position_embeddings` exactly. This constant decides *which*
+   chunks are worth retrieving. */
+export const CHARS_PER_TOKEN = 1.5;
 export const MAX_CHUNKS = 3;
 export const MAX_CONTEXT_TOKENS = 300;
-export const estimateTokens = (s) => Math.ceil(String(s).length / 4);
+export const estimateTokens = (s) => {
+  /* `String(null)` is "null" and would cost four characters of budget for a
+     string that does not exist. Nothing to read costs nothing. */
+  if (s === null || s === undefined) return 0;
+  const str = String(s);
+  return str.length ? Math.ceil(str.length / CHARS_PER_TOKEN) : 0;
+};
 
 /**
  * Resolve the conversation's focus entity from a query (§8.2).
@@ -371,11 +405,37 @@ export function resolveFocus(index, query, previous = null, opts = {}) {
 
 /**
  * The §8.2 search entry point.
+ *
+ * `sizeOf` is how a chunk is PRICED against the token budget, and it has **no
+ * default on purpose**: with no cost model there is no budget, so `maxTokens`
+ * is not applied and up to `k` hits are returned.
+ *
+ * That is not a loophole, it is the fix for one. The budget only means
+ * something to a caller that knows what it is going to hand a model, and the
+ * only such caller is the answer path, which passes `contextSizer` from
+ * `ai/answers/quick.mjs` — one compact RENDERED value per fact, which is the
+ * string that actually goes into the prompt. Pricing the index's chunk text
+ * instead prices the wrong string and the error is not neutral: a project
+ * chunk carries every field and every highlight (1175 characters at the widest
+ * here) while a question about that project reads 300 characters of summary.
+ * Priced by its text at an honest chars/token ratio the best chunk for "goal
+ * tracker" blew the budget alone and was skipped, so the question retrieved
+ * nothing and `lowConfidence` reported it as out-of-base. The budget had
+ * silently become a relevance filter, and a relevance claim is a *threshold*
+ * question (`minScore`, calibrated in `docs/CALIBRATION.json`), not a token
+ * one. Defaulting to unpriced keeps the two decisions apart.
+ *
+ * It also keeps that calibration artefact valid: the sweep in
+ * `tools/calibrate-retrieval.mjs` calls `search()` without a sizer, exactly as
+ * it did when 4-chars-per-token admitted everything under 1200 characters.
+ * Making the default budget bite would have quietly edited the conditions the
+ * sweep was run under.
+ *
  * @returns {{query, tokens, hits, focus, tokensUsed, lowConfidence, expanded}}
  */
 export function search(index, query, opts = {}) {
   const { focus = null, k = MAX_CHUNKS, maxTokens = MAX_CONTEXT_TOKENS,
-    minScore = MIN_TOP_SCORE } = opts;
+    minScore = MIN_TOP_SCORE, sizeOf = null } = opts;
 
   const raw = rawTokens(query);
   const expanded = [];
@@ -417,12 +477,15 @@ export function search(index, query, opts = {}) {
   let tokensUsed = 0;
   for (const s of scored) {
     if (hits.length >= k) break;
-    const t = estimateTokens(s.chunk.text);
-    if (tokensUsed + t > maxTokens) continue;
-    tokensUsed += t;
+    /* Unpriced hits (no `sizeOf`) are not free — they are not budgeted, and a
+       budget that cannot see a cost cannot sensibly refuse one. `tokens: null`
+       says exactly that; 0 would read as "this chunk costs nothing". */
+    const t = sizeOf ? sizeOf(s.chunk) : null;
+    if (t !== null && tokensUsed + t > maxTokens) continue;
+    tokensUsed += t ?? 0;
     hits.push({
       id: s.chunk.id, kind: s.chunk.kind, label: s.chunk.label,
-      score: +s.score.toFixed(3), text: s.chunk.text, tokens: t,
+      score: +s.score.toFixed(3), text: s.chunk.text, tokens: t, priced: t !== null,
     });
   }
 

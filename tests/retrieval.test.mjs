@@ -22,9 +22,9 @@ import { dirname, join } from 'node:path';
 import {
   buildIndex, search, chunkify, similarity, normalize, canonical, hasPronoun,
   hasEntityPronoun, resolveFocus, contentTokens, estimateTokens, RETRIEVAL_STOP,
-  MAX_CHUNKS, MAX_CONTEXT_TOKENS, MIN_TOP_SCORE,
+  MAX_CHUNKS, MAX_CONTEXT_TOKENS, MIN_TOP_SCORE, CHARS_PER_TOKEN,
 } from '../ai/retrieval/index.mjs';
-import { quickAnswer } from '../ai/answers/quick.mjs';
+import { quickAnswer, contextSizer } from '../ai/answers/quick.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const KB = JSON.parse(readFileSync(join(HERE, '..', 'knowledge', 'knowledge.json'), 'utf8'));
@@ -56,6 +56,38 @@ test('§8.2 budget — top-k <= 3 and context <= ~300 tokens', () => {
     assert.ok(r.tokensUsed <= MAX_CONTEXT_TOKENS,
       `${q}: ${r.tokensUsed} tokens > ${MAX_CONTEXT_TOKENS}`);
   }
+});
+
+/* §8.2's budget is real, but only for a caller that says what a chunk COSTS.
+   `search()` prices nothing by default (see the doc comment: a default that
+   prices the index's chunk text stops being a budget and starts being a
+   relevance filter — "goal tracker" retrieved nothing). These two cases pin
+   both halves of that contract against the real caller's sizer. */
+test('search prices nothing by default, and enforces maxTokens when given a sizer', () => {
+  const unpriced = search(IDX, 'goal tracker');
+  assert.ok(unpriced.hits.length, 'an unpriced search must not filter on token cost');
+  assert.equal(unpriced.tokensUsed, 0);
+  assert.ok(unpriced.hits.every((h) => h.tokens === null && h.priced === false));
+
+  /* what the answer path passes: the rendered fact, not the index chunk */
+  const sizeOf = contextSizer(KB);
+  const priced = search(IDX, 'goal tracker', { sizeOf, maxTokens: MAX_CONTEXT_TOKENS });
+  assert.ok(priced.hits.length, 'the real sizer must admit the best hit');
+  assert.ok(priced.tokensUsed <= MAX_CONTEXT_TOKENS,
+    `${priced.tokensUsed} > ${MAX_CONTEXT_TOKENS}`);
+  assert.ok(priced.hits.every((h) => h.priced && typeof h.tokens === 'number'));
+
+  /* and the budget really refuses: a priced search with no room admits nothing */
+  assert.equal(search(IDX, 'goal tracker', { sizeOf, maxTokens: 0 }).hits.length, 0);
+
+  /* pricing the index chunk text is the mistake this default exists to
+     prevent: the widest project chunk alone is several times the budget */
+  const byText = (c) => estimateTokens(c.text);
+  const widest = Math.max(...IDX.chunks.map((c) => estimateTokens(c.text)));
+  assert.ok(widest > MAX_CONTEXT_TOKENS,
+    'if no chunk is ever over budget, this test has stopped testing anything');
+  assert.equal(search(IDX, 'goal tracker', { sizeOf: byText }).hits.length, 0,
+    'priced by its index text the goal-tracker chunk alone exceeds the budget');
 });
 
 /* ── R1: alias glue words must never reach the index ───────────── */
@@ -365,10 +397,28 @@ test('focus switches when a different entity is named explicitly', () => {
   assert.equal(r.focusChanged, true);
 });
 
-test('estimateTokens is the documented 4-chars-per-token approximation', () => {
-  assert.equal(estimateTokens('abcd'), 1);
-  assert.equal(estimateTokens('a'.repeat(400)), 100);
+/* The ratio is a MEASUREMENT of this model's tokenizer, not the generic
+   4-chars-per-token rule of thumb it used to be. `aashish-ai-1` has a
+   1,024-token vocabulary, so its BPE cannot merge long runs the way a 32k
+   vocabulary does and real text costs 1.0–2.8 chars/token. At 4, a
+   "300-token" context was really ~750 and 14 of the 60 evaluation questions
+   built a prompt past the 512-token window.
+
+   The numbers below come from `npm run probe:tokens`, and this test is the
+   tripwire: if the tokenizer is ever retrained to a bigger vocabulary, the
+   ratio moves and this fails, pointing at the command that re-measures it. */
+test('estimateTokens uses the measured chars-per-token, not a generic 4', () => {
+  assert.ok(CHARS_PER_TOKEN >= 1.25 && CHARS_PER_TOKEN <= 2,
+    `CHARS_PER_TOKEN=${CHARS_PER_TOKEN} is outside every measured class median`);
+  assert.equal(estimateTokens('abcd'), Math.ceil(4 / CHARS_PER_TOKEN));
+  assert.equal(estimateTokens('a'.repeat(400)), Math.ceil(400 / CHARS_PER_TOKEN));
   assert.equal(estimateTokens(''), 0);
+  assert.equal(estimateTokens(null), 0);
+  /* monotone and conservative in the direction that matters: never claiming a
+     string is cheaper than a generic 4-chars-per-token guess would */
+  for (const n of [1, 7, 40, 999]) {
+    assert.ok(estimateTokens('a'.repeat(n)) >= Math.ceil(n / 2));
+  }
 });
 
 test('search is side-effect free and repeatable', () => {

@@ -36,7 +36,32 @@
 import { guardedAnswer } from '../guard/index.mjs';
 import { buildIndex, search, MIN_TOP_SCORE } from '../retrieval/index.mjs';
 import { abstainFor } from '../intent/rules.mjs';
-import { resolveFacts, renderFact } from './quick.mjs';
+import { contextSizer, resolveFacts, renderFact } from './quick.mjs';
+
+/* ── how many facts the intent fallback may paste ────────────────
+   §8.2's budget is "top-k ≤ 3 chunks, ≤ ~300 tokens", and retrieval keeps it.
+   The intent fallback below is the one path whose "top-k" is a *topic's whole
+   fact list* instead of a BM25 ranking, and it had no cap at all: "what are
+   his skills?" handed the model 38 facts and a 764-token prompt, against a
+   512-token window.
+
+   MEASURED with the shipping tokenizer (`npm run probe:tokens`): 18 skill
+   lines fit in the window alongside the frame, a typical question and 96 new
+   tokens. 12 is that measurement with headroom, because a conversation turn
+   or two (`history`) also lives in the prompt and a budget that only just
+   fits is a budget that fails the moment anything is added. */
+export const MAX_INTENT_FACTS = 12;
+
+/** The fact ids a context actually names, in order. The engine may DROP lines
+ *  to fit the model's window, so the ids a visitor is shown as "where this
+ *  came from" must come from the context that was read, not from the list
+ *  that was offered — otherwise the panel credits the model with evidence it
+ *  never saw (§12's anchors rest on this). */
+export function idsInContext(context) {
+  const out = [];
+  for (const m of String(context ?? '').matchAll(/^\[([^\]]+)\]/gm)) out.push(m[1]);
+  return out;
+}
 
 export const MODEL_BADGES = Object.freeze({
   model: 'AI ANSWER · ON-DEVICE MODEL',
@@ -226,8 +251,18 @@ export function createModelAnswerer(opts = {}) {
     /** Retrieval only — what the model will be allowed to read. Exposed so
      *  the tests (and the probes) can check the grounding without a model. */
     retrieve(question, focus = null) {
-      const found = search(indexOf(), question, { minScore, focus });
-      return { ...found, context: contextLines(kb, found.hits) };
+      const sizeOf = contextSizer(kb);
+      const found = search(indexOf(), question, { minScore, focus, sizeOf });
+      /* A hit that renders to nothing is not evidence. The index carries every
+         fact, including `public:false` ones (§8.1), and a chunk priced at zero
+         tokens would otherwise be admitted for free and counted as "something
+         to read" while contributing no line to the context the model sees. */
+      const hits = found.hits.filter((h) => sizeOf(h) > 0);
+      return {
+        ...found, hits,
+        tokensUsed: hits.reduce((n, h) => n + sizeOf(h), 0),
+        context: contextLines(kb, hits),
+      };
     },
 
     /**
@@ -257,12 +292,15 @@ export function createModelAnswerer(opts = {}) {
 
          `renderFact` is the filter, exactly as in `contextLines`: an id that is
          unknown or `public:false` renders as nothing and is dropped here, so a
-         withheld value cannot arrive through this door (§8.1). */
+         withheld value cannot arrive through this door (§8.1).
+
+         And `MAX_INTENT_FACTS` is the cap: this is a budget, so it has a
+         bound, and the bound comes from the window rather than from taste. */
       let hits = found.hits;
       let context = found.context;
       let how = 'retrieval';
       if (!hits.length && intentIds?.length) {
-        const ids = intentIds.filter((id) => renderFact(kb, id, lang));
+        const ids = intentIds.filter((id) => renderFact(kb, id, lang)).slice(0, MAX_INTENT_FACTS);
         if (ids.length) {
           hits = ids.map((id) => ({ id, kind: 'intent', label: id, score: 0 }));
           context = contextLines(kb, hits);
@@ -305,7 +343,11 @@ export function createModelAnswerer(opts = {}) {
           onToken: streamed ? null : (text) => { streamed = true; onToken?.(text); },
         });
         lastSummary = summary;
-        return { text: summary.text };
+        /* `context` goes back to the guard, which checks the claims against
+           what the model READ — the engine trims the tail to fit the window
+           and reports the trimmed string. Omitting it would let a dropped
+           line ground a claim. */
+        return { text: summary.text, context: summary.context };
       };
 
       /* No `fallback`. There is no template answer to fall back to, so a
@@ -363,11 +405,16 @@ export function createModelAnswerer(opts = {}) {
         };
       }
 
+      /* The context the model ACTUALLY read (`guarded.context`): the engine
+         drops the tail of what it is offered to fit `max_position_embeddings`,
+         and both the guard and the sources follow the trimmed form. */
+      const read = guarded.context ?? context;
       return {
-        kind: 'model', text: resolved.text, sources: hits.map((h) => h.id),
-        context, contextFrom: how,
+        kind: 'model', text: resolved.text, sources: idsInContext(read),
+        context: read, contextFrom: how,
         attempts: guarded.attempts, guardFailed: false, abstained: false,
         tokens: lastSummary?.tokens, stopReason: lastSummary?.stopReason,
+        droppedContextLines: lastSummary?.droppedContextLines ?? 0,
         ms: Date.now() - started,
       };
     },

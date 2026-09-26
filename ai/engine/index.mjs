@@ -31,7 +31,7 @@
 import { ByteLevelBPE, loadTokenizer } from './bpe.mjs';
 import { LlamaEngine } from './llama.mjs';
 import { manifestIssues, loadWeights, parseManifest } from './manifest.mjs';
-import { abstainId, defaultStopIds, frame } from './prompt.mjs';
+import { abstainId, defaultStopIds, fitToBudget, frame } from './prompt.mjs';
 
 /** The interface. Subclasses implement `generate`; `load` is a static. */
 export class LLMEngine {
@@ -131,11 +131,24 @@ export class ScratchLlamaEngine extends LLMEngine {
   } = {}) {
     const stops = stopIds ?? defaultStopIds(this.tokenizer);
     const abstain = abstainId(this.tokenizer);
-    const prompt = frame({ question, context, history, rules });
+    /* The window is enforced here, against the real tokenizer, by dropping the
+       weakest evidence rather than by failing: see `fitToBudget`. Before it,
+       an over-long prompt threw from inside `forward()` and reached the
+       visitor as "the model stopped" (measured: 14 of 60 evaluation questions).
+       `summary.context` is what the model ACTUALLY read, and the guard checks
+       against it — a trimmed line must not be able to ground a claim. */
+    const fitted = fitToBudget({
+      tokenizer: this.tokenizer, question, context, history, rules,
+      maxNewTokens, maxSeq: this.model.maxSeq,
+    });
+    const prompt = frame({ question, context: fitted.context, history: fitted.history, rules });
     const promptTokens = this.tokenizer.encode(prompt);
-    if (promptTokens.length + maxNewTokens > this.model.maxSeq) {
-      throw new Error(`${promptTokens.length} prompt tokens + ${maxNewTokens} new tokens ` +
-        `exceeds the ${this.model.maxSeq}-token context`);
+    if (promptTokens.length !== fitted.promptTokens) {
+      /* `fitToBudget` and this encode must be the same string. They are built
+         by the same `frame()`, so a mismatch means one of them changed — say
+         so rather than generating from a prompt nobody budgeted. */
+      throw new Error(`the fitted budget (${fitted.promptTokens}) and the prompt ` +
+        `(${promptTokens.length}) disagree — the frame layout drifted`);
     }
 
     /* Prefill. The specials and the rules are identical tokens on every
@@ -187,6 +200,13 @@ export class ScratchLlamaEngine extends LLMEngine {
       rawText: this.tokenizer.decode(produced),
       stopReason,
       abstained: stopReason === 'abstain',
+      /* What the model read, and what had to go to make it fit. The answer
+         layer reports the first (its `sources`) and the second is a
+         measurement of how tight the 512-token window really is. */
+      context: fitted.context,
+      contextTokens: fitted.contextTokens,
+      droppedContextLines: fitted.droppedContextLines,
+      droppedHistoryTurns: fitted.droppedHistoryTurns,
     };
   }
 

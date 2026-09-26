@@ -67,6 +67,74 @@ export function promptIds(tokenizer, args) {
   return tokenizer.encode(frame(args));
 }
 
+/* ── fitting the window ──────────────────────────────────────────
+   The model has `max_position_embeddings` positions and no more. A prompt
+   that wants one token past the end does not degrade — `LlamaEngine.forward`
+   throws, and a thrown prompt is a visitor told "the model stopped" for a
+   question the portfolio can answer.
+
+   That is not hypothetical. Measured on the shipping tokenizer
+   (`npm run probe:tokens`): 14 of the 60 evaluation questions produced a
+   prompt over 512 tokens, and "What are his skills?" produced 764 — because
+   the context budget was computed at 4 chars/token on a tokenizer that
+   spends 1.5, so a "300-token" context was really about 750.
+
+   So the budget is enforced HERE, with the real tokenizer and the real
+   frame, instead of estimated upstream and hoped for:
+
+     · context lines are dropped from the TAIL first. They arrive in
+       retrieval order (best first), so the weakest evidence goes first;
+       and because a line boundary is where the prompt diverges, dropping
+       from the tail also leaves the longest possible shared prefix for
+       `LlamaEngine.reusePrefix` to skip re-prefilling;
+     · then conversation turns, oldest first, which is §10's rule for
+       `history` anyway;
+     · a prompt that still does not fit with neither left is a genuine
+       error — the question alone does not fit — and it throws, because
+       silently answering a different question would be worse.
+
+   The caller is told what was dropped, and `guardedAnswer` re-checks the
+   guard against the context that was actually read, so a trimmed line can
+   never ground a claim. */
+export function fitToBudget({
+  tokenizer, question, context = '', history = [], rules = 'first',
+  maxNewTokens = 96, maxSeq,
+}) {
+  if (!Number.isFinite(maxSeq)) throw new Error('fitToBudget needs maxSeq');
+  const lines = String(context ?? '').split('\n').filter((line) => line.length);
+  let turns = [...history];
+
+  const count = (ctx, hist) => tokenizer.encode(
+    frame({ question, context: ctx, history: hist, rules })).length;
+  const fits = (ctx, hist) => count(ctx, hist) + maxNewTokens <= maxSeq;
+
+  let droppedLines = 0;
+  while (lines.length && !fits(lines.join('\n'), turns)) {
+    lines.pop();
+    droppedLines += 1;
+  }
+  let droppedTurns = 0;
+  while (turns.length && !fits(lines.join('\n'), turns)) {
+    turns = turns.slice(1);
+    droppedTurns += 1;
+  }
+
+  const fittedContext = lines.join('\n');
+  const promptTokens = count(fittedContext, turns);
+  if (promptTokens + maxNewTokens > maxSeq) {
+    throw new Error(`${promptTokens} prompt tokens + ${maxNewTokens} new tokens ` +
+      `exceeds the ${maxSeq}-token context, and there is no context left to trim`);
+  }
+
+  return {
+    context: fittedContext, history: turns, promptTokens,
+    /* What the context alone costs inside this frame — the number §8.2's
+       budget was always trying to be, measured instead of estimated. */
+    contextTokens: promptTokens - count('', turns),
+    droppedContextLines: droppedLines, droppedHistoryTurns: droppedTurns,
+  };
+}
+
 /** What the model may not finish a sentence with: the turn ends at
  *  `<|end|>` (the model's own habit from training) or at a new `<|asst|>`,
  *  which would otherwise leak the next turn's frame into the answer. */

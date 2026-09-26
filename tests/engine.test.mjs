@@ -22,7 +22,7 @@ import { ScratchLlamaEngine, createEngine, LLMEngine } from '../ai/engine/index.
 import { LlamaEngine, applyRope, ropeCache } from '../ai/engine/llama.mjs';
 import { manifestIssues, parseManifest, sha256hex } from '../ai/engine/manifest.mjs';
 import { dequantiseQ8, matvecQ8, rmsNorm, rowQ8 } from '../ai/engine/quant.mjs';
-import { defaultStopIds, frame, frameParts, framePrefix, promptIds }
+import { defaultStopIds, fitToBudget, frame, frameParts, framePrefix, promptIds }
   from '../ai/engine/prompt.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -512,3 +512,84 @@ test('ENG-16 frame() is exactly framePrefix() + rest, so the split cannot drift'
   assert.notEqual(framePrefix({ rules: 'first' }), framePrefix({ rules: 'third' }));
   assert.throws(() => framePrefix({ rules: 'nope' }), /unknown rules key/);
 });
+
+/* ── fitting the window ──────────────────────────────────────────────
+   The model has `max_position_embeddings` positions and a prompt that wants
+   one more does not degrade — `forward()` throws, and the visitor is told the
+   model stopped for a question the portfolio answers in full. MEASURED: 14 of
+   the 60 evaluation questions, and 3 of them still overflow even with no token
+   budget at all, because the question and the frame alone are that long.
+
+   `fitToBudget` is the fix, and it is deliberately a pure function of the
+   tokenizer: the engine tests can therefore exercise the real logic on the
+   tiny fixture (maxSeq 256) without the 5 MB export. */
+test('ENG-18 a context that does not fit is trimmed from the tail, never thrown',
+  async () => {
+    const engine = await loadEngine();
+    const { tokenizer } = engine;
+    const maxSeq = engine.model.maxSeq;
+    assert.ok(maxSeq >= 64, `fixture too small to be interesting: ${maxSeq}`);
+
+    const lines = Array.from({ length: 60 }, (_, i) => `[fact.${i}] value number ${i}`);
+    const context = lines.join('\n');
+    const question = 'What is his CGPA?';
+    const maxNewTokens = 8;
+    const rules = 'first';
+    const history = [['an earlier question', 'an earlier answer']];
+
+    const fitted = fitToBudget({ tokenizer, question, context, history, rules,
+      maxNewTokens, maxSeq });
+
+    assert.ok(fitted.promptTokens + maxNewTokens <= maxSeq,
+      `${fitted.promptTokens} + ${maxNewTokens} > ${maxSeq}`);
+    assert.ok(fitted.droppedContextLines > 0, 'nothing was dropped, so nothing was tested');
+    assert.equal(fitted.droppedHistoryTurns, 0, 'the context was enough, so history stays');
+    /* what survives is a PREFIX of what was offered: lines arrive best-first,
+       so the tail is the weakest evidence and the first line is the last to go */
+    assert.equal(fitted.context,
+      lines.slice(0, lines.length - fitted.droppedContextLines).join('\n'));
+    assert.ok(context.startsWith(fitted.context));
+
+    /* `contextTokens` is the context's own cost INSIDE this frame — the number
+       §8.2's estimate was always trying to approximate */
+    const bare = tokenizer.encode(frame({ question, context: '', history, rules })).length;
+    assert.equal(fitted.contextTokens, fitted.promptTokens - bare);
+    assert.ok(fitted.contextTokens > 0);
+
+    /* history goes next, oldest turn first (§10). The budget here is DERIVED
+       from the tokenizer rather than guessed, so the test states the rule
+       (two turns fit, three do not) instead of a magic number. */
+    const oneCtx = '[a] one';
+    const withoutTurn = tokenizer.encode(
+      frame({ question, context: oneCtx, history: [], rules })).length;
+    const turnCost = tokenizer.encode(
+      frame({ question, context: oneCtx, history: [['q1', 'a1']], rules })).length - withoutTurn;
+    assert.ok(turnCost > 1, 'the fixture must charge something for a turn');
+    const twoTurns = maxSeq - (withoutTurn + 2 * turnCost) - 1;
+    const many = fitToBudget({ tokenizer, question, context: oneCtx,
+      history: [['q1', 'a1'], ['q2', 'a2'], ['q3', 'a3']],
+      rules, maxNewTokens: twoTurns, maxSeq });
+    assert.equal(many.droppedHistoryTurns, 1, 'exactly the oldest turn must go');
+    assert.deepEqual(many.history, [['q2', 'a2'], ['q3', 'a3']]);
+    assert.ok(many.promptTokens + twoTurns <= maxSeq);
+
+    /* a question that does not fit on its own is a real error, not a silent
+       answer to a different question */
+    assert.throws(() => fitToBudget({ tokenizer, question: 'x'.repeat(4000),
+      context: '', history: [], rules, maxNewTokens, maxSeq }),
+      /no context left to trim/);
+    assert.throws(() => fitToBudget({ tokenizer, question, maxSeq: undefined }),
+      /needs maxSeq/);
+
+    /* and generate() reports what it ACTUALLY read, which is what the guard
+       and the §12 sources are checked against */
+    const summary = await collect(engine.generate({ question, context, maxNewTokens,
+      rules, history }));
+    assert.equal(summary.context, fitted.context,
+      'generate() and fitToBudget must trim identically for identical inputs');
+    assert.equal(summary.droppedContextLines, fitted.droppedContextLines);
+    assert.equal(summary.contextTokens, fitted.contextTokens);
+    assert.ok(summary.promptTokens + maxNewTokens <= maxSeq);
+
+    engine.dispose();
+  });

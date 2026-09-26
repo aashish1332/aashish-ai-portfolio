@@ -313,6 +313,24 @@ test('GUARD-31: shortenContext keeps at least one chunk and never grows the sour
   assert.equal(shortenContext([], 0.6).length, 0);
 });
 
+/* GUARD-31b: the shipped answer path passes ONE STRING of `[id] value` lines,
+   not an array of chunks. Treating that as a one-element array returned it
+   unchanged, so §5.1 step 5's "one greedy retry over a shorter context" retried
+   over the same context and the degrade step did nothing at all. */
+test('GUARD-31b: a string context is shortened by line, and stays a string', () => {
+  const ctx = '[a] one\n[b] two\n[c] three\n[d] four';
+  const short = shortenContext(ctx, 0.75);
+  assert.equal(typeof short, 'string', 'an array here would reach frame() and comma-join');
+  assert.equal(short, '[a] one\n[b] two\n[c] three');
+  assert.ok(short.length < ctx.length, 'the retry must actually read less');
+  /* the default 0.6 rounds to a whole line, never to none */
+  assert.equal(shortenContext(ctx).split('\n').length, 2);
+  assert.equal(shortenContext('[a] one\n[b] two').split('\n').length, 1);
+  /* one line is the floor: half a fact is a wrong fact */
+  assert.equal(shortenContext('[a] only'), '[a] only');
+  assert.equal(shortenContext(''), '');
+});
+
 /* ── LOAD-BEARING: the guard must be able to FAIL ────────────── */
 
 test('GUARD-32: an empty vocabulary is a blind spot, and the suite names it', () => {

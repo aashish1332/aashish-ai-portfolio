@@ -30,7 +30,7 @@ import { detectIntent, abstainFor, INJECTION_REPLY } from '../intent/rules.mjs';
 import { detectLanguage } from '../language/detect.mjs';
 import {
   buildIndex, search, normalize, contentTokens, similarity,
-  MIN_TOP_SCORE, FUZZY_MIN,
+  MIN_TOP_SCORE, FUZZY_MIN, estimateTokens,
 } from '../retrieval/index.mjs';
 import { viewOf, withheldFacts } from '../knowledge/view.mjs';
 import { replacePlaceholders } from '../knowledge/placeholders.mjs';
@@ -161,6 +161,35 @@ export function renderFact(kb, id, lang = 'en') {
     default:
       return f.text || f.name || f.value || '';
   }
+}
+
+/* ── pricing a hit by what the model will read ───────────────────
+   §8.2's budget is "≤ ~300 tokens of CONTEXT", and the context is
+   `contextLines()`: one compact rendered value per fact. The retrieval index,
+   meanwhile, has one fat chunk per fact — a project chunk at its widest here
+   is 1175 characters of name, codename, summary, tech, role, status, dates,
+   highlights, links and attribution, while `renderFact` sends the 300
+   characters of summary. Pricing the chunk against the context budget prices
+   the wrong string, and the error is not neutral: at the honest ratio the
+   biggest, most relevant chunk blew the budget alone and was skipped, so
+   "goal tracker" retrieved nothing.
+
+   So both callers that will hand evidence to a model price hits with this.
+   A hit that renders to nothing (a `public:false` field the index still
+   carries, or an id the view does not know) costs 0 and is therefore never
+   the reason a chunk was admitted — see `retrieve()` in `ai/answers/model.mjs`,
+   which drops those rather than treating them as "something to read". */
+export function contextSizer(kb, lang = 'en') {
+  const seen = new Map();
+  return (chunk) => {
+    let n = seen.get(chunk.id);
+    if (n === undefined) {
+      const value = renderFact(kb, chunk.id, lang);
+      n = value ? estimateTokens(`[${chunk.id}] ${value}`) : 0;
+      seen.set(chunk.id, n);
+    }
+    return n;
+  };
 }
 
 /**
@@ -790,7 +819,9 @@ export function quickAnswer(kb, query, opts = {}) {
   }
 
   /* one retrieval pass, shared by the prose path and the fact path */
-  const searchRes = search(indexFor(kb), question, { focus: opts.focus || null, minScore });
+  const searchRes = search(indexFor(kb), question, {
+    focus: opts.focus || null, minScore, sizeOf: contextSizer(kb, lang),
+  });
   const hits = searchRes.hits;
   base.focus = searchRes.focus || base.focus;
 
