@@ -23,7 +23,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, stat
   from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { gzipSync } from 'node:zlib';
 
 import {
@@ -481,6 +481,91 @@ test('§14: the exported model fits §4\'s weight and first-use budgets', (t) =>
     assert.ok(firstUseGz <= FIRST_USE_GZ_BUDGET,
       `the first visit pulls ${firstUseGz} B gz, over §4's ${FIRST_USE_GZ_BUDGET} B budget`);
   });
+});
+
+/* ── every shipped module PARSES ────────────────────────────────────
+   `checkImports` above walks a regex over each file, and that is what the
+   build can do without a parser. It cannot see a syntax error, and the test
+   suite cannot either: `ai/ui/styles.mjs` is imported only by `ai/ui/chat.mjs`,
+   which the browser loads and nothing in Node does. So a template literal with
+   one stray backtick in a CSS comment — "revealed by the `hidden` attribute" —
+   shipped green through 428 passing tests, and the panel simply never
+   appeared: the launcher's dynamic import rejected and `window.PortfolioAI`
+   stayed undefined, which the e2e probe reports as "panel opened: false" with
+   no clue where the problem was.
+
+   `--check` parses and does not execute, so this is safe for modules that
+   touch the DOM at load time (`worker.mjs` assigns `self.onmessage`), and it
+   is the cheapest thing that would have caught that bug at the point it was
+   written. */
+test('every shipped JS module parses, and the ai/ graph really links', async () => {
+  const walk = (dir, match) => {
+    const out = [];
+    (function rec(rel) {
+      for (const entry of readdirSync(join(ROOT, rel), { withFileTypes: true })) {
+        const next = join(rel, entry.name);
+        if (entry.isDirectory()) rec(next);
+        else if (match.test(entry.name)) out.push(next);
+      }
+    }(dir));
+    return out;
+  };
+  const rel = (...p) => join(...p);
+
+  /* ── 1. `ai/` is ESM, so IMPORT it. That is strictly stronger than a parse:
+     it resolves every `import ... from './x.mjs'` and every named export, so a
+     module that no test imports is finally exercised. The one exception is the
+     worker, which assigns `self.onmessage` at load time and cannot run in
+     Node at all; it gets parsed instead. ── */
+  const WORKER = rel('ai', 'engine', 'worker.mjs');
+  const ai = walk('ai', /\.mjs$/);
+  assert.ok(ai.length > 20, `only ${ai.length} ai/ modules found — did the walk break?`);
+  const broken = [];
+  for (const file of ai) {
+    if (file === WORKER) continue;
+    try {
+      await import(pathToFileURL(join(ROOT, file)).href);
+    } catch (error) {
+      broken.push(`${file}: ${String(error.message).split('\n')[0]}`);
+    }
+  }
+  assert.deepEqual(broken, [], `ai/ module(s) do not load:\n  ${broken.join('\n  ')}`);
+
+  /* ── 2. The page's own scripts cannot be imported — they want a `window`,
+     and three of them are ES modules with a bare `three` specifier that only
+     an import map resolves. So: parse them without running them. A classic
+     script is valid as a function body, which is free; anything that is not
+     (top-level `import`) gets `--check` with an explicit module type. ── */
+  const pageScripts = [...walk('js', /\.js$/), WORKER];
+  assert.ok(pageScripts.length >= 10, `only ${pageScripts.length} page scripts found`);
+  let spawned = 0;
+  for (const file of pageScripts) {
+    const source = readFileSync(join(ROOT, file), 'utf8').replace(/^#![^\n]*\n/, '');
+    try {
+      new Function(source);            /* parses, never calls */
+    } catch {
+      spawned += 1;
+      assert.doesNotThrow(
+        () => execFileSync(process.execPath, ['--input-type=module', '--check'],
+          { input: source, stdio: ['pipe', 'pipe', 'pipe'] }),
+        `${file} does not parse`);
+    }
+  }
+  assert.ok(spawned >= 3, `expected the ESM page scripts to need --check, got ${spawned}`);
+
+  /* ── 3. `tools/*.mjs` are ESM whose top level IS a CLI entry point, so they
+     cannot be imported either. ── */
+  for (const file of walk('tools', /\.mjs$/)) {
+    assert.doesNotThrow(
+      () => execFileSync(process.execPath, ['--check', join(ROOT, file)], { stdio: 'pipe' }),
+      `${file} does not parse`);
+  }
+
+  /* The three modules this test was written for must still be in the set —
+     the browser loads them and, before this, nothing in Node ever did. */
+  for (const must of [rel('ai', 'ui', 'chat.mjs'), rel('ai', 'ui', 'styles.mjs'), WORKER]) {
+    assert.ok(ai.includes(must), `${must} is no longer shipped/examined`);
+  }
 });
 
 test('npm run build works as a command and exits 0', () => {
