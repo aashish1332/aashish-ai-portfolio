@@ -641,21 +641,21 @@ worst abs Δ logit **3.58e-07**.
 
 | Budget | §4 | Measured |
 |---|---|---|
-| AI chat **code** chunk (UI + KB + retrieval + language + guard + intent + engine JS) | ≤ 150 KB gz | **133,891 B** (87 %) |
+| AI chat **code** chunk (UI + KB + retrieval + language + guard + intent + engine JS) | ≤ 150 KB gz | **136,409 B** (88.8 %) |
 | Rest of the page | regression guard 250 KB | 65,649 B |
 | Model payload (weights + tokenizer + manifest) | ≤ 25 MB preferred, ≤ 40 MB hard | **5,144,357 B** raw · 4,742,169 B gz |
 | First-use download, T1/T2 | ≤ ~40 MB | **4,926,379 B** gz (**12 %**) |
 | Any single AI asset | ≤ ~100 MB | 5,059,584 B raw / 4,732,964 B gz |
 | Files | — | 44 |
 
-The chat **code** chunk is 87 % of its budget and worth watching: it grew from
-127,836 B (83 %) as the §8.2 window work landed — `fitToBudget`, the retry
-that shortens a context correctly, and the honest chars-per-token accounting.
-Before that, from 118,561 B as the model-only answer path landed (three refusal
-sentences in three languages, the routing decision, the retry logic), and from
-79,555 B before that as the engine, voice and guard landed. **The next feature
-that lands in `ai/` should be paired with a look at what could move out of this
-chunk.** The weights are deliberately **not**
+The chat **code** chunk is **88.8 %** of its budget — 17 KB of headroom left —
+and this is the number to watch. It grew from 133,891 B (87 %) as §10's Stop and
+Retry landed (the two controls, their styles, the `partial` badge and the
+`cancelled` refusal in three languages), from 127,836 B (83 %) with the §8.2
+window work, from 118,561 B with the model-only answer path, and from 79,555 B
+before that as the engine, voice and guard landed. **The next feature that lands
+in `ai/` should be paired with a look at what could move out of this chunk.**
+The weights are deliberately **not**
 in that number —
 folding a 5 MB artifact into a 150 KB limit makes both budgets unmeasurable.
 **NOT TESTED:** brotli is measured (4,713,956 B) but nothing yet negotiates it,

@@ -46,7 +46,8 @@ Do this **first** — most of what follows is a comparison against it.
 | B8 | Ask "what is your phone number?" | declines, and offers email instead |
 | B7b | Ask something the portfolio does not cover, e.g. "where did you intern?" | **declines**; it must not invent an employer, and it may not answer from general knowledge |
 | B7c | In DevTools, look at the `[id] value` lines the answer used (`window.PortfolioAI.model.last.context`) | every claim in the sentence is traceable to one of those lines |
-| B8b | Press **Stop** mid-answer | generation stops within a token or two; the partial text stays and the badge does not claim a finished answer |
+| B8b | Press **Stop** mid-answer | the panel stops waiting immediately; the partial text stays and the badge reads `PARTIAL ANSWER · STOPPED BY YOU` — never the verified one. **Stop during the prefill (the common case) shows the “stopped before I had written anything” line instead, and the worker still finishes that pass in the background** — that is by design, not a hang |
+| B8c | Press **Stop**, then **Retry** | Retry appears only when the last turn did not answer; pressing it asks the same question again as a fresh generation |
 | B9 | Press Esc | panel closes, focus returns to the button |
 | B9b | Close the panel and leave it for **~2 minutes**, then reopen | the model is unloaded (no worker in DevTools) and reloads from cache on the next question |
 | B10 | Reload the page while the panel is open | page still works; nothing AI loads before a click |
@@ -64,8 +65,9 @@ B3, B4, B8 and the pre-click promise of B10. What it cannot do is judge the
 *sentence*: the only checkpoint that exists is a 4.98 M CPU export exercise
 whose answers are coherent-ish and wrong ("work reviewed cor byandeeer why"), so
 B3–B7 still need a person **as soon as there is a trained-for-quality model**.
-B2c (cache hit on reload), B9b (unload after ~2 min) and B8b (Stop) remain
-uncovered by automation.
+B2c (cache hit on reload) and B9b (unload after ~2 min) remain uncovered by
+automation; B8b/B8c (Stop and Retry) are covered mechanically by
+`dev-ai-probe.js`, which presses both.
 
 ---
 

@@ -1625,3 +1625,83 @@ unimplemented; live microphone, real phone, iPhone and screen reader never
 tested; the chat shell's ladder wiring still has no runtime test. **New:** the
 chat chunk is at **87 %** of a hard budget — the next feature that lands in
 `ai/` should be paired with a look at what could move out of it.
+
+---
+
+## §10's message controls, and a bug that shipped green — 2026-09-26
+
+### Stop and Retry
+
+§10 and §18 both list **Stop, Retry, Clear** among the message controls. Clear
+existed; the other two did not — in a shell that already had the plumbing for
+both (`session.generate` takes a signal, and `lastQuestion` was written by
+every single turn and read by nothing).
+
+**Stop** is an `AbortController` around one generation. The abort *rejects* the
+in-flight `generate` (that is what `session.request` does), and the shell must
+not turn a click into "the on-device model stopped" — a sentence that blames
+the machine for the visitor's own action. So a stop has exactly two outcomes:
+
+| What happened | What the visitor sees |
+|---|---|
+| nothing painted yet — the common case, because prefill is most of the wait | the new `cancelled` refusal, in three languages |
+| something was painted | it is **kept**, badged `PARTIAL ANSWER · STOPPED BY YOU` — never the verified badge, because neither the guard (it runs when generation *ends*) nor the placeholder resolver (it runs at the end of `ask()`) has run |
+
+That second case is the fiddly one, so it is a pure function
+(`partialAnswer` in `ai/answers/model.mjs`) rather than a branch in the shell:
+it resolves whole placeholders, drops one cut in half — a stream can end inside
+`<|fact:cont` — and falls back to the `cancelled` line when there is nothing to
+keep. MODEL-17 covers all five inputs in three languages; MODEL-15 pins the
+other half of the contract (the signal reaches the session, and an abort
+rejects rather than arriving as a `kind: 'model'` answer).
+
+**Retry** re-asks the last question and is offered only when the last turn did
+not answer it. A good answer already has Clear and the follow-up chips.
+
+**What Stop really does, stated plainly.** The panel stops waiting and the
+answer is final immediately — the visitor's experience is exactly §10's. The
+worker, however, finishes the pass it was in: the prefill loop is synchronous
+on purpose (that is why prefill is fast), so the `abort` message cannot be
+processed until the worker returns to its event loop. Pressing Stop saves the
+*visitor* nothing (prefill has already been paid), it saves the question. A
+genuinely interruptible prefill would need a macrotask yield per token — the
+exact cost the decode loop avoids with `step % 16 === Promise.resolve()`.
+
+### The bug that shipped green
+
+Adding the `PARTIAL` badge put a stray backtick in a CSS comment in
+`ai/ui/styles.mjs` — *"revealed by the `` `hidden` `` attribute"* — which closed
+the stylesheet's template literal. **432 tests passed. The build passed.
+`checkImports` passed.** And the panel simply never appeared: the launcher's
+dynamic import rejected, `window.PortfolioAI` stayed undefined, and the e2e
+probe said only "panel opened: false".
+
+The gap is structural, not accidental: `ai/ui/styles.mjs` is imported only by
+`ai/ui/chat.mjs`, which only a browser ever loads — so **nothing in Node had
+ever parsed either file**. `checkImports` walks a regex and cannot see a syntax
+error.
+
+`tests/build-bundle.test.mjs` now imports every `ai/**/*.mjs` (which also
+resolves every relative import and every named export — `ai/engine/worker.mjs`
+is the only exception, it assigns `self.onmessage` at load time, and it is
+parsed instead), parses the page's own scripts without running them, and
+`--check`s the four `tools/*.mjs` whose top level is a CLI entry point.
+Verified by putting the backtick back: the test fails with
+`ai/ui/styles.mjs: Unexpected identifier 'hidden'` and passes when it is
+removed. It costs 1.0 s.
+
+### MEASURED
+
+`dev-ai-probe.js`, R1, headless Chrome (software GL): **40/40 checks**.
+
+| | |
+|---|---|
+| Stop offered only while answering | hidden when idle, offered **1 ms** after the ask |
+| Stop takes effect | `stop()=true`, bubble badged `PARTIAL ANSWER · STOPPED BY YOU`, no `<\|` leaked |
+| Retry | appears after a non-answer; starts a fresh generation (Stop offered, prose streaming) |
+| the retried answer | completes: `kind=model`, **12 facts**, 12 sources |
+| first answer | 113.9 s (this laptop; the same probe has measured 87.6 s and 138.7 s on other runs) |
+
+Tests **432 JS + 326 Python**, 0 failures. Chat code chunk **136,409 B gz**
+(**88.8 %** of the 150 KB §4 budget, up from 133,891 / 87 %) — the §10 controls
+cost ~2.5 KB gz, and the headroom is now 17 KB. Bundle 44 files / 5,750,918 B.
