@@ -2223,7 +2223,7 @@ because §2 N7 says the AI layer does not touch the film.
 | — voice add-ons (§2 N6) | 19,215 B | 7,432 B |
 | — LLM runtime + tokenizer | 30,042 B | 14,669 B |
 | what the **click** fetches (static reach) | 86,096 B gz | **41,221 B gz, 14 files** |
-| tests | 444 JS + 326 Python, 0 failures | **450 JS + 326 Python, 0 failures** · `npm run build` clean |
+| tests | 444 JS + 326 Python, 0 failures | **451 JS + 326 Python, 0 failures** · `npm run build` clean |
 
 Three new tests. Two are the strip's two directions: `stripComments` on
 adversarial input (a regex holding a quote, a URL in a string, a CSS comment
@@ -2309,3 +2309,23 @@ Why `import(CHUNK)` and not a literal: the launcher is a classic script that
 names its chunk once, in a constant. The test pins the *call shape* and the
 *constant's value* separately, so a rewrite that changes either fails rather
 than silently passing.
+
+### 9. §2 N8 — "no second renderer, no new loop" was a sentence; now it is measured
+
+N8 is the rule that keeps the film the only thing competing for the frame, and
+it is the kind of rule that breaks quietly: a `setInterval` in a retry path or a
+`getContext('2d')` for a chart would not move a byte count, a test list or a
+screenshot until it was already fighting the film. The browser probe measures
+what happened during one session (0 GL programs compiled while answering); the
+static half says what the code is *capable* of, which is the part a regression
+changes.
+
+MEASURED as shipped, over every `ai/**` script in `dist/`: no `getContext`, no
+canvas element, no `WebGLRenderer`/`WebGL2RenderingContext`/`WEBGL_` access, no
+`new THREE.`, no `setInterval` — and `requestAnimationFrame` appears **exactly
+once**, on the one-shot `is-open` reveal, called as
+`env.requestAnimationFrame?.(…)` so a host without one still opens the panel.
+The §6.3 frame monitor must also *reuse* the film's GSAP ticker: the test
+requires both `.ticker.add(` and `.ticker.remove(` in `ai/ui/chat.mjs`, because
+a callback that can be added but not removed would turn `close()` into a leak
+the resource probe only catches after five cycles.

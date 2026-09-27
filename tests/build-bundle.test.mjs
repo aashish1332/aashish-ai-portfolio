@@ -398,6 +398,57 @@ test('§4: the model\'s arithmetic is not in the click\'s static reach', () => {
   });
 });
 
+test('§2 N8: the AI layer draws nothing and starts no loop of its own', () => {
+  /* N8 is the rule that keeps the film the only renderer on the page: no
+     second WebGL scene, no new permanent rAF loop. It is easy to state and
+     easy to break silently — a `setInterval` here or a `getContext('2d')`
+     there would not show up in a byte count, a test list or a rendering
+     screenshot until it was already competing with the film for the frame.
+     MEASURED as shipped: the entire `ai/` tree contains no canvas, no WebGL,
+     no THREE object and no interval, and `requestAnimationFrame` appears
+     exactly once — a one-shot class toggle. */
+  temp((out) => {
+    buildBundle({ out, quiet: true });
+    const code = walkFiles(out)
+      .map((abs) => ({ rel: abs.slice(out.length + 1).replaceAll('\\', '/'),
+                       text: readFileSync(abs, 'utf8') }))
+      .filter((f) => f.rel.startsWith('ai/') && !f.rel.startsWith('ai/model-export/')
+        && /\.(mjs|js)$/.test(f.rel));
+    assert.ok(code.length > 20, `only ${code.length} shipped ai/ scripts`);
+
+    for (const [pattern, what] of [
+      [/getContext\s*\(/, 'a canvas context'],
+      [/createElement\s*\(\s*['"]canvas['"]/, 'a canvas element'],
+      [/WebGLRenderer|WebGL2?RenderingContext|WEBGL_/, 'WebGL access'],
+      [/\bnew\s+THREE\./, 'a THREE object'],
+      [/setInterval\s*\(/, 'a setInterval — a loop nobody stops'],
+    ]) {
+      const hit = code.find((f) => pattern.test(f.text));
+      assert.ok(!hit,
+        `${hit?.rel} contains ${what} — §2 N8 forbids a second renderer and new permanent loops`);
+    }
+
+    /* one rAF, and it is a class toggle rather than a loop. The call is
+       `env.requestAnimationFrame?.(…)` — the AI must survive a host without
+       one — so the optional-call `?.` is part of the shape being matched. */
+    const RAF = /requestAnimationFrame\s*\??\.?\s*\(/;
+    const rafFiles = code.filter((f) => RAF.test(f.text));
+    assert.equal(rafFiles.length, 1,
+      `expected exactly one file to use requestAnimationFrame, got ${rafFiles.map((f) => f.rel).join(', ') || 'none'}`);
+    const line = rafFiles[0].text.split('\n').find((l) => RAF.test(l));
+    assert.match(line, /classList\.add\(['"]is-open['"]\)/,
+      `the one requestAnimationFrame is not the one-shot open animation: ${line.trim()}`);
+
+    /* §6.3's frame monitor rides the film's ticker; it must not bring its own */
+    const shell = code.find((f) => f.rel === 'ai/ui/chat.mjs');
+    assert.ok(shell, 'ai/ui/chat.mjs is missing from the bundle');
+    assert.match(shell.text, /\.ticker\.add\s*\(/,
+      'the frame monitor no longer reuses the film\'s GSAP ticker (§2 N8)');
+    assert.match(shell.text, /\.ticker\.remove\s*\(/,
+      'the frame monitor can be added but not removed — close() would leak a ticker callback');
+  });
+});
+
 test('§4: the retired deterministic ANSWERS are not in the bundle at all', () => {
   /* The owner retired Quick Answers as answers, so the wording is dead weight
      on every visitor's device: it was built on every question and discarded by

@@ -167,7 +167,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
 |---|---|
 | Portfolio works, visually intact, GSAP/Lenis/Three.js OK | **MEASURED** — all pre-existing tests green; no renderer added; the film keeps its own rAF |
 | No AI-caused jank | **MEASURED** — **0 % median frame drift / 1.00× p95** with the film's tier pinned on the real GPU, and 65 ms worst long task vs the page's own 88 ms |
-| Three.js not duplicated, no new WebGL scene, no permanent extra rAF | **MEASURED** — 0 GL programs compiled while answering; the frame monitor reuses the film's ticker |
+| Three.js not duplicated, no new WebGL scene, no permanent extra rAF | **MEASURED** — 0 GL programs compiled while answering (browser probe), and a static gate over the shipped code: the whole `ai/` tree has no `getContext`, no canvas, no `THREE` object, no `setInterval`, and exactly one `requestAnimationFrame` (a one-shot class toggle). The frame monitor adds *and removes* a callback on the film's own GSAP ticker |
 | Scratch tokenizer + model, random init | **MEASURED** |
 | Stage A + Stage B done | **NOT TESTED** — owner-side GPU |
 | Retrieval / guard / EN-HI-Hinglish / auto language detection | **MEASURED** |
