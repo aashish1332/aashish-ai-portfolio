@@ -270,13 +270,41 @@ const say = (label, ok, detail) => {
     };
     return { stop: seen('STOP'), retry: seen('RETRY'), clear: seen('CLEAR') };
   });
-  const streamedProse = (ms) => page.waitForFunction(() => {
-    const bots = [...document.querySelectorAll('.ai__msg.is-bot')];
-    const last = bots[bots.length - 1];
-    return !!last
-      && /AI ANSWER/.test(last.querySelector('.ai__badge')?.textContent || '')
-      && (last.querySelector('span:not(.ai__badge)')?.textContent || '').length > 20;
-  }, { timeout: ms, polling: 100 }).then(() => true).catch(() => false);
+  /* Watch a generation from INSIDE the page and record both halves of what
+     "it really started" means: prose arrived, and Stop was on offer while it
+     did.
+
+     Sampling those in two round trips was this probe's own race: the stream
+     was detected, then the ask "is Stop there?" crossed the wire, and on a
+     fast answer the generation had already finished by the time it arrived —
+     reported as `streamed=true stopOffered=false`, which reads like a broken
+     Retry button and is really a slow question. One in-page loop, one answer. */
+  const watchStream = (ms) => page.evaluate(async (limit) => {
+    const t0 = Date.now();
+    let streamed = false;
+    let streamedAt = 0;
+    let stopSeen = false;
+    for (;;) {
+      const bots = [...document.querySelectorAll('.ai__msg.is-bot')];
+      const last = bots[bots.length - 1];
+      const badge = last?.querySelector('.ai__badge')?.textContent || '';
+      const text = (last?.querySelector('span:not(.ai__badge)')?.textContent || '');
+      const stop = [...document.querySelectorAll('.ai__controls .ai__link')]
+        .find((b) => b.textContent.trim() === 'STOP');
+      if (!streamed && /AI ANSWER/.test(badge) && text.length > 20) {
+        streamed = true;
+        streamedAt = Date.now();
+      }
+      if (stop && stop.hidden === false) stopSeen = true;
+      if (streamed && stopSeen) break;
+      /* an answer that streamed and finished without ever offering Stop is a
+         real finding, not a reason to wait out the whole timeout */
+      if (streamed && Date.now() - streamedAt > 4000) break;
+      if (Date.now() - t0 > limit) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    return { streamed, stopSeen };
+  }, ms);
 
   if (modelPhase === 'ready') {
     const idle = await chatControls();
@@ -334,12 +362,11 @@ const say = (label, ok, detail) => {
     /* Retry really re-asks — proved by a fresh generation (Stop offered again)
        that streams, not by a log line */
     const retried = await page.evaluate(() => window.PortfolioAI.retry());
-    const again = await streamedProse(Number(process.env.WAIT_ANSWER || 180000));
-    const retryState = await chatControls();
-    say('tokens stream in before the answer is finished', again === true, '');
+    const again = await watchStream(Number(process.env.WAIT_ANSWER || 180000));
+    say('tokens stream in before the answer is finished', again.streamed === true, '');
     say('Retry starts a fresh generation',
-      retried === true && again === true && retryState.stop.hidden === false,
-      `retry()=${retried} streamed=${again} stopOffered=${retryState.stop.hidden === false}`);
+      retried === true && again.streamed === true && again.stopSeen === true,
+      `retry()=${retried} streamed=${again.streamed} stopOffered=${again.stopSeen}`);
 
     /* let this one FINISH: the completed-answer checks below run on it. The
        signal is the shell's own — a final `model.last` that is not the partial
@@ -415,11 +442,24 @@ const say = (label, ok, detail) => {
     ? `"${micBefore.text}" pressed=${micBefore.pressed} — ${micBefore.title}` : 'MISSING');
 
   const voiceRun = micBefore ? await page.evaluate(async () => {
-    document.querySelector('.ai__mic').click();
+    const mic = document.querySelector('.ai__mic');
+    mic.click();
+    /* §2 N6 made the first tap asynchronous — it fetches the voice module — and
+       a fixed 1.5 s sleep was measuring this laptop, not the button: it passed
+       until a run where the model was still finishing, then reported a dead
+       button that was only a slow one. So the probe now records what the
+       button says WHILE it loads (it must say something at once: §2 N7), then
+       waits for the module to arrive, then reads the outcome. */
+    await new Promise((r) => setTimeout(r, 80));
+    const whileLoading = { text: mic.textContent, disabled: mic.disabled, title: mic.title };
+    for (let i = 0; i < 200 && !window.PortfolioAI.voice; i++) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
     await new Promise((r) => setTimeout(r, 1500));
     const bots = [...document.querySelectorAll('.ai__msg.is-bot')];
     const last = bots[bots.length - 1];
     return {
+      whileLoading,
       st: window.PortfolioAI.voice,
       handsFree: window.PortfolioAI.handsFree,
       badge: last?.querySelector('.ai__badge')?.textContent,
@@ -438,6 +478,13 @@ const say = (label, ok, detail) => {
   if (voiceRun) {
     const st = voiceRun.st || {};
     console.log(`  voice state                   level=${st.level} supported=${st.supported} enabled=${st.enabled} mode=${st.mode}`);
+    console.log(`  voice tap (80 ms in)          "${voiceRun.whileLoading?.text}" disabled=${voiceRun.whileLoading?.disabled} ${voiceRun.whileLoading?.title || ''}`);
+    /* §2 N7: a tap must be acknowledged immediately. Either the button is
+       already live, or it says it is loading — what it may NOT do is sit
+       there looking identical and inert until the module shows up. */
+    say('voice: the tap is acknowledged at once',
+      voiceRun.whileLoading?.text !== 'VOICE' || voiceRun.whileLoading?.disabled === true,
+      `"${voiceRun.whileLoading?.text}" disabled=${voiceRun.whileLoading?.disabled}`);
     if (st.enabled) {
       say('voice: disclosure shown', /VOICE ON/.test(voiceRun.badge || '')
         && /leaves this device/i.test(voiceRun.text || ''), `badge="${voiceRun.badge}" "${(voiceRun.snippet || '').trim()}…"`);

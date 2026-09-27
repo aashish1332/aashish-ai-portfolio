@@ -260,7 +260,12 @@ of ≤800 elements, no layout read) against §4's 50 ms budget.
 ### Heard, and heard out loud (§11)
 
 `ai/voice/index.mjs` is the whole thing: **adapter-first**, so the engine can
-be replaced without the panel noticing.
+be replaced without the panel noticing. It is split from `ai/voice/caps.mjs`
+so the panel can describe voice — which tier grants what, and whether this
+browser has a recognizer — **without fetching the recognizer, the VAD or the
+speaker**. Those arrive on the tap that chooses a voice mode (§2 N6); the button
+says `VOICE…` while they load, because a tap that produces nothing reads as a
+dead button (§2 N7).
 
 **Nothing is listened to until the visitor asks.** The recognition object is
 not constructed until the button is pressed, and the first thing that happens
@@ -516,7 +521,9 @@ That is an allow-list entry with a reason, not a default.
 | The §8.4 retrieval gate is calibrated rather than assumed | **bounded, one half measured** — ceiling 4.647 recomputed from the data by test; the floor is **NOT MEASURED** (`docs/CALIBRATION.json`) |
 | Numbers and declared aliases are retrievable | **verified** — "8.28" → `ach.lpu-cgpa`, "who is he" → `person.name`, both regression-tested |
 | Browser inference and quantisation | **built, and run on trained weights** — a module worker runs the graph on int8 weights, shards are SHA-256 verified on load, and three implementations of the same architecture are cross-checked (torch ↔ numpy ↔ JavaScript). Measured on the `local` checkpoint's export: 138 positions, argmax **100 %**, top-16 order **100 %**, worst abs Δ logit **8.82e-06**, load 57–63 ms, prefill 68–71 tok/s, decode **65–74 tok/s** (8–9× §4's floor) on R1's CPU |
-| §4's budgets, with the model in the bundle | **measured** — chat code chunk **134,175 B gz (87.4 %, 19 KB of headroom)** of a 150 KB budget, of which §4's chat-UI chunk proper is 89,088 B (58.0 %) and the voice add-ons (18,464 B) and the LLM runtime + tokenizer (26,652 B) are §4 rows of their own; model payload 4,742,169 B gz, first visit 4,926,379 B gz = **12 %** of §4's 40 MB. Asserted on every `npm test`; the weight budgets are NOT TESTED (loudly skipped) without an export |
+| §4's budgets, with the model in the bundle | **measured** — chat code chunk **138,779 B gz (90.4 %, 14 KB of headroom)** of a 150 KB budget, of which §4's chat-UI chunk proper is 89,522 B (58.3 %) and the voice add-ons (19,215 B) and the LLM runtime + tokenizer (30,042 B) are §4 rows of their own; what the **click** actually fetches is 86,096 B gz (the static reach of `ai/ui/chat.mjs`); model payload 4,742,169 B gz, first visit 4,926,379 B gz = **12 %** of §4's 40 MB. Asserted on every `npm test`; the weight budgets are NOT TESTED (loudly skipped) without an export |
+| §2 N6: voice assets arrive on a tap, not on the click | **verified in a browser** — `dev-ai-probe.js` fetches `ai/voice/caps.mjs` with the shell and the engine modules only after the microphone button is pressed; `tests/build-bundle.test.mjs` follows the shipped import graph and fails if `ai/voice/index.mjs`, `vad.mjs` or `phantoms.mjs` become statically reachable from `ai/ui/chat.mjs` again |
+| §9.3's cache: a later visit costs no network | **measured** — `dev-offline-probe.js` reloads with `*model-export*` blocked at the CDP level and the model still reaches ready from `aashish-ai-model:aashish-ai-1` (`hits: 3`, `misses: 0`, 0 network responses). What is NOT TESTED is the page's own HTML offline: no service worker is registered (§9.3), so the document is the browser's business |
 | No answer template ships to a visitor | **verified** — §5.1 step 4's wording is in `evaluation/answer-text.mjs`, which the build does not copy, and `tests/build-bundle.test.mjs` asserts it twice: no built text file contains a template phrase, and the shipped planner returns `text: ''` for every portfolio question (only the §9 refusal and the identity disclosure, which are fixed statements about the *assistant*, still ship) |
 | §6.3's rungs actually reach the session | **verified in Node** — the wiring is `createSessionBudget` in `ai/governor/index.mjs`, dependencies injected, so every rung is *run* against a fake answerer and a fake scene (GOV-3/GOV-3b/GOV-4). It replaces a source-text grep that passed while rungs 1 and 2 were dead — see `docs/PROGRESS.md` |
 | §10's message controls: Stop, Retry, Clear | **verified in a browser** — `dev-ai-probe.js` presses them: Stop is offered only while answering (1 ms after the ask), takes effect, and leaves the bubble badged `PARTIAL ANSWER · STOPPED BY YOU` with no placeholder in it; Retry starts a fresh generation. The stop's text rules are unit-tested on the real knowledge base (`partialAnswer`, MODEL-17). What Stop does NOT do is interrupt the worker's current pass — see `docs/PROGRESS.md` |

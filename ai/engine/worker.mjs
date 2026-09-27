@@ -20,6 +20,7 @@
    ═══════════════════════════════════════════════════════════════ */
 
 import { ScratchLlamaEngine } from './index.mjs';
+import { loadWithCacheRecovery, modelCacheName } from './cache.mjs';
 
 let engine = null;
 let busy = null;      /* the AbortController of the generation in flight */
@@ -33,15 +34,25 @@ self.onmessage = async (event) => {
     if (type === 'prepare') {
       const { manifestUrl, tokenizerUrl, verify = true } = event.data;
       engine?.dispose();
-      engine = await ScratchLlamaEngine.load({
-        manifestUrl, tokenizerUrl, verify,
-        onProgress: ({ stage, loaded, total, shard, ms }) =>
-          post({ id, type: 'progress', stage, loaded, total, shard, ms }),
+      /* §9.3: the artifacts live in a version-keyed Cache Storage, so a later
+         visit loads with zero bytes of network and the assistant works with
+         the network cut. `caches` is absent outside a secure context and can
+         still refuse to open; both fall back to the plain fetch path. */
+      const { result, stats } = await loadWithCacheRecovery({
+        cacheStorage: self.caches || null,
+        cacheName: modelCacheName(manifestUrl),
+        load: (fetchImpl) => ScratchLlamaEngine.load({
+          manifestUrl, tokenizerUrl, verify, fetchImpl,
+          onProgress: ({ stage, loaded, total, shard, ms }) =>
+            post({ id, type: 'progress', stage, loaded, total, shard, ms }),
+        }),
       });
+      engine = result;
       prepared = true;
       const info = engine.memoryEstimate;
       post({ id, type: 'ready', config: engine.config,
-             verified: engine.verified, bytes: engine.bytes, memory: info });
+             verified: engine.verified, bytes: engine.bytes, memory: info,
+             cache: { name: modelCacheName(manifestUrl), ...stats } });
       return;
     }
 

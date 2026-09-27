@@ -44,32 +44,19 @@ import { tierInfo } from '../governor/index.mjs';
 import { voiceHint } from '../language/detect.mjs';
 import { isPhantom } from './phantoms.mjs';
 import { createMicVad } from './vad.mjs';
+/* The pre-tap capability answers live in `caps.mjs` so the chat shell can ask
+   "would voice work here?" without loading any of what follows (§2 N6). They
+   are imported for this module's own use AND re-exported, so every existing
+   importer of `ai/voice/index.mjs` keeps working unchanged. */
+import {
+  VOICE_POLICY, voicePolicy, NO_ENGINE, speechRecognitionCtor,
+  recognizeSupported, voiceSummary,
+} from './caps.mjs';
 
-/* ── the tier table, read rather than restated ─────────────────── */
-
-/** What each `TIERS[].voice` level grants. Keys are the declared vocabulary. */
-export const VOICE_POLICY = {
-  none: {
-    pushToTalk: false, speakAnswers: false, continuous: false,
-    reason: 'This device\'s tier keeps answers typed.',
-  },
-  tap: { pushToTalk: true, speakAnswers: false, continuous: false, reason: null },
-  /* §6.2 grants T2 Proactive "(VAD-gated)" — the gate is real, it lives in
-     `ai/voice/vad.mjs`, and it is what makes an always-open microphone
-     something other than an always-running recognizer. */
-  both: { pushToTalk: true, speakAnswers: true, continuous: true, reason: null },
-  all: { pushToTalk: true, speakAnswers: true, continuous: true, reason: null },
-};
-
-export function voicePolicy(tierId) {
-  const level = tierInfo(tierId)?.voice || 'none';
-  const p = VOICE_POLICY[level];
-  /* A tier naming a level this table does not know must fail CLOSED: an
-     unrecognised capability is not permission. `tests/voice.test.mjs` pins
-     the two sets against each other so this cannot be reached by drift. */
-  if (!p) return { level, ...VOICE_POLICY.none, reason: `Unknown voice level "${level}".` };
-  return { level, ...p };
-}
+export {
+  VOICE_POLICY, voicePolicy, NO_ENGINE, speechRecognitionCtor,
+  recognizeSupported, voiceSummary,
+} from './caps.mjs';
 
 /* ── timing ──────────────────────────────────────────────────────
    A continuous-mode turn is opened by the wake phrase and then has to be
@@ -99,9 +86,6 @@ export const SPEECH_DISCLOSURE =
   'Voice mode uses your browser\'s speech recognition, which sends what you '
   + 'say to your browser\'s speech service — so while it listens, your audio '
   + 'leaves this device. Typed questions never do. Turn voice off any time.';
-
-export const NO_ENGINE =
-  'This browser has no speech recognition, so voice mode stays off. Typing works.';
 
 /* ── the wake phrase ───────────────────────────────────────────── */
 
@@ -146,18 +130,6 @@ export function stripWake(text, phrases = WAKE_PHRASES) {
 }
 
 /* ── input: the recognizer ─────────────────────────────────────── */
-
-export function speechRecognitionCtor(env) {
-  return env?.SpeechRecognition || env?.webkitSpeechRecognition || null;
-}
-
-/** Feature detection as a value, never a throw — a browser without the API
- *  must cost nothing and say why. */
-export function recognizeSupported(env) {
-  return speechRecognitionCtor(env)
-    ? { supported: true, reason: null }
-    : { supported: false, reason: NO_ENGINE };
-}
 
 /* Errors that mean "do not ask again". Re-starting after one of these would
    demand a permission the visitor just refused, once per session end — the
@@ -715,9 +687,5 @@ const tabHidden = () => (typeof env.document?.hidden === 'boolean'
   };
 }
 
-/** Everything the panel needs to describe voice mode before it is turned on. */
-export function voiceSummary(tierId, env) {
-  const p = voicePolicy(tierId);
-  const s = recognizeSupported(env);
-  return { ...p, supported: s.supported, reason: s.supported ? p.reason : s.reason };
-}
+/* `voiceSummary` — the panel's pre-tap description — lives in `./caps.mjs`
+   with the policy table it reads, and is re-exported above. */

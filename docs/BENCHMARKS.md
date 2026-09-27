@@ -641,10 +641,11 @@ worst abs Δ logit **3.58e-07**.
 
 | Budget | §4 | Measured |
 |---|---|---|
-| AI chat **code** chunk, conservative reading (every shipped `ai/**` module + `knowledge.json`) | ≤ 150 KB gz | **134,175 B** (87.4 %) |
-| — of that, §4's chat-UI chunk proper (UI + KB + retrieval + language + guard + intent + anchors + governor) | — | 89,088 B (58.0 %) |
-| — of that, voice add-ons (loaded only when a voice mode is chosen, §2 N6) | §4 lists separately | 18,464 B |
-| — of that, LLM runtime + tokenizer (§4 "LLM runtime" row) | — | 26,652 B |
+| AI chat **code** chunk, conservative reading (every shipped `ai/**` module + `knowledge.json`) | ≤ 150 KB gz | **138,779 B** (90.4 %) |
+| — of that, §4's chat-UI chunk proper (UI + KB + retrieval + language + guard + intent + anchors + governor) | — | 89,522 B (58.3 %) |
+| — of that, voice add-ons (loaded only on the tap that picks voice, §2 N6) | §4 lists separately | 19,215 B |
+| — of that, LLM runtime + tokenizer (§4 "LLM runtime" row) | — | 30,042 B |
+| AI assets actually fetched by **the click** (static reach of `ai/ui/chat.mjs`) | §4's number to keep small | **86,096 B gz (84.1 KB), 14 files** |
 | Rest of the page | regression guard 250 KB | 65,649 B |
 | Model payload (weights + tokenizer + manifest) | ≤ 25 MB preferred, ≤ 40 MB hard | **5,144,357 B** raw · 4,742,169 B gz |
 | First-use download, T1/T2 | ≤ ~40 MB | **4,926,379 B** gz (**12 %**) |
@@ -715,8 +716,41 @@ looked like on its own, because the *selection* logic — which project, which
 skills, whether the question is answerable at all — has to stay on the visitor's
 side of the wire, and it is now the bulk of the file.
 
-**The next feature that lands in `ai/` should be paired with a look at what could
-move out of this chunk.**
+Then it **grew twice more, by design, and both times off the click path**:
++1,088 B gz to split the voice layer so only its capability table ships with the
+shell (§2 N6), and +3,207 B gz for `ai/engine/cache.mjs`, which is §9.3's real
+model cache. Neither is fetched by a visitor who only types: the click's static
+reach is **86,096 B gz** (measured by following the import graph in
+`tests/build-bundle.test.mjs`), against **102,596 B** before the voice split.
+The conservative §4 figure is the number that guards the budget, and it is at
+90.4 % — 14 KB of headroom — with the runtime (30 KB) and the voice add-ons
+(19 KB) inside it, both of which §4 lists on their own rows. **The next feature
+that lands in `ai/` should be paired with a look at what could move out of this
+chunk.**
+
+### §9.3's cache: zero bytes on the second visit (2026-09-27)
+
+`node dev-offline-probe.js`, R1, headless Chrome. Three checks that cannot be
+talked around, because the second visit is run with `*model-export*` **blocked
+at the CDP level**:
+
+| | measured |
+|---|---|
+| visit 1 | model ready in **27.9 s**, 3 responses from `model-export/`, `puts: 3`, `hits: 0` |
+| the cache it created | `aashish-ai-model:aashish-ai-1` — **3 files, 5,144,357 B** |
+| visit 2, `model-export` blocked | model **ready in 23.5 s**, `hits: 3`, `misses: 0`, **0 responses from the network** |
+| the page's own shell offline | **not available** — the document came from cache, the `/js` launcher did not (§9.3: no service worker is registered, so the page makes no offline promise; the model files are cached, the HTML is the browser's business) |
+
+So §4's "One-time, then cached (**0 MB** on later visits)" is now a measurement
+rather than a hope: with the artifact directory unreachable the assistant still
+reaches `ready`, and the only way that can happen is Cache Storage.
+**NOT TESTED:** the wall clock does **not** follow — 27.9 s → 23.5 s is decode
+work, not download work, on a localhost origin. What the cache removes is
+network bytes, which is what §4 promises. The unit half
+(`tests/model-cache.test.mjs`, 8 tests) pins the parts a browser cannot show:
+zero fetches on a hit, a refused `open()`, a `QuotaExceededError` on write, old
+versions deleted and foreign caches left alone, and a **poisoned** entry
+(correct length, wrong bytes) dropped and re-downloaded exactly once.
 The weights are deliberately **not**
 in that number —
 folding a 5 MB artifact into a 150 KB limit makes both budgets unmeasurable.

@@ -22,9 +22,7 @@ import {
 import { createModelSession } from '../engine/session.mjs';
 import { resolveAnchor, anchorLabel } from './anchors.mjs';
 import { createLanguageTracker } from '../language/detect.mjs';
-import {
-  createVoice, recognizeSupported, voiceSummary,
-} from '../voice/index.mjs';
+import { recognizeSupported, voiceSummary } from '../voice/caps.mjs';
 import {
   probeCapabilities, chooseTier, probeWebGPU, tierInfo,
   createDegradeLadder, createSessionBudget, hasSimd,
@@ -764,6 +762,18 @@ let working = 0;
     micBtn.textContent = on ? (info.mode === 'continuous' ? 'LISTENING' : 'MIC ON') : 'VOICE';
     micBtn.disabled = !info.supported || !info.pushToTalk;
     micBtn.title = info.reason || 'Talk to the assistant';
+    /* §2 N7 — the button must never just go dead. Turning voice on now loads
+       a module first (§2 N6), and on a slow connection that is a visible
+       wait: without this, a tap would produce nothing at all until the code
+       arrived, which reads as a broken button. */
+    if (voicePending) {
+      micBtn.classList.add('is-loading');
+      micBtn.textContent = 'VOICE…';
+      micBtn.disabled = true;
+      micBtn.title = 'Loading voice mode…';
+    } else {
+      micBtn.classList.remove('is-loading');
+    }
   }
 
   /** A status change the visitor did not ask for — a dead microphone, or an
@@ -778,23 +788,51 @@ let working = 0;
     }
   }
 
-  /** Created on demand — and creating it builds no engine, so this is safe to
-   *  call before anything is ever listened to (`createRecognizer` constructs
-   *  nothing until `start()`). */
+  /* §2 N6: the recognizer, the VAD and the speaker arrive on the first tap,
+     not with the shell — normally-typing visitors never parse them. That
+     makes enabling voice async, so the loader is single-flight (two callers
+     must not build two controllers) and `voiceWanted` stops a load that
+     finished after Stop from switching the microphone on anyway. */
+  let voicePromise = null;
+  let voiceWanted = false;
+  let voicePending = false;
+
   function voiceController() {
-    if (!voice) {
-      voice = createVoice(env, {
-        tier: tier ?? 0,
-        chat: api,
-        onStatus: voiceChanged,
-      });
-    }
-    return voice;
+    if (voice) return Promise.resolve(voice);
+    /* Forgotten on failure, so a second tap can retry a fetch that failed */
+    voicePromise ||= import('../voice/index.mjs')
+      .then((m) => {
+        voice = m.createVoice(env, {
+          tier: tier ?? 0,
+          chat: api,
+          onStatus: voiceChanged,
+        });
+        return voice;
+      })
+      .catch((err) => { voicePromise = null; throw err; });
+    return voicePromise;
   }
 
-  function toggleVoice() {
+  async function toggleVoice() {
     if (voice?.isEnabled()) { stopVoice(); return; }
-    const st = voiceController().enable();
+    voiceWanted = true;
+    voicePending = true;
+    voiceButton();
+    let ctl;
+    try {
+      ctl = await voiceController();
+    } catch (err) {
+      voicePending = false;
+      voiceButton();
+      /* The module itself could not load. That is the same visitor-facing
+         situation as an engine-less browser, and it is said the same way. */
+      voiceFailure = `Voice mode could not load (${escape(err?.message || err)}).`;
+      bubble('bot', voiceFailure, { badge: 'VOICE UNAVAILABLE', badgeClass: 'is-note' });
+      return;
+    }
+    voicePending = false;
+    if (!voiceWanted) { voiceButton(); return; }   /* Stop was pressed while loading */
+    const st = ctl.enable();
     voiceButton();
     if (!st.enabled) {
       if (st.reason) {
@@ -814,6 +852,7 @@ let working = 0;
   }
 
   function stopVoice() {
+    voiceWanted = false;
     voice?.disable();
     voiceButton();
   }
@@ -823,8 +862,8 @@ let working = 0;
    *  whether this device may listen continuously, push-to-talk only, not at
    *  all. Exposed so a host (and the probe) can move it deliberately rather
    *  than waiting for the governor to. */
-  function setVoiceTier(next) {
-    const st = voiceController().setTier(next);
+  async function setVoiceTier(next) {
+    const st = (await voiceController()).setTier(next);
     voiceButton();
     return st;
   }
@@ -1127,6 +1166,10 @@ let working = 0;
         notice: modelNotice,
         engine: session ? { status: session.status, reason: session.reason,
                             bytes: session.loaded?.bytes ?? null,
+                            /* §9.3: the worker's own account of where the
+                               bytes came from — the only thing that can tell
+                               a cache hit from a fast network (dev-offline-probe.js) */
+                            cache: session.cache ?? null,
                             ...budget.status() } : null,
         last: lastAnswer,
       };

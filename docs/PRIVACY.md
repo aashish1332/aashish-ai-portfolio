@@ -99,10 +99,21 @@ a shipped file, is a **failure**, not a warning.
 ## 6. Children, consent, retention
 
 There is no account, no login, no cookie set by the AI, and no storage of
-anything the visitor says. The model cache (P6/P7) will hold model files
-keyed by version, not conversation. Nothing needs a consent banner because
-nothing is tracked; the voice disclosure covers the one path where audio
-leaves the device.
+anything the visitor says. **What is stored is now real, and it is only the
+model:** `ai/engine/cache.mjs` puts the manifest, the tokenizer and the shards
+in a Cache Storage entry named `aashish-ai-model:<version>` (§9.3), so a later
+visit loads with zero bytes of network. Those are the same public artifacts any
+visitor could download, keyed by version and never by conversation — the
+questions asked, the answers given and the microphone audio are not written
+anywhere, and opening the panel offline reads nothing but those three files.
+An older version's cache is deleted when a new one activates, and no other
+origin's caches are touched. Nothing needs a consent banner because nothing is
+tracked; the voice disclosure covers the one path where audio leaves the device.
+
+Voice is also stricter than it was: the recognizer, the VAD and the speaker are
+fetched **on the tap that chooses a voice mode** (§2 N6), so a visitor who only
+types never loads them at all — `tests/build-bundle.test.mjs` follows the import
+graph and fails if they become statically reachable from the chat shell again.
 
 ---
 

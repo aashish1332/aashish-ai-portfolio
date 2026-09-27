@@ -281,6 +281,63 @@ test('the shipped bundle declines the withheld field exactly as the full KB does
   });
 });
 
+/**
+ * Every module a browser fetches to run `entry`, following only STATIC imports.
+ * That is the set that arrives the moment the file does — which is exactly
+ * what §2 N6 is about: what a visitor pays for before choosing anything.
+ */
+function staticReach(entry, out) {
+  const seen = new Set();
+  const walk = (rel) => {
+    if (seen.has(rel)) return;
+    seen.add(rel);
+    const src = readFileSync(join(out, rel), 'utf8');
+    for (const m of src.matchAll(/(?:^|[\s;])import\s+(?:[^'"()]*?from\s+)?['"]([^'"]+)['"]/g)) {
+      if (!m[1].startsWith('.')) continue;            /* bare specifier: not shipped */
+      walk(join(dirname(rel), m[1]).split('\\').join('/'));
+    }
+  };
+  walk(entry);
+  return seen;
+}
+
+test('§2 N6: the voice engine is fetched on a TAP, not on the click', () => {
+  /* N6: "voice assets load only when a voice mode is chosen". The panel must
+     describe voice (and disable the button with a reason) as soon as it opens,
+     so the tier policy and the feature check arrive with the shell — but the
+     recognizer, the VAD, the speaker and the phantoms filter must not. That
+     difference is not visible in a file listing, because all of them ship:
+     it is a question about the IMPORT GRAPH, so this follows it. */
+  temp((out) => {
+    const summary = buildBundle({ out, quiet: true });
+    const reach = staticReach('ai/ui/chat.mjs', out);
+
+    /* what the click DOES pay for */
+    assert.ok(reach.has('ai/answers/model.mjs'), 'the answer path must arrive with the shell');
+    assert.ok(reach.has('ai/voice/caps.mjs'),
+      'the tier policy has to arrive with the button, or N6 is being satisfied by ' +
+      'a button that cannot say whether voice would work');
+
+    /* what it does NOT */
+    for (const late of ['ai/voice/index.mjs', 'ai/voice/vad.mjs', 'ai/voice/phantoms.mjs']) {
+      assert.ok(!reach.has(late),
+        `${late} is statically reachable from ai/ui/chat.mjs — every visitor who only ` +
+        'types parses it for nothing (§2 N6)');
+      /* …and it still ships, so the lazy import will actually find it */
+      assert.ok(summary.files.includes(late), `${late} is not in the bundle at all`);
+    }
+
+    /* the boundary is worth a number: this is what a typing visitor fetches on
+       the first click, and it is the figure §2 N6 is protecting */
+    const bytes = [...reach].reduce((n, rel) => n + gzipSync(readFileSync(join(out, rel))).length, 0);
+    const lazy = ['ai/voice/index.mjs', 'ai/voice/vad.mjs', 'ai/voice/phantoms.mjs']
+      .reduce((n, rel) => n + gzipSync(readFileSync(join(out, rel))).length, 0);
+    assert.ok(lazy > 8000, `the deferred voice modules are only ${lazy} B gz — this test is not `
+      + 'measuring what it thinks it is');
+    assert.ok(bytes < 100_000, `the click now fetches ${bytes} B gz of script`);
+  });
+});
+
 test('§4: the retired deterministic ANSWERS are not in the bundle at all', () => {
   /* The owner retired Quick Answers as answers, so the wording is dead weight
      on every visitor's device: it was built on every question and discarded by

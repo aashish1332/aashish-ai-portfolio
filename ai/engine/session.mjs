@@ -27,6 +27,7 @@ export function createModelSession(opts = {}) {
   let nextId = 0;
   const pending = new Map();      /* id → {resolve, reject, onToken} */
   let lastLoaded = null;
+  let lastCache = null;
 
   function fail(message) {
     state = 'error';
@@ -113,6 +114,10 @@ export function createModelSession(opts = {}) {
     get reason() { return reason; },
     get config() { return config; },
     get loaded() { return lastLoaded; },
+    /** §9.3's cache, as the worker reported it: name, hits/misses, whether a
+     *  poisoned entry forced a re-download. Read by the offline probe, which
+     *  is the only thing that can tell a cache hit from a fast network. */
+    get cache() { return lastCache; },
 
     /** Fetch, verify and decode the model. Idempotent: a second call while
      *  ready resolves immediately, and a call while loading shares it. */
@@ -126,6 +131,7 @@ export function createModelSession(opts = {}) {
           state = 'ready';
           config = info.config;
           lastLoaded = { bytes: info.bytes, memory: info.memory, verified: info.verified };
+          lastCache = info.cache || null;
           return { config, loaded: lastLoaded };
         })
         .catch((error) => {

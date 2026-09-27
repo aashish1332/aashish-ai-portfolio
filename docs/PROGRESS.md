@@ -1892,3 +1892,99 @@ re-injecting a template phrase into the planner, which failed it.
 new home. Nothing visitor-facing changed: the panel refused those paths before
 this commit (`noAnswerLine`) and refuses them now — the bytes are simply no
 longer downloaded to produce text that was discarded.
+
+---
+
+## §2 N6 and §9.3, and the two things they needed — 2026-09-27
+
+The two rules were the oldest unmet ones in the brief, and each needed a
+mechanism rather than an assertion.
+
+### 1. Voice loads on a TAP, not on the click (§2 N6)
+
+`ai/ui/chat.mjs` statically imported `ai/voice/index.mjs`, which imports the
+VAD and the phantoms filter. So "voice assets load only when a voice mode is
+chosen" was false for every visitor who never chose one: they parsed the whole
+voice layer on the click.
+
+The panel does need to say *something* about voice the moment it opens (is the
+button live, and if not, why), so the pre-tap half moved to a new
+`ai/voice/caps.mjs`: the §6.2 tier policy and the recognizer feature check, and
+nothing that listens or speaks. `ai/voice/index.mjs` re-exports all of it, so
+nothing that already imported the voice layer had to change.
+
+Turning voice on is async now, which created two real defects that the browser
+probe caught rather than the unit tests:
+
+* **The button could go briefly dead.** A tap fetched a module before anything
+  visible happened. It now shows `VOICE…` (disabled, "Loading voice mode…")
+  from the tap until the module arrives — §2 N7 is "never a blank modal or an
+  endless spinner", and an inert-looking button is the same failure.
+* **`dev-ai-probe.js` was measuring the machine.** Its voice section slept a
+  fixed 1.5 s after clicking the microphone and then read the state. On the run
+  where the model was still finishing, that reported a dead button that was
+  only a slow one. The probe now waits for the outcome, and it asserts the new
+  thing too: at 80 ms the button already says `VOICE…`.
+
+MEASURED on R1, headless Chrome: what the click statically fetches went from
+**102,596 B gz (16 files) to 86,096 B gz (14 files)** — a 16.1 KB reduction —
+and the voice engine, VAD and phantoms filter are not among them. The
+conservative §4 chunk went **up** 1,088 B gz, because the capability module it
+needed is now its own file; `tests/build-bundle.test.mjs` follows the shipped
+import graph and fails if the engine becomes reachable from the shell again
+(verified by re-adding the import).
+
+### 2. The model is actually cached, so "0 MB on later visits" is true (§9.3)
+
+§4 promises one-time download and §14 asks for the offline-after-cache test,
+but "cached" had been the HTTP cache — a hint that can be evicted, cannot be
+enumerated, and is not available offline. §9.3 asks for the real thing.
+
+`ai/engine/cache.mjs` puts the manifest, the tokenizer and every shard in a
+**version-keyed Cache Storage** entry (`aashish-ai-model:<version>`, taken from
+the export directory, so there is no second source of truth), deletes older
+versions on activation, leaves other origins' caches alone, and — the rule that
+keeps this honest — **verifies every hit** through the existing sha256 check in
+`loadWeights`. A cache is a source of bytes, never a source of trust.
+
+Three failure paths were designed rather than discovered: no `caches` (not a
+secure context), a refused `open()` (private window) and a `QuotaExceededError`
+on write all fall back to the plain fetch — a cache failure is never a load
+failure (§2 N7). And if a stored shard fails its own hash, the version's cache
+is dropped and the load is retried once: a poisoned or truncated entry costs a
+visitor one re-download instead of a permanently broken assistant, and a
+genuinely bad artifact still fails the same way twice (CACHE-6b).
+
+### MEASURED — `node dev-offline-probe.js` (new), R1, headless Chrome
+
+| | |
+|---|---|
+| visit 1 | ready in **27.9 s**, 3 network responses, `puts: 3`, `hits: 0` |
+| the cache | `aashish-ai-model:aashish-ai-1` — **3 files, 5,144,357 B** |
+| visit 2, **`*model-export*` blocked at the CDP level** | ready in 23.5 s, `hits: 3`, `misses: 0`, **0 network responses** |
+| page offline (network cut, reload) | document came from the HTTP cache, the `/js` launcher did not — reported, not asserted: with no service worker (§9.3) the page makes no offline promise. The **model** is the part that is now guaranteed |
+
+**NOT TESTED / not promised:** the wall clock did **not** improve (27.9 → 23.5 s
+is decode work on localhost, not download work), and no real network was
+involved, so the 0 MB claim is about bytes on the wire, not about time.
+
+`tests/model-cache.test.mjs` (8 tests) pins what a browser cannot show: zero
+fetches on a hit, an absent `caches`, a refused open, a refused write, old-version
+eviction, a foreign cache left intact, the poisoned-entry recovery, and that a
+404 is never stored (caching a failure would make it permanent).
+
+### 3. Re-verified end to end after all of it
+
+`dev-ai-probe.js`, R1, headless Chrome: **41/41 checks**. Panel ready 19.3 s,
+first answer 59.0 s, `AI ANSWER · ON-DEVICE MODEL`, the skills question reading
+**12 facts / 12 sources** — which is the §5.1 topic-only fallback still working
+through the new planner — phone question `NO ANSWER · NOT PUBLISHED`, Stop and
+Retry exercised, voice enabled at `level=both mode=continuous`. Frame-health A/B
+stays **INCONCLUSIVE** (headless software GL has a 0.7 fps baseline).
+
+Tests **444 JS + 326 Python**, 0 failures. `npm run build` clean.
+
+**Still open, unchanged:** no for-quality checkpoint (the browser's answers are
+still the 4.98M `local` export, which is why they read like
+`"work reviewed cor byandeeer why"`), real-device and real-microphone testing,
+and §11 Proactive's long soak.
