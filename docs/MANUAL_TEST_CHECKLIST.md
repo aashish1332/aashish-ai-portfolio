@@ -130,6 +130,8 @@ yours to work around.
 | F1 | Open/close the panel five times | does the phone get warmer / slower? note it |
 | F2 | Note the OS's memory use for the tab before and after | a growth over five cycles is a bug |
 | F3 | If you have the dev machine: `npm run probe:resources` | paste the tail into the chat — it prints its own tally |
+| F4 | Optional: `npm run probe:degrade` | §14's T0 and download-failure paths are already **20/20 automated** (`docs/BENCHMARKS.md`); run it if you want to see them. Two of those checks can only be cheated by the probe itself, so if it ever prints fewer than 20/20, that is a real finding |
+| F5 | Optional, for a slow-network simulation: `PORT=5581 FAIL_MODEL=1 node dev-server.mjs` | 404s every model asset, which is how the failure path is driven without touching shipped code |
 
 ---
 

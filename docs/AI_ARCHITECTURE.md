@@ -9,8 +9,11 @@ scale — see [TRAINING.md](TRAINING.md)) · §10 voice, §11 voice input, §12
 section-following landed · P6 export + P7 browser runtime built and gated ·
 P8 voice built, Proactive VAD-gated.** A model genuinely trained on this
 laptop runs in the browser today (config `local`, ~5M params); P4's Stage A
-and P5's Stage B at config A still need a GPU, and P9–P11 (hardening, ternary,
-final QA) are open. Voice input is browser-verified with a stub engine and
+and P5's Stage B at config A still need a GPU. P10's ternary experiment has a
+**written no-go** (`experiments/ternary/README.md`) and P11's final report exists
+(`docs/FINAL_REPORT.md`); P9's hardening is done as far as this box can measure
+it — 2 % frame cost, 65 ms worst long task, 0 leaks over 5 reopens — with the
+hardware-side gaps listed in the report rather than claimed. Voice input is browser-verified with a stub engine and
 unit-tested against doubles, but it has **never** been run with a live
 microphone — see §5.
 
@@ -521,7 +524,7 @@ That is an allow-list entry with a reason, not a default.
 | The §8.4 retrieval gate is calibrated rather than assumed | **bounded, one half measured** — ceiling 4.647 recomputed from the data by test; the floor is **NOT MEASURED** (`docs/CALIBRATION.json`) |
 | Numbers and declared aliases are retrievable | **verified** — "8.28" → `ach.lpu-cgpa`, "who is he" → `person.name`, both regression-tested |
 | Browser inference and quantisation | **built, and run on trained weights** — a module worker runs the graph on int8 weights, shards are SHA-256 verified on load, and three implementations of the same architecture are cross-checked (torch ↔ numpy ↔ JavaScript). Measured on the `local` checkpoint's export: 138 positions, argmax **100 %**, top-16 order **100 %**, worst abs Δ logit **8.82e-06**, load 57–63 ms, prefill 68–71 tok/s, decode **65–74 tok/s** (8–9× §4's floor) on R1's CPU |
-| §4's budgets, with the model in the bundle | **measured** — chat code chunk **138,779 B gz (90.4 %, 14 KB of headroom)** of a 150 KB budget, of which §4's chat-UI chunk proper is 89,522 B (58.3 %) and the voice add-ons (19,215 B) and the LLM runtime + tokenizer (30,042 B) are §4 rows of their own; what the **click** actually fetches is 86,096 B gz (the static reach of `ai/ui/chat.mjs`); model payload 4,742,169 B gz, first visit 4,926,379 B gz = **12 %** of §4's 40 MB. Asserted on every `npm test`; the weight budgets are NOT TESTED (loudly skipped) without an export |
+| §4's budgets, with the model in the bundle | **measured** — chat code chunk **138,896 B gz (90.4 %, 14 KB of headroom)** of a 150 KB budget, of which §4's chat-UI chunk proper is 89,522 B (58.3 %) and the voice add-ons (19,215 B) and the LLM runtime + tokenizer (30,042 B) are §4 rows of their own; what the **click** actually fetches is 86,096 B gz (the static reach of `ai/ui/chat.mjs`); model payload 4,742,169 B gz, first visit 4,926,379 B gz = **12 %** of §4's 40 MB. Asserted on every `npm test`; the weight budgets are NOT TESTED (loudly skipped) without an export |
 | §2 N6: voice assets arrive on a tap, not on the click | **verified in a browser** — `dev-ai-probe.js` fetches `ai/voice/caps.mjs` with the shell and the engine modules only after the microphone button is pressed; `tests/build-bundle.test.mjs` follows the shipped import graph and fails if `ai/voice/index.mjs`, `vad.mjs` or `phantoms.mjs` become statically reachable from `ai/ui/chat.mjs` again |
 | §9.3's cache: a later visit costs no network | **measured** — `dev-offline-probe.js` reloads with `*model-export*` blocked at the CDP level and the model still reaches ready from `aashish-ai-model:aashish-ai-1` (`hits: 3`, `misses: 0`, 0 network responses). What is NOT TESTED is the page's own HTML offline: no service worker is registered (§9.3), so the document is the browser's business |
 | No answer template ships to a visitor | **verified** — §5.1 step 4's wording is in `evaluation/answer-text.mjs`, which the build does not copy, and `tests/build-bundle.test.mjs` asserts it twice: no built text file contains a template phrase, and the shipped planner returns `text: ''` for every portfolio question (only the §9 refusal and the identity disclosure, which are fixed statements about the *assistant*, still ship) |

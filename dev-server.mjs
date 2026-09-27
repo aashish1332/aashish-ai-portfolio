@@ -27,6 +27,15 @@ const root = resolve(process.env.ROOT || process.cwd());
 const port = +(process.env.PORT || 5577);
 const label = process.env.ROOT ? `preview (${process.env.ROOT})` : 'dev server';
 
+/* `FAIL_MODEL=1` 404s everything under /ai/model-export/, so the model's
+   download-failure path can be driven for real (dev-degrade-probe.js §2).
+   Fault injection has to happen HERE and not in the browser: the weights are
+   fetched from inside a module Worker, and CDP's Network.setBlockedURLs on
+   the page session does not intercept a dedicated worker's requests — a
+   browser-side block silently reported a healthy download as a passing test.
+   Nothing about this touches shipped code; it is a dev-server knob. */
+const failModel = process.env.FAIL_MODEL === '1';
+
 /* ── POST /api/contact ──
    Mirrors server.js's contract (validate, accept, log) so the post-credit
    form works against this dependency-free dev server instead of 404-ing
@@ -66,6 +75,9 @@ http.createServer(async (req, res) => {
     }
     if (urlPath === '/api/health') return json(res, 200, { ok: true });
     if (urlPath === '/') urlPath = '/index.html';
+    if (failModel && urlPath.startsWith('/ai/model-export/')) {
+      res.writeHead(404); return res.end('not found (FAIL_MODEL)');
+    }
     const filePath = normalize(join(root, urlPath));
     if (!filePath.startsWith(root)) { res.writeHead(403); return res.end(); }
     const data = await readFile(filePath);
@@ -74,4 +86,5 @@ http.createServer(async (req, res) => {
   } catch {
     res.writeHead(404); res.end('not found');
   }
-}).listen(port, () => console.log(`🎬 ${label} → http://localhost:${port}`));
+}).listen(port, () => console.log(`🎬 ${label} → http://localhost:${port}`
+  + (failModel ? '  [FAIL_MODEL: /ai/model-export/ 404s]' : '')));

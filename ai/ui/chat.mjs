@@ -1044,7 +1044,11 @@ let working = 0;
     const info = tierInfo(tier);
     const badge = body.querySelector('.ai__tier');
     if (badge) {
-      badge.textContent = `T${tier} · ${info.label.toUpperCase()}`;
+      /* Only when nothing model-related has been said yet. On T0 the tier
+         branch above already wrote "NO AI MODEL HERE", and T1+ wrote
+         "PREPARING MODEL…" — restamping the tier's short label over either
+         one told the visitor less than the shell already knew. */
+      if (modelState === 'idle') badge.textContent = `T${tier} · ${info.label.toUpperCase()}`;
       badge.title = `${info.name} (${info.note}) — ${caps.threads || '?'} threads`
         + `${caps.memoryReported ? `, ${caps.memory} GB` : ''}`
         + `${caps.benchmarkMs ? `, bench ${Math.round(caps.benchmarkMs)} ms` : ''}`

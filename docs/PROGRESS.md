@@ -1988,3 +1988,76 @@ Tests **444 JS + 326 Python**, 0 failures. `npm run build` clean.
 still the 4.98M `local` export, which is why they read like
 `"work reviewed cor byandeeer why"`), real-device and real-microphone testing,
 and §11 Proactive's long soak.
+
+---
+
+## Phase 9–11 — the two missing §14 gates, P10's decision, P11's report — 2026-09-27
+
+**Status:** ✅ **P10 complete (written go/no-go) · P11 complete (final report
+written, gaps listed in it) · P9 open on hardware R1 cannot provide.**
+
+### 1. §14's unsupported path and failure path, driven for real (new probe)
+
+§14 asks for automated e2e coverage of "the T0 unsupported path, offline-after-
+cache, download failure/retry". The middle one had a probe; the other two had
+**nothing**, and they are the two a visitor on a metered phone or a flaky
+connection actually meets. `dev-degrade-probe.js` (new, `npm run probe:degrade`)
+drives both — **20/20 checks**:
+
+| Case | What it proves |
+|---|---|
+| **T0** (`navigator.connection.saveData`, the environment §6.1 asks about instead of sniffing) | tier 0, **0 model assets requested**, **0 engine workers**, `model.engine === null`, badge `T0 · NO AI MODEL HERE`, 0 page errors, and a real question refused as `no-model` with `NO ANSWER · NO AI MODEL ON THIS DEVICE` — not a spinner |
+| **FAILURE** (every model asset 404ing on a first visit) | `model.state === 'error'` with the reason said out loud (`manifest fetch failed: 404 …`), the panel still usable, the film untouched, the question refused honestly, 0 page errors — and **a reload on a healthy network reaches `ready`** with a real 5,059,584 B model and a real answer, which is the retry the panel promises in words |
+
+### 2. Two bugs the probe found, and one wrong test
+
+* **The fault injection was in the wrong place.** The first version blocked
+  `*model-export*` with CDP `Network.setBlockedURLs` on the page session. The
+  weights are fetched **inside a module Worker**, and that block does not reach
+  a dedicated worker's requests — so the failing case came back `state: ready`
+  and read as a green check. It is now a **dev-server** fault-injection flag
+  (`FAIL_MODEL=1` 404s `/ai/model-export/`, `PORT=5581`), and the probe asserts
+  the fault is live (`HTTP 404` from the page) *before* it believes anything the
+  panel says. A failure case that cannot fail is worse than no test.
+* **`prepareModel()` restamped the tier's short label over the model line.** On
+  T0 the badge block ran after `setModelState('unsupported', …)` and overwrote
+  `T0 · NO AI MODEL HERE` with `T0 · NO AI MODEL` — less specific than what the
+  shell already knew. It only restamps while `modelState === 'idle'` now, so the
+  T1+ case keeps `PREPARING MODEL…` too. Visitor-facing, small, and found by
+  asserting the words rather than the state.
+* **A wrong assertion of mine**: "no worker was created" failed because §6.1's
+  micro-benchmark legitimately runs in a throwaway blob worker on every device.
+  The check is now "no **engine** worker", which is what the rule is about.
+
+### MEASURED — after the fix (R1, headless Chrome)
+
+| | |
+|---|---|
+| `node dev-degrade-probe.js` | **20/20 checks** |
+| chat code chunk (§4, conservative) | **138,896 B gz · 90.4 %** (was 138,779 · 90.4 % — the badge fix and its comment, +117 B) |
+| tests | **444 JS + 326 Python, 0 failures** · `npm run build` clean |
+
+### 3. P10 (§13) — written go/no-go: **NO-GO**
+
+`experiments/ternary/README.md`. Ternary is **separated from the baseline by not
+existing**: no QAT flag, no second quantizer, no ternary kernel. At 4.98M params
+its real benefit is size (~3 MB gz off a 4.93 MB first visit — ≈6 % of a budget
+we use 12 % of), the speed benefit needs kernels a stock browser runtime does not
+provide (§13 says so itself), and the decision belongs *after* the baseline
+passes its own gates. Four conditions that would re-open it are written down,
+with the order to do them in.
+
+### 4. P11 (§18) — the final report
+
+`docs/FINAL_REPORT.md`: MODEL · TRAINING · KNOWLEDGE · BROWSER · PERFORMANCE ·
+CHAT · VOICE · TERNARY · KNOWN LIMITATIONS · WHAT I NEED FROM YOU, every value
+tagged MEASURED / ESTIMATED / NOT TESTED, plus §18's checklist item by item.
+
+The one thing it says first, because it is the honest headline: **the pipeline
+is real and verified end to end; the model currently in the browser is not
+trained for quality.** The claim about architecture, privacy and locality is
+true today. The claim about answer quality is not, and it needs the GPU run.
+
+**Still open, unchanged, and listed in the report:** the GPU training run and
+the P4 gate (owner), a real-device / real-microphone / screen-reader pass, the
+deployment host, PII sign-off, WASM SIMD and WebGPU, and the §4 chunk at 90.4 %.

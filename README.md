@@ -190,11 +190,14 @@ idle page cost a measured 1.2 s of blocked main thread (`docs/BENCHMARKS.md` §1
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | hosting requirements, build/preview, what ships |
 | [docs/MANUAL_TEST_CHECKLIST.md](docs/MANUAL_TEST_CHECKLIST.md) | the ~10-minute routine for a real phone and microphone |
 | [docs/PROGRESS.md](docs/PROGRESS.md) | phase-by-phase log, including what is unfinished |
+| [docs/FINAL_REPORT.md](docs/FINAL_REPORT.md) | §18's final report: every value tagged MEASURED / ESTIMATED / NOT TESTED |
+| [experiments/ternary/README.md](experiments/ternary/README.md) | §13's written go/no-go on the ternary experiment (no-go, and why) |
 
 ```bash
 npm run test:all     # 444 JS + 326 Python tests
 node dev-ai-probe.js     # the click → answer gate in a real browser (41 checks)
 node dev-offline-probe.js # §9.3 cache: a second visit with model-export blocked
+node dev-degrade-probe.js # §14: the T0 path and the download-failure path, end to end
 npm run probe:resources  # §15.3: heap, nodes, listeners, long tasks → docs/RESOURCES.json
 npm run calibrate    # sweep the §8.4 retrieval gate against the evaluation set → docs/CALIBRATION.json
 npm run params       # parameter count + its band gate

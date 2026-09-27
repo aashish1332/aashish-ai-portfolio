@@ -641,7 +641,7 @@ worst abs Δ logit **3.58e-07**.
 
 | Budget | §4 | Measured |
 |---|---|---|
-| AI chat **code** chunk, conservative reading (every shipped `ai/**` module + `knowledge.json`) | ≤ 150 KB gz | **138,779 B** (90.4 %) |
+| AI chat **code** chunk, conservative reading (every shipped `ai/**` module + `knowledge.json`) | ≤ 150 KB gz | **138,896 B** (90.4 %) |
 | — of that, §4's chat-UI chunk proper (UI + KB + retrieval + language + guard + intent + anchors + governor) | — | 89,522 B (58.3 %) |
 | — of that, voice add-ons (loaded only on the tap that picks voice, §2 N6) | §4 lists separately | 19,215 B |
 | — of that, LLM runtime + tokenizer (§4 "LLM runtime" row) | — | 30,042 B |
@@ -757,6 +757,46 @@ folding a 5 MB artifact into a 150 KB limit makes both budgets unmeasurable.
 **NOT TESTED:** brotli is measured (4,713,956 B) but nothing yet negotiates it,
 so the effective transfer is the gzip figure; and no CDN or real network was
 involved, so these are file sizes, not load times.
+
+### The unsupported path and the failure path, driven for real (2026-09-27)
+
+`npm run probe:degrade` (`dev-degrade-probe.js`, new). §14 asks for automated
+e2e coverage of "the T0 unsupported path, offline-after-cache, download
+failure/retry". The middle one is above; these are the other two, and until
+this probe **nothing had ever driven either of them end to end**. **20/20
+checks**, R1, headless Chrome:
+
+| Case | Measured |
+|---|---|
+| T0 (`navigator.connection.saveData = true`) | tier **0**, model assets requested **0**, engine workers **0**, `model.engine === null`, badge `T0 · NO AI MODEL HERE`, page errors **0** |
+| T0, asked "What are your skills?" | `kind=no-model`, `NO ANSWER · NO AI MODEL ON THIS DEVICE` + a full sentence — a refusal, not a spinner |
+| Failure (all of `/ai/model-export/` 404s) | `model.state === 'error'`, `reason = manifest fetch failed: 404 …`, panel usable (`isOpen: true`), `Film3D` untouched, page errors **0** |
+| Failure, then a reload on a healthy network | `error → ready`, **5,059,584 B** of model, and it answers — the retry the panel promises |
+
+**What this cost, in tested trust.** Two of the three findings were in the
+testing itself, and both would have produced a green result for a broken path:
+
+1. **The injection was in the wrong layer.** The first version blocked the model
+   with CDP `Network.setBlockedURLs` on the page session. The weights are
+   fetched **inside a module Worker**, and that block does not reach a dedicated
+   worker's requests — the failing case returned `state: ready` and the probe
+   printed it as a pass. It is now a dev-server flag (`FAIL_MODEL=1`, on
+   `PORT=5581`) and the probe asserts `HTTP 404` **from the page** before it
+   believes a word the panel says afterwards. Instrument bug, not a product bug,
+   but the conclusion it invalidated was the whole section.
+2. **A real product bug it did find.** `prepareModel()` restamped the tier's
+   short label over the model line, so T0's badge read `T0 · NO AI MODEL`
+   instead of the already-written `T0 · NO AI MODEL HERE` — the shell knew
+   something more specific and said less. It only restamps while
+   `modelState === 'idle'` now, which also preserves `PREPARING MODEL…` on T1+.
+3. **One wrong assertion of mine:** "no worker was created" failed legitimately,
+   because §6.1's micro-benchmark runs in a throwaway blob worker on every
+   device, T0 included. The rule is about the *engine* worker, and that is what
+   it checks now.
+
+| | |
+|---|---|
+| chat code chunk (§4, conservative) | **138,896 B gz = 90.4 %** (was 138,779 — the badge fix and its comment) |
 
 ---
 
