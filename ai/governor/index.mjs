@@ -54,6 +54,15 @@ export const THRESHOLDS = {
 
 export const tierInfo = (id) => TIERS[Math.max(0, Math.min(TIERS.length - 1, id | 0))];
 
+/** §6.2's answer budget for a tier — one source, so the table and its budget
+ *  cannot drift. T0 publishes no model budget, and an answerer attached
+ *  before the tier is known must get the smallest number, not the largest. */
+export const T0_MAX_NEW = 48;
+export const tierMaxNew = (id) => {
+  const t = tierInfo(id);
+  return t.maxNew > 0 ? t.maxNew : T0_MAX_NEW;
+};
+
 /**
  * §6.1 capability probe. Synchronous, side-effect free, never throws.
  *
@@ -309,6 +318,102 @@ export function createDegradeLadder(opts = {}) {
     },
     status() {
       return { active, step, effect: step ? LADDER[step - 1].key : null, ...monitor.status() };
+    },
+  };
+}
+
+/* ── §6.3's rungs, applied to the session they act on ────────────────
+   `createDegradeLadder` decides WHEN to move; this decides WHAT a move
+   costs. It lives here, with its dependencies injected, because a rung key
+   the caller misreads silently does nothing — the shell matched `budget`
+   where the key is `shorten`, and set a `paceMs` nothing read — and the only
+   check at the time was a grep of the shell's source, which cannot tell a
+   live branch from a dead one. `tests/governor.test.mjs` now RUNS each rung.
+
+   @param {(quality:'low'|'normal') => void} [opts.setSceneQuality] §12, rung 3
+   @param {() => void} [opts.onStop] rung 4 fired: the caller says why, out loud
+   @param {(step:number) => void} [opts.onRestore] the session got its budget back
+ */
+export function createSessionBudget(opts = {}) {
+  const {
+    getAnswerer = () => null,
+    setSceneQuality = null,
+    onStop = null,
+    onRestore = null,
+    paceMs = 24,
+    shortenFloor = 32,
+  } = opts;
+
+  let tier = null;
+  let maxNewTokens = null;      /* null until a tier is known or an answerer attaches */
+  let pace = 0;
+  let stopped = false;
+  let attached = null;
+
+  /* One writer for both knobs, so the answerer can never hold a copy this
+     object does not. Every rung goes through it — including the ones that
+     only change one of the two. */
+  const apply = () => {
+    const a = attached || getAnswerer();
+    a?.setPaceMs?.(pace);
+    if (maxNewTokens != null) a?.setMaxNewTokens?.(maxNewTokens);
+  };
+
+  return {
+    /* §6.2: the tier decides how long an answer may be */
+    setTier(id) {
+      tier = id | 0;
+      maxNewTokens = tierMaxNew(tier);
+      apply();
+      return maxNewTokens;
+    },
+    /* Seeds the budget if no tier set one, and re-pushes whatever a rung
+       already turned — a device can degrade while the model is loading. */
+    attach(answerer) {
+      attached = answerer || null;
+      if (maxNewTokens == null) maxNewTokens = tierMaxNew(tier);
+      apply();
+      return { paceMs: pace, maxNewTokens, stopped };
+    },
+    /** §6.4: the answerer is gone. Stop pushing knobs at it. */
+    detach() { attached = null; return this.status(); },
+
+    get paceMs() { return pace; },
+    get maxNewTokens() { return maxNewTokens; },
+    get stopped() { return stopped; },
+    status() { return { tier, paceMs: pace, maxNewTokens, stopped }; },
+
+    /** Apply one rung; returns the key it acted on, or null for a step
+     *  `LADDER` does not define. Never a silent no-op — the tests assert that
+     *  every key the ladder publishes is one this acts on. */
+    applyStep(step) {
+      const key = LADDER[step - 1]?.key || null;
+      if (key === 'scene') {
+        setSceneQuality?.('low');           /* §12: temporary, restored below */
+      } else if (key === 'stop') {
+        stopped = true;                     /* §6.3 step 4 — no canned answer */
+        onStop?.();
+      } else if (key === 'pace') {
+        pace = paceMs;                      /* step 1: yields, same wording */
+        apply();
+      } else if (key === 'shorten') {
+        maxNewTokens = Math.max(shortenFloor,   /* step 2, with a floor */
+          Math.round((maxNewTokens ?? tierMaxNew(tier)) / 2));
+        apply();
+      }
+      return key;
+    },
+
+    /** The frames recovered: every knob a rung turned goes back, including
+     *  the copies the answerer holds. */
+    restore(step = 0) {
+      pace = 0;
+      stopped = false;
+      maxNewTokens = tierMaxNew(tier);
+      setSceneQuality?.('normal');
+      apply();
+      onRestore?.(step);
+      return this.status();
     },
   };
 }

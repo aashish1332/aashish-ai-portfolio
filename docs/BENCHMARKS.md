@@ -641,7 +641,10 @@ worst abs Δ logit **3.58e-07**.
 
 | Budget | §4 | Measured |
 |---|---|---|
-| AI chat **code** chunk (UI + KB + retrieval + language + guard + intent + engine JS) | ≤ 150 KB gz | **136,409 B** (88.8 %) |
+| AI chat **code** chunk, conservative reading (every shipped `ai/**` module + `knowledge.json`) | ≤ 150 KB gz | **137,039 B** (89.2 %) |
+| — of that, §4's chat-UI chunk proper (UI + KB + retrieval + language + guard + intent + anchors + governor) | — | 91,923 B (59.8 %) |
+| — of that, voice add-ons (loaded only when a voice mode is chosen, §2 N6) | §4 lists separately | 18,464 B |
+| — of that, LLM runtime + tokenizer (§4 "LLM runtime" row) | — | 26,652 B |
 | Rest of the page | regression guard 250 KB | 65,649 B |
 | Model payload (weights + tokenizer + manifest) | ≤ 25 MB preferred, ≤ 40 MB hard | **5,144,357 B** raw · 4,742,169 B gz |
 | First-use download, T1/T2 | ≤ ~40 MB | **4,926,379 B** gz (**12 %**) |
@@ -687,13 +690,18 @@ been measured at **390 ms** and at **20–22 s** on this box in the same hour, b
 two probes with two different wait conditions; the 50× spread is a machine-load
 artifact and neither number should be quoted alone.
 
-The chat **code** chunk is **88.8 %** of its budget — 17 KB of headroom left —
+The chat **code** chunk is **89.2 %** of its budget — 16 KB of headroom left —
 and this is the number to watch. It grew from 133,891 B (87 %) as §10's Stop and
 Retry landed (the two controls, their styles, the `partial` badge and the
 `cancelled` refusal in three languages), from 127,836 B (83 %) with the §8.2
 window work, from 118,561 B with the model-only answer path, and from 79,555 B
-before that as the engine, voice and guard landed. **The next feature that lands
-in `ai/` should be paired with a look at what could move out of this chunk.**
+before that as the engine, voice and guard landed. The last **+776 B** did not
+buy a feature: `createSessionBudget` moved §6.3's rung wiring out of
+`ai/ui/chat.mjs` (−533 B gz) and into `ai/governor/index.mjs` (+1,309 B gz),
+where it takes its dependencies as arguments and can therefore be **run** by
+tests — the source-text check it replaced passed while two of the four rungs
+were dead. **The next feature that lands in `ai/` should be paired with a look at
+what could move out of this chunk.**
 The weights are deliberately **not**
 in that number —
 folding a 5 MB artifact into a 150 KB limit makes both budgets unmeasurable.

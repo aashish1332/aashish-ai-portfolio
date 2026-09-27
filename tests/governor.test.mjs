@@ -13,22 +13,24 @@
            oscillate between degrade and restore on alternating frames.
      GOV-3 the shell acted on a rung key (`budget`) that LADDER does not have
            (`shorten`), and handed `paceMs` to nobody — so rungs 1 and 2 were
-           silent no-ops. Pinned by comparing the shell's keys to LADDER.
+           silent no-ops. It was pinned by grepping the shell's source, which
+           is how it stayed wrong: a grep cannot tell a live branch from a
+           dead one. The wiring is now `createSessionBudget` in the governor,
+           which takes its dependencies as arguments and is therefore RUN
+           here, rung by rung.
+     GOV-4 the per-tier answer budget was computed in two places and only one
+           of them remembered T0 — see `tierMaxNew`.
 
    THRESHOLDS is a documented "starting heuristic" (§6.2), not a measured
    constant — these tests pin the DECISION RULES, not the tuning.
    ═══════════════════════════════════════════════════════════════ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
 import {
   TIERS, THRESHOLDS, tierInfo, probeCapabilities, chooseTier, hasSimd,
   SIMD_PROBE_BYTES, probeWebGPU, createFrameMonitor, createDegradeLadder, LADDER,
+  createSessionBudget, tierMaxNew, T0_MAX_NEW,
 } from '../ai/governor/index.mjs';
-
-const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** A fake `globalThis`-shaped environment. */
 function fakeEnv(over = {}) {
@@ -133,6 +135,24 @@ test('§6.2: tierInfo is total and T0 promises no model', () => {
   assert.equal(tierInfo(99).name, 'T3');
 });
 
+test('GOV-4: the per-tier answer budget has ONE source, and T0 has one too', () => {
+  /* Two copies existed: `prepareModel()` computed the budget when the tier
+     was chosen, and the ladder's restore recomputed it by hand without a T0
+     case. They agreed on T1/T2/T3 only because someone had typed the same
+     numbers twice. Every value here is now read off `TIERS` itself, so the
+     table and its budget cannot drift apart. */
+  for (const t of TIERS) assert.equal(tierMaxNew(t.id), t.maxNew || T0_MAX_NEW, t.name);
+  assert.equal(tierMaxNew(1), 96);
+  assert.equal(tierMaxNew(2), 160);
+  assert.equal(tierMaxNew(3), 256);
+  /* T0 publishes no model budget to inherit, and an answerer attached before
+     any tier is known must get the smallest budget rather than the largest. */
+  assert.equal(tierMaxNew(0), T0_MAX_NEW);
+  assert.ok(T0_MAX_NEW > 0, 'a zero budget would be a config error, not a tier');
+  assert.equal(tierMaxNew(null), T0_MAX_NEW);
+  assert.equal(tierMaxNew(99), 256, 'clamped, like tierInfo');
+});
+
 /* ── §6.3 frame health ──────────────────────────────────────────── */
 test('§6.3: the monitor ignores noise and reports ema/p95', () => {
   const m = createFrameMonitor({ sampleWindow: 10 });
@@ -206,29 +226,116 @@ test('§6.3: step 4 is the floor, and the ladder can be capped', () => {
   assert.equal(capped.step, 2, 'a session with no model need not descend past the scene step');
 });
 
-test('§6.3: the shell acts on rung keys that exist — and on all of them', () => {
-  /* GOV-3, and it is the same bug twice. `applyLadderStep()` matched a key
-     called `budget` while the ladder's key is `shorten`, and set a `paceMs` the
-     answerer never received — so rungs 1 and 2 were silent no-ops, and nothing
-     noticed because the shell needs a DOM to run. `LADDER` is the contract, so
-     the check is simply that the two agree in both directions: a rung key the
-     shell does not know silently does nothing, and a key the shell invents can
-     never fire. */
-  const src = readFileSync(join(HERE, '..', 'ai', 'ui', 'chat.mjs'), 'utf8');
-  const keys = LADDER.map((r) => r.key);
-  /* only the comparisons in `applyLadderStep` — the shell also reads
-     `e.key === 'Enter'`, which is an event field, not a rung */
-  const used = [...src.matchAll(/key === '([a-z][a-z-]*)'/g)].map((m) => m[1]);
-  assert.ok(used.length >= keys.length, 'the shell must act on the rungs it is given');
-  for (const k of new Set(used)) {
-    assert.ok(keys.includes(k),
-      `ai/ui/chat.mjs compares a ladder key to '${k}', which LADDER does not have — ` +
-      'that branch can never run');
+/* A real answerer's shape, reduced to the two knobs the ladder turns. It
+   records every call, because the bug being guarded against is a rung that
+   changes the shell's own copy and never reaches the thing that generates. */
+function fakeAnswerer() {
+  return {
+    paceMs: 0, maxNewTokens: 96, calls: [],
+    setPaceMs(ms) { this.calls.push(['pace', ms]); this.paceMs = ms; return ms; },
+    setMaxNewTokens(n) { this.calls.push(['maxNew', n]); this.maxNewTokens = n; return n; },
+  };
+}
+
+test('GOV-3: every rung actually moves the session it is applied to', () => {
+  /* The wiring used to live in ai/ui/chat.mjs, where the only check was a grep
+     of its source — and that grep PASSED while both rungs 1 and 2 were dead.
+     `createSessionBudget` takes its dependencies as arguments, so here they
+     are, and here it runs. */
+  const answerer = fakeAnswerer();
+  const scene = [];
+  const stops = [];
+  const restores = [];
+  const budget = createSessionBudget({
+    getAnswerer: () => answerer,
+    setSceneQuality: (q) => scene.push(q),
+    onStop: () => stops.push(true),
+    onRestore: (s) => restores.push(s),
+  });
+
+  /* §6.2: the tier sets the budget, and it reaches a live answerer */
+  assert.equal(budget.setTier(2), 160);
+  assert.equal(budget.maxNewTokens, 160);
+  assert.deepEqual(answerer.calls, [['pace', 0], ['maxNew', 160]],
+    'choosing a tier pushes both knobs, so an answerer built later starts in sync');
+
+  /* rung 1 — pace. The arithmetic is unchanged (tests/engine.test.mjs pins
+     that), so the ONLY thing this rung buys is the main thread's frames — and
+     it buys none of them if the answerer does not hear about it. */
+  assert.equal(budget.applyStep(1), 'pace');
+  assert.equal(budget.paceMs, 24);
+  assert.equal(answerer.paceMs, 24, 'rung 1 must reach the answerer, not just the shell');
+
+  /* rung 2 — shorten, on the answerer's own token budget */
+  assert.equal(budget.applyStep(2), 'shorten');
+  assert.equal(budget.maxNewTokens, 80);
+  assert.equal(answerer.maxNewTokens, 80, 'rung 2 must reach the answerer');
+  /* and it has a floor: a rung that can be re-entered must not reach zero */
+  for (let i = 0; i < 8; i++) budget.applyStep(2);
+  assert.equal(budget.maxNewTokens, 32);
+  /* the other knobs are untouched by it — a rung changes its own cost, not
+     the whole ladder's */
+  assert.equal(budget.paceMs, 24);
+  assert.equal(budget.stopped, false);
+
+  /* rung 3 — the scene, through the one hook §12 owns */
+  assert.equal(budget.applyStep(3), 'scene');
+  assert.deepEqual(scene, ['low']);
+
+  /* rung 4 — stop, and the caller gets to say why out loud */
+  assert.equal(budget.applyStep(4), 'stop');
+  assert.equal(budget.stopped, true);
+  assert.deepEqual(stops, [true]);
+
+  /* §6.3 "restore when idle": every knob a rung turned goes back, including
+     the two the ANSWERER holds a copy of — restoring only the shell's copy is
+     how a session stays shortened after the frames recovered */
+  budget.restore(0);
+  assert.equal(budget.paceMs, 0);
+  assert.equal(budget.stopped, false);
+  assert.equal(budget.maxNewTokens, 160);
+  assert.equal(answerer.paceMs, 0);
+  assert.equal(answerer.maxNewTokens, 160);
+  assert.deepEqual(scene, ['low', 'normal']);
+  assert.deepEqual(restores, [0]);
+
+  /* and every key `LADDER` publishes is one this acts on: a rung whose key
+     nothing matches is a silent no-op, which is exactly the bug above */
+  for (const rung of LADDER) {
+    const b = createSessionBudget({ getAnswerer: () => null, setSceneQuality: () => {} });
+    assert.equal(b.applyStep(rung.step), rung.key,
+      `LADDER rung '${rung.key}' is not acted on — it silently does nothing`);
   }
-  for (const k of keys) {
-    assert.ok(used.includes(k),
-      `LADDER rung '${k}' is never acted on by ai/ui/chat.mjs — it silently does nothing`);
-  }
+  /* an undefined step is a fact, not a crash (§6.1) */
+  assert.equal(createSessionBudget({}).applyStep(99), null);
+  assert.equal(createSessionBudget({}).applyStep(0), null);
+});
+
+test('GOV-3b: a rung that fires before the answerer exists is not lost', () => {
+  /* The ladder is armed around the work, and a device can degrade during the
+     model's own download — before `createModelAnswerer` has ever run. A rung
+     that only wrote to the answerer would be forgotten; the budget has to
+     hold the value and hand it over on attach. */
+  let live = null;
+  const budget = createSessionBudget({ getAnswerer: () => live });
+  budget.setTier(3);
+  budget.applyStep(1);
+  budget.applyStep(2);
+  assert.equal(live, null, 'no answerer yet, and no crash');
+  assert.equal(budget.paceMs, 24);
+  assert.equal(budget.maxNewTokens, 128);
+
+  live = fakeAnswerer();
+  budget.attach(live);
+  assert.equal(live.paceMs, 24, 'the pacing a rung turned must survive the attach');
+  assert.equal(live.maxNewTokens, 128, 'so must the shortened budget');
+
+  /* an answerer attached with no tier known gets the smallest budget, never
+     the largest — the conservative direction */
+  const fresh = createSessionBudget({ getAnswerer: () => null });
+  const a = fakeAnswerer();
+  fresh.attach(a);
+  assert.equal(a.maxNewTokens, T0_MAX_NEW);
 });
 
 test('§6.3-GATE: an idle ladder never degrades the scene, however slow the page is', () => {

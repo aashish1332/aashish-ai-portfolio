@@ -42,7 +42,8 @@ P1–P3 runs in the browser or on the training machine.
 | Retrieval | `ai/retrieval/index.mjs` | yes |
 | Language detection | `ai/language/detect.mjs`, `ai/language/lexicons.json` | yes |
 | Intent routing | `ai/intent/rules.mjs` | yes |
-| Answers | `ai/answers/quick.mjs` | yes |
+| Answers | `ai/answers/model.mjs` (the only answer path) | yes |
+| Routing, the §8.4 gate and the follow-up graph | `ai/answers/quick.mjs` — its templates are built and **discarded**, never rendered | yes |
 | Placeholder grammar | `ai/knowledge/placeholders.mjs` | yes |
 | Chat shell + governor | `ai/ui/*.mjs`, `ai/governor/index.mjs`, `js/ai/launcher.js` | lazily, on click |
 | Tokenizer | `ai/tokenizer/*` | not yet (P7) |
@@ -514,7 +515,8 @@ That is an allow-list entry with a reason, not a default.
 | The §8.4 retrieval gate is calibrated rather than assumed | **bounded, one half measured** — ceiling 4.647 recomputed from the data by test; the floor is **NOT MEASURED** (`docs/CALIBRATION.json`) |
 | Numbers and declared aliases are retrievable | **verified** — "8.28" → `ach.lpu-cgpa`, "who is he" → `person.name`, both regression-tested |
 | Browser inference and quantisation | **built, and run on trained weights** — a module worker runs the graph on int8 weights, shards are SHA-256 verified on load, and three implementations of the same architecture are cross-checked (torch ↔ numpy ↔ JavaScript). Measured on the `local` checkpoint's export: 138 positions, argmax **100 %**, top-16 order **100 %**, worst abs Δ logit **8.82e-06**, load 57–63 ms, prefill 68–71 tok/s, decode **65–74 tok/s** (8–9× §4's floor) on R1's CPU |
-| §4's budgets, with the model in the bundle | **measured** — chat code chunk **136,409 B gz (88.8 %, 17 KB of headroom)** of a 150 KB budget, model payload 4,742,169 B gz, first visit 4,926,379 B gz = **12 %** of §4's 40 MB. Asserted on every `npm test`; the weight budgets are NOT TESTED (loudly skipped) without an export |
+| §4's budgets, with the model in the bundle | **measured** — chat code chunk **137,039 B gz (89.2 %, 16 KB of headroom)** of a 150 KB budget, of which §4's chat-UI chunk proper is 91,923 B (59.8 %) and the voice add-ons (18,464 B) and the LLM runtime + tokenizer (26,652 B) are §4 rows of their own; model payload 4,742,169 B gz, first visit 4,926,379 B gz = **12 %** of §4's 40 MB. Asserted on every `npm test`; the weight budgets are NOT TESTED (loudly skipped) without an export |
+| §6.3's rungs actually reach the session | **verified in Node** — the wiring is `createSessionBudget` in `ai/governor/index.mjs`, dependencies injected, so every rung is *run* against a fake answerer and a fake scene (GOV-3/GOV-3b/GOV-4). It replaces a source-text grep that passed while rungs 1 and 2 were dead — see `docs/PROGRESS.md` |
 | §10's message controls: Stop, Retry, Clear | **verified in a browser** — `dev-ai-probe.js` presses them: Stop is offered only while answering (1 ms after the ask), takes effect, and leaves the bubble badged `PARTIAL ANSWER · STOPPED BY YOU` with no placeholder in it; Retry starts a fresh generation. The stop's text rules are unit-tested on the real knowledge base (`partialAnswer`, MODEL-17). What Stop does NOT do is interrupt the worker's current pass — see `docs/PROGRESS.md` |
 | The export carries no dev path and no test fixture | **verified** — provenance is step/commit/SHA-256, not a directory (the build refused the path); a model version directory ships only its manifest, tokenizer and shards, so the 257 KB parity fixture no longer reaches `dist/` |
 | The same model is not two different sizes | **verified** — 4,984,064 params, and the 5,246,208 a naive `state_dict` sum reads is the **tied** `lm_head.weight` counted twice (`data_ptr()` equal, `tieGap` 0), pinned by test |

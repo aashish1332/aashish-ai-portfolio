@@ -1772,3 +1772,57 @@ frame time does not move.
 The two remaining probe failures are the voice section's wake-phrase pair,
 which flips between runs on a host with no real microphone (§11 has always been
 NOT TESTED for exactly this reason). Neither is a resource figure.
+
+---
+
+## §6.3's wiring is a value now, and the tests run it — 2026-09-27
+
+GOV-3 was the only check on the hand that turns §6.3's knobs, and it was a
+**grep**: it read `ai/ui/chat.mjs`'s source and looked for `key === '…'`
+comparisons matching `LADDER`. That check **passed while rungs 1 and 2 were
+dead** — step 2 matched `budget` where the ladder's key is `shorten`, and step 1
+set a `paceMs` the answerer never received. A grep cannot tell a live branch
+from a dead one, and it was never going to find the second half of the bug
+(the value was computed and discarded).
+
+The reason given for settling for a grep was true and is now false: the shell
+needs a DOM, so nothing could drive it. It does not need a DOM any more,
+because the wiring is no longer in the shell. `createSessionBudget` in
+`ai/governor/index.mjs` owns §6.2's per-tier answer budget, §6.3 step 1's pace
+and step 2's token budget, and pushes both into the answerer — which is the
+part that was missing. It takes its dependencies as arguments
+(`getAnswerer`, `setSceneQuality`, `onStop`, `onRestore`), so a test can drive
+every rung with fakes.
+
+| | |
+|---|---|
+| `ai/ui/chat.mjs` | **−533 B gz** — the rung switch, the two local knobs and their comments moved out; it now keeps only the copy and the once-per-session notice flag |
+| `ai/governor/index.mjs` | **+1,309 B gz** — `createSessionBudget` and `tierMaxNew`, which had no home before |
+| chat code chunk | **+776 B gz**, i.e. **137,039 B** = **89.2 %** of the §4 budget of 150 KB, from 136,409 B (88.8 %) |
+
+So this step **costs** budget rather than saving it, and it is worth saying so
+plainly: the chunk is the §4 number to watch, and the honest trade here is
++776 B (0.5 pp) for a mechanism that can now fail loudly. A second bug came out
+of the same consolidation — the per-tier budget (96/160/256) was computed in
+**two** places, and the ladder's restore copy had no T0 case, so it would have
+restored 160 tokens onto a device with no model. Both now read `TIERS` through
+`tierMaxNew` (GOV-4).
+
+### MEASURED
+
+* `dev-ai-probe.js` is **untouched** by this change — no visitor-facing path,
+  string or behaviour moved. What moved is *which module owns the knobs*.
+* Tests **434 JS + 326 Python**, 0 failures (was 432 JS; the source-grep GOV-3
+  became a run-time GOV-3, plus GOV-3b and GOV-4).
+* GOV-3 was **verified to catch the original bug**: renaming step 2's key back
+  to `budget` fails GOV-3 and GOV-3b and nothing else — it is a real test of the
+  wiring, not of the source text.
+* `npm run build` clean, 44 files, 5,755,780 B.
+* The §4 chunk, split by the line items §4 actually names: the chat UI chunk
+  proper (UI + `knowledge.json` + retrieval + language + guard + intent +
+  anchors + governor) is **91,923 B gz = 89.8 KB (59.8 %)**; the voice add-ons
+  are **18,464 B gz** and the LLM runtime + tokenizer **26,652 B gz**, each of
+  which §4 lists on its own row. The 89.2 % figure above is the conservative
+  reading — every shipped `ai/**` module except the model counted as one chunk
+  — and `tests/build-bundle.test.mjs` asserts that one, because it can never
+  flatter the result.

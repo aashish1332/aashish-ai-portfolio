@@ -27,7 +27,7 @@ import {
 } from '../voice/index.mjs';
 import {
   probeCapabilities, chooseTier, probeWebGPU, tierInfo,
-  createDegradeLadder, LADDER, hasSimd,
+  createDegradeLadder, createSessionBudget, hasSimd,
 } from '../governor/index.mjs';
 import { STYLES } from './styles.mjs';
 
@@ -164,12 +164,18 @@ let working = 0;
   let unloadTimer = null;
   /* §6.2's per-tier answer budget, and §6.3 steps 1–2 acting on it. These
      are the knobs the degrade ladder turns; the model itself is unchanged. */
-  let maxNewTokens = null;
-  let paceMs = 0;
-  /* §6.3's last rung used to drop to extractive Quick Answers. Those are
-     retired, so the rung now STOPS the generation and says why — the same load
-     reduction without a canned sentence standing in for an answer. */
-  let generationStopped = false;
+  /* §6.2's per-tier budget and §6.3's two session knobs live in the governor
+     (`createSessionBudget`), where the tests can run every rung: this shell
+     needs a DOM, which is why rungs 1 and 2 were silent no-ops for a phase. */
+  const budget = createSessionBudget({
+    getAnswerer: () => answerer,
+    setSceneQuality: (m) => hooks.setSceneQuality?.(m),
+    onStop: () => noticeOnce('The frames were struggling, so I have stopped '
+      + 'generating answers for this session.'),
+    /* A rung below 3 raised no notice, so the once-per-session flag goes
+       back and the next session can still say what happened to it. */
+    onRestore: (step) => { if (step < 3) noticeShown = false; },
+  });
   let voice = null;            /* built on the first tap, never on open */
   let micBtn = null;
   let disclosureSpoken = false;
@@ -623,7 +629,7 @@ let working = 0;
        to be reachable only by driving a whole fake browser). Four of its
        outcomes refuse before the model is reached, and none of them answers. */
     const route = routeQuestion({
-      res, lang, generationStopped, modelState,
+      res, lang, generationStopped: budget.stopped, modelState,
       hasModel: !!answerer && answerer.status === 'ready',
     });
     if (route.path === 'safety') {
@@ -710,7 +716,7 @@ let working = 0;
     }
     /* §6.3 steps 1–2: if the governor has already shortened this session, the
        answer is still the model's — the panel just says why it is shorter. */
-    if (paceMs || ladder?.status?.().step >= 2) {
+    if (budget.paceMs || ladder?.status?.().step >= 2) {
       noticeOnce('The scene was struggling, so answers are kept shorter for this session.');
     }
     lastAnchor = resolveAnchor(doc, { kb, ids: out.sources }) || lastAnchor;
@@ -824,42 +830,6 @@ let working = 0;
   }
 
   /* ── section: governor wiring ─────────────────────────────────── */
-  /* §6.3's rungs, applied to the thing that can actually act on them.
-
-     The keys here MUST match `LADDER` in `ai/governor/index.mjs`, and two of
-     them did not: step 2's key is `shorten` while this matched `budget`, and
-     `paceMs` was set on the shell while the answerer kept its own copy — so
-     rungs 1 and 2 silently did nothing at all. Both are wired now. Nothing
-     automated covers this wiring (the chat shell needs a DOM), which is
-     exactly how it stayed wrong; `tests/governor.test.mjs` pins the ladder,
-     not the hand that turns its knobs. */
-  function applyLadderStep(step) {
-    if (!step) return;
-    const key = LADDER[step - 1]?.key;
-    if (key === 'scene') {
-      /* §12 step 3: temporary low quality, restored when the device recovers */
-      hooks.setSceneQuality?.('low');
-    } else if (key === 'stop') {
-      /* §6.3 step 4: the frames cannot afford a generation, so there is no
-         longer one to afford. The panel says why instead of substituting a
-         built sentence — those are retired (see `ai/answers/model.mjs`). */
-      generationStopped = true;
-      noticeOnce('The frames were struggling, so I have stopped generating answers '
-        + 'for this session.');
-    } else if (key === 'pace') {
-      /* §6.3 step 1: yield between tokens. The arithmetic is unchanged, so
-         the answer is the same one — pinned in tests/engine.test.mjs — the
-         main thread simply gets its frames back. */
-      paceMs = 24;
-      answerer?.setPaceMs?.(paceMs);
-    } else if (key === 'shorten') {
-      /* §6.3 step 2: shorter answers. Applied to the answerer, which owns
-         the token budget for the session. */
-      maxNewTokens = Math.max(32, Math.round((maxNewTokens || 96) / 2));
-      answerer?.setMaxNewTokens?.(maxNewTokens);
-    }
-  }
-
   function startFrameHealth() {
     if (ladder) return;                                /* idempotent: never stack */
     const gsapRef = env.gsap;
@@ -867,20 +837,8 @@ let working = 0;
     ladder = createDegradeLadder({
       /* armed by whileWorking() around real work, not by the panel opening */
       active: false,
-      onStep: (step) => applyLadderStep(step),
-      onRestore: (step) => {
-        hooks.setSceneQuality?.('normal');
-        /* §6.3: "restore when idle" — the pacing and the shortened budget
-           existed for the frames that were struggling, and the frames
-           recovered. Every knob a rung turned is put back, including the two
-           the answerer owns a copy of. */
-        paceMs = 0;
-        answerer?.setPaceMs?.(0);
-        generationStopped = false;
-        maxNewTokens = tier === 1 ? 96 : tier === 3 ? 256 : 160;
-        answerer?.setMaxNewTokens?.(maxNewTokens);
-        if (step < 3) noticeShown = false;
-      },
+      onStep: (step) => budget.applyStep(step),
+      onRestore: (step) => budget.restore(step),
     });
     tickerFn = (_time, deltaMs) => ladder.tick(deltaMs);
     gsapRef.ticker.add(tickerFn);
@@ -894,7 +852,8 @@ let working = 0;
     tickerFn = null;
     if (ladder) { ladder.reset(); ladder = null; }
     working = 0;
-    hooks.setSceneQuality?.('normal');
+    /* nothing a rung turned outlives the session it turned it in */
+    budget.restore(0);
   }
 
   /* ── section: lifecycle ───────────────────────────────────────── */
@@ -971,9 +930,12 @@ let working = 0;
     preparing = session.prepare()
       .then((ready) => {
         answerer = createModelAnswerer({
-          kb, session, persona: 'first', maxNewTokens,
+          kb, session, persona: 'first', maxNewTokens: budget.maxNewTokens,
           onNotice: (text) => noticeOnce(text),
         });
+        /* Seeds the budget if the tier never set one, and re-pushes whatever a
+           rung already turned onto this answerer. */
+        budget.attach(answerer);
         setModelState('ready');
         const kbLoaded = ready?.loaded?.bytes ?? session.loaded?.bytes ?? 0;
         if (label) {
@@ -1006,6 +968,8 @@ let working = 0;
       session?.dispose();
       session = null;
       answerer = null;
+      /* §6.4: nothing is generating any more, so nothing should be paced */
+      budget.detach();
       preparing = null;
       setModelState('idle');
     }, 120_000);
@@ -1026,7 +990,7 @@ let working = 0;
     tier = chooseTier(caps);
     /* §6.2's answer budget per tier. The model itself is one model: the tier
        decides how long an answer may be and how hard the device is pushed. */
-    maxNewTokens = tier === 1 ? 96 : tier === 0 ? 48 : tier === 2 ? 160 : 256;
+    budget.setTier(tier);
 
     /*
        §6.5: the size is stated BEFORE anything is fetched, and the download
@@ -1163,7 +1127,7 @@ let working = 0;
         notice: modelNotice,
         engine: session ? { status: session.status, reason: session.reason,
                             bytes: session.loaded?.bytes ?? null,
-                            maxNewTokens, paceMs } : null,
+                            ...budget.status() } : null,
         last: lastAnswer,
       };
     },
