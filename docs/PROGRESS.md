@@ -2310,7 +2310,41 @@ names its chunk once, in a constant. The test pins the *call shape* and the
 *constant's value* separately, so a rewrite that changes either fails rather
 than silently passing.
 
-### 9. §2 N8 — "no second renderer, no new loop" was a sentence; now it is measured
+### 9. The SHIPPED bundle, driven in a browser for the first time (2026-09-27)
+
+A gap nobody had noticed: **`dev-ai-probe.js` hardcoded `http://localhost:5577/`**,
+the dev server — so every browser verification in this project had run against
+the *source tree*, and the thing a visitor actually receives (`dist/`: stripped
+`knowledge.json`, comments removed from `ai/**`, no dev tooling) had never been
+loaded by a browser at all. The Node tests import the stripped modules, which is
+strong evidence, but "the browser parses and runs it end to end" is a different
+claim.
+
+The probe now takes `AI_BASE`, and it was pointed at the built bundle served the
+way production serves it (`ROOT=dist PORT=5582 node dev-server.mjs`, the same
+MIME table as `npm run preview`).
+
+**MEASURED — 43/43 checks on the shipped bundle**, R1, headless Chrome on the
+real GPU:
+
+| | |
+|---|---|
+| no AI asset before the click | ✔ — the network watch stayed empty until the button was pressed |
+| panel + model | ready, and a real generation: `kind=model`, badge `AI ANSWER · ON-DEVICE MODEL` |
+| the capped-fallback question | `kind=model`, **12 facts read, 12 sources** |
+| Stop / Retry | both pressed and both took effect on the stripped chunk |
+| frame health, panel open vs closed | closed **33.2 ms** (115 frames) → open **33.3 ms** (105 frames), **0.3 %** drift, **1×** p95, both arms `tier 2 · BALANCED @72% y=0`; the control sampled twice read 33.3 → 33.2 ms (−0.3 %) |
+| §6.3 ladder | `step=0`, `active=false`, no scene-quality change |
+| voice | tap acknowledged, the unavailable-microphone reason spoken rather than silent, scene handed back, button back to off, mic off when the panel closed |
+| Escape, focus | panel closed, focus returned to `#askAI` |
+| console errors / page errors / failed requests | **0 / 0 / 0** |
+| assets fetched on first open | **31** — the 14 of the click's static reach plus the worker's own `ai/engine/**`, which is exactly the split the import-graph test pins |
+
+So the deliverable is verified, not just its source. What remains unverified is
+unchanged and listed in `docs/FINAL_REPORT.md`: a real phone, a real microphone,
+a screen reader, Firefox and Safari.
+
+### 10. §2 N8 — "no second renderer, no new loop" was a sentence; now it is measured
 
 N8 is the rule that keeps the film the only thing competing for the frame, and
 it is the kind of rule that breaks quietly: a `setInterval` in a retry path or a

@@ -776,6 +776,27 @@ their own rows. The click's static reach fell with it, to **41,221 B gz**.
 **The budget is no longer the binding constraint on what `ai/` may grow into; it
 is a regression guard now.**
 
+### The shipped bundle, in a browser (2026-09-27)
+
+`dev-ai-probe.js` used to hardcode the dev server, so **every browser number in
+this file described the SOURCE tree** — and the thing a visitor receives is
+`dist/`, with a stripped `knowledge.json` and the comments removed from
+`ai/**`. The probe now takes `AI_BASE`, and the run below was made against the
+built bundle served the way production serves it (`ROOT=dist PORT=5582`, the
+same MIME table as `npm run preview`).
+
+| | |
+|---|---|
+| probe | **43/43 checks**, 0 console errors, 0 page errors, 0 failed requests |
+| no AI asset before the click | ✔ — the network watch stayed empty until the button was pressed |
+| the answer | `kind=model`, badge `AI ANSWER · ON-DEVICE MODEL`, 12 facts read / 12 sources |
+| frame health, closed → open | 33.2 ms (115 frames) → 33.3 ms (105 frames), **0.3 %** drift, **1×** p95, both arms `tier 2 · BALANCED @72% y=0`; the double-sampled control read −0.3 % |
+| assets fetched on first open | **31** — the 14 of the click's static reach plus the worker's own `ai/engine/**` |
+
+R1 on a loaded box, so the absolute milliseconds move 2–3× between runs; what
+this establishes is that the **stripped** bundle loads, mounts, spawns its
+worker and answers — which the Node import tests could not show.
+
 ### §9.3's cache: zero bytes on the second visit (2026-09-27)
 
 `node dev-offline-probe.js`, R1, headless Chrome. Three checks that cannot be

@@ -14,12 +14,22 @@
 
    Run:  node dev-ai-probe.js            (desktop, 1280×800)
          MOBILE=1 node dev-ai-probe.js   (phone, 390×844)
+
+   `AI_BASE` points it somewhere other than the dev server — which is how the
+   SHIPPED bundle gets driven in a browser at all. Until this existed the
+   probe only ever ran against the source tree, so the thing a visitor
+   actually receives (`dist/`: stripped knowledge.json, comments removed from
+   ai/**, no dev tooling) had never been loaded by a browser:
+
+     npm run build
+     ROOT=dist PORT=5582 node dev-server.mjs &
+     AI_BASE=http://localhost:5582/ node dev-ai-probe.js
    ═══════════════════════════════════════════════════════════════ */
 'use strict';
 const puppeteer = require('puppeteer-core');
 
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const URL = 'http://localhost:5577/';
+const URL = process.env.AI_BASE || 'http://localhost:5577/';
 const MOBILE = !!process.env.MOBILE;
 
 /* anything that must not exist before the click */

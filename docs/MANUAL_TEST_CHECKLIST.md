@@ -55,13 +55,16 @@ Do this **first** — most of what follows is a comparison against it.
 **Watch for:** the panel stealing scroll from the film; the chat container
 scrolling the page instead of itself; a stuck spinner.
 
-**Already covered without a person (2026-09-26).** `dev-ai-probe.js` opens the
+**Already covered without a person (2026-09-27).** `dev-ai-probe.js` opens the
 panel in headless Chrome and asserts the flow mechanically — 0 AI requests
-before the click, the panel becoming ready (20.0 s on R1), an answer badged
+before the click, the panel becoming ready, an answer badged
 *AI ANSWER · ON-DEVICE MODEL* with its sources, the withheld phone number
 declined, "what are your skills?" answered from the capped intent fallback (12
-facts), Escape closing, focus returning — **31/31**, and the same probe covers
-B3, B4, B8 and the pre-click promise of B10. What it cannot do is judge the
+facts), Escape closing, focus returning — **43/43**, and the same probe covers
+B3, B4, B8 and the pre-click promise of B10. The latest run was pointed at the
+**built bundle** (`AI_BASE`, with `dist/` served the way production serves it),
+so the numbers above describe what a visitor downloads rather than the source
+tree, and the console/page-error/failed-request counts on that run were 0/0/0. What it cannot do is judge the
 *sentence*: the only checkpoint that exists is a 4.98 M CPU export exercise
 whose answers are coherent-ish and wrong ("work reviewed cor byandeeer why"), so
 B3–B7 still need a person **as soon as there is a trained-for-quality model**.
