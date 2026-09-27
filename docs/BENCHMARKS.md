@@ -192,6 +192,9 @@ governor's unit tests pin both directions, and the gate was mutation-tested
 * **No real GPU.** Every number above is software GL, where shader compilation
   is pathologically slow. The 1.2 s relink is *expected* to be far smaller on
   real hardware — **and that is an expectation, not a measurement.**
+  **Superseded 2026-09-27:** the GPU was reachable from `headless: 'new'` all
+  along (see *"Frame health, on the real GPU"*); the resource probe had already
+  been using it, and the §4 reference profiles were then run.
 * **No phone, no screen reader, no other tabs.**
 * **A 240 s non-response, once.** On the pre-fix path (ladder armed for the
   panel's lifetime) two runs failed to return a CDP call within the 240 s
@@ -505,8 +508,10 @@ existence.
 
 ---
 
-**NOT TESTED:** the §4 target "median FPS drop ≤ 10 %, p95 ≤ 1.5× baseline" on a real GPU, the
-4×/6× DevTools CPU throttling profiles, and any real phone. `longtask` observation and the
+**NOT TESTED:** any real phone. (The §4 target on a real GPU, and the 4×/6× CPU-throttling
+profiles, were run on 2026-09-27 — see *"Frame health, on the real GPU"* and *"§4's reference
+profiles"* above: **0 % / −2.5 % / +0.3 %** drift, **1.00×** p95, **43/43** each. What those
+runs do **not** establish is a phone's answer latency — the throttle misses worker threads.) `longtask` observation and the
 ladder's *cost* were added afterwards by the §15.3 pass above — see
 **Resource + lifecycle (§15.3)** for the measured result, including the 1.2 s
 shader-recompile task the ladder used to cause.
@@ -839,6 +844,34 @@ within the same day, so 815 ms is the best case on an unloaded box and nothing m
 at a pinned tier, which is what makes it attributable, not what a visitor's film will choose;
 and the p95 being *identical* to 0.1 ms in both arms is reported as measured rather than
 explained.
+
+### §4's reference profiles, which had never been run (§15.3)
+
+The same probe under `Emulation.setCPUThrottlingRate` — the same CDP call and the same
+`THROTTLE` knob as `dev-baseline-probe.js`, so the two are comparable. R1 is already a weak
+machine; this is the only way to make it weaker without owning a phone.
+
+| Profile | panel ready | first answer | drift (closed → open) | p95 | probe |
+|---|---|---|---|---|---|
+| R1 as it is | **815 ms** | **25,129 ms** | **0 %** (18.3 → 18.3 ms) | **1.00×** | **43/43** |
+| **4× CPU** | **1,091 ms** | **45,380 ms** | **−2.5 %** (35.3 → 34.4 ms) | **1.00×** | **43/43** |
+| **6× CPU** | **1,502 ms** | **42,753 ms** | **+0.3 %** (35.4 → 35.5 ms) | **1.00×** | **43/43** |
+
+§4's own target — "median FPS drop ≤ 10 %, p95 ≤ 1.5× baseline" — is met on all three. Every
+flow check passes under 6× as well: the answer still streams, Stop still cuts it and keeps the
+partial text, Retry still re-asks, the skills question still reads 12 facts, the panel is still
+usable.
+
+**Two things this pair of runs honestly says it is not:**
+
+* The CPU throttle does **not** simulate a weak device faithfully for *worker* work. Frame time
+  doubles (18.3 → 35.3 ms), so the main thread is throttled as expected, but the first answer
+  goes 25.1 s → 45.4 s, which is **1.8×, not 4×**. The generation runs in a Worker and the CDP
+  throttle does not hit it proportionally. A real phone's answer latency is therefore **still
+  NOT TESTED**, and this profile should not be quoted as if it were.
+* Panel ready scales cleanly with CPU (815 → 1,091 → 1,502 ms). That is a useful signal about
+  the *other* number: the same probe has reported 19.3–27.9 s for this same step on this same
+  box, so that spread is machine load, not a property of the assistant.
 
 ---
 

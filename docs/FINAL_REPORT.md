@@ -109,8 +109,10 @@ The constraint that outranks everything else: *the portfolio must not get slower
 | Time to first token | cold **5,193 ms** · repeat question **17 ms** · different question sharing 120/142 ids **407 ms** (LCP prefix cache) | **MEASURED** |
 | Decode | **19–25 ms/token**; prefill is **90–95 %** of the wait | **MEASURED** |
 | CPU inference (Python, §14) | smoke **1,335 tok/s**; kernel **121 M MAC/s** vs **97 M** for a plain loop — this box measures JS **~10× below spec** | **MEASURED** |
-| Mobile | Never run on a real phone; T1/T2 are heuristics | **NOT TESTED** |
+| Mobile | Never run on a real phone; T1/T2 are heuristics. The closest was R1 under a 4×/6× CDP throttle, and that throttle under-penalises the Worker | **NOT TESTED** |
 | Frame health, panel open vs closed (§14's ≤10 %) | **0 % median drift, 1.00× p95** on the real GPU (Intel HD 520, D3D11) with the film's tier pinned; 127 vs 126 frames, same tier/scale/position in both arms | **MEASURED** |
+| §4's reference profiles (never run before 2026-09-27) | R1 as it is **0 %**, R1 @4× CPU **−2.5 %**, R1 @6× CPU **+0.3 %** — all **1.00×** p95, all **43/43 checks**; panel ready 815 / 1,091 / 1,502 ms; first answer 25.1 / 45.4 / 42.8 s | **MEASURED** |
+| A weak device, for real | **NOT TESTED** — the CDP throttle hits the main thread (frame time 18.3 → 35.3 ms) but not the Worker proportionally (first answer 25.1 → 45.4 s is 1.8×, not 4×), so this profile must not be quoted as a phone's latency | **NOT TESTED** |
 | …and why it took this long | The A/B ran under software GL until 2026-09-27, where it was inconclusive; the first real-GPU run without a pin reported **−49 %** (the *open* arm faster) because the film's own governor walked tier 1 → tier 4 during the session — a confound the probe now detects and refuses to attribute | **MEASURED** |
 | Judge relevance | **NOT TESTED** — the scene/mic/relevance judge still has no reference profile to run against | **NOT TESTED** |
 | §4 code chunk | **138,896 B gz = 90.4 %** of 150 KB (14 KB headroom), conservative reading: every shipped `ai/**` + `knowledge.json`; asserted on every `npm test` | **MEASURED** |

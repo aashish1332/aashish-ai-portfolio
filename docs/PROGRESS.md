@@ -2096,6 +2096,34 @@ recorded; the A/B is at a *pinned* tier, which is what makes it attributable but
 is not the tier a visitor's film will choose; and p95 identical to 0.1 ms in both
 arms is reported as measured, not explained.
 
+### 6. §4's reference profiles — the 4×/6× throttling runs that had never happened
+
+`THROTTLE` was a `dev-baseline-probe.js`-only knob. It is now on the AI probe too
+(same CDP call, `Emulation.setCPUThrottlingRate`, applied before navigation), and
+the gate was run on all three profiles:
+
+| Profile | panel ready | first answer | frame drift | p95 | probe |
+|---|---|---|---|---|---|
+| R1 as it is | **815 ms** | **25,129 ms** | **0 %** | **1.00×** | **43/43** |
+| **4× CPU** | **1,091 ms** | **45,380 ms** | **−2.5 %** | **1.00×** | **43/43** |
+| **6× CPU** | **1,502 ms** | **42,753 ms** | **+0.3 %** | **1.00×** | **43/43** |
+
+§4's target (≤ 10 % median drop, p95 ≤ 1.5×) is met on all three, and every flow
+check survives 6× — streaming, Stop keeping the partial, Retry, 12 facts on the
+skills question, panel usable.
+
+**What the throttle is not, said because it would be easy to overclaim:** frame
+time doubles (18.3 → 35.3 ms), so the main thread is throttled, but the first
+answer goes 25.1 → 45.4 s — **1.8×, not 4×** — because the generation runs in a
+Worker and this CDP throttle does not hit it proportionally. So the closest this
+box can get to a weak device is still not a weak device, and a phone's answer
+latency remains **NOT TESTED**.
+
+One incidental answer: panel ready scales cleanly with CPU (815 → 1,091 →
+1,502 ms) while the same probe has reported 19.3–27.9 s for that same step on
+that same box, which is what finally makes the earlier 390 ms–20 s spread
+attributable to machine load rather than to the assistant.
+
 **Still open, unchanged, and listed in the report:** the GPU training run and
 the P4 gate (owner), a real-device / real-microphone / screen-reader pass, the
 deployment host, PII sign-off, WASM SIMD and WebGPU, and the §4 chunk at 90.4 %.

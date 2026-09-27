@@ -61,6 +61,18 @@ const say = (label, ok, detail) => {
       `--window-size=${MOBILE ? 390 : 1280},${MOBILE ? 844 : 800}`, '--no-first-run'],
   });
   const page = await browser.newPage();
+  /* §4/§15.3's "reference profiles": R1 as it is, and R1 with the CPU throttled,
+     which is the closest this box can get to a weak device without owning one.
+     Same knob and the same CDP call as dev-baseline-probe.js, so the two are
+     comparable — `THROTTLE=4 node dev-ai-probe.js`. Applied before navigation,
+     because a throttle that starts after the film has booted measures nothing
+     about the boot. */
+  const THROTTLE = process.env.THROTTLE ? Number(process.env.THROTTLE) : null;
+  if (THROTTLE) {
+    const client = await page.target().createCDPSession();
+    await client.send('Emulation.setCPUThrottlingRate', { rate: THROTTLE });
+    console.log(`  cpu throttle                 ${THROTTLE}× (Emulation.setCPUThrottlingRate)`);
+  }
   await page.setViewport(MOBILE
     ? { width: 390, height: 844, deviceScaleFactor: 3, isMobile: true, hasTouch: true }
     : { width: 1280, height: 800 });
