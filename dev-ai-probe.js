@@ -41,12 +41,23 @@ const say = (label, ok, detail) => {
      model download plus SHA-256 and dequantise, and TWO generations. On the
      R1 dev laptop that is minutes, and the load varies 2–3x between runs, so
      a tight stop would fail the probe rather than fail the thing it probes. */
+  /* GL mode. `dev-resource-probe.js` uses the same knob with the same default,
+     and the default is the REAL GPU: this laptop's Intel HD 520 is reachable
+     from `headless: 'new'` (`ANGLE (… D3D11)`), which the P0 baseline already
+     used. Section 5's frame-health A/B cannot produce a verdict without it —
+     it used to run under software GL and declare itself inconclusive, which
+     was honest but left §14's jank question unanswered on the only hardware
+     to hand. Software GL stays available for what it was for: simulating a
+     device that is already struggling, where the §6.3 ladder has to move. */
+  const SW_GL = process.env.SW_GL === '1';
   const hardStop = setTimeout(() => { console.log('PROBE TIMEOUT'); process.exit(2); },
     Number(process.env.PROBE_TIMEOUT || 900000));
   const browser = await puppeteer.launch({
     executablePath: CHROME,
     headless: 'new',
-    args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader',
+    args: [...(SW_GL
+      ? ['--use-gl=swiftshader', '--enable-unsafe-swiftshader']
+      : ['--enable-gpu']),
       `--window-size=${MOBILE ? 390 : 1280},${MOBILE ? 844 : 800}`, '--no-first-run'],
   });
   const page = await browser.newPage();
@@ -110,7 +121,30 @@ const say = (label, ok, detail) => {
     };
     requestAnimationFrame(step);
   }));
+  /* Pin the film's tier for BOTH arms of the frame A/B. Measured on R1 with
+     the real GPU: the film's own governor walks from tier 1 @85 % to tier
+     4 @50 % inside a single probe run — without the AI touching it — so an
+     unpinned A/B reads as "the panel made the film 49 % faster", which is
+     nonsense in either direction. `forceTier` restarts the governor's warmup
+     and cooldown, so the pin holds across a 3 s sample. Re-pinned before each
+     arm, and the arm's tier is printed to prove it held. */
+  const PIN_TIER = process.env.PIN_TIER === undefined ? 2 : Number(process.env.PIN_TIER);
+  const pinScene = async () => {
+    if (PIN_TIER >= 0) await page.evaluate((t) => window.Film3D?.forceTier?.(t), PIN_TIER);
+  };
+  await pinScene();
   const closed = await sampleFrames();
+  /* What the FILM was doing while the frames were sampled. Without it the
+     A/B's two numbers are not comparable: the film has its own governor, it
+     adapts on its own, and the scene position is not the same at the start of
+     the probe as it is after five answers. Collected so the drift can be
+     attributed instead of blamed on the panel. */
+  const sceneAt = () => page.evaluate(() => {
+    const st = window.Film3D?.govStatus ? window.Film3D.govStatus() : {};
+    return { tier: st.tier ?? null, label: st.label ?? null, scale: st.scale ?? null,
+             y: Math.round(window.scrollY || 0), paused: !!window.Film3D?.isPaused?.() };
+  });
+  closed.scene = await sceneAt();
 
   /* ── 3. click → panel ────────────────────────────────────────────── */
   const btn = await page.$('#askAI');
@@ -405,12 +439,32 @@ const say = (label, ok, detail) => {
      headless swiftshader the film renders at well under 10 fps, so an A/B
      ratio computed here would be a meaningless number reported as a pass.
      It is computed and then explicitly declared inconclusive. */
+  await pinScene();
   const openSample = await sampleFrames();
+  openSample.scene = await sceneAt();
   const drift = closed.median ? +(((openSample.median - closed.median) / closed.median) * 100).toFixed(1) : 0;
   const ratio = closed.p95 ? +(openSample.p95 / closed.p95).toFixed(2) : 1;
+  const scene = (s) => `tier ${s.scene.tier}·${s.scene.label} @${s.scene.scale}${s.scene.paused ? ' paused' : ''} y=${s.scene.y}`;
+  console.log(`  frame samples                 closed ${closed.median} ms (${closed.n} frames, ${scene(closed)})`);
+  console.log(`                                open   ${openSample.median} ms (${openSample.n} frames, ${scene(openSample)})`);
+  /* A drift is only attributable to the panel when the two arms saw the same
+     film. Different tier, different resolution scale or a big move in the
+     scroll position means the film changed under its OWN governor, and the
+     honest reading is "the scene changed", not "the AI cost you frames" —
+     in either direction. Reporting a −49 % drift as a jank failure (it was
+     the panel-open arm that was FASTER) is the kind of number that gets a
+     real regression waved through later. */
+  const sameFilm = closed.scene.tier === openSample.scene.tier
+    && closed.scene.scale === openSample.scene.scale
+    && closed.scene.y === openSample.scene.y
+    && closed.scene.paused === openSample.scene.paused;
   if (closed.median > 50) {
     console.log(`⚠ frame-health A/B            INCONCLUSIVE — baseline is ${(1000 / closed.median).toFixed(1)} fps ` +
-      `in headless software GL (${closed.median} ms/frame). Needs the §15 reference profile on real hardware.`);
+      `${SW_GL ? 'in software GL' : 'on this GPU'} (${closed.median} ms/frame). Needs the §15 reference profile.`);
+  } else if (!sameFilm) {
+    console.log(`⚠ frame-health A/B            NOT ATTRIBUTABLE — the film changed between the arms `
+      + `(${closed.scene.tier}/@${closed.scene.scale} → ${openSample.scene.tier}/@${openSample.scene.scale}), `
+      + `so the ${drift}% drift is the film's own governor, not the panel.`);
   } else {
     say('median frame drift', Math.abs(drift) <= 10, `${drift}%  (closed ${closed.median} ms → open ${openSample.median} ms)`);
     say('p95 frame time', ratio <= 1.5, `${ratio}× (closed ${closed.p95} ms → open ${openSample.p95} ms)`);

@@ -195,7 +195,7 @@ idle page cost a measured 1.2 s of blocked main thread (`docs/BENCHMARKS.md` §1
 
 ```bash
 npm run test:all     # 444 JS + 326 Python tests
-node dev-ai-probe.js     # the click → answer gate in a real browser (41 checks)
+node dev-ai-probe.js     # the click → answer gate in a real browser (43 checks, real GPU; SW_GL=1 to opt into software GL)
 node dev-offline-probe.js # §9.3 cache: a second visit with model-export blocked
 node dev-degrade-probe.js # §14: the T0 path and the download-failure path, end to end
 npm run probe:resources  # §15.3: heap, nodes, listeners, long tasks → docs/RESOURCES.json

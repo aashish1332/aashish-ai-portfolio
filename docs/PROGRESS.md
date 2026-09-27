@@ -264,7 +264,7 @@ Full detail in `docs/BENCHMARKS.md`. Headlines:
 | Tier chosen, phone (390×844, coarse pointer) | **T1 · LITE** |
 | Phone behaviour | film **paused** while the sheet covers it, **resumed** on close, no horizontal overflow (390 vs 390) |
 | Scroll lock | `lenis.isStopped === true` while open (§12) |
-| Frame-health A/B | **INCONCLUSIVE** — headless software GL runs the film at 0.6–1.8 fps, so the ratio proves nothing. Printed as inconclusive rather than as a pass; needs the §15 reference profile on real hardware. The ladder's **cost** is now measured instead (see *Resource budget + lifecycle (§15.3)*: rung 3 = a full shader recompile) |
+| Frame-health A/B | **INCONCLUSIVE** — headless software GL runs the film at 0.6–1.8 fps, so the ratio proves nothing. Printed as inconclusive rather than as a pass; needs the §15 reference profile on real hardware. The ladder's **cost** is now measured instead (see *Resource budget + lifecycle (§15.3)*: rung 3 = a full shader recompile). **Superseded 2026-09-27**: the real GPU was reachable in headless Chrome, and with the film's tier pinned the A/B is **0 % median drift / 1.00× p95** |
 | Film regression after the change | desktop probe **clean** (no console/page errors, no failed requests); mobile equally clean |
 
 ### Bugs found and fixed in P2 (both would have shipped)
@@ -1980,7 +1980,9 @@ first answer 59.0 s, `AI ANSWER · ON-DEVICE MODEL`, the skills question reading
 **12 facts / 12 sources** — which is the §5.1 topic-only fallback still working
 through the new planner — phone question `NO ANSWER · NOT PUBLISHED`, Stop and
 Retry exercised, voice enabled at `level=both mode=continuous`. Frame-health A/B
-stays **INCONCLUSIVE** (headless software GL has a 0.7 fps baseline).
+stayed **INCONCLUSIVE** here (headless software GL has a 0.7 fps baseline) —
+superseded 2026-09-27, see the next section: the real GPU was reachable, the A/B
+now measures **0 % drift**, and the software-GL run was a confound.
 
 Tests **444 JS + 326 Python**, 0 failures. `npm run build` clean.
 
@@ -2057,6 +2059,42 @@ The one thing it says first, because it is the honest headline: **the pipeline
 is real and verified end to end; the model currently in the browser is not
 trained for quality.** The claim about architecture, privacy and locality is
 true today. The claim about answer quality is not, and it needs the GPU run.
+
+### 5. §14's jank question, finally answered on real hardware
+
+Older logs recorded the frame-health A/B as **INCONCLUSIVE** because the probes
+ran under `--use-gl=swiftshader`. That was a choice, not a limit: this laptop's
+**Intel HD 520 is reachable from `headless: 'new'`** — `ANGLE (… Direct3D11
+vs_5_0 ps_5_0, D3D11)` — and `docs/BASELINE.json` was already measured that way.
+So `dev-ai-probe.js` now takes `SW_GL=1` to opt *into* software GL (the same
+knob `dev-resource-probe.js` uses) and uses the real GPU by default.
+
+**The first real-GPU run produced a confound, and catching it was the point.**
+It reported **−49.2 %** drift — the panel-open arm *twice as fast* — because the film's
+**own governor** had walked `tier 1 · HIGH @85 %` →
+`tier 4 · SURVIVAL @50 %` during the session, with the AI requesting no quality
+change at all (`qualityCalls: 0`, MEASURED in every run). A drift measured across
+two different films is not an AI cost in either direction, so the probe now
+samples the film's tier / scale / scroll position / paused state in **both** arms
+and declines to attribute a drift when they differ — and it pins the tier
+(`PIN_TIER`, default 2), re-pinned before each arm, because that is what makes
+the comparison mean anything.
+
+### MEASURED — `node dev-ai-probe.js`, R1, real GPU (Intel HD 520, D3D11)
+
+| Arm | frames | median | p95 | film |
+|---|---|---|---|---|
+| closed | 127 | **18.3 ms** | 36.5 ms | `tier 2 · BALANCED @72% y=0` |
+| open, after 5 answers | 126 | **18.3 ms** | 36.5 ms | `tier 2 · BALANCED @72% y=0` |
+| **drift** | | **0 %** (§14 allows ≤ 10 %) | **1.00×** (§14's p95 guard) | same film both arms |
+| panel ready | | **815–880 ms** after the click, in these two runs | | |
+| probe | | **43/43 checks** | | |
+
+**Honest caveats:** 815 ms is the best case on an unloaded box — the same probe
+has measured 19.3–27.9 s on the same day, and the 390 ms–20 s spread was already
+recorded; the A/B is at a *pinned* tier, which is what makes it attributable but
+is not the tier a visitor's film will choose; and p95 identical to 0.1 ms in both
+arms is reported as measured, not explained.
 
 **Still open, unchanged, and listed in the report:** the GPU training run and
 the P4 gate (owner), a real-device / real-microphone / screen-reader pass, the

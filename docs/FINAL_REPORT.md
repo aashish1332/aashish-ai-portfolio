@@ -24,7 +24,7 @@ this report says so in the same breath as the good news.
 | Clause | State |
 |---|---|
 | "custom … trained from scratch" | **MEASURED** — our tokenizer, our model code, random init, our trainer, our export, our engine. No pretrained weights anywhere in the shipping path. |
-| "running locally in the visitor's browser" | **MEASURED** — `dev-ai-probe.js` **41/41 checks**; one real answer with `AI ANSWER · ON-DEVICE MODEL`, 12 facts read, 12 sources; zero requests to any third party. |
+| "running locally in the visitor's browser" | **MEASURED** — `dev-ai-probe.js` **43/43 checks** (real GPU); one real answer with `AI ANSWER · ON-DEVICE MODEL`, 12 facts read, 12 sources; zero requests to any third party. |
 | "no LLM API, no backend" | **MEASURED** — `npm run build` ships a static bundle; the model is fetched from the site's own path and cached locally; no API key exists anywhere in the repo. |
 | "training from scratch" (the full spec-sized model) | **NOT TESTED** — Stage A + Stage B at config A have never run; they need a GPU. What has run is the 4.98M CPU pipeline config. |
 | "answering questions about my work" | **NOT TESTED in the sense that matters** — the shipped checkpoint answers, but it answers *badly*, because it has had 800 steps on a 3.2 MB corpus. |
@@ -102,7 +102,7 @@ The constraint that outranks everything else: *the portfolio must not get slower
 | What the click fetches | **86,096 B gz** static reach of `ai/ui/chat.mjs` (was 102,596 B before the voice split) | **MEASURED** |
 | First open | UI **221–405 ms**, knowledge + capability probe **285–722 ms** | **MEASURED** |
 | Worst main-thread long task, AI windows | **65 ms** — against the page's own worst of **88 ms** with the panel never opened | **MEASURED** |
-| Frame time, panel open vs closed | 25.2 ms vs 24.7 ms = **2 %** FPS drop (§4 allows 10 %) | **MEASURED** |
+| Frame time, panel open vs closed | 25.2 ms vs 24.7 ms = **2 %** FPS drop (§4 allows 10 %); re-measured with the film's tier pinned: **18.3 vs 18.3 ms = 0 %** | **MEASURED** |
 | GL programs compiled during answering | **0** (31 → 31) | **MEASURED** |
 | §6.3 ladder during five answers | peak rung **1** (pace); **0** quality changes requested from the scene | **MEASURED** |
 | Long task that *was* the AI's fault | Fixed: the ladder drove a material recompile via `getProgramInfoLog` — **1,221 ms → 0 ms** by gating rung 3 | **MEASURED** |
@@ -110,10 +110,13 @@ The constraint that outranks everything else: *the portfolio must not get slower
 | Decode | **19–25 ms/token**; prefill is **90–95 %** of the wait | **MEASURED** |
 | CPU inference (Python, §14) | smoke **1,335 tok/s**; kernel **121 M MAC/s** vs **97 M** for a plain loop — this box measures JS **~10× below spec** | **MEASURED** |
 | Mobile | Never run on a real phone; T1/T2 are heuristics | **NOT TESTED** |
-| Judge relevance | **INCONCLUSIVE** in headless software GL — baseline 0.5–0.8 fps, so the scene/mic/relevance judge cannot be trusted here | **NOT TESTED** |
+| Frame health, panel open vs closed (§14's ≤10 %) | **0 % median drift, 1.00× p95** on the real GPU (Intel HD 520, D3D11) with the film's tier pinned; 127 vs 126 frames, same tier/scale/position in both arms | **MEASURED** |
+| …and why it took this long | The A/B ran under software GL until 2026-09-27, where it was inconclusive; the first real-GPU run without a pin reported **−49 %** (the *open* arm faster) because the film's own governor walked tier 1 → tier 4 during the session — a confound the probe now detects and refuses to attribute | **MEASURED** |
+| Judge relevance | **NOT TESTED** — the scene/mic/relevance judge still has no reference profile to run against | **NOT TESTED** |
 | §4 code chunk | **138,896 B gz = 90.4 %** of 150 KB (14 KB headroom), conservative reading: every shipped `ai/**` + `knowledge.json`; asserted on every `npm test` | **MEASURED** |
 
 ## CHAT
+
 
 | Property | Value | Tag |
 |---|---|---|
@@ -157,7 +160,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
 | Item | Verdict |
 |---|---|
 | Portfolio works, visually intact, GSAP/Lenis/Three.js OK | **MEASURED** — all pre-existing tests green; no renderer added; the film keeps its own rAF |
-| No AI-caused jank | **MEASURED** — 2 % frame-time cost, 65 ms worst long task vs the page's own 88 ms |
+| No AI-caused jank | **MEASURED** — **0 % median frame drift / 1.00× p95** with the film's tier pinned on the real GPU, and 65 ms worst long task vs the page's own 88 ms |
 | Three.js not duplicated, no new WebGL scene, no permanent extra rAF | **MEASURED** — 0 GL programs compiled while answering; the frame monitor reuses the film's ticker |
 | Scratch tokenizer + model, random init | **MEASURED** |
 | Stage A + Stage B done | **NOT TESTED** — owner-side GPU |
@@ -192,11 +195,14 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
 5. **The §4 code chunk is at 90.4 %** with 14 KB of headroom. The next AI feature
    should be paired with something moving out of the chunk. (The retired Quick
    Answers wording already moved out: −2,864 B gz, no feature lost.)
-6. **Two open observations, recorded not explained:** the panel's own ready time
-   has been measured at 390 ms and at 20–22 s on this box within the same hour;
-   and two of four resource runs showed +21 GL programs during an AI session
-   while the other two showed none and the ladder never requested a quality
-   change.
+6. **Three open observations, recorded not explained:** the panel's own ready
+   time has been measured at 390 ms, 815 ms and 19.3–27.9 s on this box within
+   the same day; two of four resource runs showed +21 GL programs during an AI
+   session while the other two showed none and the ladder never requested a
+   quality change; and the frame A/B's p95 is identical to 0.1 ms in both arms.
+   The film's own governor also walks tier 1 → tier 4 inside a single probe run,
+   which is why the A/B now pins the tier and checks the film state in both arms
+   before attributing anything.
 7. **Ladder ↔ shell wiring** is now runtime-tested in the governor, but the full
    shell integration (scene hook effects end to end) is only covered at the
    module boundary.

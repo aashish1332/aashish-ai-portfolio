@@ -414,6 +414,10 @@ The A/B (panel closed vs open) is computed, but in headless software GL the film
 page is GPU-starved. The probe prints `INCONCLUSIVE — needs the §15 reference profile on real
 hardware` instead of a fabricated pass.
 
+**Superseded 2026-09-27** — the real GPU was reachable from `headless: 'new'` all along, and
+this probe now uses it by default (`SW_GL=1` still forces software GL for the
+struggling-device case). See *"Frame health, on the real GPU"* below.
+
 ## Voice input (§11) — 2026-09-22
 
 Measured with `node dev-ai-probe.js` on **R1**, headless Chrome, software GL.
@@ -797,6 +801,44 @@ testing itself, and both would have produced a green result for a broken path:
 | | |
 |---|---|
 | chat code chunk (§4, conservative) | **138,896 B gz = 90.4 %** (was 138,779 — the badge fix and its comment) |
+
+### Frame health, on the real GPU (§6.3/§14, 2026-09-27)
+
+`node dev-ai-probe.js`, R1, `headless: 'new'` with `--enable-gpu`. **This box's Intel HD 520
+is reachable headlessly** — `WEBGL_debug_renderer_info` reports
+`ANGLE (Intel, Intel(R) HD Graphics 520 … Direct3D11 vs_5_0 ps_5_0, D3D11)` — and the P0
+baseline in `docs/BASELINE.json` was already measured that way, so the software-GL runs were
+a choice, not a limitation. `--use-gl=swiftshader` is now behind `SW_GL=1`.
+
+**The first real-GPU run found a confound, not a result.** The A/B reported **−49.2 %** drift —
+the panel-open arm was *twice as fast*:
+
+| Arm | median | film state |
+|---|---|---|
+| closed | 35.8 ms | `tier 1 · HIGH @85%` |
+| open | 18.2 ms | `tier 4 · SURVIVAL @50%` |
+
+The film's **own** governor had walked from tier 1 to its last tier during the session, with
+the AI requesting no quality change at all (`qualityCalls: 0`, MEASURED in every run). A drift
+across two different films is not an AI cost, in either direction, and reporting it as a jank
+**failure** is how a real regression gets waved through later. The probe now samples the film's
+tier / scale / scroll position / paused state in both arms and refuses to attribute a drift
+when they differ.
+
+**Then the tier was pinned (`PIN_TIER`, default 2) and re-pinned before each arm:**
+
+| Arm | frames | median | p95 | film |
+|---|---|---|---|---|
+| closed | 127 | **18.3 ms** | 36.5 ms | `tier 2 · BALANCED @72% y=0` |
+| open (after 5 answers) | 126 | **18.3 ms** | 36.5 ms | `tier 2 · BALANCED @72% y=0` |
+| drift | | **0 %** (§14 allows ≤ 10 %) | **1.00×** | same film in both arms |
+
+`node dev-ai-probe.js` → **43/43 checks**. Panel ready **815–880 ms** after the click in these
+two runs. **NOT TESTED:** the panel's ready time has been measured at 390 ms and 19.3–27.9 s
+within the same day, so 815 ms is the best case on an unloaded box and nothing more; the A/B is
+at a pinned tier, which is what makes it attributable, not what a visitor's film will choose;
+and the p95 being *identical* to 0.1 ms in both arms is reported as measured rather than
+explained.
 
 ---
 
