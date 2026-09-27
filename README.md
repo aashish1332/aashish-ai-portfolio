@@ -208,6 +208,9 @@ npm run smoke        # tokenizer contract, shards, data cursor, checkpoints
 npm run train:local  # the largest model this laptop trains for real → training/checkpoints/local
 npm run train:sft    # Stage B: continue that checkpoint on the §7.4 data → training/checkpoints/sft-local
 npm run sample:answers -- --checkpoint stage-A=training/checkpoints/local --checkpoint stage-B=training/checkpoints/sft-local  # what a checkpoint answers, no browser
+npm run eval:prompts  # §14: the client's own prompt per evaluation case (no model needed)
+npm run eval:decode   # decode them from a checkpoint (0.62 s/token on R1 — see docs/EVALUATION.json)
+npm run eval:report   # score with the shipped guard + apply the §14 ship gates → docs/EVALUATION.json
 npm run export:model # checkpoint → the browser artifact: q8 shards + manifest + parity fixture
 npm run verify:engine # §9.2: does the JavaScript engine match the numpy reference, on the SHIPPING weights?
 npm run build        # production bundle → dist/ (stripped knowledge base, no dev tooling)

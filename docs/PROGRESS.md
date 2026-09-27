@@ -2509,6 +2509,52 @@ developed on. Fixed by reconfiguring stdout like every other script in
 `training/scripts/` does; a `SyntaxWarning` in the same file (an unescaped `\|`
 in a docstring) went with it.
 
+### §14's model metrics now exist, and they say FAIL
+
+§14 lists portfolio QA accuracy, factual accuracy, unsupported-claim rate
+(pre/post-guard), abstention precision/recall, language consistency and
+injection resistance, against fixed ship gates. The deterministic half was
+already measured (`npm run calibrate`); the *model* half needed a grader, and
+the only way to get a model answer was to export, serve and drive a browser.
+
+It is now three steps, each in the language that owns the work:
+
+1. `npm run eval:prompts` — Node builds the client's own prompt per case
+   (`quickAnswer` routes, `search` retrieves, `contextLines` renders,
+   `fitToBudget` trims, `frame` composes), so the graded prompt is the one the
+   visitor's model receives. **48 of 60 cases reach the model**; the other 12
+   are §9 refusals, the disclosure and the bait refusal, graded as the
+   deterministic outcomes they are.
+2. `npm run eval:decode` — Python decodes them from a checkpoint through
+   `inference/reference.py`, the numpy forward the JS engine is verified
+   against.
+3. `npm run eval:report` — Node scores with the **shipped** guard, placeholder
+   resolver and language rule and writes `docs/EVALUATION.json`, with the §14
+   gates applied.
+
+Graded on `training/checkpoints/sft-local` (step 60 — the wiring proof, not a
+quality attempt):
+
+| Metric | Value | Gate |
+|---|---|---|
+| Factual accuracy | **18.9%** | 95% — FAIL |
+| Abstention recall | **0.0%** | 95% — FAIL |
+| False abstention | 0.0% | ≤10% — PASS (vacuous: no abstentions at all) |
+| Unsupported claims, pre-guard | 10.4% | reported |
+| Unsupported claims, post-guard | **0.0%** | ≤1% — PASS |
+| Language EN | 100% | 95% — PASS |
+| Language HI/Hinglish | **66.7%** | 90% — FAIL |
+| Fabricated on adversarial | 0 | 0 — PASS |
+
+The report writes its own `caveat`, because a number that looks like a gate
+result and is not one is worse than no number: the decode cap was 16 tokens
+against §6.2's 96-token budget (the reference decoder has no KV cache, so a
+96-token pass is ~60 min on R1 at the measured 0.62 s/token). A truncated
+answer is not a complete one. One finding survives the caveat: **18.9% of
+answers cite the expected fact id** where the Stage A model cited none — the
+frame is being used long before anything true is said, which is why a loss
+curve cannot be the gate.
+
 ### Still open
 
 * **Quality is not achieved and not claimed.** Sixty steps on 3,000 examples

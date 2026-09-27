@@ -67,6 +67,7 @@ true about **answer quality**. See "What I need from you".
 | Stage B data, real token counts | 40,000 examples = **10,582,527 tokens**, of which **1,155,200 (10.9%) supervised**; the data manifest's own figure (7,263,195, characters/3.4) was **31% low**. `make_instruction_data.py` now measures it with the shipping tokenizer when one is present | **MEASURED** |
 | GPU / Kaggle Stage A+B | **Never run.** Scripts and notebook exist; the run is owner-side | **NOT TESTED** |
 | P4 verify gate (9/9 sources) | **NOT TESTED** — no trained-for-quality checkpoint to gate | **NOT TESTED** |
+| §14 model gate | **Measured and failing.** The evaluator exists and runs end to end; the checkpoint it grades is a 60-step wiring proof, so the failure is the expected one. The gate becomes meaningful the day a config-A Stage B checkpoint exists | **NOT TESTED** |
 
 ## KNOWLEDGE
 
@@ -80,6 +81,7 @@ true about **answer quality**. See "What I need from you".
 | Evaluation set | 60 questions, **56 executable** without a trained model; calibration reproduced byte-for-byte after the planner/text split (only the timestamp changed) | **MEASURED** |
 | Hallucination strategy | Layer 1 refuses before the model is asked; the model is given only retrieved public facts inside a delimited context; the guard checks the answer against a vocabulary built from shipped facts only; `<|abstain|>` is checked before the guard; unverifiable answers are withheld and labelled | **MEASURED** |
 | Language | EN / HI / Hinglish detection, no selector — by design | **MEASURED** |
+| §14 model-answer metrics | **MEASURED, and the gates FAIL** — a three-step pipeline (`npm run eval:prompts` → `eval:decode` → `eval:report`) builds the client's own prompts, decodes a checkpoint through the numpy reference and scores the answers with the *shipped* guard/placeholders/language rules (`docs/EVALUATION.json`). On `training/checkpoints/sft-local` (60 steps): factual accuracy **18.9%** (gate 95%), abstention recall **0.0%** (gate 95%), language EN 100% / HI+Hinglish **66.7%** (gate 90%), unsupported-claim 10.4% pre-guard → **0.0% post-guard**, 0 fabrications on the adversarial set. The report carries its own `caveat`: a 16-token decode cap is not gate-grade | **MEASURED (a failing grade) / NOT TESTED (at a real scale)** |
 | Relevance of what is selected vs. what is asked | **MEASURED for the deterministic half, NOT TESTED for the model's** — grounding (every `expected_facts` cited) 100 %, 0 fabricated facts, alias routing 14 → 0 misroutes, gate ceiling 4.647 recomputed from the data. Whether a *generated sentence* is relevant to its question is **NOT TESTED**, and §14 asks for metrics (QA accuracy, unsupported-claim rate, abstention precision/recall) rather than a relevance judge: reading those needs a trained-for-quality checkpoint, which is owner-side. The checkpoint that exists answers with garbage, so a judge run against it would grade noise | **MEASURED / NOT TESTED** |
 
 ## BROWSER

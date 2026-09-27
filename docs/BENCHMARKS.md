@@ -1188,3 +1188,48 @@ proves the path and the format, not the answers — the words are still wrong,
 and the shipped export remains the Stage A artifact until a config-A run
 (a GPU, owner-side) produces something worth shipping. The mask's effect on
 quality at 40k examples is therefore **unmeasured**.
+
+---
+
+## §14 model-answer evaluation — 2026-09-27, R1
+
+§14's metrics needed a model answer to grade, and until now the only way to get
+one was to export the checkpoint, serve the site and drive a browser. The
+evaluation is now a three-step pipeline, each step in the language that owns the
+work:
+
+| Step | Command | Does |
+|---|---|---|
+| 1 | `npm run eval:prompts` | builds the client's own prompt per case — `quickAnswer` routes, `search` retrieves, `contextLines` renders, `fitToBudget` trims, `frame` composes |
+| 2 | `npm run eval:decode` | greedy-decodes them from a checkpoint via `inference/reference.py`, the numpy forward the JS engine is verified against |
+| 3 | `npm run eval:report` | scores with the **shipped** guard, placeholder resolver and language rule; writes `docs/EVALUATION.json` |
+
+| Metric | Value | Note |
+|---|---|---|
+| Cases | 60 total · **48 reach the model** · 12 decided before it | the 12 are §9 refusals, the disclosure and the bait refusal — measured as deterministic outcomes |
+| Decode cost | **0.62 s/token** | numpy reference, R1: 48 prompts × 16 tokens = **11 min**. A full 96-token pass is ~60 min here |
+| checkpoint graded | `training/checkpoints/sft-local`, step 60 | 60 steps on 3,000 examples — the wiring proof, not a quality attempt |
+| Portfolio QA accuracy | **18.9%** | |
+| Factual accuracy | **18.9%** | gate 95% — **FAIL** |
+| Unsupported-claim rate, pre-guard | 10.4% | |
+| Unsupported-claim rate, post-guard | **0.0%** | gate 1% — PASS (the guard withholds what it rejects) |
+| Abstention recall | **0.0%** | gate 95% — **FAIL**; the model never abstained |
+| False abstention | 0.0% | gate ≤10% — PASS (vacuously: no abstentions at all) |
+| Language consistency | EN **100%** · HI/Hinglish **66.7%** | gates 95/90% — HI/Hinglish **FAIL** |
+| Turn terminated | 6.3% | a 16-token cap explains most of this |
+| Fabricated facts on adversarial | **0** | gate 0 — PASS |
+| Guard failures | 5 of 48 | |
+
+**NOT gate-grade, and the report says so in its own `caveat` field:** the decode
+cap was 16 tokens against §6.2's 96-token tier budget, because the reference
+decoder has no KV cache (deliberately — it is the cache-correctness check). A
+truncated answer is not a complete one, so factual accuracy is unmeasured in the
+strict sense and abstention recall is unreliable. The number that *is* solid is
+the pre/post-guard pair: 10.4% of model answers asserted something the context
+does not contain, and the guard withheld every one of them.
+
+**The finding worth keeping:** 18.9% of answers cite the expected fact id, up
+from ~0 for the Stage A model, and the answers are garbage. A small model that
+has seen the frame emits the *right shape* (fact placeholders, `<|ctx|>` form)
+long before it says anything true — which is exactly why a loss curve cannot be
+the quality gate and this pipeline exists.
