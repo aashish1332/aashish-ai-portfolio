@@ -827,6 +827,7 @@ same MIME table as `npm run preview`).
 | assets fetched on first open | **31** — the 14 of the click's static reach plus the worker's own `ai/engine/**` |
 | the phone viewport (`MOBILE=1`, 390×844) | **43/43** as well — sheet open pauses the film, closing resumes it, **no horizontal overflow (390 vs 390)**, withheld phone declined in the UI |
 | §9.3's cache, on the same bundle (`dev-offline-probe.js`, now also `AI_BASE`) | **7/7** — visit 1 ready **26.3 s**, 3 puts, `hits: 0`; visit 2 with `*model-export*` blocked ready **22.0 s**, `hits: 3`, `misses: 0`, **0 network responses** for the weights, cache `aashish-ai-model:aashish-ai-1` holding 3 files / 5,144,354 B |
+| §14's degrade gates on the same bundle (`dev-degrade-probe.js`, `ROOT=dist`) | **20/20** — T0: 0 model assets requested, 0 engine workers, `engine=null`, badge `T0 · NO AI MODEL HERE`, question refused `no-model`; failure: every model asset 404s, `state=error` with the reason spoken, panel usable, film untouched, **and a reload on a healthy network recovers to `ready` with real weights (5,059,584 B) and a real answer** |
 
 R1 on a loaded box, so the absolute milliseconds move 2–3× between runs; what
 this establishes is that the **stripped** bundle loads, mounts, spawns its

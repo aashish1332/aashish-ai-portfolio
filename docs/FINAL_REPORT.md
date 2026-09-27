@@ -92,7 +92,7 @@ true about **answer quality**. See "What I need from you".
 | Memory | Extra heap while answering **1.3 MB** (§4 allows 300 MB); **0 MB** growth per reopen over 5 cycles | **MEASURED** |
 | WebGPU | Probed (`probeWebGPU`) and reported in the tier title; **no WGSL kernels are written**, so it accelerates nothing | **NOT TESTED / NOT IMPLEMENTED** |
 | WASM SIMD | Feature-detected (`hasSimd`) and reported; the kernels are JavaScript | **NOT TESTED / NOT IMPLEMENTED** |
-| Fallbacks | T0 (no model) and download failure both verified end to end: `dev-degrade-probe.js` **20/20**, including recovery on reload | **MEASURED** |
+| Fallbacks | T0 (no model) and download failure both verified end to end on the **built bundle**: `dev-degrade-probe.js` **20/20** (`ROOT=dist`), including the reload on a healthy network recovering to `ready` with real weights and a real answer | **MEASURED** |
 | Firefox / Safari / iPhone | Never run | **NOT TESTED** |
 
 ## PERFORMANCE
@@ -178,7 +178,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
 | Download + file sizes measured, caching + versioning | **MEASURED** — including 0 bytes on the second visit |
 | Main thread protected, workers used | **MEASURED** — prefill (90–95 % of the wait) never touches the main thread, the model's arithmetic is only reachable from the worker (import-graph test), and the worst AI long task is 65 ms against the page's own 88 ms |
 | WebGPU + WASM investigated | **MEASURED as investigation**; neither implemented, and the report says why |
-| Unsupported / mobile paths handled | **MEASURED** for unsupported (20/20), and the responsive path under mobile emulation on the **shipped** bundle (43/43 at 390×844: the sheet pauses the film, closes cleanly, no horizontal overflow); a **real phone is NOT TESTED** |
+| Unsupported / mobile paths handled | **MEASURED** for unsupported (20/20) and the download-failure/retry path, both run against the **built bundle**; the responsive path under mobile emulation on the same bundle (43/43 at 390×844: the sheet pauses the film, closes cleanly, no horizontal overflow); a **real phone is NOT TESTED** |
 | Chat: streaming, Stop, Retry, Clear, bounded context, accessible, responsive | **MEASURED** except screen-reader and real-device behaviour |
 | Voice: both modes, local STT/TTS, lazy, permission paths, no selector, limits | **MEASURED as code/tests**; live speech **NOT TESTED** |
 | Training resumable, checkpoints, evaluation, no fake results | **MEASURED** (resume verified); quality gates **NOT TESTED** |

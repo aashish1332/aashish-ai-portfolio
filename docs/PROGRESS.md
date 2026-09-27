@@ -2341,6 +2341,17 @@ real GPU:
 | assets fetched on first open | **31** — the 14 of the click's static reach plus the worker's own `ai/engine/**`, which is exactly the split the import-graph test pins |
 | the **phone** build of the same run (`MOBILE=1`, 390×844) | **43/43** as well — the sheet pauses the film (`scene paused (phone) isPaused=true`) and resumes it on close, **no horizontal overflow (390 vs 390)**, and the withheld phone number is still declined in the UI (`NO ANSWER · NOT PUBLISHED`) |
 
+Three more browser gates were then run against the same bundle, because the
+probe above is only the chat flow: **§9.3's cache 7/7** (visit 1 ready 26.3 s
+with 3 puts; visit 2 with `*model-export*` blocked ready 22.0 s from Cache
+Storage — `hits: 3`, `misses: 0`, **0 network responses**), **§14's degrade gates
+20/20** on the same bundle (`ROOT=dist`: T0 loads no model at all, the failure
+arm 404s every model asset, and a reload on a healthy network recovers to
+`ready` with real weights and a real answer),
+and **§12's anchor resolution 7/7** with the hands-free move verified
+(`scrollY 0 → 14609`) — the last of those only after the three instrument bugs
+in section 10 below were fixed.
+
 So the deliverable is verified, not just its source. What remains unverified is
 unchanged and listed in `docs/FINAL_REPORT.md`: a real phone, a real microphone,
 a screen reader, Firefox and Safari.
