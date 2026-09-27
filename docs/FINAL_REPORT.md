@@ -27,7 +27,7 @@ this report says so in the same breath as the good news.
 | "running locally in the visitor's browser" | **MEASURED** — `dev-ai-probe.js` **43/43 checks** (real GPU); one real answer with `AI ANSWER · ON-DEVICE MODEL`, 12 facts read, 12 sources; zero requests to any third party. |
 | "no LLM API, no backend" | **MEASURED** — `npm run build` ships a static bundle; the model is fetched from the site's own path and cached locally; no API key exists anywhere in the repo. |
 | "training from scratch" (the full spec-sized model) | **NOT TESTED** — Stage A + Stage B at config A have never run; they need a GPU. What has run is the 4.98M CPU pipeline config. |
-| "answering questions about my work" | **NOT TESTED in the sense that matters** — the shipped checkpoint answers, but it answers *badly*, because it has had 800 steps on a 3.2 MB corpus. |
+| "answering questions about my work" | **NOT TESTED in the sense that matters** — the shipped checkpoint answers, but it answers *badly*, because it has had 1,100 steps on a ~3 MB corpus. |
 
 So: the claim is true about **architecture, privacy and locality**, and not yet
 true about **answer quality**. See "What I need from you".
@@ -77,6 +77,7 @@ true about **answer quality**. See "What I need from you".
 | Evaluation set | 60 questions, **56 executable** without a trained model; calibration reproduced byte-for-byte after the planner/text split (only the timestamp changed) | **MEASURED** |
 | Hallucination strategy | Layer 1 refuses before the model is asked; the model is given only retrieved public facts inside a delimited context; the guard checks the answer against a vocabulary built from shipped facts only; `<|abstain|>` is checked before the guard; unverifiable answers are withheld and labelled | **MEASURED** |
 | Language | EN / HI / Hinglish detection, no selector — by design | **MEASURED** |
+| Relevance of what is selected vs. what is asked | **MEASURED for the deterministic half, NOT TESTED for the model's** — grounding (every `expected_facts` cited) 100 %, 0 fabricated facts, alias routing 14 → 0 misroutes, gate ceiling 4.647 recomputed from the data. Whether a *generated sentence* is relevant to its question is **NOT TESTED**, and §14 asks for metrics (QA accuracy, unsupported-claim rate, abstention precision/recall) rather than a relevance judge: reading those needs a trained-for-quality checkpoint, which is owner-side. The checkpoint that exists answers with garbage, so a judge run against it would grade noise | **MEASURED / NOT TESTED** |
 
 ## BROWSER
 
@@ -101,7 +102,7 @@ The constraint that outranks everything else: *the portfolio must not get slower
 | Metric | Value | Tag |
 |---|---|---|
 | Anything AI on initial load | The launcher only (goal ≤2 KB gz); a network assertion in the probe fails the test if any AI asset is fetched pre-click | **MEASURED** (`dev-ai-probe.js`) |
-| What the click fetches | **86,096 B gz** static reach of `ai/ui/chat.mjs` (was 102,596 B before the voice split) | **MEASURED** |
+| What the click fetches | **41,221 B gz** static reach of `ai/ui/chat.mjs` (86,096 B before the comment strip, 102,596 B before the voice split) | **MEASURED** |
 | First open | UI **221–405 ms**, knowledge + capability probe **285–722 ms** | **MEASURED** |
 | Worst main-thread long task, AI windows | **65 ms** — against the page's own worst of **88 ms** with the panel never opened | **MEASURED** |
 | Frame time, panel open vs closed | 25.2 ms vs 24.7 ms = **2 %** FPS drop (§4 allows 10 %); re-measured with the film's tier pinned: **18.3 vs 18.3 ms = 0 %** | **MEASURED** |
@@ -118,8 +119,7 @@ The constraint that outranks everything else: *the portfolio must not get slower
 | §4's reference profiles (never run before 2026-09-27) | R1 as it is **0 %**, R1 @4× CPU **−2.5 %**, R1 @6× CPU **+0.3 %** — all **1.00×** p95, all **43/43 checks**; panel ready 815 / 1,091 / 1,502 ms; first answer 25.1 / 45.4 / 42.8 s | **MEASURED** |
 | A weak device, for real | **NOT TESTED** — the CDP throttle hits the main thread (frame time 18.3 → 35.3 ms) but not the Worker proportionally (first answer 25.1 → 45.4 s is 1.8×, not 4×), so this profile must not be quoted as a phone's latency | **NOT TESTED** |
 | …and why it took this long | The A/B ran under software GL until 2026-09-27, where it was inconclusive; the first real-GPU run without a pin reported **−49 %** (the *open* arm faster) because the film's own governor walked tier 1 → tier 4 during the session — a confound the probe now detects and refuses to attribute | **MEASURED** |
-| Judge relevance | **NOT TESTED** — the scene/mic/relevance judge still has no reference profile to run against | **NOT TESTED** |
-| §4 code chunk | **138,896 B gz = 90.4 %** of 150 KB (14 KB headroom), conservative reading: every shipped `ai/**` + `knowledge.json`; asserted on every `npm test` | **MEASURED** |
+| §4 code chunk | **69,079 B gz = 45.0 %** of 150 KB (84 KB headroom), conservative reading: every shipped `ai/**` + `knowledge.json`; was 138,896 B = 90.4 % until the build stopped shipping comments from `ai/**`. Asserted on every `npm test`, and reported by `npm run bundle` | **MEASURED** |
 
 ## CHAT
 
@@ -201,9 +201,12 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
    microphone.** Every one of those is a NOT TESTED above.
 4. **WASM SIMD and WebGPU are unimplemented**, and the payoff cannot be measured
    here — this box runs scalar JS ~10× below its own specification.
-5. **The §4 code chunk is at 90.4 %** with 14 KB of headroom. The next AI feature
-   should be paired with something moving out of the chunk. (The retired Quick
-   Answers wording already moved out: −2,864 B gz, no feature lost.)
+5. **The §4 code chunk is at 45.0 %** with 84 KB of headroom, so the budget is a
+   regression guard rather than a constraint on the next feature. It halved on
+   2026-09-27 because half its gzip was comments in our own `ai/**` modules and
+   the build stopped shipping them (−69,817 B gz, nothing a visitor runs
+   changed). The retired Quick Answers wording had already moved out
+   (−2,864 B gz, no feature lost).
 6. **Three open observations, recorded not explained:** the panel's own ready
    time has been measured at 390 ms, 815 ms and 19.3–27.9 s on this box within
    the same day; two of four resource runs showed +21 GL programs during an AI

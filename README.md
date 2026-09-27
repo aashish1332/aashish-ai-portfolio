@@ -142,7 +142,7 @@ exits non-zero on any disagreement. A second parity gate runs on every
 forward pass fails the build instead of a visitor's question.
 
 Today's shipped weights are from a **local CPU run** — 4,984,064 params,
-config `local`, 800 steps on this laptop — that exists so the whole path
+config `local`, 1,100 steps on this laptop — that exists so the whole path
 (train → export → download → worker → stream → guard) is real end to end. It
 runs at **65–74 tok/s decode** on a 2016 ultrabook with no GPU, 8–9× the ≥ 8 tok/s
 floor §4 asks for. The §7.1 shipping target is still config A (37.9M) trained

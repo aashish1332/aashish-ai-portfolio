@@ -2185,5 +2185,51 @@ on `model.state`, which is why earlier runs printed
 
 **Still open, unchanged, and listed in the report:** the GPU training run and
 the P4 gate (owner), a real-device / real-microphone / screen-reader pass, the
-deployment host, PII sign-off, WASM SIMD and WebGPU, `benchSlowMs` tuning against
-an idle reference, and the §4 chunk at 90.4 %.
+deployment host, PII sign-off, WASM SIMD and WebGPU, and `benchSlowMs` tuning
+against an idle reference.
+
+### 5. §4's code chunk — halved, by not shipping prose (2026-09-27)
+
+The chunk had been sitting at 90.4 % of its 150 KB budget and the report named it
+as the thing to watch. The fix was not a feature removal and not a new
+abstraction: it was that **half the chunk's gzip was comments in our own
+modules.** Measured on the shipped tree — 137,272 B gz with comments, 66,799 B
+gz without — **70,473 B gz, 51.3 % of §4's budget, was being spent on design
+notes the visitor never runs.** `gzip` does not help here: comment text is
+English prose, and prose is what it compresses worst.
+
+So `tools/build.mjs` now writes a stripped copy of every shipped `ai/**` script
+(`stripComments`), and the repository keeps every word. Three things make that a
+measurement rather than a hope:
+
+* it reuses `maskSource`, the comment/string/template/regex walk the leak scan
+already rests on — one walk, so one bug and one set of tests;
+* the test that used to check "every shipped module parses" now also **imports
+the stripped modules from `dist/`**, which is stronger than parsing and would
+fail on a comment cut through a token;
+* and "the same program" is checked by asking the built planner and the source
+planner the same five questions (skills, a withheld field, an unanswerable one,
+the disclosure, an injection) and comparing `intent`/`sources`/`plan`/`text`
+for equality — not by arguing that a character-preserving transform must be
+safe.
+
+`js/**` and `css/**` are asserted byte-identical to source in the same test,
+because §2 N7 says the AI layer does not touch the film.
+
+| | before | after |
+|---|---|---|
+| chat code chunk (§4, conservative) | 138,896 B gz · **90.4 %** | **69,079 B gz · 45.0 %** |
+| — §4's chat-UI chunk proper | 89,522 B | 46,978 B (30.6 %) |
+| — voice add-ons (§2 N6) | 19,215 B | 7,432 B |
+| — LLM runtime + tokenizer | 30,042 B | 14,669 B |
+| what the **click** fetches (static reach) | 86,096 B gz | **41,221 B gz, 14 files** |
+| tests | 444 JS + 326 Python, 0 failures | **446 JS + 326 Python, 0 failures** · `npm run build` clean |
+
+The two new tests are the strip's two directions: `stripComments` on adversarial
+input (a regex holding a quote, a URL in a string, a CSS comment inside a
+template literal, a division), and the built-vs-source behaviour comparison.
+
+`npm run bundle` (`tools/bundle-report.mjs`) is new too: the §4 figures in the
+docs used to come from a throwaway `node -e` snippet, which is exactly how a
+figure goes stale. It prints the chunk, §4's three sub-rows, the first-visit
+total and the largest files, and `--json` emits it for the docs.

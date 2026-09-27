@@ -667,11 +667,11 @@ worst abs Δ logit **3.58e-07**.
 
 | Budget | §4 | Measured |
 |---|---|---|
-| AI chat **code** chunk, conservative reading (every shipped `ai/**` module + `knowledge.json`) | ≤ 150 KB gz | **138,896 B** (90.4 %) |
-| — of that, §4's chat-UI chunk proper (UI + KB + retrieval + language + guard + intent + anchors + governor) | — | 89,522 B (58.3 %) |
-| — of that, voice add-ons (loaded only on the tap that picks voice, §2 N6) | §4 lists separately | 19,215 B |
-| — of that, LLM runtime + tokenizer (§4 "LLM runtime" row) | — | 30,042 B |
-| AI assets actually fetched by **the click** (static reach of `ai/ui/chat.mjs`) | §4's number to keep small | **86,096 B gz (84.1 KB), 14 files** |
+| AI chat **code** chunk, conservative reading (every shipped `ai/**` module + `knowledge.json`) | ≤ 150 KB gz | **69,079 B** (45.0 %) — was 138,896 B (90.4 %) before shipped `ai/**` stopped carrying comments |
+| — of that, §4's chat-UI chunk proper (UI + KB + retrieval + language + guard + intent + anchors + governor) | — | 46,978 B (30.6 %) |
+| — of that, voice add-ons (loaded only on the tap that picks voice, §2 N6) | §4 lists separately | 7,432 B |
+| — of that, LLM runtime + tokenizer (§4 "LLM runtime" row) | — | 14,669 B |
+| AI assets actually fetched by **the click** (static reach of `ai/ui/chat.mjs`) | §4's number to keep small | **41,221 B gz (40.3 KB), 14 files** |
 | Rest of the page | regression guard 250 KB | 65,649 B |
 | Model payload (weights + tokenizer + manifest) | ≤ 25 MB preferred, ≤ 40 MB hard | **5,144,357 B** raw · 4,731,918 B gz (step 1100) |
 | First-use download, T1/T2 | ≤ ~40 MB | **4,798,585 B** gz (**12 %**) |
@@ -748,11 +748,33 @@ shell (§2 N6), and +3,207 B gz for `ai/engine/cache.mjs`, which is §9.3's real
 model cache. Neither is fetched by a visitor who only types: the click's static
 reach is **86,096 B gz** (measured by following the import graph in
 `tests/build-bundle.test.mjs`), against **102,596 B** before the voice split.
-The conservative §4 figure is the number that guards the budget, and it is at
-90.4 % — 14 KB of headroom — with the runtime (30 KB) and the voice add-ons
-(19 KB) inside it, both of which §4 lists on their own rows. **The next feature
-that lands in `ai/` should be paired with a look at what could move out of this
-chunk.**
+
+**Then it halved, by shipping nothing a visitor runs.** The largest single line
+in the chunk was prose: our own `ai/**` modules are heavily commented — the
+design notes in `ai/answers/model.mjs` alone are 13 KB — and gzip cannot
+compress English prose away. MEASURED on the shipped tree: **137,272 B gz with
+comments, 66,799 B gz without, so 70,473 B gz (51.3 % of §4's 150 KB) was being
+spent on comments.** The build now serves a stripped copy of every shipped
+`ai/**` script (`stripComments` in `tools/build.mjs`); the repository keeps
+every word of it, and `npm run bundle` (`tools/bundle-report.mjs`) is the
+reporter that would have caught the figure going stale.
+
+Two things make that safe rather than clever. It reuses `maskSource`, the same
+comment/string/template/regex walk the leak scan already depends on — so one bug
+would show up in both, and one set of tests is evidence for both. And it is
+checked as the claim it actually is: the stripped modules are **imported** from
+`dist/` in `tests/build-bundle.test.mjs`, then the built planner and the source
+planner are asked the same five questions and their
+`intent`/`sources`/`plan`/`text` compared for equality. `js/**` and `css/**` are
+asserted byte-identical to source, because §2 N7 says the AI layer does not
+touch the film.
+
+The conservative §4 figure is the number that guards the budget, and after the
+comment strip it is at **45.0 % — 84 KB of headroom** — with the runtime
+(14.7 KB) and the voice add-ons (7.4 KB) inside it, both of which §4 lists on
+their own rows. The click's static reach fell with it, to **41,221 B gz**.
+**The budget is no longer the binding constraint on what `ai/` may grow into; it
+is a regression guard now.**
 
 ### §9.3's cache: zero bytes on the second visit (2026-09-27)
 
@@ -822,7 +844,7 @@ testing itself, and both would have produced a green result for a broken path:
 
 | | |
 |---|---|
-| chat code chunk (§4, conservative) | **138,896 B gz = 90.4 %** (was 138,779 — the badge fix and its comment) |
+| chat code chunk (§4, conservative) | **69,079 B gz = 45.0 %** after the 2026-09-27 comment strip (before it: 138,896 B = 90.4 %, and 138,779 before the badge fix and its comment) |
 
 ### Frame health, on the real GPU (§6.3/§14, 2026-09-27)
 

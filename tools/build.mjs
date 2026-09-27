@@ -372,6 +372,53 @@ export function checkImports(files) {
   return problems;
 }
 
+/* ── comment stripping (the §4 budget, half of it) ───────────────
+   The AI chunk's documentation is ~half of the bytes a visitor downloads,
+   and gzip cannot compress it away: it is English prose, not repetition.
+   MEASURED on the shipped tree — 137,272 B gz with comments, 66,799 B gz
+   without, i.e. **70,473 B gz (51.3 %) of §4's 150 KB budget was being spent
+   on comments** ([tools/bundle-report.mjs](bundle-report.mjs)).
+
+   So a shipped `ai/**` script is served without comments. Nothing else
+   changes: the repository keeps every word of it, `knowledge.json` is data
+   (no comments to remove), and this is deliberately limited to `ai/**` —
+   `js/**` is the portfolio's own film, and §2 N7 says the build must not
+   touch it.
+
+   It reuses `maskSource`, which already walks comments, strings, template
+   literals and regex literals correctly, because the leak scan needed exactly
+   that. The consequence is a real safety property rather than a convenience:
+   the *same* walk that decides what a documentation mention is decides what
+   ships, so the two can never disagree, and `tests/build-bundle.test.mjs`
+   parses the stripped output as the check that it is still the same program. */
+
+/** Is this a shipped file whose comments a visitor should not pay for? */
+export function stripsComments(rel) {
+  return rel.startsWith('ai/') && /\.(mjs|js)$/.test(rel);
+}
+
+/**
+ * The same file with every comment replaced by whitespace.
+ *
+ * `maskSource` keeps the code character-for-character and preserves line
+ * breaks (so automatic semicolon insertion is unaffected); the only tidying
+ * afterwards is removing the now-blank tails and collapsing the runs of blank
+ * lines a stripped block comment leaves behind. Lines are never joined — at
+ * least one `\n` always survives — which is the only way this could have
+ * changed what a browser runs.
+ */
+export function stripComments(text) {
+  return maskSource(text).code
+    .replace(/[ \t]+$/gm, '')
+    .replace(/\n{3,}/g, '\n\n');
+}
+
+/** Copy one shipped file, stripping comments from the ones that carry none. */
+function writeShipped(from, to, rel) {
+  if (!stripsComments(rel)) { cpSync(from, to); return; }
+  writeFileSync(to, stripComments(readFileSync(from, 'utf8')), 'utf8');
+}
+
 /* ── bundling ──────────────────────────────────────────────────── */
 
 function listFiles(root, absDir, out = []) {
@@ -399,20 +446,29 @@ export function buildBundle({ root = ROOT, out = join(ROOT, 'dist'), quiet = fal
   mkdirSync(out, { recursive: true });
 
   const copied = [];
+  /* The same files BEFORE stripping, kept so the dev-reference scan still
+     sees the comment mentions it is supposed to report: a stripped file has
+     no comments left to find, and "this comment names a dev probe" is a note
+     about the source, not about the bundle. */
+  const sources = [];
   for (const entry of SHIP_PATHS) {
     const abs = join(root, entry);
     if (!existsSync(abs)) continue;
     if (statSync(abs).isDirectory()) {
-      cpSync(abs, join(out, entry), { recursive: true });
-      copied.push(...listFiles(out, join(out, entry)).map((f) => ({
-        ...f,
-        rel: relative(out, f.abs).split(sep).join('/'),
-      })));
+      mkdirSync(join(out, entry), { recursive: true });
+      for (const f of listFiles(root, abs)) {
+        const target = join(out, f.rel);
+        mkdirSync(dirname(target), { recursive: true });
+        writeShipped(f.abs, target, f.rel);
+        copied.push({ abs: target, rel: f.rel });
+        sources.push(f);
+      }
     } else {
       const target = join(out, entry);
       mkdirSync(dirname(target), { recursive: true });
-      cpSync(abs, target);
+      writeShipped(abs, target, entry);
       copied.push({ abs: target, rel: entry });
+      sources.push({ abs, rel: entry });
     }
   }
 
@@ -470,8 +526,12 @@ export function buildBundle({ root = ROOT, out = join(ROOT, 'dist'), quiet = fal
   const deliberate = scanForPrivateValues(other, privateBefore)
     .filter((l) => SITE_PUBLISHED.includes(l.path));
 
-  /* 3. no dev tooling references (comment mentions are notes, not failures) */
-  const { failures: devRefs, notes: devNotes } = scanForDevReferences(other);
+  /* 3. no dev tooling references (comment mentions are notes, not failures).
+        Scanned on the SOURCE, because the shipped `ai/**` files have had
+        their comments removed before this point — a note about a comment
+        would otherwise be unreportable, and a real code reference still
+        fails because the code is character-identical. */
+  const { failures: devRefs, notes: devNotes } = scanForDevReferences(sources);
   if (devRefs.length) {
     problems.push(...devRefs.map((d) => `${d.path} ${d.why}: ${d.sample}`));
   }
