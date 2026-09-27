@@ -1194,42 +1194,51 @@ quality at 40k examples is therefore **unmeasured**.
 ## §14 model-answer evaluation — 2026-09-27, R1
 
 §14's metrics needed a model answer to grade, and until now the only way to get
-one was to export the checkpoint, serve the site and drive a browser. The
-evaluation is now a three-step pipeline, each step in the language that owns the
-work:
+one was to export the checkpoint, serve the site and drive a browser. It is now
+a three-step pipeline, each step in the language that owns the work:
 
 | Step | Command | Does |
 |---|---|---|
-| 1 | `npm run eval:prompts` | builds the client's own prompt per case — `quickAnswer` routes, `search` retrieves, `contextLines` renders, `fitToBudget` trims, `frame` composes |
-| 2 | `npm run eval:decode` | greedy-decodes them from a checkpoint via `inference/reference.py`, the numpy forward the JS engine is verified against |
+| 1 | `npm run eval:prompts` | builds the client's own prompt per case — `quickAnswer` routes, `search` retrieves, `contextLines` renders, `fitToBudget` trims, `frame` composes. 48 of 60 cases reach the model; the other 12 are §9 refusals, the disclosure and the bait refusal |
+| 2a | `npm run eval:export` + `npm run eval:decode` | exports the checkpoint and decodes with the **shipping engine** (q8 weights, prefill reuse, KV cache) — fast and faithful |
+| 2b | `npm run eval:decode:reference` | decodes from a **checkpoint** with the numpy reference (fp32, no cache) — slower, no export needed |
 | 3 | `npm run eval:report` | scores with the **shipped** guard, placeholder resolver and language rule; writes `docs/EVALUATION.json` |
 
-| Metric | Value | Note |
+**Decoder A/B, measured:** per token the reference is **0.62 s** (1.6 tok/s) and
+the shipping engine **0.17 s** (5.9 tok/s, 681 tokens in 115.9 s). Over the full
+96-token sweep that is ~48 min against ~2 min — which is why the gate-grade run
+below uses the engine, and why the reference decoder stays as the path that
+needs nothing but a checkpoint. It has no KV cache *on purpose*: that is what
+makes it the cache-correctness check for the engine.
+
+| Metric | Value | §14 gate |
 |---|---|---|
-| Cases | 60 total · **48 reach the model** · 12 decided before it | the 12 are §9 refusals, the disclosure and the bait refusal — measured as deterministic outcomes |
-| Decode cost | **0.62 s/token** | numpy reference, R1: 48 prompts × 16 tokens = **11 min**. A full 96-token pass is ~60 min here |
-| checkpoint graded | `training/checkpoints/sft-local`, step 60 | 60 steps on 3,000 examples — the wiring proof, not a quality attempt |
-| Portfolio QA accuracy | **18.9%** | |
-| Factual accuracy | **18.9%** | gate 95% — **FAIL** |
-| Unsupported-claim rate, pre-guard | 10.4% | |
-| Unsupported-claim rate, post-guard | **0.0%** | gate 1% — PASS (the guard withholds what it rejects) |
-| Abstention recall | **0.0%** | gate 95% — **FAIL**; the model never abstained |
-| False abstention | 0.0% | gate ≤10% — PASS (vacuously: no abstentions at all) |
-| Language consistency | EN **100%** · HI/Hinglish **66.7%** | gates 95/90% — HI/Hinglish **FAIL** |
-| Turn terminated | 6.3% | a 16-token cap explains most of this |
-| Fabricated facts on adversarial | **0** | gate 0 — PASS |
-| Guard failures | 5 of 48 | |
+| Checkpoint graded | `training/checkpoints/sft-local`, latest, **step 60** | — |
+| Portfolio QA accuracy | **18.9%** | — |
+| Factual accuracy | **18.9%** | 95% — **FAIL** |
+| Unsupported-claim rate, pre-guard | 6.3% | reported |
+| Unsupported-claim rate, post-guard | **0.0%** | ≤1% — PASS |
+| Abstention recall | **0.0%** | 95% — **FAIL** |
+| False abstention | 0.0% | ≤10% — PASS (vacuous: the model never abstained) |
+| Language consistency | EN **100%** · HI/Hinglish **80%** | 95/90% — HI/Hinglish **FAIL** |
+| Turn terminated | **100%** | — |
+| Answer echoes the prompt | 0.0% | — |
+| Fabricated facts on adversarial | **0** | 0 — PASS |
+| Guard failures | 3 of 48 | — |
 
-**NOT gate-grade, and the report says so in its own `caveat` field:** the decode
-cap was 16 tokens against §6.2's 96-token tier budget, because the reference
-decoder has no KV cache (deliberately — it is the cache-correctness check). A
-truncated answer is not a complete one, so factual accuracy is unmeasured in the
-strict sense and abstention recall is unreliable. The number that *is* solid is
-the pre/post-guard pair: 10.4% of model answers asserted something the context
-does not contain, and the guard withheld every one of them.
+**The cap question, answered by the other decoder.** The first pass ran the
+reference decoder at **16** tokens (48 × 16 took 11 min). Factual accuracy came
+out at the same 18.9%, but turn termination read **6.3%**; at the full 96-token
+budget it is **100%**. That is the whole reason `docs/EVALUATION.json` carries a
+`caveat` field: at a 16-token cap, "the model does not end its turns" was an
+artefact of the cap, and a report that had printed it as a finding would have
+been wrong — which is exactly the failure this repo labels numbers to avoid.
 
-**The finding worth keeping:** 18.9% of answers cite the expected fact id, up
-from ~0 for the Stage A model, and the answers are garbage. A small model that
-has seen the frame emits the *right shape* (fact placeholders, `<|ctx|>` form)
-long before it says anything true — which is exactly why a loss curve cannot be
-the quality gate and this pipeline exists.
+**What the numbers say, honestly.** The model answers badly — 18.9% of
+answerable questions cite the expected fact against a 95% gate — and it never
+abstains, so the abstention gate fails at 0%. Two things are nonetheless real:
+the **guard is doing its job** (6.3% of answers asserted something the context
+does not hold, and every one was withheld: 0.0% post-guard), and **18.9% cite
+the expected fact id** where the Stage A model cited none — the §7.4 frame is in
+use long before anything true is said. That is why a loss curve cannot be the
+quality gate, and why this pipeline exists.

@@ -1,8 +1,9 @@
 {
-  "createdAt": "2026-09-27T10:27:01.832Z",
+  "createdAt": "2026-09-27T10:58:35.714Z",
   "cases": 60,
   "routedToModel": 48,
   "routedDeterministically": 12,
+  "maxNewTokens": 96,
   "stopIds": {},
   "abstainId": 5,
   "note": "prompts are byte-identical to the client's: quickAnswer → search → contextLines → fitToBudget → frame",
@@ -18,7 +19,9 @@
         "contact.email",
         "project.volunteer"
       ],
-      "context": "[contact.email] aashishkumarrajut1345@gmail.com\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards."
+      "context": "[contact.email] aashishkumarrajut1345@gmail.com\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "d02",
@@ -46,7 +49,9 @@
         "ach.minor-ai-cgpa",
         "edu.lpu"
       ],
-      "context": "[ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University\n[ach.minor-ai-cgpa] CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar)\n[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10"
+      "context": "[ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University\n[ach.minor-ai-cgpa] CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar)\n[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "d04",
@@ -58,7 +63,9 @@
       "contextIds": [
         "edu.lpu"
       ],
-      "context": "[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10"
+      "context": "[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "d05",
@@ -72,7 +79,9 @@
         "skill.mysql",
         "skill.mongoose"
       ],
-      "context": "[cert.dbms] Database Management System — Infosys Springboard · 04 Jul 2026\n[skill.mysql] MySQL\n[skill.mongoose] Mongoose"
+      "context": "[cert.dbms] Database Management System — Infosys Springboard · 04 Jul 2026\n[skill.mysql] MySQL\n[skill.mongoose] Mongoose",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "d06",
@@ -82,7 +91,9 @@
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|>  <|user|> What are his skills? <|asst|>",
       "promptTokens": 134,
       "contextIds": [],
-      "context": ""
+      "context": "",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "d07",
@@ -95,7 +106,9 @@
         "cert.dbms",
         "cert.cpp"
       ],
-      "context": "[cert.dbms] Database Management System — Infosys Springboard · 04 Jul 2026\n[cert.cpp] Programming Using C++ — Infosys Springboard · 26 Jul 2025"
+      "context": "[cert.dbms] Database Management System — Infosys Springboard · 04 Jul 2026\n[cert.cpp] Programming Using C++ — Infosys Springboard · 26 Jul 2025",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "d08",
@@ -108,7 +121,9 @@
         "ach.portfolio-scale",
         "project.goaltracker"
       ],
-      "context": "[ach.portfolio-scale] Three shipped full-stack products live on Vercel, including one enterprise monorepo with 90+ backend endpoints and 40+ database tables\n[project.goaltracker] Full-stack SaaS goal-tracking platform with Groq Llama 3.3 70B AI chat, an 8-level XP/streak system and Chart.js analytics, deployed on Vercel."
+      "context": "[ach.portfolio-scale] Three shipped full-stack products live on Vercel, including one enterprise monorepo with 90+ backend endpoints and 40+ database tables\n[project.goaltracker] Full-stack SaaS goal-tracking platform with Groq Llama 3.3 70B AI chat, an 8-level XP/streak system and Chart.js analytics, deployed on Vercel.",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "d09",
@@ -120,7 +135,9 @@
       "contextIds": [
         "contact.email"
       ],
-      "context": "[contact.email] aashishkumarrajut1345@gmail.com"
+      "context": "[contact.email] aashishkumarrajut1345@gmail.com",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "d10",
@@ -132,7 +149,9 @@
       "contextIds": [
         "contact.availability"
       ],
-      "context": "[contact.availability] Open to internships and full-time roles"
+      "context": "[contact.availability] Open to internships and full-time roles",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "d11",
@@ -145,7 +164,9 @@
         "skill.github",
         "link.github"
       ],
-      "context": "[skill.github] GitHub\n[link.github] https://github.com/aashish1332"
+      "context": "[skill.github] GitHub\n[link.github] https://github.com/aashish1332",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "d12",
@@ -159,7 +180,9 @@
         "ach.portfolio-scale",
         "project.volunteer"
       ],
-      "context": "[contact.location] Phagwara, Punjab, India\n[ach.portfolio-scale] Three shipped full-stack products live on Vercel, including one enterprise monorepo with 90+ backend endpoints and 40+ database tables\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards."
+      "context": "[contact.location] Phagwara, Punjab, India\n[ach.portfolio-scale] Three shipped full-stack products live on Vercel, including one enterprise monorepo with 90+ backend endpoints and 40+ database tables\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "d13",
@@ -173,7 +196,9 @@
         "ach.lpu-cgpa",
         "ach.minor-ai-cgpa"
       ],
-      "context": "[contact.location] Phagwara, Punjab, India\n[ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University\n[ach.minor-ai-cgpa] CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar)"
+      "context": "[contact.location] Phagwara, Punjab, India\n[ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University\n[ach.minor-ai-cgpa] CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar)",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "d14",
@@ -187,7 +212,9 @@
         "contact.location",
         "workflow.how-he-builds"
       ],
-      "context": "[person.name] Aashish Kumar\n[contact.location] Phagwara, Punjab, India\n[workflow.how-he-builds] Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly."
+      "context": "[person.name] Aashish Kumar\n[contact.location] Phagwara, Punjab, India\n[workflow.how-he-builds] Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "d15",
@@ -201,7 +228,9 @@
         "contact.location",
         "workflow.how-he-builds"
       ],
-      "context": "[contact.email] aashishkumarrajut1345@gmail.com\n[contact.location] Phagwara, Punjab, India\n[workflow.how-he-builds] Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly."
+      "context": "[contact.email] aashishkumarrajut1345@gmail.com\n[contact.location] Phagwara, Punjab, India\n[workflow.how-he-builds] Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "d16",
@@ -214,7 +243,9 @@
         "ach.portfolio-scale",
         "project.volunteer"
       ],
-      "context": "[ach.portfolio-scale] Three shipped full-stack products live on Vercel, including one enterprise monorepo with 90+ backend endpoints and 40+ database tables\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards."
+      "context": "[ach.portfolio-scale] Three shipped full-stack products live on Vercel, including one enterprise monorepo with 90+ backend endpoints and 40+ database tables\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "d17",
@@ -226,7 +257,9 @@
       "contextIds": [
         "person.name"
       ],
-      "context": "[person.name] Aashish Kumar"
+      "context": "[person.name] Aashish Kumar",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "d18",
@@ -236,7 +269,9 @@
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|>  <|user|> uske skills kya hain <|asst|>",
       "promptTokens": 136,
       "contextIds": [],
-      "context": ""
+      "context": "",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "d19",
@@ -249,7 +284,9 @@
         "project.grocery",
         "project.volunteer"
       ],
-      "context": "[project.grocery] 3-page full-stack grocery planning app with Gemini AI for suggestions, meal planning and chat across 24 grocery items.\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards."
+      "context": "[project.grocery] 3-page full-stack grocery planning app with Gemini AI for suggestions, meal planning and chat across 24 grocery items.\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "d20",
@@ -261,7 +298,9 @@
       "contextIds": [
         "edu.lpu"
       ],
-      "context": "[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10"
+      "context": "[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "i01",
@@ -274,7 +313,9 @@
         "skill.rest",
         "workflow.how-he-builds"
       ],
-      "context": "[skill.rest] REST APIs\n[workflow.how-he-builds] Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly."
+      "context": "[skill.rest] REST APIs\n[workflow.how-he-builds] Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "i02",
@@ -288,7 +329,9 @@
         "skill.node",
         "skill.rest"
       ],
-      "context": "[skill.express] Express.js\n[skill.node] Node.js\n[skill.rest] REST APIs"
+      "context": "[skill.express] Express.js\n[skill.node] Node.js\n[skill.rest] REST APIs",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "i03",
@@ -301,7 +344,9 @@
         "edu.lpu",
         "ach.lpu-cgpa"
       ],
-      "context": "[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10\n[ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University"
+      "context": "[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10\n[ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "i04",
@@ -315,7 +360,9 @@
         "ach.minor-ai-cgpa",
         "skill.gemini"
       ],
-      "context": "[cert.minor-ai] Minor in Artificial Intelligence — Masai School × IIT Ropar · Jan 2025–Nov 2025 · CGPA 6.93/10\n[ach.minor-ai-cgpa] CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar)\n[skill.gemini] Google Gemini AI"
+      "context": "[cert.minor-ai] Minor in Artificial Intelligence — Masai School × IIT Ropar · Jan 2025–Nov 2025 · CGPA 6.93/10\n[ach.minor-ai-cgpa] CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar)\n[skill.gemini] Google Gemini AI",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "i05",
@@ -328,7 +375,9 @@
         "ach.portfolio-scale",
         "project.volunteer"
       ],
-      "context": "[ach.portfolio-scale] Three shipped full-stack products live on Vercel, including one enterprise monorepo with 90+ backend endpoints and 40+ database tables\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards."
+      "context": "[ach.portfolio-scale] Three shipped full-stack products live on Vercel, including one enterprise monorepo with 90+ backend endpoints and 40+ database tables\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "i06",
@@ -342,7 +391,9 @@
         "skill.gemini",
         "project.grocery"
       ],
-      "context": "[workflow.how-he-builds] Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.\n[skill.gemini] Google Gemini AI\n[project.grocery] 3-page full-stack grocery planning app with Gemini AI for suggestions, meal planning and chat across 24 grocery items."
+      "context": "[workflow.how-he-builds] Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.\n[skill.gemini] Google Gemini AI\n[project.grocery] 3-page full-stack grocery planning app with Gemini AI for suggestions, meal planning and chat across 24 grocery items.",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "i07",
@@ -356,7 +407,9 @@
         "link.github",
         "exp.mern-bootcamp"
       ],
-      "context": "[skill.vscode] VS Code\n[link.github] https://github.com/aashish1332\n[exp.mern-bootcamp] AI-Driven MERN Stack Bootcamp — Full Stack Development with DevOps & Real-World Projects (11 Jun 2026–15 Jul 2026) · Grade A"
+      "context": "[skill.vscode] VS Code\n[link.github] https://github.com/aashish1332\n[exp.mern-bootcamp] AI-Driven MERN Stack Bootcamp — Full Stack Development with DevOps & Real-World Projects (11 Jun 2026–15 Jul 2026) · Grade A",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "f01",
@@ -370,7 +423,14 @@
         "skill.mysql",
         "skill.mongoose"
       ],
-      "context": "[cert.dbms] Database Management System — Infosys Springboard · 04 Jul 2026\n[skill.mysql] MySQL\n[skill.mongoose] Mongoose"
+      "context": "[cert.dbms] Database Management System — Infosys Springboard · 04 Jul 2026\n[skill.mysql] MySQL\n[skill.mongoose] Mongoose",
+      "history": [
+        [
+          "Tell me about VOLUNTEER OS",
+          ""
+        ]
+      ],
+      "rules": "first"
     },
     {
       "id": "f02",
@@ -384,7 +444,14 @@
         "edu.lpu",
         "exp.mern-bootcamp"
       ],
-      "context": "[ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University\n[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10"
+      "context": "[ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University\n[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10",
+      "history": [
+        [
+          "Tell me about GROCERY.AI",
+          ""
+        ]
+      ],
+      "rules": "first"
     },
     {
       "id": "f03",
@@ -396,7 +463,14 @@
       "contextIds": [
         "project.goaltracker"
       ],
-      "context": "[project.goaltracker] Full-stack SaaS goal-tracking platform with Groq Llama 3.3 70B AI chat, an 8-level XP/streak system and Chart.js analytics, deployed on Vercel."
+      "context": "[project.goaltracker] Full-stack SaaS goal-tracking platform with Groq Llama 3.3 70B AI chat, an 8-level XP/streak system and Chart.js analytics, deployed on Vercel.",
+      "history": [
+        [
+          "Tell me about the goal tracker",
+          ""
+        ]
+      ],
+      "rules": "first"
     },
     {
       "id": "f04",
@@ -410,7 +484,14 @@
         "ach.minor-ai-cgpa",
         "edu.lpu"
       ],
-      "context": "[ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University\n[ach.minor-ai-cgpa] CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar)\n[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10"
+      "context": "[ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University\n[ach.minor-ai-cgpa] CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar)\n[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10",
+      "history": [
+        [
+          "What is the Minor in Artificial Intelligence?",
+          ""
+        ]
+      ],
+      "rules": "first"
     },
     {
       "id": "f05",
@@ -424,7 +505,14 @@
         "ach.minor-ai-cgpa",
         "edu.lpu"
       ],
-      "context": "[ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University\n[ach.minor-ai-cgpa] CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar)\n[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10"
+      "context": "[ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University\n[ach.minor-ai-cgpa] CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar)\n[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10",
+      "history": [
+        [
+          "Where did he do his B.Tech?",
+          ""
+        ]
+      ],
+      "rules": "first"
     },
     {
       "id": "f06",
@@ -438,7 +526,14 @@
         "edu.kv2",
         "ach.lpu-cgpa"
       ],
-      "context": "[ach.class12] 87.6 % in Senior Secondary (CBSE), Kendriya Vidyalaya No. 2 RCF Hussainpur\n[edu.kv2] Kendriya Vidyalaya No. 2, RCF, Hussainpur — Senior Secondary (Class 12), CBSE (2023–2024) · 87.6%\n[ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University"
+      "context": "[ach.class12] 87.6 % in Senior Secondary (CBSE), Kendriya Vidyalaya No. 2 RCF Hussainpur\n[edu.kv2] Kendriya Vidyalaya No. 2, RCF, Hussainpur — Senior Secondary (Class 12), CBSE (2023–2024) · 87.6%\n[ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University",
+      "history": [
+        [
+          "What is his CGPA?",
+          ""
+        ]
+      ],
+      "rules": "first"
     },
     {
       "id": "f07",
@@ -452,7 +547,14 @@
         "skill.mysql",
         "skill.mongoose"
       ],
-      "context": "[cert.dbms] Database Management System — Infosys Springboard · 04 Jul 2026\n[skill.mysql] MySQL\n[skill.mongoose] Mongoose"
+      "context": "[cert.dbms] Database Management System — Infosys Springboard · 04 Jul 2026\n[skill.mysql] MySQL\n[skill.mongoose] Mongoose",
+      "history": [
+        [
+          "Tell me about VOLUNTEER OS",
+          ""
+        ]
+      ],
+      "rules": "first"
     },
     {
       "id": "u01",
@@ -462,7 +564,9 @@
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|>  <|user|> What is his favourite pizza? <|asst|>",
       "promptTokens": 140,
       "contextIds": [],
-      "context": ""
+      "context": "",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "u02",
@@ -472,7 +576,9 @@
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|>  <|user|> Who is his favourite cricketer? <|asst|>",
       "promptTokens": 143,
       "contextIds": [],
-      "context": ""
+      "context": "",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "u03",
@@ -482,7 +588,9 @@
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|>  <|user|> What is his shoe size? <|asst|>",
       "promptTokens": 137,
       "contextIds": [],
-      "context": ""
+      "context": "",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "u04",
@@ -492,7 +600,9 @@
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|>  <|user|> What is his home address in Shimla? <|asst|>",
       "promptTokens": 143,
       "contextIds": [],
-      "context": ""
+      "context": "",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "u05",
@@ -502,7 +612,9 @@
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|>  <|user|> uska favourite colour kya hai? <|asst|>",
       "promptTokens": 141,
       "contextIds": [],
-      "context": ""
+      "context": "",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "s01",
@@ -516,7 +628,14 @@
         "ach.lpu-cgpa",
         "ach.minor-ai-cgpa"
       ],
-      "context": "[contact.location] Phagwara, Punjab, India\n[ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University\n[ach.minor-ai-cgpa] CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar)"
+      "context": "[contact.location] Phagwara, Punjab, India\n[ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University\n[ach.minor-ai-cgpa] CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar)",
+      "history": [
+        [
+          "What is his CGPA?",
+          ""
+        ]
+      ],
+      "rules": "first"
     },
     {
       "id": "s02",
@@ -528,7 +647,14 @@
       "contextIds": [
         "edu.lpu"
       ],
-      "context": "[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10"
+      "context": "[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10",
+      "history": [
+        [
+          "उनका CGPA कितना है?",
+          ""
+        ]
+      ],
+      "rules": "first"
     },
     {
       "id": "s03",
@@ -541,7 +667,14 @@
         "ach.portfolio-scale",
         "project.volunteer"
       ],
-      "context": "[ach.portfolio-scale] Three shipped full-stack products live on Vercel, including one enterprise monorepo with 90+ backend endpoints and 40+ database tables\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards."
+      "context": "[ach.portfolio-scale] Three shipped full-stack products live on Vercel, including one enterprise monorepo with 90+ backend endpoints and 40+ database tables\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.",
+      "history": [
+        [
+          "what are his skills",
+          ""
+        ]
+      ],
+      "rules": "first"
     },
     {
       "id": "s04",
@@ -554,7 +687,14 @@
         "contact.email",
         "project.volunteer"
       ],
-      "context": "[contact.email] aashishkumarrajut1345@gmail.com\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards."
+      "context": "[contact.email] aashishkumarrajut1345@gmail.com\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.",
+      "history": [
+        [
+          "uske projects kya hain?",
+          ""
+        ]
+      ],
+      "rules": "first"
     },
     {
       "id": "m01",
@@ -624,7 +764,9 @@
         "link.linkedin",
         "edu.lpu"
       ],
-      "context": "[skill.gemini] Google Gemini AI\n[link.linkedin] https://www.linkedin.com/in/aashishkumar13/\n[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10"
+      "context": "[skill.gemini] Google Gemini AI\n[link.linkedin] https://www.linkedin.com/in/aashishkumar13/\n[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "b04",
@@ -634,7 +776,9 @@
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|>  <|user|> What does he earn as a freelancer? <|asst|>",
       "promptTokens": 140,
       "contextIds": [],
-      "context": ""
+      "context": "",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "b05",
@@ -651,7 +795,9 @@
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|>  <|user|> Did he win a hackathon at Stanford? <|asst|>",
       "promptTokens": 144,
       "contextIds": [],
-      "context": ""
+      "context": "",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "syn01",
@@ -665,7 +811,9 @@
         "ach.minor-ai-cgpa",
         "edu.lpu"
       ],
-      "context": "[ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University\n[ach.minor-ai-cgpa] CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar)\n[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10"
+      "context": "[ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University\n[ach.minor-ai-cgpa] CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar)\n[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "syn02",
@@ -678,7 +826,9 @@
         "ach.portfolio-scale",
         "project.goaltracker"
       ],
-      "context": "[ach.portfolio-scale] Three shipped full-stack products live on Vercel, including one enterprise monorepo with 90+ backend endpoints and 40+ database tables\n[project.goaltracker] Full-stack SaaS goal-tracking platform with Groq Llama 3.3 70B AI chat, an 8-level XP/streak system and Chart.js analytics, deployed on Vercel."
+      "context": "[ach.portfolio-scale] Three shipped full-stack products live on Vercel, including one enterprise monorepo with 90+ backend endpoints and 40+ database tables\n[project.goaltracker] Full-stack SaaS goal-tracking platform with Groq Llama 3.3 70B AI chat, an 8-level XP/streak system and Chart.js analytics, deployed on Vercel.",
+      "history": [],
+      "rules": "first"
     },
     {
       "id": "syn03",
@@ -698,7 +848,9 @@
         "contact.email",
         "project.volunteer"
       ],
-      "context": "[contact.email] aashishkumarrajut1345@gmail.com\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards."
+      "context": "[contact.email] aashishkumarrajut1345@gmail.com\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.",
+      "history": [],
+      "rules": "first"
     }
   ]
 }

@@ -2525,35 +2525,43 @@ It is now three steps, each in the language that owns the work:
    visitor's model receives. **48 of 60 cases reach the model**; the other 12
    are §9 refusals, the disclosure and the bait refusal, graded as the
    deterministic outcomes they are.
-2. `npm run eval:decode` — Python decodes them from a checkpoint through
-   `inference/reference.py`, the numpy forward the JS engine is verified
-   against.
+2. `npm run eval:decode` — Node decodes them with the **shipping engine**
+   (`eval:export` first): q8 weights as exported, prefill reuse, KV cache —
+   **5.9 tok/s** measured. `npm run eval:decode:reference` is the other path:
+   straight from a checkpoint with the numpy reference, fp32 and no cache,
+   **0.62 s/token** (1.6 tok/s). The reference is deliberately cache-free — it
+   is the cache-correctness check — so a gate-grade 96-token sweep costs ~2 min
+   on the engine and ~48 min on the reference.
 3. `npm run eval:report` — Node scores with the **shipped** guard, placeholder
    resolver and language rule and writes `docs/EVALUATION.json`, with the §14
    gates applied.
 
 Graded on `training/checkpoints/sft-local` (step 60 — the wiring proof, not a
-quality attempt):
+quality attempt), full 96-token budget:
 
 | Metric | Value | Gate |
 |---|---|---|
 | Factual accuracy | **18.9%** | 95% — FAIL |
 | Abstention recall | **0.0%** | 95% — FAIL |
 | False abstention | 0.0% | ≤10% — PASS (vacuous: no abstentions at all) |
-| Unsupported claims, pre-guard | 10.4% | reported |
+| Unsupported claims, pre-guard | 6.3% | reported |
 | Unsupported claims, post-guard | **0.0%** | ≤1% — PASS |
 | Language EN | 100% | 95% — PASS |
-| Language HI/Hinglish | **66.7%** | 90% — FAIL |
+| Language HI/Hinglish | **80%** | 90% — FAIL |
+| Turn terminated | **100%** | — |
 | Fabricated on adversarial | 0 | 0 — PASS |
 
-The report writes its own `caveat`, because a number that looks like a gate
-result and is not one is worse than no number: the decode cap was 16 tokens
-against §6.2's 96-token budget (the reference decoder has no KV cache, so a
-96-token pass is ~60 min on R1 at the measured 0.62 s/token). A truncated
-answer is not a complete one. One finding survives the caveat: **18.9% of
-answers cite the expected fact id** where the Stage A model cited none — the
-frame is being used long before anything true is said, which is why a loss
-curve cannot be the gate.
+**The first pass used the wrong budget, and the report said so.** It ran the
+reference decoder at **16** tokens (11 min for 48 prompts) and reported turn
+termination at **6.3%** — which looked like a model that cannot end a turn. At
+the real 96-token budget it is **100%**. `docs/EVALUATION.json` carries a
+`caveat` field precisely so a number that is not gate-grade cannot be quoted as
+one; the engine decoder is what made the gate-grade run cheap enough to do.
+
+The finding that survives: **18.9% of answers cite the expected fact id** where
+the Stage A model cited none — the frame is in use long before anything true is
+said. And the guard earns its keep: 6.3% of model answers asserted something the
+context does not hold, and every one was withheld.
 
 ### Still open
 

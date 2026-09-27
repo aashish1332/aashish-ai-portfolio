@@ -130,7 +130,13 @@ export function promptFor(kb, tokenizer, c, opts = {}) {
     prompt,
     promptTokens: tokenizer.encode(prompt).length,
     contextIds: hits.flatMap((h) => [h.id, ...(h.alsoIds || [])]).filter(Boolean),
+    /* The parts as well as the string, so a decoder can drive the shipping
+       engine's own `generate()` — which builds the prompt itself — and then
+       check it built the same one. Re-deriving parts from the prompt would be
+       the kind of reverse parse that drifts. */
     context: fitted.context,
+    history: fitted.history,
+    rules: persona,
   };
 }
 
@@ -146,14 +152,23 @@ export function echoesPrompt(answer, prompt, question) {
  * Score one case against one answer. Pure, so the tests can drive it with
  * synthetic rows instead of needing a checkpoint.
  */
-export function scoreCase({ c, promptRow, answer, kb }) {
+export function scoreCase({ c, promptRow, answer, kb, ended = null, abstainedFlag = null }) {
   const raw = String(answer ?? '');
   const resolved = replacePlaceholders(raw, (id) => renderFact(kb, id, promptRow.lang) || '');
   const cited = [...raw.matchAll(new RegExp('<\\|\\s*fact:([^|]+?)\\s*\\|>', 'g'))].map((m) => m[1].trim());
   const contextIds = new Set(promptRow.contextIds || []);
   const expected = c.expected_facts || [];
   const forbidden = c.forbidden || [];
-  const abstained = /<\|\s*abstain\s*\|>/.test(raw) || resolved.trim() === '';
+  /* The shipping engine stops *before* pushing the stop token, so its raw
+     continuation carries no `<|end|>` even when the model ended its turn. A
+     decoder that knows why it stopped passes that on rather than making the
+     scorer guess from text alone. */
+  /* An empty continuation counts as a refusal: the model asserted nothing, and
+     the alternative — treating silence as an unsupported claim — would punish
+     a model for the one honest thing it can do. It lands in the abstention
+     numbers, where a model that refuses everything is visible as what it is. */
+  const abstained = abstainedFlag === true
+    || /<\|\s*abstain\s*\|>/.test(raw) || resolved.trim() === '';
 
   const guardResult = c.type === 'malicious' ? { ok: true, violations: [] }
     : guard(resolved, { lang: promptRow.lang, context: promptRow.context || '', kb });
@@ -182,7 +197,7 @@ export function scoreCase({ c, promptRow, answer, kb }) {
     guardOk: guardResult.ok,
     guardCodes: guardResult.violations.map((v) => v.code),
     languageOk: abstained ? null : languageMatches(resolved, promptRow.lang),
-    terminated: /<\|\s*end\s*\|>\s*$/.test(raw),
+    terminated: ended === 'end-token' || ended === 'abstain' || /<\|\s*end\s*\|>\s*$/.test(raw),
     echoes: promptRow.prompt ? echoesPrompt(resolved, promptRow.prompt, c.question) : false,
     expectedAnswer: promptRow.answer || null,
   };
@@ -262,13 +277,20 @@ function emitPrompts(args) {
   const spec = loadJson(args.tokenizer);
   const tokenizer = new ByteLevelBPE(spec);
   const index = buildIndex(kb);
-  const prompts = cases.map((c) => promptFor(kb, tokenizer, c, { index, maxSeq: args.maxSeq }));
+  const prompts = cases.map((c) => promptFor(kb, tokenizer, c, {
+    index, maxSeq: args.maxSeq, maxNewTokens: args.maxNewTokens,
+  }));
   const routed = prompts.filter((p) => p.route === 'model');
   const out = {
     createdAt: new Date().toISOString(),
     cases: cases.length,
     routedToModel: routed.length,
     routedDeterministically: prompts.length - routed.length,
+    /* The decode budget the prompt was FITTED for. It has to travel with the
+       prompts: `fitToBudget` trims the context to leave room for this many
+       new tokens, so decoding the same prompt with a different budget would
+       mean the engine composes a different prompt than the file records. */
+    maxNewTokens: args.maxNewTokens,
     stopIds: defaultStopIds(tokenizer),
     abstainId: abstainId(tokenizer),
     note: 'prompts are byte-identical to the client\'s: quickAnswer → search → contextLines → fitToBudget → frame',
@@ -295,7 +317,12 @@ function grade(args) {
     const c = cases.get(promptRow.id);
     const got = byId.get(promptRow.id);
     if (!c || !got) continue;
-    rows.push(scoreCase({ c, promptRow, answer: got.answer, kb }));
+    rows.push(scoreCase({
+      c, promptRow, kb,
+      answer: got.rawText ?? got.answer,
+      ended: got.stopReason ?? null,
+      abstainedFlag: got.abstained ?? null,
+    }));
   }
   const result = aggregate(rows);
   /* A decode cap smaller than the tier's answer budget makes two metrics
@@ -360,6 +387,7 @@ export function parseArgs(argv) {
     emitPrompts: null, grade: null, json: null, gate: false,
     tokenizer: join(ROOT, 'ai', 'tokenizer', 'artifacts', 'seed-1k', 'tokenizer.json'),
     maxSeq: 512,
+    maxNewTokens: 96,   /* §6.2's tier-1 answer budget */
   };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -368,6 +396,7 @@ export function parseArgs(argv) {
     else if (a === '--json') args.json = argv[++i];
     else if (a === '--tokenizer') args.tokenizer = argv[++i];
     else if (a === '--max-seq') args.maxSeq = Number(argv[++i]);
+    else if (a === '--max-new-tokens') args.maxNewTokens = Number(argv[++i]);
     else if (a === '--gate') args.gate = true;
     else if (a === '-h' || a === '--help') {
       console.log('node tools/model-eval.mjs --emit-prompts <out.json> | --grade <answers.json> [--json <report>] [--tokenizer <tokenizer.json>] [--gate]');

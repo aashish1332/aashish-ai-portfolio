@@ -32,6 +32,11 @@ ai/tokenizer/artifacts/*
 # silently disagree with the weights it claims to be.
 ai/model-export/
 
+# Scratch export used by the §14 model evaluation: the engine decoder reads an
+# exported artifact, and re-creating it is one command
+# (`npm run eval:export`). The evaluation OUTPUT (docs/EVAL_*.json) is committed.
+tmp-eval-export/
+
 # ── Python (training + inference side) ───────────────────────────────
 __pycache__/
 *.py[cod]

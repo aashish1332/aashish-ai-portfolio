@@ -209,7 +209,9 @@ npm run train:local  # the largest model this laptop trains for real → trainin
 npm run train:sft    # Stage B: continue that checkpoint on the §7.4 data → training/checkpoints/sft-local
 npm run sample:answers -- --checkpoint stage-A=training/checkpoints/local --checkpoint stage-B=training/checkpoints/sft-local  # what a checkpoint answers, no browser
 npm run eval:prompts  # §14: the client's own prompt per evaluation case (no model needed)
-npm run eval:decode   # decode them from a checkpoint (0.62 s/token on R1 — see docs/EVALUATION.json)
+npm run eval:export   # export the checkpoint the evaluation should grade (scratch dir)
+npm run eval:decode   # decode with the SHIPPING engine, q8 as exported, KV cache (5.9 tok/s here)
+npm run eval:decode:reference # the same from a checkpoint with the numpy reference (0.62 s/token)
 npm run eval:report   # score with the shipped guard + apply the §14 ship gates → docs/EVALUATION.json
 npm run export:model # checkpoint → the browser artifact: q8 shards + manifest + parity fixture
 npm run verify:engine # §9.2: does the JavaScript engine match the numpy reference, on the SHIPPING weights?
