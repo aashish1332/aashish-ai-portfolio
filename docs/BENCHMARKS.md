@@ -607,9 +607,26 @@ are the numbers a visitor's machine produces, not Python's: `ai/engine/*` in
 Node, reading the shards the browser reads.
 
 **The weights are trained.** `training/checkpoints/local` — `vocab=1,024 d=256
-L=6 heads=8/4 ffn=768 ctx=512 tied`, **4,984,064 params**, step 800, val loss
-0.6423 on a short CPU schedule. This is a **pipeline/export** exercise at
-4.98M params; it is not config A and it is not a quality result.
+L=6 heads=8/4 ffn=768 ctx=512 tied`, **4,984,064 params**, val loss 0.6423 on a
+short CPU schedule. This is a **pipeline/export** exercise at 4.98M params; it is
+not config A and it is not a quality result.
+
+**Updated 2026-09-27 — the run was finished.** The export above came from step
+800 of an interrupted run (no `RUN_MANIFEST.json`, which is how that is known).
+`--resume auto` carried it 800 → **1,100 steps in 623.7 s**: loss 6.9471 →
+**0.6242** (windowed gate PASS, 6.8368 → 0.909), **val loss 0.7030**, throughput
+**3,612 tokens/s (256×8)** — against the 1,335 tok/s recorded from the loaded
+box, which is the load spread this file keeps warning about. The manifest is now
+written (23 KB, 68 shard hashes). Re-exported at step 1100: shard 5,059,584 B,
+gzip **4,731,918 B**, brotli 4,712,394 B, q8 row error 0.001356, torch↔numpy PASS
+(max |Δ| 9.54e-6); `verify:engine` **PASS** (argmax 100 %, worst |Δlogit| 1.65e-5,
+decode 79 tok/s).
+
+**And the honest result of those 300 extra steps:** the answers changed and did
+not improve — `"work reviewed cor byandeeer why"` (step 800) →
+`"Uneomunyatoe thek, reviewed cor byandeainir…"` (step 1100). More CPU steps on a
+3 MB generated corpus teach memorisation, not answering. The blocker is data and
+scale, which is what P4/P5 on a GPU are for.
 
 ### `npm run verify:engine` — the parity gate, on the shipping export
 
@@ -656,8 +673,8 @@ worst abs Δ logit **3.58e-07**.
 | — of that, LLM runtime + tokenizer (§4 "LLM runtime" row) | — | 30,042 B |
 | AI assets actually fetched by **the click** (static reach of `ai/ui/chat.mjs`) | §4's number to keep small | **86,096 B gz (84.1 KB), 14 files** |
 | Rest of the page | regression guard 250 KB | 65,649 B |
-| Model payload (weights + tokenizer + manifest) | ≤ 25 MB preferred, ≤ 40 MB hard | **5,144,357 B** raw · 4,742,169 B gz |
-| First-use download, T1/T2 | ≤ ~40 MB | **4,926,379 B** gz (**12 %**) |
+| Model payload (weights + tokenizer + manifest) | ≤ 25 MB preferred, ≤ 40 MB hard | **5,144,357 B** raw · 4,731,918 B gz (step 1100) |
+| First-use download, T1/T2 | ≤ ~40 MB | **4,798,585 B** gz (**12 %**) |
 | Any single AI asset | ≤ ~100 MB | 5,059,584 B raw / 4,732,964 B gz |
 | Files | — | 44 |
 
@@ -861,6 +878,40 @@ machine; this is the only way to make it weaker without owning a phone.
 flow check passes under 6× as well: the answer still streams, Stop still cuts it and keeps the
 partial text, Retry still re-asks, the skills question still reads 12 facts, the panel is still
 usable.
+
+### The control that changes how the table above must be read
+
+A later run reported **+92.9 %** drift from the same probe, same pin, same tier — and a re-run
+reported **0 %**. So the probe now samples the *open* arm **twice**, seconds apart, with the film
+untouched between the samples. In the run that produced both numbers:
+
+| Sample | median | film |
+|---|---|---|
+| closed | 18.3 ms | `tier 2 · BALANCED @72% y=0`, quality normal, ladder `step=0 active=false` |
+| open (1st) | 18.3 ms | same |
+| open (2nd) | **35.4 ms** | same |
+
+The two open samples disagree with **each other** by **93.4 %** — with the AI doing nothing, the
+ladder never having moved (`step=0`, no quality change, `sceneQuality=normal`) and the film's own
+tier/scale/position identical. The film on this box is **bimodal between ~18.3 ms (≈55 fps) and
+~35.4 ms (≈28 fps)**, and `govStatus()` reports the tier's *target* scale, not the pixel ratio
+the renderer ends up with, so the flip is invisible in it.
+
+**Consequence, stated plainly: a single-run frame A/B on R1 is worth ±90 %,** and neither the
+0 % nor the 92.9 % figure above should be quoted on its own. The probe prints the control's own
+disagreement next to the verdict and refuses to call a drift attributable when the control
+contradicts it. What the pinned run *does* establish is narrower and still real: the AI causes no
+**long task**, no **GL program**, and no **quality change**, and the film's cost is dominated by a
+mode switch that happens without it.
+
+**A related flip, in the tier itself (§6.2).** Every recent run of this probe chose **T1 · LITE**
+(`panel opened … tier=1`), while the P2-era record in this file says the same desktop class lands
+on T2. Nothing about the device changed — `benchSlowMs` is 14 ms and the §6.1 micro-benchmark is
+load-sensitive, so a busy box classifies itself as lite. §6.2 calls the table "starting heuristics
+— validate and adjust", and this is the measurement that says **`benchSlowMs` needs tuning against
+an idle reference**, because the tier it picks sets the answer budget (96 tokens at T1 vs 160 at
+T2). The direction of the error is the conservative one, which is why it is recorded rather than
+patched on a hunch.
 
 **Two things this pair of runs honestly says it is not:**
 

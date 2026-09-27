@@ -1340,7 +1340,7 @@ prints that arithmetic where the confusion happens, and
 | Decode | **65–74 tok/s** over 6 runs — 8–9× §4's ≥ 8 tok/s floor, CPU, on the real trained weights |
 | KV cache | 3,072 KB resident at ctx 512 |
 | Bundle, gzip | chat code **127,836 B** of 153,600 B (§4) · rest of page 65,649 B of a 256,000 B guard |
-| Model payload, gzip | **4,742,169 B** raw 5,144,357 B — 12 % of §4's 40 MB first-use budget |
+| Model payload, gzip | **4,731,918 B** (step-1100 export; 4,742,169 B at step 800) raw 5,144,357 B — 12 % of §4's 40 MB first-use budget |
 | Tests | **411 JS + 326 Python**, 0 failures (`npm run test:all`) |
 
 Val loss on the `local` run: 2.1917 @100 → 1.1711 @200 → 0.9229 @300 →
@@ -1400,11 +1400,13 @@ unflattering to the obvious suspects:
 * **No live microphone, no real GPU, no iPhone, no screen reader.** Every item
   in `docs/MANUAL_TEST_CHECKLIST.md` §D is still NOT TESTED; headless Chrome
   has no microphone and can only be observed *refusing*.
-* **The exported weights are step 800** of an 1,100-step schedule, because
-  `latest.pt` is step 800 and the older step files were pruned by `keep_last`.
-  Re-running to the end is cheap, but nothing in the pipeline depends on it —
-  what was being verified is the architecture and the export, not the step
-  count.
+* ~~**The exported weights are step 800** of an 1,100-step schedule.~~
+  **Closed 2026-09-27:** the run was resumed (`--resume auto`) and finished at
+  **step 1,100 of 1,100** in 623.7 s — loss 6.9471 → 0.6242, val 0.7030,
+  **3,612 tokens/s**, `RUN_MANIFEST.json` written, re-exported and re-gated
+  (`verify:engine` PASS, worst |Δlogit| 1.65e-5). It changed the answers without
+  improving them, which is the useful part: the blocker is data and scale, not
+  step count. See the last section of this log.
 * **Deployment host undecided** (`docs/DEPLOYMENT.md` §6) and no CI provider,
   so the budget checks run on `npm test`.
 * **PII open questions stand:** C4 (bootcamp provider unknown, excluded from
@@ -2133,6 +2135,55 @@ One incidental answer: panel ready scales cleanly with CPU (815 → 1,091 →
 that same box, which is what finally makes the earlier 390 ms–20 s spread
 attributable to machine load rather than to the assistant.
 
+### 7. The local run was finished, and the pipeline's record-keeping proven
+
+The shipped export came from step 800 of a run that had **not** reached
+`_finish()` — which is the only writer of `RUN_MANIFEST.json`, and
+`training/checkpoints/local/` had none. So the run behind the artifact was
+interrupted rather than completed. `--resume auto` carried it **800 → 1,100
+steps in 623.7 s**:
+
+| | before (step 800) | after (step 1,100) |
+|---|---|---|
+| loss | — | **6.9471 → 0.6242**, windowed gate **PASS** (6.8368 → 0.909) |
+| val loss | 0.6423 | **0.7030** |
+| throughput | 1,335 tok/s (loaded box) | **3,612 tok/s** (256×8, calm box) |
+| `RUN_MANIFEST.json` | **absent** | **written**, 23 KB — seed, config, tokenizer version, hyperparameters, **68 shard hashes**, full loss history |
+| shard | 5,059,584 B, gz 4,732,964 | 5,059,584 B, **gz 4,731,918** |
+| `verify:engine` | PASS, worst \|Δlogit\| 8.82e-6 | **PASS**, 138 positions, argmax **100 %**, worst \|Δlogit\| **1.65e-5**, q8 row error 0.001356 |
+
+**The honest headline is not the gain, because there isn't one.** The answers at
+step 1,100 are still wrong, just differently:
+`"work reviewed cor byandeeer why"` → `"Uneomunyatoe thek, reviewed cor byandeainir…"`.
+Three hundred more CPU steps on 3 MB of generated text teach the model to
+memorise its corpus, not to answer questions about a person. What this run bought
+is **proof that the pipeline records a completed run** (the manifest, the hashes,
+the loss history) and a fresh parity gate on fresh weights — both prerequisites
+for the GPU run, not substitutes for it.
+
+### 8. Two instrument findings that change how the frame numbers are read
+
+* **The film on R1 is bimodal, so a single-run frame A/B is worth ±90 %.** The
+  probe now samples the *open* arm twice, seconds apart, with the film untouched:
+  in one run the two open samples read **18.3 ms and 35.4 ms — 93.4 % apart**,
+  with the ladder at `step=0`, no quality change and identical tier/scale/position.
+  A separate run reported **+92.9 %** drift, and the run before it **0 %**. The
+  probe prints the control's disagreement beside the verdict and refuses to
+  attribute a drift the control contradicts. What survives as the AI's own,
+  bounded contribution: no long task, no GL program, no quality change.
+* **§6.2 picked T1 · LITE on this desktop in every recent run**, where the P2-era
+  record says T2 — `benchSlowMs` is 14 ms and the §6.1 micro-benchmark is
+  load-sensitive, so a busy box downgrades itself. The direction is conservative
+  (a shorter answer budget, 96 vs 160 tokens), which is why it is recorded rather
+  than patched without an idle reference to tune against.
+
+The probe's wait condition was also fixed here: it waited on `PortfolioAI.state`,
+which means "the panel is up" and can be true while the model is still
+downloading (the opening bubble says so in words, which is honest). It now waits
+on `model.state`, which is why earlier runs printed
+`state=ready tier=1 badge="T1 · PREPARING MODEL…"`.
+
 **Still open, unchanged, and listed in the report:** the GPU training run and
 the P4 gate (owner), a real-device / real-microphone / screen-reader pass, the
-deployment host, PII sign-off, WASM SIMD and WebGPU, and the §4 chunk at 90.4 %.
+deployment host, PII sign-off, WASM SIMD and WebGPU, `benchSlowMs` tuning against
+an idle reference, and the §4 chunk at 90.4 %.

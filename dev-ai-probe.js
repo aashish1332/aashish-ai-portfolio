@@ -154,7 +154,16 @@ const say = (label, ok, detail) => {
   const sceneAt = () => page.evaluate(() => {
     const st = window.Film3D?.govStatus ? window.Film3D.govStatus() : {};
     return { tier: st.tier ?? null, label: st.label ?? null, scale: st.scale ?? null,
-             y: Math.round(window.scrollY || 0), paused: !!window.Film3D?.isPaused?.() };
+             y: Math.round(window.scrollY || 0), paused: !!window.Film3D?.isPaused?.(),
+             /* `govStatus()` reports the TIER's scale, not the render path — a
+                §6.3 rung-3 change goes through `setQuality('low')`, which is
+                invisible in that snapshot. Read it directly, or a rung-3
+                change is misread as the film's own governor. */
+             quality: window.Film3D?.quality ? window.Film3D.quality() : null,
+             ladder: (() => {
+               const l = window.PortfolioAI?.ladderStatus?.();
+               return l ? { step: l.step, active: l.active, qualityCalls: l.qualityCalls } : null;
+             })() };
   });
   closed.scene = await sceneAt();
 
@@ -169,7 +178,14 @@ const say = (label, ok, detail) => {
      starter chips, which is a FAILED check for a panel that was merely still
      loading. Wait for what is actually being asserted. */
   const openedAt = Date.now();
-  await page.waitForFunction(() => window.PortfolioAI && window.PortfolioAI.state === 'ready',
+  /* Wait on the MODEL's phase, not the panel's. `state` becomes 'ready' when
+     the panel is up, which can be while the model is still downloading — the
+     UI says so in words ("PREPARING ON-DEVICE MODEL") and that is honest, but a
+     probe that reads `state` then reports tier badges and model behaviour from
+     a half-open session. It printed `state=ready tier=1 badge="T1 · PREPARING
+     MODEL…"` exactly that way. */
+  await page.waitForFunction(() => ['ready', 'unsupported', 'error']
+    .includes(window.PortfolioAI?.model?.state),
     { timeout: Number(process.env.WAIT_READY || 180000), polling: 250 })
     .then(() => console.log(`  panel ready                  ${Date.now() - openedAt} ms after the click`))
     .catch(() => console.log('  panel ready                  NOT REACHED before the timeout'));
@@ -454,6 +470,13 @@ const say = (label, ok, detail) => {
   await pinScene();
   const openSample = await sampleFrames();
   openSample.scene = await sceneAt();
+  /* A CONTROL: the open arm sampled a second time, immediately after, with the
+     film in exactly the same state. If the two open samples disagree with each
+     other by more than they disagree with the closed one, the number is not a
+     property of the panel at all — it is this box. Added after a run reported
+     +92.9 % here while an earlier, identical run reported 0 %. */
+  const openAgain = await sampleFrames();
+  openAgain.scene = await sceneAt();
   const drift = closed.median ? +(((openSample.median - closed.median) / closed.median) * 100).toFixed(1) : 0;
   const ratio = closed.p95 ? +(openSample.p95 / closed.p95).toFixed(2) : 1;
   const scene = (s) => `tier ${s.scene.tier}·${s.scene.label} @${s.scene.scale}${s.scene.paused ? ' paused' : ''} y=${s.scene.y}`;
@@ -469,7 +492,12 @@ const say = (label, ok, detail) => {
   const sameFilm = closed.scene.tier === openSample.scene.tier
     && closed.scene.scale === openSample.scene.scale
     && closed.scene.y === openSample.scene.y
-    && closed.scene.paused === openSample.scene.paused;
+    && closed.scene.paused === openSample.scene.paused
+    && closed.scene.quality === openSample.scene.quality;
+  const controlSpread = openSample.median
+    ? +(((openAgain.median - openSample.median) / openSample.median) * 100).toFixed(1) : 0;
+  console.log(`  ladder                        step=${openSample.scene.ladder?.step} active=${openSample.scene.ladder?.active} effect=${openSample.scene.ladder?.effect} sceneQuality=${openSample.scene.quality}`);
+  console.log(`  control (open, sampled twice)  ${openSample.median} ms → ${openAgain.median} ms = ${controlSpread}% between two identical states`);
   if (closed.median > 50) {
     console.log(`⚠ frame-health A/B            INCONCLUSIVE — baseline is ${(1000 / closed.median).toFixed(1)} fps ` +
       `${SW_GL ? 'in software GL' : 'on this GPU'} (${closed.median} ms/frame). Needs the §15 reference profile.`);
@@ -480,6 +508,10 @@ const say = (label, ok, detail) => {
   } else {
     say('median frame drift', Math.abs(drift) <= 10, `${drift}%  (closed ${closed.median} ms → open ${openSample.median} ms)`);
     say('p95 frame time', ratio <= 1.5, `${ratio}× (closed ${closed.p95} ms → open ${openSample.p95} ms)`);
+    /* Only meaningful if the control agrees with itself; say so either way. */
+    if (Math.abs(controlSpread) > 10) {
+      console.log(`⚠ control disagrees with itself by ${Math.abs(controlSpread)}% — ${drift}% is this box, not the panel`);
+    }
   }
 
   /* ── 6. scene hooks + layout ─────────────────────────────────────── */

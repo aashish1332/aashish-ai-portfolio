@@ -56,11 +56,12 @@ true about **answer quality**. See "What I need from you".
 | Corpus provenance | **100 % own work**, generated deterministically by `training/scripts/make_seed_corpus.py` (seed 20260920). Every external source in `data/sources.json` is **disabled** pending licence verification, and the file's policy says there is no `--force` flag | **MEASURED** |
 | Licence exposure | **None for what has been trained on** — we wrote every line. The §7.3 public datasets (Sangraha, Hindi Wikipedia, L3Cube-HingCorpus, simple English) have never been fetched | **MEASURED** |
 | Tokenized shards | `data/processed/seed/shards/train-0000{0,1}.bin` + manifest | **MEASURED** |
-| Local run that exists | `training/checkpoints/local`, **step 800**, q8 export sha `0e6dc009…`, `tieGap 0.0` | **MEASURED** |
-| Throughput on R1 | **1,335 tokens/s** (batch 4 × block 128, smoke config); ~850 tok/s for the local config | **MEASURED** |
-| Loss behaviour | 6.6847 → 4.3151 over 50 steps (windowed verdict) | **MEASURED** |
+| Local run that exists | `training/checkpoints/local`, **step 1100 of 1100**, resumed from step 800 and **finished**, `RUN_MANIFEST.json` written, export sha `f1eaf3a74e14…`, `tieGap 0.0` | **MEASURED** |
+| Throughput on R1 | **1,335 tokens/s** (batch 4 × block 128, smoke config, loaded box) · **3,612 tokens/s** (256×8, local config, calm box) · ~850 tok/s quoted earlier for the CPU loop | **MEASURED** |
+| Loss behaviour | 6.9471 → 0.6242 over 1100 steps, windowed gate **PASS** (6.8368 → 0.909), final val loss 0.7030 · the 50-step smoke gate was 6.6847 → 4.3151 | **MEASURED** |
+| Did more steps help the answers? | **No.** 800 → 1100 steps changed the output (`"work reviewed cor byandeeer why"` → `"Uneomunyatoe thek, reviewed cor byandeainir…"`) but not its quality. The corpus is ~3 MB of generated text and the model is 5M params: it is memorising, not learning to answer. **The blocker is data and scale, not step count** | **MEASURED** |
 | Checkpoint + resume | Verified, including config/tokenizer-version validation on load | **MEASURED** (`checkpoint.py`, resume test) |
-| Run record for the shipped artifact | **Absent, and that is itself a measurement:** `RUN_MANIFEST.json` is written by `_finish()`, which every run and resume reaches, and `training/checkpoints/local/` has none — so the 800-step artifact came from a run that was **interrupted**, not completed. Provenance survives in the export manifest; the run-dir record does not. `npm run train:local` writes it by resuming | **MEASURED** |
+| Run record for the shipped artifact | `RUN_MANIFEST.json` is written by `_finish()`, which every run and resume reaches, so the 800-step artifact's missing manifest proved that run was **interrupted**. Resuming it (`--resume auto`, step 800 → 1100) **finished the run and wrote the manifest** (23 KB: seed, config, tokenizer version, hyperparameters, data-shard hashes for 68 shards, full loss history) — the record-keeping is now proven on a run that completes | **MEASURED** |
 | GPU / Kaggle Stage A+B | **Never run.** Scripts and notebook exist; the run is owner-side | **NOT TESTED** |
 | P4 verify gate (9/9 sources) | **NOT TESTED** — no trained-for-quality checkpoint to gate | **NOT TESTED** |
 
@@ -83,8 +84,8 @@ true about **answer quality**. See "What I need from you".
 |---|---|---|
 | Runtime | Static bundle, ES modules; the model runs in a **module Worker** (`ai/engine/worker.mjs`); the page only parses tokens | **MEASURED** |
 | Format / quantization | One shard, **q8-row** weights + f32 norms, worst row error **0.001146** | **MEASURED** |
-| Sizes | 5,059,584 B raw · **4,732,964 B gz** · 4,713,956 B brotli · tokenizer 66,667 B · first visit **4,926,379 B gz = 12 %** of §4's 40 MB | **MEASURED** |
-| Engine parity | `npm run verify:engine` **PASS**: argmax 100 %, worst \|Δlogit\| **8.82e-6** | **MEASURED** |
+| Sizes | 5,059,584 B raw · **4,731,918 B gz** · 4,712,394 B brotli · tokenizer 66,667 B · first visit **4,798,585 B gz = 12 %** of §4's 40 MB (step-1100 export) | **MEASURED** |
+| Engine parity | `npm run verify:engine` **PASS** on the step-1100 weights: 138 positions checked, argmax **100 %**, top-16 order 100 %, worst \|Δlogit\| **1.65e-5** (tolerance 0.02), torch↔numpy PASS, worst q8 row error **0.001356**, decode 79 tok/s, KV 3,072 KB | **MEASURED** |
 | Caching | §9.3 version-keyed Cache Storage; second visit transfers **0 bytes** of model, verified with the model path 404ing | **MEASURED** (`dev-offline-probe.js`) |
 | Offline after cache | The cached model answers with the network down | **MEASURED** |
 | Memory | Extra heap while answering **1.3 MB** (§4 allows 300 MB); **0 MB** growth per reopen over 5 cycles | **MEASURED** |
@@ -111,7 +112,9 @@ The constraint that outranks everything else: *the portfolio must not get slower
 | Decode | **19–25 ms/token**; prefill is **90–95 %** of the wait | **MEASURED** |
 | CPU inference (Python, §14) | smoke **1,335 tok/s**; kernel **121 M MAC/s** vs **97 M** for a plain loop — this box measures JS **~10× below spec** | **MEASURED** |
 | Mobile | Never run on a real phone; T1/T2 are heuristics. The closest was R1 under a 4×/6× CDP throttle, and that throttle under-penalises the Worker | **NOT TESTED** |
-| Frame health, panel open vs closed (§14's ≤10 %) | **0 % median drift, 1.00× p95** on the real GPU (Intel HD 520, D3D11) with the film's tier pinned; 127 vs 126 frames, same tier/scale/position in both arms | **MEASURED** |
+| Frame health, panel open vs closed (§14's ≤10 %) | **0 % median drift, 1.00× p95** on the real GPU (Intel HD 520, D3D11) with the film's tier pinned; 127 vs 126 frames, same tier/scale/position in both arms — **but see the next row before quoting it** | **MEASURED** |
+| …and its control, which says a single run is worth ±90 % | The probe's second open sample, seconds later with the film untouched, measured **35.4 ms vs 18.3 ms = 93.4 % apart**; a separate run reported +92.9 % drift. The film on R1 is **bimodal (~18.3 / ~35.4 ms)** with the AI doing nothing, the ladder at `step=0` and no quality change. So "0 %" and "92.9 %" are both this box; the AI's own contributions are the *bounded* ones: no long task, no GL program, no quality change | **MEASURED** |
+| Tier choice stability (§6.2) | Every recent run classified R1 as **T1 · LITE** while the earlier record says T2 — `benchSlowMs` (14 ms) reads a load-sensitive micro-benchmark, so a busy box downgrades itself. Conservative, and the tier sets the answer budget (96 vs 160 tokens), so it needs tuning against an idle reference | **MEASURED** |
 | §4's reference profiles (never run before 2026-09-27) | R1 as it is **0 %**, R1 @4× CPU **−2.5 %**, R1 @6× CPU **+0.3 %** — all **1.00×** p95, all **43/43 checks**; panel ready 815 / 1,091 / 1,502 ms; first answer 25.1 / 45.4 / 42.8 s | **MEASURED** |
 | A weak device, for real | **NOT TESTED** — the CDP throttle hits the main thread (frame time 18.3 → 35.3 ms) but not the Worker proportionally (first answer 25.1 → 45.4 s is 1.8×, not 4×), so this profile must not be quoted as a phone's latency | **NOT TESTED** |
 | …and why it took this long | The A/B ran under software GL until 2026-09-27, where it was inconclusive; the first real-GPU run without a pin reported **−49 %** (the *open* arm faster) because the film's own governor walked tier 1 → tier 4 during the session — a confound the probe now detects and refuses to attribute | **MEASURED** |
@@ -185,9 +188,12 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
 ## KNOWN LIMITATIONS (the honest list)
 
 1. **No trained-for-quality checkpoint.** The browser answers, coherently-ish and
-   wrongly — a real answer from this build reads `"work reviewed cor byeeepfei p
-   thesod andies inste ofing."` The engine, guard, budget and UI around it are
-   verified; the *model* is a pipeline artifact.
+   wrongly — real answers from this build read `"work reviewed cor byandeeer
+   why"` at step 800 and `"Uneomunyatoe thek, reviewed cor byandeainir…"` at step
+   1100. Training it further on this machine does not change that: 300 more steps
+   moved the words, not the quality, because the corpus is ~3 MB of generated
+   text. The engine, guard, budget and UI around it are verified; the *model* is
+   a pipeline artifact.
 2. **This laptop cannot produce trustworthy absolute timings.** Its load moves
    wall-clock numbers 2–3× between runs. Only interleaved same-process
    comparisons (minimum-of-N) are quoted as findings.
