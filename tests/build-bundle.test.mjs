@@ -353,6 +353,51 @@ test('§2 N6: the voice engine is fetched on a TAP, not on the click', () => {
   });
 });
 
+test('§4: the model\'s arithmetic is not in the click\'s static reach', () => {
+  /* The property that keeps the main thread safe (§4: "AI work on the main
+     thread: no task > 50 ms"). The click parses the shell and the session
+     client; the session spawns a module Worker, and the arithmetic — the
+     tokenizer, the matmuls, the dequantiser — is parsed only inside that
+     worker. Nothing about it is visible in a file listing or a byte total:
+     every one of those files ships. It is a question about the IMPORT GRAPH,
+     so it is answered by following it.
+
+     If this ever failed, the symptom would be exactly what §4 forbids: a
+     multi-hundred-KB script parsed on the main thread before the first token,
+     which is the same class of cost as the material recompile behind the
+     1,221 ms long task. */
+  temp((out) => {
+    const summary = buildBundle({ out, quiet: true });
+    const click = staticReach('ai/ui/chat.mjs', out);
+    const worker = staticReach('ai/engine/worker.mjs', out);
+
+    /* the arithmetic is IN the worker, so the model can actually run */
+    for (const heavy of ['ai/engine/index.mjs', 'ai/engine/llama.mjs',
+      'ai/engine/bpe.mjs', 'ai/engine/quant.mjs', 'ai/engine/cache.mjs']) {
+      assert.ok(worker.has(heavy), `${heavy} is not reachable from the worker — the model cannot run`);
+      assert.ok(summary.files.includes(heavy), `${heavy} is not in the bundle at all`);
+      /* …and NOT in the click, so the main thread never parses it */
+      assert.ok(!click.has(heavy),
+        `${heavy} is statically reachable from ai/ui/chat.mjs — the click would parse `
+        + 'the model\'s arithmetic on the main thread (§4: no task > 50 ms)');
+    }
+    /* the worker itself is fetched by URL, never imported by the shell */
+    assert.ok(!click.has('ai/engine/worker.mjs'),
+      'the worker script is imported by the shell — it must be fetched as a Worker');
+    /* …and the session is what names it, at a site-relative URL */
+    const session = readFileSync(join(out, 'ai', 'engine', 'session.mjs'), 'utf8');
+    assert.match(session, /new URL\('\.\/worker\.mjs', import\.meta\.url\)/,
+      'the session no longer resolves its worker relative to itself');
+
+    /* the boundary is worth a number: the arithmetic the click does NOT parse */
+    const deferred = [...worker].filter((rel) => !click.has(rel))
+      .reduce((n, rel) => n + gzipSync(readFileSync(join(out, rel))).length, 0);
+    assert.ok(deferred > 10_000,
+      `only ${deferred} B gz is deferred to the worker — this test is not measuring `
+      + 'what it thinks it is (MEASURED: 13,296 B gz across the nine worker-only files)');
+  });
+});
+
 test('§4: the retired deterministic ANSWERS are not in the bundle at all', () => {
   /* The owner retired Quick Answers as answers, so the wording is dead weight
      on every visitor's device: it was built on every question and discarded by

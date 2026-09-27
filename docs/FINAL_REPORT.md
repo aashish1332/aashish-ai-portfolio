@@ -83,7 +83,7 @@ true about **answer quality**. See "What I need from you".
 
 | Property | Value | Tag |
 |---|---|---|
-| Runtime | Static bundle, ES modules; the model runs in a **module Worker** (`ai/engine/worker.mjs`); the page only parses tokens | **MEASURED** |
+| Runtime | Static bundle, ES modules; the model runs in a **module Worker** (`ai/engine/worker.mjs`); the page only parses tokens. The main thread does not even *parse* the arithmetic: `tests/build-bundle.test.mjs` follows the import graph and requires the tokenizer, matmuls, dequantiser and manifest verifier to be reachable from the worker and **not** from `ai/ui/chat.mjs` — **13,296 B gz** of worker-only script the click never loads | **MEASURED** |
 | Format / quantization | One shard, **q8-row** weights + f32 norms, worst row error **0.001146** | **MEASURED** |
 | Sizes | 5,059,584 B raw · **4,731,918 B gz** · 4,712,394 B brotli · tokenizer 66,667 B · first visit **4,798,585 B gz = 12 %** of §4's 40 MB (step-1100 export) | **MEASURED** |
 | Engine parity | `npm run verify:engine` **PASS** on the step-1100 weights: 138 positions checked, argmax **100 %**, top-16 order 100 %, worst \|Δlogit\| **1.65e-5** (tolerance 0.02), torch↔numpy PASS, worst q8 row error **0.001356**, decode 79 tok/s, KV 3,072 KB | **MEASURED** |
@@ -175,7 +175,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
 | No backend, no API key, local inference | **MEASURED** — the built bundle is scanned: no external URL in any shipped AI script, exactly one outbound call site (the site's own `knowledge.json`), no XHR/WebSocket/EventSource/sendBeacon, no secret-shaped string, no hosted-LLM hostname |
 | Lazy-loaded; nothing AI on initial load | **MEASURED** with a failing network assertion as the guard |
 | Download + file sizes measured, caching + versioning | **MEASURED** — including 0 bytes on the second visit |
-| Main thread protected, workers used | **MEASURED** — prefill (90–95 % of the wait) never touches the main thread |
+| Main thread protected, workers used | **MEASURED** — prefill (90–95 % of the wait) never touches the main thread, the model's arithmetic is only reachable from the worker (import-graph test), and the worst AI long task is 65 ms against the page's own 88 ms |
 | WebGPU + WASM investigated | **MEASURED as investigation**; neither implemented, and the report says why |
 | Unsupported / mobile paths handled | **MEASURED** for unsupported (20/20); mobile **NOT TESTED** |
 | Chat: streaming, Stop, Retry, Clear, bounded context, accessible, responsive | **MEASURED** except screen-reader and real-device behaviour |

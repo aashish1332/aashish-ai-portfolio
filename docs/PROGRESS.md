@@ -2223,7 +2223,7 @@ because §2 N7 says the AI layer does not touch the film.
 | — voice add-ons (§2 N6) | 19,215 B | 7,432 B |
 | — LLM runtime + tokenizer | 30,042 B | 14,669 B |
 | what the **click** fetches (static reach) | 86,096 B gz | **41,221 B gz, 14 files** |
-| tests | 444 JS + 326 Python, 0 failures | **447 JS + 326 Python, 0 failures** · `npm run build` clean |
+| tests | 444 JS + 326 Python, 0 failures | **448 JS + 326 Python, 0 failures** · `npm run build` clean |
 
 Three new tests. Two are the strip's two directions: `stripComments` on
 adversarial input (a regex holding a quote, a URL in a string, a CSS comment
@@ -2266,3 +2266,21 @@ The patterns are deliberately narrow: a false positive here would be a
 fabricated finding, which is worse than finding nothing. Comments are stripped
 from `dist/` before the scan, so a key hidden in a comment cannot mask a real one
 the scan should see.
+
+### 7. The model's arithmetic is parsed only in the worker — now pinned
+
+§4's hardest rule is "AI work on the main thread: no task > 50 ms", and the
+structural half of it was true but untested: the click parses the shell and the
+session client, the session spawns a module Worker by URL, and the tokenizer,
+the matmuls, the dequantiser and the manifest verifier are parsed **only inside
+that worker**. Nothing about it is visible in a file listing or a byte total —
+every one of those files ships — so it is a question about the import graph.
+
+`tests/build-bundle.test.mjs` now follows that graph and requires the engine
+modules to be reachable from `ai/engine/worker.mjs` **and not** from
+`ai/ui/chat.mjs`, and the worker itself to be absent from the click's reach.
+**MEASURED: 13,296 B gz across nine files is deferred this way.** If it ever
+regressed, the symptom would be the exact cost §4 forbids: several hundred KB of
+script parsed on the main thread before the first token — the same class as the
+material recompile behind the 1,221 ms long task this project already had to
+remove.
