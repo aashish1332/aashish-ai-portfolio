@@ -177,7 +177,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
 | Download + file sizes measured, caching + versioning | **MEASURED** — including 0 bytes on the second visit |
 | Main thread protected, workers used | **MEASURED** — prefill (90–95 % of the wait) never touches the main thread, the model's arithmetic is only reachable from the worker (import-graph test), and the worst AI long task is 65 ms against the page's own 88 ms |
 | WebGPU + WASM investigated | **MEASURED as investigation**; neither implemented, and the report says why |
-| Unsupported / mobile paths handled | **MEASURED** for unsupported (20/20); mobile **NOT TESTED** |
+| Unsupported / mobile paths handled | **MEASURED** for unsupported (20/20), and the responsive path under mobile emulation on the **shipped** bundle (43/43 at 390×844: the sheet pauses the film, closes cleanly, no horizontal overflow); a **real phone is NOT TESTED** |
 | Chat: streaming, Stop, Retry, Clear, bounded context, accessible, responsive | **MEASURED** except screen-reader and real-device behaviour |
 | Voice: both modes, local STT/TTS, lazy, permission paths, no selector, limits | **MEASURED as code/tests**; live speech **NOT TESTED** |
 | Training resumable, checkpoints, evaluation, no fake results | **MEASURED** (resume verified); quality gates **NOT TESTED** |

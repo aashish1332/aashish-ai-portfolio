@@ -792,6 +792,7 @@ same MIME table as `npm run preview`).
 | the answer | `kind=model`, badge `AI ANSWER · ON-DEVICE MODEL`, 12 facts read / 12 sources |
 | frame health, closed → open | 33.2 ms (115 frames) → 33.3 ms (105 frames), **0.3 %** drift, **1×** p95, both arms `tier 2 · BALANCED @72% y=0`; the double-sampled control read −0.3 % |
 | assets fetched on first open | **31** — the 14 of the click's static reach plus the worker's own `ai/engine/**` |
+| the phone viewport (`MOBILE=1`, 390×844) | **43/43** as well — sheet open pauses the film, closing resumes it, **no horizontal overflow (390 vs 390)**, withheld phone declined in the UI |
 
 R1 on a loaded box, so the absolute milliseconds move 2–3× between runs; what
 this establishes is that the **stripped** bundle loads, mounts, spawns its

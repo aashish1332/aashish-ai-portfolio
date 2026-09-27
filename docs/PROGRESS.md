@@ -2339,6 +2339,7 @@ real GPU:
 | Escape, focus | panel closed, focus returned to `#askAI` |
 | console errors / page errors / failed requests | **0 / 0 / 0** |
 | assets fetched on first open | **31** — the 14 of the click's static reach plus the worker's own `ai/engine/**`, which is exactly the split the import-graph test pins |
+| the **phone** build of the same run (`MOBILE=1`, 390×844) | **43/43** as well — the sheet pauses the film (`scene paused (phone) isPaused=true`) and resumes it on close, **no horizontal overflow (390 vs 390)**, and the withheld phone number is still declined in the UI (`NO ANSWER · NOT PUBLISHED`) |
 
 So the deliverable is verified, not just its source. What remains unverified is
 unchanged and listed in `docs/FINAL_REPORT.md`: a real phone, a real microphone,
