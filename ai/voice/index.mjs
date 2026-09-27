@@ -582,7 +582,10 @@ const tabHidden = () => (typeof env.document?.hidden === 'boolean'
       },
       onState: () => opts.onStatus?.(status()),
     });
-    speaker = speaker || opts.speaker || createSpeaker(env, { onEnd: () => opts.onStatus?.(status()) });
+    speaker = speaker || opts.speaker || createSpeaker(env, {
+      onStart: () => opts.onStatus?.(status()),
+      onEnd: () => opts.onStatus?.(status()),
+    });
 
     if (!nick.supported) return status();
 
@@ -789,7 +792,12 @@ const tabHidden = () => (typeof env.document?.hidden === 'boolean'
     if (!p.speakAnswers) return false;
     const text = res?.text;
     if (!text) return false;
-    return speaker?.speak(text, { lang }) || false;
+    const started = speaker?.speak(text, { lang }) || false;
+    /* §11.5's dot moves faster while an answer is being read, and that state
+       has to be reported when it begins, not only when it ends — without
+       this the panel would show `speaking` only after the voice stopped. */
+    if (started) opts.onStatus?.(status());
+    return started;
   }
 
   function setTier(t) {

@@ -707,14 +707,14 @@ worst abs Δ logit **3.58e-07**.
 
 | Budget | §4 | Measured |
 |---|---|---|
-| AI chat **code** chunk, conservative reading (every shipped `ai/**` module + `knowledge.json`) | ≤ 150 KB gz | **69,664 B** (45.4 %) — was 138,896 B (90.4 %) before shipped `ai/**` stopped carrying comments; 69,079 B before the on-device voice path (+585 B gz, `ai/voice/index.mjs` to 4,861 B) |
-| — of that, §4's chat-UI chunk proper (UI + KB + retrieval + language + guard + intent + anchors + governor) | — | 47,037 B (30.6 %) |
-| — of that, voice add-ons (loaded only on the tap that picks voice, §2 N6) | §4 lists separately | 7,958 B |
+| AI chat **code** chunk, conservative reading (every shipped `ai/**` module + `knowledge.json`) | ≤ 150 KB gz | **70,544 B** (45.9 %) — was 138,896 B (90.4 %) before shipped `ai/**` stopped carrying comments; 69,079 B before the on-device voice path and §11.5's visual (+1,465 B gz total: `ai/voice/index.mjs` to 4,878 B, `ai/ui/chat.mjs` to 9,456 B, `ai/ui/styles.mjs` to 2,799 B) |
+| — of that, §4's chat-UI chunk proper (UI + KB + retrieval + language + guard + intent + anchors + governor) | — | 47,900 B (31.2 %) |
+| — of that, voice add-ons (loaded only on the tap that picks voice, §2 N6) | §4 lists separately | 7,975 B |
 | — of that, LLM runtime + tokenizer (§4 "LLM runtime" row) | — | 14,669 B |
-| AI assets actually fetched by **the click** (static reach of `ai/ui/chat.mjs`) | §4's number to keep small | **41,280 B gz (40.3 KB), 14 files** |
+| AI assets actually fetched by **the click** (static reach of `ai/ui/chat.mjs`) | §4's number to keep small | **42,143 B gz (41.2 KB), 14 files** · the worker-only arithmetic the click does **not** parse is still **13,296 B gz** across 9 files |
 | Rest of the page | regression guard 250 KB | 65,649 B |
 | Model payload (weights + tokenizer + manifest) | ≤ 25 MB preferred, ≤ 40 MB hard | **5,144,357 B** raw · 4,741,050 B gz (step 1100) |
-| First-use download, T1/T2 | ≤ ~40 MB | **4,810,714 B** gz (**11.5 %**) |
+| First-use download, T1/T2 | ≤ ~40 MB | **4,811,594 B** gz (**11.5 %**) |
 | Any single AI asset | ≤ ~100 MB | 5,059,584 B raw / 4,732,964 B gz |
 | Files | — | 44 |
 
@@ -810,11 +810,13 @@ asserted byte-identical to source, because §2 N7 says the AI layer does not
 touch the film.
 
 The conservative §4 figure is the number that guards the budget, and after the
-comment strip it is at **45.4 % — 82 KB of headroom** — with the runtime
+comment strip it is at **45.9 % — 81 KB of headroom** — with the runtime
 (14.7 KB) and the voice add-ons (8.0 KB) inside it, both of which §4 lists on
-their own rows. The click's static reach fell with it, to **41,280 B gz** (every
+their own rows. The click's static reach fell with it, to **42,143 B gz** (every
 figure in this paragraph is the 2026-09-27 re-run, after the on-device voice
-path added 585 B gz to the chunk).
+path and §11.5's visual added 1,465 B gz to the chunk — and the worker-only
+arithmetic the click still does not parse is unchanged at 13,296 B gz, which is
+the part that matters for a 50 ms main-thread budget).
 **The budget is no longer the binding constraint on what `ai/` may grow into; it
 is a regression guard now.**
 
@@ -910,7 +912,7 @@ testing itself, and both would have produced a green result for a broken path:
 
 | | |
 |---|---|
-| chat code chunk (§4, conservative) | **69,664 B gz = 45.4 %** after the 2026-09-27 comment strip (before it: 138,896 B = 90.4 %, and 138,779 before the badge fix and its comment). +585 B gz of the current figure is the on-device voice path (`ai/voice/index.mjs` 4,861 B gz, `ai/ui/chat.mjs` 9,163 B gz) — see `docs/RESEARCH_VERIFICATION.md` row 6 |
+| chat code chunk (§4, conservative) | **70,544 B gz = 45.9 %** after the 2026-09-27 comment strip (before it: 138,896 B = 90.4 %, and 138,779 before the badge fix and its comment). +1,465 B gz of the current figure is the on-device voice path and §11.5's orb (`ai/voice/index.mjs` 4,878 B gz, `ai/ui/chat.mjs` 9,456 B gz, `ai/ui/styles.mjs` 2,799 B gz) — see `docs/RESEARCH_VERIFICATION.md` row 6 |
 
 ### Where voice recognition runs (2026-09-27, §19 row 6)
 

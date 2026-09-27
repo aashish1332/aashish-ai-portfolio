@@ -2640,3 +2640,45 @@ failures**; `npm run build` clean. The on-device path itself is **NOT TESTED**
 against a real microphone or a real browser — `docs/MANUAL_TEST_CHECKLIST.md` §D
 now asks the tester to compare the sentence against `SpeechRecognition.available()`
 on their own machine.
+
+## Phase: §11.5's voice visual — the one item in §11 that was never built
+
+Reading §11 against the tree for the first time since the voice layer landed
+turned up a section with no code behind it at all: **§11.5, voice visuals.** No
+orb, no waveform, nothing that showed a visitor which state the microphone was
+in beyond four letters of text on the button.
+
+It could not be built the obvious way. §2 N8 forbids a new permanent rAF loop,
+the film already owns the only one, and §11.5 itself asks for "CSS orb … using
+transforms + opacity". So: one 7px dot inside the voice button, one
+`data-voice` attribute set by the pure function `voiceVisualState(status)`, and
+everything else in the stylesheet. `off` / `armed` / `listening` / `speaking` /
+`suspended`, `transform` + `opacity` only, animated **only** under
+`@media (prefers-reduced-motion: no-preference)` — so reduced motion gets a
+still dot that is still brighter when the microphone is live. No canvas, no
+WebGL, no frame loop anywhere in the shell.
+
+The decision that can be wrong is the **order**, because a session can be
+listening and speaking and hidden at once: hidden outranks speaking outranks
+listening, and `prefers-reduced-motion` outranks all of it by removing the
+motion rather than the message. `tests/voice.test.mjs` VOICE-13 pins the order,
+pins that every state it can return has words to be announced with, and reads
+the stylesheet to check the animation is transform/opacity-only and gated.
+
+Two smaller things came with it. §11.1 asks each voice state to have "a UI
+label and an `aria-live` status" — the button's `aria-label` now names the
+state in words (it cannot hold a sentence on screen), while the announcements
+that matter (refusals, the disclosure) stay in the transcript's live region.
+And the shell used to write the button's text with `textContent`, which would
+have wiped a nested dot on the next state change; the label is its own element
+now, and one test in the shipped-module parse sweep caught a backtick in my own
+CSS comment — the exact hazard this repo already documents, in the file it
+already documents it for.
+
+Measured: §4 code chunk **70,544 B gz = 45.9 %** (was 69,664 / 45.4 %; +880 B
+gz here, +1,465 B gz since before the voice work). The click's static reach is
+**42,143 B gz / 14 files** and the worker-only arithmetic it does not parse is
+unchanged at **13,296 B gz**, which is the number that matters for §4's 50 ms
+main-thread budget. Tests **486 JS + 343 Python, 0 failures**; `npm run build`
+clean. What the dot looks like on a real screen is **NOT TESTED** — no browser
+has been shown it.

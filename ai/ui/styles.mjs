@@ -71,6 +71,34 @@ export const STYLES = `
 .ai__mic:disabled { color: var(--paper-faint); border-color: var(--line); cursor: default; }
 .ai__mic.is-on { color: var(--cyan); border-color: var(--cyan); }
 
+/* §11.5 — the voice visual. One dot that says which state the microphone is
+   in, drawn with transforms and opacity only. No canvas, no WebGL, and no
+   JavaScript frame loop: the shell sets one data-voice attribute when the
+   voice layer reports a state change, and everything that moves lives here.
+   (Spelled without backticks on purpose — this file is one template literal,
+   and a backtick anywhere inside it ends the string. The test that parses
+   every shipped module is what found that the first time.)
+   The off state means there is nothing to look at, so nothing is shown. */
+.ai__orb {
+  display: inline-block; width: 7px; height: 7px; margin-right: 6px;
+  border-radius: 50%; background: currentColor; opacity: .45;
+  vertical-align: baseline;
+}
+.ai__mic[data-voice='listening'] .ai__orb, .ai__mic[data-voice='speaking'] .ai__orb { opacity: 1; }
+.ai__mic[data-voice='suspended'] .ai__orb { opacity: .3; }
+.ai__mic[data-voice='off'] .ai__orb, .ai__mic:disabled .ai__orb { display: none; }
+
+/* Motion is the enhancement, never the message: the dot is already brighter
+   when it is listening, so with reduced motion it simply stays still. */
+@media (prefers-reduced-motion: no-preference) {
+  .ai__mic[data-voice='listening'] .ai__orb { animation: aiOrbPulse 1.6s ease-in-out infinite; }
+  .ai__mic[data-voice='speaking'] .ai__orb { animation: aiOrbPulse .8s ease-in-out infinite; }
+}
+@keyframes aiOrbPulse {
+  0%, 100% { transform: scale(.8); opacity: .55; }
+  50% { transform: scale(1.35); opacity: 1; }
+}
+
 @media (max-width: 640px) { .ai__mic { font-size: 8.5px; padding: 6px 6px; } }
 
 .ai__log {

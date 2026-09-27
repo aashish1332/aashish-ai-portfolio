@@ -126,7 +126,7 @@ The constraint that outranks everything else: *the portfolio must not get slower
 | §4's reference profiles (never run before 2026-09-27) | R1 as it is **0 %**, R1 @4× CPU **−2.5 %**, R1 @6× CPU **+0.3 %** — all **1.00×** p95, all **43/43 checks**; panel ready 815 / 1,091 / 1,502 ms; first answer 25.1 / 45.4 / 42.8 s | **MEASURED** |
 | A weak device, for real | **NOT TESTED** — the CDP throttle hits the main thread (frame time 18.3 → 35.3 ms) but not the Worker proportionally (first answer 25.1 → 45.4 s is 1.8×, not 4×), so this profile must not be quoted as a phone's latency | **NOT TESTED** |
 | …and why it took this long | The A/B ran under software GL until 2026-09-27, where it was inconclusive; the first real-GPU run without a pin reported **−49 %** (the *open* arm faster) because the film's own governor walked tier 1 → tier 4 during the session — a confound the probe now detects and refuses to attribute | **MEASURED** |
-| §4 code chunk | **69,664 B gz = 45.4 %** of 150 KB (82 KB headroom), conservative reading: every shipped `ai/**` + `knowledge.json`; was 138,896 B = 90.4 % until the build stopped shipping comments from `ai/**`. It moved 69,079 → 69,664 B on 2026-09-27 for the on-device voice path and its tests (+585 B gz, of which `ai/voice/index.mjs` is 4,861 B gz now). Asserted on every `npm test`, and reported by `npm run bundle` | **MEASURED** |
+| §4 code chunk | **70,544 B gz = 45.9 %** of 150 KB (81 KB headroom), conservative reading: every shipped `ai/**` + `knowledge.json`; was 138,896 B = 90.4 % until the build stopped shipping comments from `ai/**`. It moved 69,079 → 70,544 B on 2026-09-27 for the on-device voice path and §11.5's visual (+1,465 B gz, of which `ai/voice/index.mjs` is 4,878 B gz now). The click's static reach is 42,143 B gz across 14 files, and the arithmetic it does **not** parse is unchanged at 13,296 B gz. Asserted on every `npm test`, and reported by `npm run bundle` | **MEASURED** |
 
 ## CHAT
 
@@ -152,6 +152,7 @@ The constraint that outranks everything else: *the portfolio must not get slower
 | STT | Platform speech recognition — **server-side by default, and the code says so** (`ai/voice/index.mjs`'s own header: "that engine is *server-side*: while it listens, audio leaves the device", disclosed in those words). It is **not** "local on Chrome" unless the page asks; an earlier draft of this row said otherwise and was wrong | **MEASURED as code** · live microphone **NOT TESTED** |
 | STT, on-device when the platform allows it (§11.2 S0) | Added 2026-09-27 after re-verifying §19: `SpeechRecognition.available({ processLocally: true, langs })` is asked **once per session, before the microphone opens**; `processLocally` is set only on `'available'`; the disclosure switches to *"run on this device — what you say is not sent anywhere"* only after the platform says yes, and the shell waits for that answer instead of printing one sentence and contradicting it. Silence counts as no (the 1.5 s cap), so the sentence is never left unspoken; a refusal of the on-device mode falls back to the server-side engine **once**, reported. `install()` is not used — a language-pack download is not something to start on a click | **MEASURED as tests** (`tests/voice.test.mjs` VOICE-12, 7 cases, all against doubles) · **NOT TESTED** on a real browser or phone |
 | TTS | `speechSynthesis` with a voice picker; local, free | **MEASURED as code** · speech itself **NOT TESTED** |
+| Voice visuals (§11.5) | One CSS dot on the voice button, driven by a single `data-voice` attribute from the pure `voiceVisualState(status)` — `off` / `armed` / `listening` / `speaking` / `suspended`, in that order of alarmingness. `transform` + `opacity` only, animation gated on `prefers-reduced-motion: no-preference`, no canvas, no WebGL, **no new frame loop** (§2 N8); the shell now paints one attribute where it already painted the button, so there is no new render path. The button's `aria-label` says the same state in words | **MEASURED as tests** (`tests/voice.test.mjs` VOICE-13: the mapping and its order, every state announceable, the stylesheet's animation gated and transform-only) · **NOT TESTED** on a real screen |
 | VAD | Our own energy-based detector (`ai/voice/vad.mjs`) | **MEASURED as code** · thresholds unvalidated on real speech |
 | Laziness | §2 N6 enforced: only a capability table (`ai/voice/caps.mjs`) ships with the shell; the ~17 KB voice layer loads when a voice mode is chosen | **MEASURED** |
 | Mic denied / unsupported | Unit-tested paths; state machine covered | **MEASURED as tests** · real permission prompt **NOT TESTED** |
@@ -188,7 +189,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
 | WebGPU + WASM investigated | **MEASURED as investigation**; neither implemented, and the report says why |
 | Unsupported / mobile paths handled | **MEASURED** for unsupported (20/20) and the download-failure/retry path, both run against the **built bundle**; the responsive path under mobile emulation on the same bundle (43/43 at 390×844: the sheet pauses the film, closes cleanly, no horizontal overflow); a **real phone is NOT TESTED** |
 | Chat: streaming, Stop, Retry, Clear, bounded context, accessible, responsive | **MEASURED** except screen-reader and real-device behaviour |
-| Voice: both modes, local STT/TTS, lazy, permission paths, no selector, limits | **MEASURED as code/tests**; live speech **NOT TESTED**. TTS is local (`speechSynthesis`); STT is the platform's — asked to stay on the device when the platform says it can (§19 row 6), disclosed either way |
+| Voice: both modes, local STT/TTS, lazy, permission paths, no selector, limits, visual state (§11.5) | **MEASURED as code/tests**; live speech **NOT TESTED**. TTS is local (`speechSynthesis`); STT is the platform's — asked to stay on the device when the platform says it can (§19 row 6), disclosed either way |
 | Training resumable, checkpoints, evaluation, no fake results | **MEASURED** (resume verified); quality gates **NOT TESTED** |
 | Ternary separated from the baseline | **MEASURED** — separated by not existing; decision recorded |
 
@@ -210,7 +211,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
    microphone.** Every one of those is a NOT TESTED above.
 4. **WASM SIMD and WebGPU are unimplemented**, and the payoff cannot be measured
    here — this box runs scalar JS ~10× below its own specification.
-5. **The §4 code chunk is at 45.4 %** with 82 KB of headroom, so the budget is a
+5. **The §4 code chunk is at 45.9 %** with 81 KB of headroom, so the budget is a
    regression guard rather than a constraint on the next feature. It halved on
    2026-09-27 because half its gzip was comments in our own `ai/**` modules and
    the build stopped shipping them (−69,817 B gz, nothing a visitor runs

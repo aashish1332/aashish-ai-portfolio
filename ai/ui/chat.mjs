@@ -98,6 +98,31 @@ const STREAM_FLUSH_MS = 64;
  *        while you are typing is hostile, and this is what the voice layer
  *        switches on once it exists.
  */
+/* ── §11.5's voice visual, as a pure decision ─────────────────────
+   One attribute, and CSS does the rest: no canvas, no WebGL, no new frame
+   loop (§2 N8), and nothing that runs while the tab is hidden. It is a pure
+   function because the ORDER is the part that can be wrong — a session can
+   be listening and speaking and hidden at once, and the state that wins has
+   to be the one the visitor most needs to know about. */
+export function voiceVisualState(info) {
+  if (!info?.enabled) return 'off';
+  if (info.suspended) return 'suspended';   /* §11.1: hidden tab, not listening */
+  if (info.speaking) return 'speaking';
+  if (info.listening) return 'listening';
+  return 'armed';
+}
+
+/** §11.1 asks each voice state to be announced, not only shown: the visible
+ *  label is terse (a 30px button cannot hold a sentence), so the accessible
+ *  name says the state in words. */
+export const VOICE_STATE_WORDS = Object.freeze({
+  off: 'Voice mode is off',
+  armed: 'Voice mode is on, waiting for you to speak',
+  listening: 'Voice mode is listening',
+  speaking: 'Voice mode is reading the answer aloud',
+  suspended: 'Voice mode is paused while this tab is hidden',
+});
+
 export function createChat(opts = {}) {
   const doc = opts.doc || document;
   const env = opts.env || window;
@@ -176,6 +201,8 @@ let working = 0;
   });
   let voice = null;            /* built on the first tap, never on open */
   let micBtn = null;
+  let micLabel = null;         /* the button's text; the orb is a sibling */
+  let orb = null;
   let disclosureSpoken = false;
   /* A disclosure waiting on the on-device question (§19) — see voiceChanged. */
   let disclosurePending = false;
@@ -223,9 +250,18 @@ let working = 0;
        pressed, and the reason it cannot be pressed is its tooltip. On a
        browser without an engine it is disabled from the first paint rather
        than failing after the visitor has spoken into a dead microphone. */
-    micBtn = el('button', 'ai__mic', 'VOICE');
+    micBtn = el('button', 'ai__mic');
     micBtn.type = 'button';
     micBtn.setAttribute('aria-pressed', 'false');
+    micBtn.dataset.voice = 'off';          /* §11.5: nothing to look at yet */
+    micBtn.setAttribute('aria-label', 'Voice mode is off');
+    /* §11.5's visual, inside the button so it cannot say something the button
+       does not: a span, not the button's own text, because the label is
+       rewritten on every state change and a text node would be wiped. */
+    orb = el('span', 'ai__orb');
+    orb.setAttribute('aria-hidden', 'true');
+    micLabel = el('span', 'ai__mic-label', 'VOICE');
+    micBtn.append(orb, micLabel);
     micBtn.addEventListener('click', toggleVoice);
     const closeBtn = el('button', 'ai__close', '✕');
     closeBtn.type = 'button';
@@ -761,7 +797,12 @@ let working = 0;
     const on = !!info.enabled;
     micBtn.classList.toggle('is-on', on);
     micBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
-    micBtn.textContent = on ? (info.mode === 'continuous' ? 'LISTENING' : 'MIC ON') : 'VOICE';
+    micLabel.textContent = on ? (info.mode === 'continuous' ? 'LISTENING' : 'MIC ON') : 'VOICE';
+    /* §11.5: one attribute, read by CSS; which value it is comes from
+       voiceVisualState(), where the order is pinned by test. */
+    const state = voiceVisualState(info);
+    micBtn.dataset.voice = state;
+    micBtn.setAttribute('aria-label', VOICE_STATE_WORDS[state] || VOICE_STATE_WORDS.off);
     micBtn.disabled = !info.supported || !info.pushToTalk;
     micBtn.title = info.reason || 'Talk to the assistant';
     /* §2 N7 — the button must never just go dead. Turning voice on now loads
@@ -770,9 +811,10 @@ let working = 0;
        arrived, which reads as a broken button. */
     if (voicePending) {
       micBtn.classList.add('is-loading');
-      micBtn.textContent = 'VOICE…';
+      micLabel.textContent = 'VOICE…';
       micBtn.disabled = true;
       micBtn.title = 'Loading voice mode…';
+      micBtn.setAttribute('aria-label', 'Voice mode is loading');
     } else {
       micBtn.classList.remove('is-loading');
     }

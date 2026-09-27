@@ -29,6 +29,9 @@ import {
   speechRecognitionCtor, WAKE_PHRASES, SPEECH_DISCLOSURE, NO_ENGINE, THRASH_LIMIT,
   SPEECH_DISCLOSURE_ON_DEVICE, ON_DEVICE_PROBE_MS, probeOnDevice,
 } from '../ai/voice/index.mjs';
+/* §11.5's visual state lives with the shell, because it is a UI decision made
+   from the voice layer's status object — so the test imports it from there. */
+import { voiceVisualState, VOICE_STATE_WORDS } from '../ai/ui/chat.mjs';
 
 /** Let the recognizer's own promise chain settle (real timers, not the fake). */
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -955,4 +958,68 @@ test('VOICE-11b: Proactive resumes into its gate, not into an open recognizer', 
   voice.onVisibility();
   assert.equal(voice.status().suspended, false);
   assert.equal(nick.started, before, 'a visible tab does not restart what was never stopped');
+});
+
+/* ── VOICE-13 · §11.5's voice visual, and §11.1's announcement ────
+   The visual is CSS — no canvas, no WebGL, no frame loop (§2 N8) — so what
+   can be tested is the DECISION the shell feeds it and the file that draws
+   it. Both are checked here, because "the dot is right" and "the animation
+   is gated" are separate claims and one can break without the other. */
+
+test('VOICE-13: the visual state follows the microphone, and says the worst one', () => {
+  assert.equal(voiceVisualState(null), 'off');
+  assert.equal(voiceVisualState({}), 'off');
+  assert.equal(voiceVisualState({ enabled: false, listening: true }), 'off',
+    'a session that is off is off, whatever else is left over on the object');
+  assert.equal(voiceVisualState({ enabled: true }), 'armed', 'on and waiting is its own state');
+  assert.equal(voiceVisualState({ enabled: true, listening: true }), 'listening');
+  assert.equal(voiceVisualState({ enabled: true, speaking: true }), 'speaking');
+  /* The order, which is the part that can be wrong: a session can hold all of
+     these at once, and each step up is the more important thing to show. */
+  assert.equal(voiceVisualState({ enabled: true, listening: true, speaking: true }), 'speaking');
+  assert.equal(voiceVisualState({ enabled: true, listening: true, speaking: true, suspended: true }),
+    'suspended', 'a hidden tab outranks everything: that is the state that must never be mistaken');
+});
+
+test('VOICE-13: every state has words, and no two states say the same thing', () => {
+  const states = ['off', 'armed', 'listening', 'speaking', 'suspended'];
+  const said = states.map((s) => VOICE_STATE_WORDS[s]);
+  for (const s of states) {
+    assert.equal(typeof VOICE_STATE_WORDS[s], 'string');
+    assert.ok(VOICE_STATE_WORDS[s].length > 0, `${s} would be announced as nothing`);
+  }
+  assert.equal(new Set(said).size, said.length, 'two states share a sentence — one of them is a lie');
+  /* Every state voiceVisualState can return has to be announceable, or the
+     button would fall back to "off" while it is listening. */
+  for (const s of ['off', 'armed', 'listening', 'speaking', 'suspended']) {
+    assert.ok(VOICE_STATE_WORDS[s], `${s} is a state the shell can paint with no words for it`);
+  }
+});
+
+test('VOICE-13: the visual is CSS, and reduced motion leaves it still', () => {
+  const css = readFileSync(join(HERE, '..', 'ai', 'ui', 'styles.mjs'), 'utf8');
+  assert.match(css, /\.ai__orb\b/, 'the orb is gone from the stylesheet');
+  assert.match(css, /data-voice='listening'[^\n]*\.ai__orb/, 'listening does not reach the visual');
+  assert.match(css, /data-voice='off'[^\n]*\.ai__orb[^\n]*display: none/,
+    'off should show nothing, and the stylesheet no longer hides it');
+  /* Suspended is DIMMED, not hidden: voice is still on, just not listening,
+     and a visitor returning to the tab has to be able to see which it is. */
+  assert.match(css, /data-voice='suspended'[^\n]*\.ai__orb[^\n]*opacity: \.3/,
+    'a paused session should stay visible but quiet');
+  /* §11.5 asks for transforms and opacity; a width/height/left animation
+     would be layout work on a portfolio that must not get slower (§4). */
+  const keyframes = css.match(/@keyframes aiOrbPulse \{[\s\S]*?\n\}/);
+  assert.ok(keyframes, 'the pulse keyframes are gone');
+  for (const prop of keyframes[0].match(/\{[^}]*\}/g) || []) {
+    assert.match(prop, /transform|opacity/,
+      `the orb animates ${prop.trim()}, which is not a transform or an opacity`);
+  }
+  /* The animation must live behind no-preference, or reduced motion moves. */
+  const gated = css.match(/@media \(prefers-reduced-motion: no-preference\) \{[\s\S]*?\n\}/);
+  assert.ok(gated, 'the orb animation is no longer gated on prefers-reduced-motion');
+  assert.match(gated[0], /\.ai__orb/);
+  assert.doesNotMatch(css.replace(gated[0], ''), /animation: aiOrbPulse/,
+    'an ungated copy of the animation would move for a visitor who asked it not to');
+  assert.doesNotMatch(css, /requestAnimationFrame|getContext\(/,
+    'the visual has to stay CSS: no frame loop and no canvas inside the shell');
 });

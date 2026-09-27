@@ -118,7 +118,9 @@ path works on your machine, and it has never been seen by a person.
 | D8 | Speak while the answer is being read | the reading stops (barge-in) |
 | D9 | Press Esc / tap Stop | microphone stops immediately |
 | D10 | Say a question in Hindi, then one in Hinglish | answered in the same language, read by the matching voice |
-| D11 | Leave the tab and use another app, then come back | it must not have been listening while hidden (`voice.status().suspended === true` while hidden), and listening resumes on return |
+| D10b | Watch the dot on the mic button: turn voice on and stay quiet, then speak, then let it read the answer | it is **dim** when voice is on and waiting (`armed`), **brighter and pulsing** while you speak (`listening`), **faster** while an answer is read aloud (`speaking`), and it **disappears** when voice is off (§11.5). `window.PortfolioAI.voice` carries the same state as `onDevice`-less fields — `listening` / `speaking` / `suspended` |
+| D10c | Turn on **Reduce motion** in the OS/browser settings, then repeat D10b | the dot still changes brightness per state but **stops pulsing** — motion is the enhancement, never the message |
+| D11 | Leave the tab and use another app, then come back | it must not have been listening while hidden (`voice.status().suspended === true` while hidden), the dot goes **dim but stays visible**, and listening resumes on return |
 | D12 | Keep the mic on through **a quiet room with a fan/TV** for ~2 minutes | it must not open a segment on the room tone alone, and a normal speaking voice must still open one within ~1.5 s |
 
 **Record:** did D3–D5 work the first time, or did you have to say it twice?
