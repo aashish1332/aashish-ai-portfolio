@@ -2485,6 +2485,7 @@ nothing is worse than none.
 | Local Stage B run | **60 steps, 66.6 s**, 1.11 s/step (batch 4 × block 256, grad-accum 2, CPU) |
 | Loss | 7.5571 → **6.3133**; windowed gate **PASS** (7.6043 → 6.0065); val 6.2715 → **5.5403** |
 | Format change, same prompts | Stage A: no turn end, `<|asst|>` mid-answer. Stage B @60 steps: **frame and `<|end|>` appear** (`npm run sample:answers`) |
+| Run-level resume | `--resume auto` carried a 10-step run to 20: `resumed latest.pt at step 10 (2,560 tokens, 421 supervised)`, loss history and step counter intact. **Found by doing it:** the loop never advanced `SftStream`'s own counters, so the first working resume printed `(0 tokens, 0 supervised)` — which reads exactly like a lost cursor. They now advance with every batch |
 | New tool | `inference/sample_answers.py` — greedy-decode a checkpoint on real prompts via `inference/reference.py`, no browser |
 | Tests | **451 JS / 343 Python**, 0 failures |
 

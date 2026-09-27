@@ -296,6 +296,12 @@ def train(args) -> int:
         y = torch.tensor(ys, device=device, dtype=torch.long)
         tokens_seen += int(x.numel())
         supervised_seen += int((y != sft.IGNORE_INDEX).sum())
+        # The cursor's own counters have to advance with the run: they are what
+        # a resume prints and what the checkpoint records, and leaving them at
+        # zero makes "resumed at step 10 (0 tokens)" a lie that looks like a
+        # lost cursor.
+        stream.tokens_consumed += int(x.numel())
+        stream.supervised_consumed += int((y != sft.IGNORE_INDEX).sum())
 
         with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=use_amp):
             out = model(x, labels=y)
@@ -332,7 +338,8 @@ def train(args) -> int:
     verdict = loss_verdict(losses)
     measured = sft.measured_token_counts(tokenizer, examples)
     return _finish(args, cfg, meta, summary, measured, init, manager, losses, verdict,
-                   started, tokens_seen, supervised_seen, counts)
+                   started, tokens_seen, supervised_seen, counts,
+                   (stream.tokens_consumed, stream.supervised_consumed))
 
 
 def _snapshot(state, losses, stream, manager, step, is_best: bool = False) -> None:
@@ -343,11 +350,11 @@ def _snapshot(state, losses, stream, manager, step, is_best: bool = False) -> No
 
 
 def _finish(args, cfg, meta, summary, measured, init, manager, losses, verdict,
-            started, tokens_seen, supervised_seen, counts) -> int:
+            started, tokens_seen, supervised_seen, counts, stream_totals) -> int:
     seconds = time.time() - started
     print(f"\nloss: {losses[0]:.4f} → {losses[-1]:.4f} over {len(losses)} steps "
           f"({seconds:.1f}s, {seconds / max(1, len(losses)):.2f}s/step)")
-    print(f"tokens: {tokens_seen:,} seen, {supervised_seen:,} supervised "
+    print(f"tokens: {tokens_seen:,} seen this session, {supervised_seen:,} supervised "
           f"({supervised_seen / max(1, tokens_seen):.1%} — the rest is context and "
           f"the question, which §7.4 does not train on)")
     print(f"gate 'loss decreases': {verdict['verdict']} "
@@ -372,6 +379,8 @@ def _finish(args, cfg, meta, summary, measured, init, manager, losses, verdict,
             "counterfactual": summary["counterfactual"],
             "supervised_tokens": supervised_seen,
             "tokens_seen": tokens_seen,
+            "tokens_seen_cumulative": stream_totals[0],
+            "supervised_tokens_cumulative": stream_totals[1],
             "measured": measured,
         },
         "hyperparameters": {"steps": args.steps, "batch": args.batch, "block": args.block,
@@ -390,7 +399,7 @@ def _finish(args, cfg, meta, summary, measured, init, manager, losses, verdict,
     print(f"checkpoints: {manager.summary()}")
     print(f"manifest: {manifest}")
     print("\nnext: export and verify the engine against it\n"
-          f"  npm run export:model\n  npm run verify:engine")
+          f"  npm run export:model -- --run-dir {args.run_dir}\n  npm run verify:engine")
     if args.json:
         Path(args.json).write_text(json.dumps(
             {"loss": losses, "verdict": verdict, "params": counts["total"],

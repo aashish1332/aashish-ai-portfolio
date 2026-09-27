@@ -266,6 +266,14 @@ The structure is what changed, and structure is what Stage B is for. Sixty
 steps on 3,000 examples is not a quality result: the words are still wrong,
 and the honest summary is that the format gap is now closable, not closed.
 
+**Resume is verified at the run level too** (`--resume auto`): a 10-step run
+was continued to 20 and printed `resumed latest.pt at step 10 (2,560 tokens,
+421 supervised)` — the cursor, the loss history and the step counter all
+carried. The cursor is why this needed fixing: the stream's own counters were
+never advanced by the loop, so the first working resume printed `(0 tokens)`,
+which looks exactly like a lost cursor. They now advance with every batch and
+are what the checkpoint stores.
+
 ## 6. Checkpoints and resume (§7.5)
 
 | Requirement | Implementation | Verified how |
