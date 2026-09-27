@@ -812,6 +812,124 @@ test('stripComments removes comments, keeps strings and code, joins no lines', (
     'line breaks were lost — that changes automatic semicolon insertion');
 });
 
+/* ── §2 N2/N3 + §17 secrets, verified instead of asserted ─────────
+   The report, the README and `knowledge/PII_REVIEW.md` all say "no backend,
+   no LLM API, no API key", and none of the three can check it — they are
+   prose about the bytes a visitor receives. So it is checked here, on the
+   BUILT bundle, which is the thing the claim is actually about:
+
+     · no shipped AI script contains an absolute http(s) URL, so there is no
+       host for a question, an answer or a microphone buffer to reach;
+     · the shipped AI code makes exactly ONE network call — `fetch(KB_URL)`,
+       this site's own knowledge file — so "nothing leaves the device" is a
+       property of the call graph rather than of a promise;
+     · no shipping call exists at all: no XHR, WebSocket, EventSource,
+       sendBeacon or `navigator.share`;
+     · no shipped text file contains a secret-shaped string;
+     · no shipped text file names a hosted LLM service.
+
+   Running it on `dist/` matters twice over: it is what a browser gets, and
+   comments are already stripped there, so a key inside a comment cannot hide
+   a real one elsewhere. Patterns are deliberately narrow — a false positive
+   here would be a fabricated finding, which is the one thing worse than
+   finding nothing. */
+const LLM_HOSTS = [
+  'api.openai.com', 'api.anthropic.com', 'generativelanguage.googleapis.com',
+  'aiplatform.googleapis.com', 'api.cohere.ai', 'api.mistral.ai',
+  'api.groq.com', 'api.together.xyz', 'openrouter.ai/api', 'api.replicate.com',
+  'api-inference.huggingface.co', 'api.deepseek.com', 'dashscope.aliyuncs.com',
+];
+
+const SECRET_PATTERNS = [
+  [/-----BEGIN [A-Z ]*PRIVATE KEY-----/, 'a PEM private key block'],
+  [/\bsk-[A-Za-z0-9_-]{20,}/, 'an OpenAI-shaped key'],
+  [/\bAIza[0-9A-Za-z_-]{30,}/, 'a Google API key'],
+  [/\bgh[pousr]_[A-Za-z0-9]{30,}/, 'a GitHub token'],
+  [/\bAKIA[0-9A-Z]{16}\b/, 'an AWS access key id'],
+  [/\bxox[baprs]-[0-9A-Za-z-]{10,}/, 'a Slack token'],
+  [/\bBearer\s+[A-Za-z0-9._-]{24,}/, 'a bearer token'],
+  [/(?:api[_-]?key|client[_-]?secret|access[_-]?token)\s*[:=]\s*['"][A-Za-z0-9_\-./+]{16,}['"]/i,
+    'a key/secret assignment'],
+];
+
+const SHIPPING_CALLS = [/\bfetch\s*\(/g, /XMLHttpRequest/g, /new\s+WebSocket/g,
+  /EventSource\s*\(/g, /sendBeacon\s*\(/g, /navigator\.share\s*\(/g];
+
+/** §17's analytics clause, as service names a bundle would have to contain. */
+const TRACKING = ['googletagmanager.com', 'google-analytics.com', 'gtag(',
+  'plausible.io', 'posthog.com', 'mixpanel.com', 'clarity.ms', 'hotjar.com',
+  'matomo.', '_paq.push', 'segment.com/analytics', 'amplitude.com'];
+
+test('§2 N2/N3 + §17: the bundle cannot call out, and carries no secret', () => {
+  temp((out) => {
+    buildBundle({ out, quiet: true });
+    const all = walkFiles(out)
+      .map((abs) => ({ rel: abs.slice(out.length + 1).replaceAll('\\', '/'),
+                       text: readFileSync(abs, 'utf8') }))
+      .filter((f) => /\.(mjs|js|json|html|css)$/.test(f.rel));
+    assert.ok(all.length > 20, `only ${all.length} text files in the bundle`);
+
+    /* the AI CODE, which is what can be asked to reach out */
+    const aiCode = all.filter((f) => f.rel.startsWith('ai/')
+      && !f.rel.startsWith('ai/model-export/') && /\.(mjs|js)$/.test(f.rel));
+    assert.ok(aiCode.length > 20, `only ${aiCode.length} shipped ai/ scripts`);
+
+    const external = aiCode.filter((f) => /https?:\/\//.test(f.text))
+      .map((f) => f.rel);
+    assert.deepEqual(external, [],
+      `shipped AI code contains an absolute URL — nothing may leave the device:\n  ${external.join('\n  ')}`);
+
+    /* exactly one network call, and it must be the site's own knowledge file */
+    const calls = [];
+    for (const f of aiCode) {
+      for (const pattern of SHIPPING_CALLS) {
+        for (const m of f.text.matchAll(pattern)) {
+          const at = m.index + m[0].length - 1;
+          calls.push({ rel: f.rel, call: m[0], line: f.text.slice(0, at).split('\n').length });
+        }
+      }
+    }
+    assert.equal(calls.length, 1,
+      `expected exactly one outbound call in the shipped AI code, found ${calls.length}: `
+      + `${calls.map((c) => `${c.rel}:${c.line} ${c.call}`).join(', ')}`);
+    assert.equal(calls[0].rel, 'ai/ui/chat.mjs');
+    const kbFetch = readFileSync(join(out, 'ai', 'ui', 'chat.mjs'), 'utf8')
+      .split('\n')[calls[0].line - 1];
+    assert.match(kbFetch, /fetch\(KB_URL\)/,
+      `the one call is not the knowledge fetch: ${kbFetch.trim()}`);
+    /* …and that URL is a relative path inside the site */
+    assert.match(readFileSync(join(out, 'ai', 'ui', 'chat.mjs'), 'utf8'),
+      /new URL\(['"]\.\.\/\.\.\/knowledge\/knowledge\.json['"], import\.meta\.url\)/,
+      'KB_URL is no longer a site-relative knowledge path');
+
+    /* §17: "verbose logs, benchmarks and debug overlays are dev-only". The AI
+       code carries no console call at all — warn/error would be legitimate, so
+       only the debug-grade ones are refused — and no overlay is built. */
+    const noisy = aiCode
+      .filter((f) => /console\.(log|debug|info|trace|table|dir|count|time)\s*\(/.test(f.text))
+      .map((f) => f.rel);
+    assert.deepEqual(noisy, [],
+      `shipped AI code still logs for the developer:\n  ${noisy.join('\n  ')}`);
+
+    /* secrets, across every shipped text file — data included */
+    for (const f of all) {
+      for (const [pattern, what] of SECRET_PATTERNS) {
+        assert.ok(!pattern.test(f.text), `${f.rel} ships ${what}`);
+      }
+      for (const host of LLM_HOSTS) {
+        assert.ok(!f.text.includes(host),
+          `${f.rel} names the hosted LLM service ${host} — §2 N2 forbids it`);
+      }
+      /* §17: "make sure chat/voice content is never sent" is trivially true
+         when there is no analytics at all — this keeps it true. */
+      const analytics = TRACKING.find((name) => f.text.includes(name));
+      assert.ok(!analytics,
+        `${f.rel} loads the analytics/tracking service ${analytics} — chat and voice `
+        + 'content must never be sent, and no counter is disclosed because there is none');
+    }
+  });
+});
+
 test('npm run build works as a command and exits 0', () => {
   temp((out) => {
     const stdout = execFileSync(process.execPath,

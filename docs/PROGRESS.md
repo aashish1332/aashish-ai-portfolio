@@ -2223,13 +2223,46 @@ because §2 N7 says the AI layer does not touch the film.
 | — voice add-ons (§2 N6) | 19,215 B | 7,432 B |
 | — LLM runtime + tokenizer | 30,042 B | 14,669 B |
 | what the **click** fetches (static reach) | 86,096 B gz | **41,221 B gz, 14 files** |
-| tests | 444 JS + 326 Python, 0 failures | **446 JS + 326 Python, 0 failures** · `npm run build` clean |
+| tests | 444 JS + 326 Python, 0 failures | **447 JS + 326 Python, 0 failures** · `npm run build` clean |
 
-The two new tests are the strip's two directions: `stripComments` on adversarial
-input (a regex holding a quote, a URL in a string, a CSS comment inside a
-template literal, a division), and the built-vs-source behaviour comparison.
+Three new tests. Two are the strip's two directions: `stripComments` on
+adversarial input (a regex holding a quote, a URL in a string, a CSS comment
+inside a template literal, a division), and the built-vs-source behaviour
+comparison.
 
 `npm run bundle` (`tools/bundle-report.mjs`) is new too: the §4 figures in the
 docs used to come from a throwaway `node -e` snippet, which is exactly how a
 figure goes stale. It prints the chunk, §4's three sub-rows, the first-visit
 total and the largest files, and `--json` emits it for the docs.
+
+### 6. §2 N2/N3 + §17's secrets — three prose claims turned into a gate
+
+The final report, the README and `knowledge/PII_REVIEW.md` all say "no backend,
+no LLM API, no API key". §18 says not to write "implemented" without verifying,
+so the claim is now checked against the built bundle — which is what it is
+actually about — in `tests/build-bundle.test.mjs`:
+
+* no shipped `ai/**` script contains an absolute `http(s)` URL (**MEASURED:**
+there are none, so there is no host for a question, an answer or a microphone
+buffer to reach);
+* the shipped AI code makes **exactly one** outbound call — `fetch(KB_URL)`, this
+site's own `knowledge.json` — and the test asserts the count, the file, the line
+and that the URL is site-relative, so a second one cannot be added quietly;
+* no `XMLHttpRequest`, `WebSocket`, `EventSource`, `sendBeacon` or
+`navigator.share` exists in shipped AI code;
+* no shipped text file matches a secret pattern (PEM block, OpenAI/Google/GitHub/
+AWS/Slack key shapes, a `Bearer` token, a key-or-secret assignment), and none
+names a hosted LLM service.
+
+Two more §17 clauses ride along in the same test, because they are the same kind
+of claim. **Production logging:** the shipped AI code contains no `console.*`
+at all, so the assert is "no debug-grade call" (`warn`/`error` stay legal), and
+no debug overlay exists. **Analytics:** there is none in the portfolio — the
+word only appears in project descriptions in `index.html` — so "chat and voice
+content is never sent" is true by there being no destination, and the test fails
+if a known tracker name ever appears in the bundle.
+
+The patterns are deliberately narrow: a false positive here would be a
+fabricated finding, which is worse than finding nothing. Comments are stripped
+from `dist/` before the scan, so a key hidden in a comment cannot mask a real one
+the scan should see.

@@ -25,7 +25,7 @@ this report says so in the same breath as the good news.
 |---|---|
 | "custom … trained from scratch" | **MEASURED** — our tokenizer, our model code, random init, our trainer, our export, our engine. No pretrained weights anywhere in the shipping path. |
 | "running locally in the visitor's browser" | **MEASURED** — `dev-ai-probe.js` **43/43 checks** (real GPU); one real answer with `AI ANSWER · ON-DEVICE MODEL`, 12 facts read, 12 sources; zero requests to any third party. |
-| "no LLM API, no backend" | **MEASURED** — `npm run build` ships a static bundle; the model is fetched from the site's own path and cached locally; no API key exists anywhere in the repo. |
+| "no LLM API, no backend" | **MEASURED** — `npm run build` ships a static bundle; the model is fetched from the site's own path and cached locally. Checked on the built bytes rather than asserted: `tests/build-bundle.test.mjs` fails if any shipped `ai/**` script contains an absolute URL, if the shipped AI code makes more than the **one** outbound call it makes (`fetch(KB_URL)`, this site's own knowledge file), if it opens an XHR/WebSocket/EventSource/sendBeacon, if any shipped file carries a secret-shaped string, or if any names a hosted LLM service. |
 | "training from scratch" (the full spec-sized model) | **NOT TESTED** — Stage A + Stage B at config A have never run; they need a GPU. What has run is the 4.98M CPU pipeline config. |
 | "answering questions about my work" | **NOT TESTED in the sense that matters** — the shipped checkpoint answers, but it answers *badly*, because it has had 1,100 steps on a ~3 MB corpus. |
 
@@ -172,7 +172,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
 | Stage A + Stage B done | **NOT TESTED** — owner-side GPU |
 | Retrieval / guard / EN-HI-Hinglish / auto language detection | **MEASURED** |
 | No language selector | **MEASURED** — none exists |
-| No backend, no API key, local inference | **MEASURED** |
+| No backend, no API key, local inference | **MEASURED** — the built bundle is scanned: no external URL in any shipped AI script, exactly one outbound call site (the site's own `knowledge.json`), no XHR/WebSocket/EventSource/sendBeacon, no secret-shaped string, no hosted-LLM hostname |
 | Lazy-loaded; nothing AI on initial load | **MEASURED** with a failing network assertion as the guard |
 | Download + file sizes measured, caching + versioning | **MEASURED** — including 0 bytes on the second visit |
 | Main thread protected, workers used | **MEASURED** — prefill (90–95 % of the wait) never touches the main thread |

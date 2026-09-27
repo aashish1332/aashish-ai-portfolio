@@ -37,7 +37,12 @@ visitor types ──▶ language detector (§8.3)  ──▶ intent router  ─�
 ```
 
 There is **no backend, no API key, and no LLM service**. Everything in
-P1–P3 runs in the browser or on the training machine.
+P1–P3 runs in the browser or on the training machine. That is checked against
+the built bundle rather than trusted to this sentence: the shipped `ai/**` code
+contains no absolute URL and exactly **one** outbound call site — `fetch(KB_URL)`,
+the site's own knowledge file — with no XHR, WebSocket, EventSource or sendBeacon
+anywhere, and no secret-shaped string in any shipped file
+(`tests/build-bundle.test.mjs`, §2 N2/N3 + §17).
 
 | Layer | Files | Ships to browser |
 |---|---|---|
