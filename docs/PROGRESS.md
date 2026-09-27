@@ -2541,15 +2541,18 @@ quality attempt), full 96-token budget:
 
 | Metric | Value | Gate |
 |---|---|---|
-| Factual accuracy | **18.9%** | 95% — FAIL |
-| Abstention recall | **0.0%** | 95% — FAIL |
-| False abstention | 0.0% | ≤10% — PASS (vacuous: no abstentions at all) |
-| Unsupported claims, pre-guard | 6.3% | reported |
+| Cases · model-routed · decided before it | 60 · **41** · 19 | — |
+| Factual accuracy (34 cases state a fact) | **0.0%** | 95% — FAIL |
+| Abstention recall | **92.3%** | 95% — FAIL |
+| False abstention | 2.4% | ≤10% — PASS |
+| Unsupported claims, pre-guard | 7.3% | reported |
 | Unsupported claims, post-guard | **0.0%** | ≤1% — PASS |
 | Language EN | 100% | 95% — PASS |
-| Language HI/Hinglish | **80%** | 90% — FAIL |
+| Language HI/Hinglish | **78.6%** | 90% — FAIL |
 | Turn terminated | **100%** | — |
+| Follow-up referent reached the prompt | 42.9% (7 cases) | reported |
 | Fabricated on adversarial | 0 | 0 — PASS |
+| Refusals before the model | 13 (7 for want of evidence) | — |
 
 **The first pass used the wrong budget, and the report said so.** It ran the
 reference decoder at **16** tokens (11 min for 48 prompts) and reported turn
@@ -2558,10 +2561,18 @@ the real 96-token budget it is **100%**. `docs/EVALUATION.json` carries a
 `caveat` field precisely so a number that is not gate-grade cannot be quoted as
 one; the engine decoder is what made the gate-grade run cheap enough to do.
 
-The finding that survives: **18.9% of answers cite the expected fact id** where
-the Stage A model cited none — the frame is in use long before anything true is
-said. And the guard earns its keep: 6.3% of model answers asserted something the
-context does not hold, and every one was withheld.
+**A number from this table was revoked, and it is worth reading why.** The first
+version reported factual accuracy **18.9%** and the finding "18.9% of answers
+cite the expected fact id where Stage A cited none". Both came from a scorer bug,
+not from the model: 27 of the 60 cases carry an empty `expected_facts` on purpose
+(they are judged on abstaining, or on their referent), the scorer counted an
+empty expectation as **fully covered**, and the seven `follow_up`s among them
+were the entire numerator — 7 of 37 = 18.9% with no correct answer in it.
+Re-grading the same answers with the fixed scorer gives **0.0%**, and a
+regression test now pins it. The honest reading of this checkpoint is that
+**nothing true is produced yet** while the frame and the guard around it work:
+turns terminate 100%, the prompt is never echoed, and every unsupported claim
+was withheld (7.3% → 0.0%).
 
 ### Still open
 

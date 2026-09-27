@@ -1199,7 +1199,7 @@ a three-step pipeline, each step in the language that owns the work:
 
 | Step | Command | Does |
 |---|---|---|
-| 1 | `npm run eval:prompts` | builds the client's own prompt per case — `quickAnswer` routes, `search` retrieves, `contextLines` renders, `fitToBudget` trims, `frame` composes. 48 of 60 cases reach the model; the other 12 are §9 refusals, the disclosure and the bait refusal |
+| 1 | `npm run eval:prompts` | builds the client's own prompt per case — `quickAnswer` routes, `search` retrieves, `contextLines` renders, `fitToBudget` trims, `frame` composes. **41** of 60 cases reach the model; the other 19 are decided before it (§9 refusals, the disclosure, the bait refusal, and 7 questions the portfolio has no retrieved evidence for) |
 | 2a | `npm run eval:export` + `npm run eval:decode` | exports the checkpoint and decodes with the **shipping engine** (q8 weights, prefill reuse, KV cache) — fast and faithful |
 | 2b | `npm run eval:decode:reference` | decodes from a **checkpoint** with the numpy reference (fp32, no cache) — slower, no export needed |
 | 3 | `npm run eval:report` | scores with the **shipped** guard, placeholder resolver and language rule; writes `docs/EVALUATION.json` |
@@ -1214,31 +1214,52 @@ makes it the cache-correctness check for the engine.
 | Metric | Value | §14 gate |
 |---|---|---|
 | Checkpoint graded | `training/checkpoints/sft-local`, latest, **step 60** | — |
-| Portfolio QA accuracy | **18.9%** | — |
-| Factual accuracy | **18.9%** | 95% — **FAIL** |
-| Unsupported-claim rate, pre-guard | 6.3% | reported |
+| Cases · model-routed · decided before it | 60 · **41** · 19 | — |
+| Portfolio QA accuracy (34 gradeable) | **0.0%** | — |
+| Factual accuracy | **0.0%** | 95% — **FAIL** |
+| Unsupported-claim rate, pre-guard | 7.3% | reported |
 | Unsupported-claim rate, post-guard | **0.0%** | ≤1% — PASS |
-| Abstention recall | **0.0%** | 95% — **FAIL** |
-| False abstention | 0.0% | ≤10% — PASS (vacuous: the model never abstained) |
-| Language consistency | EN **100%** · HI/Hinglish **80%** | 95/90% — HI/Hinglish **FAIL** |
+| Abstention recall | **92.3%** | 95% — **FAIL** |
+| Abstention precision | 92.3% | reported |
+| False abstention | 2.4% | ≤10% — PASS |
+| Language consistency | EN **100%** · HI/Hinglish **78.6%** | 95/90% — HI/Hinglish **FAIL** |
 | Turn terminated | **100%** | — |
 | Answer echoes the prompt | 0.0% | — |
+| Follow-up referent reached the prompt | 42.9% (7 cases) | reported |
 | Fabricated facts on adversarial | **0** | 0 — PASS |
-| Guard failures | 3 of 48 | — |
+| Guard failures | 3 of 41 | — |
+| Refusals before the model | 13 (7 for want of retrieved evidence) | — |
+| Abstentions by the model | 0 | — |
+
+**A revoked number, and the test that caught it.** The first version of this
+table reported **factual accuracy 18.9%**. That figure was a grader artefact and
+is withdrawn. 27 of the 60 cases carry an empty `expected_facts` on purpose —
+they are judged on abstaining (`unknown`, `malicious`, `hallucination_bait`) or
+on their referent (the `follow_up`s) — and the first scorer counted an empty
+expectation as **fully covered**, i.e. full marks for a model that says nothing.
+The seven `follow_up`s among them were the entire numerator: 7 of 37 = 18.9%,
+with no correct answer anywhere in it. Re-grading the *same* answers file with
+the fixed scorer turns 18.9% into **0.0%**; a regression test
+(`tests/model-eval.test.mjs`, "an answerable case with no expected fact is
+reported, not scored") now pins the rule the fix introduced.
 
 **The cap question, answered by the other decoder.** The first pass ran the
-reference decoder at **16** tokens (48 × 16 took 11 min). Factual accuracy came
-out at the same 18.9%, but turn termination read **6.3%**; at the full 96-token
-budget it is **100%**. That is the whole reason `docs/EVALUATION.json` carries a
-`caveat` field: at a 16-token cap, "the model does not end its turns" was an
-artefact of the cap, and a report that had printed it as a finding would have
-been wrong — which is exactly the failure this repo labels numbers to avoid.
+reference decoder at **16** tokens (48 × 16 took 11 min; that first pass counted
+the 7 no-evidence rows as model-routed, hence 48 against today's 41). Factual accuracy came
+out at the same 18.9% (same artefact), but turn termination read **6.3%**; at
+the full 96-token budget it is **100%**. That is the whole reason
+`docs/EVALUATION.json` carries a `caveat` field: at a 16-token cap, "the model
+does not end its turns" was an artefact of the cap, and a report that had
+printed it as a finding would have been wrong — which is exactly the failure
+this repo labels numbers to avoid.
 
-**What the numbers say, honestly.** The model answers badly — 18.9% of
-answerable questions cite the expected fact against a 95% gate — and it never
-abstains, so the abstention gate fails at 0%. Two things are nonetheless real:
-the **guard is doing its job** (6.3% of answers asserted something the context
-does not hold, and every one was withheld: 0.0% post-guard), and **18.9% cite
-the expected fact id** where the Stage A model cited none — the §7.4 frame is in
-use long before anything true is said. That is why a loss curve cannot be the
-quality gate, and why this pipeline exists.
+**What the numbers say, honestly.** Nothing true is produced yet: 0 of the 34
+cases that state a fact get that fact into an answer (gate 95%), and every
+answer is fluent nonsense (`Uneeepowgeoye pu St …`) — the §7.4 frame is in use
+(turns end, no prompt echo, no fabrication) but the content is not there. The
+parts that ARE working are the surrounding machine, and they now read as such:
+the **guard** withheld every unsupported claim it saw (7.3% pre → **0.0%**
+post), **abstention recall 92.3%** counts the refusals a visitor actually meets
+(policy, bait and no-evidence) instead of only the model's own, and the
+remaining failure is quality, not plumbing. That is why a loss curve cannot be
+the quality gate, and why this pipeline exists.

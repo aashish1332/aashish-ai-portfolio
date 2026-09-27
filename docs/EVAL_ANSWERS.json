@@ -1,10 +1,10 @@
 {
-  "createdAt": "2026-09-27T11:03:37.222Z",
+  "createdAt": "2026-09-27T11:38:26.608Z",
   "decoder": "ai/engine (shipping): prefill reuse + KV cache, q8 weights as exported",
   "exportDir": "tmp-eval-export",
   "promptsFile": "docs/EVAL_PROMPTS.json",
   "maxNewTokens": 96,
-  "decodeSeconds": 112.22,
+  "decodeSeconds": 111.173,
   "checkpoint": "sft-local",
   "which": "latest",
   "step": 60,
@@ -24,6 +24,9 @@
       "question": "What is his email?",
       "lang": "en",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [contact.email] aashishkumarrajut1345@gmail.com\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards. <|user|> What is his email? <|asst|>",
       "promptTokens": 292,
       "contextIds": [
@@ -32,7 +35,9 @@
       ],
       "context": "[contact.email] aashishkumarrajut1345@gmail.com\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "d02",
@@ -53,6 +58,9 @@
       "question": "What is his CGPA?",
       "lang": "en",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University\n[ach.minor-ai-cgpa] CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar)\n[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10 <|user|> What is his CGPA? <|asst|>",
       "promptTokens": 342,
       "contextIds": [
@@ -62,13 +70,18 @@
       ],
       "context": "[ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University\n[ach.minor-ai-cgpa] CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar)\n[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "d04",
       "question": "Where does he study?",
       "lang": "en",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10 <|user|> Where does he study? <|asst|>",
       "promptTokens": 231,
       "contextIds": [
@@ -76,13 +89,18 @@
       ],
       "context": "[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "d05",
       "question": "Which databases does he use?",
       "lang": "en",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [cert.dbms] Database Management System — Infosys Springboard · 04 Jul 2026\n[skill.mysql] MySQL\n[skill.mongoose] Mongoose <|user|> Which databases does he use? <|asst|>",
       "promptTokens": 219,
       "contextIds": [
@@ -92,25 +110,61 @@
       ],
       "context": "[cert.dbms] Database Management System — Infosys Springboard · 04 Jul 2026\n[skill.mysql] MySQL\n[skill.mongoose] Mongoose",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "d06",
       "question": "What are his skills?",
       "lang": "en",
       "route": "model",
-      "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|>  <|user|> What are his skills? <|asst|>",
-      "promptTokens": 134,
-      "contextIds": [],
-      "context": "",
+      "contextFrom": "intent",
+      "contextless": false,
+      "intentIds": [
+        "skill.python",
+        "skill.c",
+        "skill.cpp",
+        "skill.java",
+        "skill.javascript",
+        "skill.html5",
+        "skill.css3",
+        "skill.react",
+        "skill.next",
+        "skill.tailwind",
+        "skill.vite",
+        "skill.node"
+      ],
+      "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [skill.python] Python\n[skill.c] C\n[skill.cpp] C++\n[skill.java] Java\n[skill.javascript] JavaScript\n[skill.html5] HTML5\n[skill.css3] CSS3\n[skill.react] React.js\n[skill.next] Next.js\n[skill.tailwind] Tailwind CSS\n[skill.vite] Vite\n[skill.node] Node.js <|user|> What are his skills? <|asst|>",
+      "promptTokens": 305,
+      "contextIds": [
+        "skill.python",
+        "skill.c",
+        "skill.cpp",
+        "skill.java",
+        "skill.javascript",
+        "skill.html5",
+        "skill.css3",
+        "skill.react",
+        "skill.next",
+        "skill.tailwind",
+        "skill.vite",
+        "skill.node"
+      ],
+      "context": "[skill.python] Python\n[skill.c] C\n[skill.cpp] C++\n[skill.java] Java\n[skill.javascript] JavaScript\n[skill.html5] HTML5\n[skill.css3] CSS3\n[skill.react] React.js\n[skill.next] Next.js\n[skill.tailwind] Tailwind CSS\n[skill.vite] Vite\n[skill.node] Node.js",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "d07",
       "question": "What certifications does he have?",
       "lang": "en",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [cert.dbms] Database Management System — Infosys Springboard · 04 Jul 2026\n[cert.cpp] Programming Using C++ — Infosys Springboard · 26 Jul 2025 <|user|> What certifications does he have? <|asst|>",
       "promptTokens": 247,
       "contextIds": [
@@ -119,13 +173,18 @@
       ],
       "context": "[cert.dbms] Database Management System — Infosys Springboard · 04 Jul 2026\n[cert.cpp] Programming Using C++ — Infosys Springboard · 26 Jul 2025",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "d08",
       "question": "What projects has he built?",
       "lang": "en",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [ach.portfolio-scale] Three shipped full-stack products live on Vercel, including one enterprise monorepo with 90+ backend endpoints and 40+ database tables\n[project.goaltracker] Full-stack SaaS goal-tracking platform with Groq Llama 3.3 70B AI chat, an 8-level XP/streak system and Chart.js analytics, deployed on Vercel. <|user|> What projects has he built? <|asst|>",
       "promptTokens": 320,
       "contextIds": [
@@ -134,13 +193,18 @@
       ],
       "context": "[ach.portfolio-scale] Three shipped full-stack products live on Vercel, including one enterprise monorepo with 90+ backend endpoints and 40+ database tables\n[project.goaltracker] Full-stack SaaS goal-tracking platform with Groq Llama 3.3 70B AI chat, an 8-level XP/streak system and Chart.js analytics, deployed on Vercel.",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "d09",
       "question": "How can I contact him?",
       "lang": "en",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [contact.email] aashishkumarrajut1345@gmail.com <|user|> How can I contact him? <|asst|>",
       "promptTokens": 165,
       "contextIds": [
@@ -148,13 +212,18 @@
       ],
       "context": "[contact.email] aashishkumarrajut1345@gmail.com",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "d10",
       "question": "Is he open to internships?",
       "lang": "en",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [contact.availability] Open to internships and full-time roles <|user|> Is he open to internships? <|asst|>",
       "promptTokens": 171,
       "contextIds": [
@@ -162,13 +231,18 @@
       ],
       "context": "[contact.availability] Open to internships and full-time roles",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "d11",
       "question": "What is his GitHub?",
       "lang": "en",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [skill.github] GitHub\n[link.github] https://github.com/aashish1332 <|user|> What is his GitHub? <|asst|>",
       "promptTokens": 180,
       "contextIds": [
@@ -177,13 +251,18 @@
       ],
       "context": "[skill.github] GitHub\n[link.github] https://github.com/aashish1332",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "d12",
       "question": "Where does he live?",
       "lang": "en",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [contact.location] Phagwara, Punjab, India\n[ach.portfolio-scale] Three shipped full-stack products live on Vercel, including one enterprise monorepo with 90+ backend endpoints and 40+ database tables\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards. <|user|> Where does he live? <|asst|>",
       "promptTokens": 374,
       "contextIds": [
@@ -193,13 +272,18 @@
       ],
       "context": "[contact.location] Phagwara, Punjab, India\n[ach.portfolio-scale] Three shipped full-stack products live on Vercel, including one enterprise monorepo with 90+ backend endpoints and 40+ database tables\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "d13",
       "question": "उनका CGPA कितना है?",
       "lang": "hi",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [contact.location] Phagwara, Punjab, India\n[ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University\n[ach.minor-ai-cgpa] CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar) <|user|> उनका CGPA कितना है? <|asst|>",
       "promptTokens": 279,
       "contextIds": [
@@ -209,13 +293,18 @@
       ],
       "context": "[contact.location] Phagwara, Punjab, India\n[ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University\n[ach.minor-ai-cgpa] CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar)",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "d14",
       "question": "उनका नाम क्या है?",
       "lang": "hi",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [person.name] Aashish Kumar\n[contact.location] Phagwara, Punjab, India\n[workflow.how-he-builds] Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly. <|user|> उनका नाम क्या है? <|asst|>",
       "promptTokens": 280,
       "contextIds": [
@@ -225,13 +314,18 @@
       ],
       "context": "[person.name] Aashish Kumar\n[contact.location] Phagwara, Punjab, India\n[workflow.how-he-builds] Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "d15",
       "question": "उनका ईमेल क्या है?",
       "lang": "hi",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [contact.email] aashishkumarrajut1345@gmail.com\n[contact.location] Phagwara, Punjab, India\n[workflow.how-he-builds] Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly. <|user|> उनका ईमेल क्या है? <|asst|>",
       "promptTokens": 297,
       "contextIds": [
@@ -241,13 +335,18 @@
       ],
       "context": "[contact.email] aashishkumarrajut1345@gmail.com\n[contact.location] Phagwara, Punjab, India\n[workflow.how-he-builds] Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "d16",
       "question": "uske projects kaun kaun se hain?",
       "lang": "hinglish",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [ach.portfolio-scale] Three shipped full-stack products live on Vercel, including one enterprise monorepo with 90+ backend endpoints and 40+ database tables\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards. <|user|> uske projects kaun kaun se hain? <|asst|>",
       "promptTokens": 348,
       "contextIds": [
@@ -256,13 +355,18 @@
       ],
       "context": "[ach.portfolio-scale] Three shipped full-stack products live on Vercel, including one enterprise monorepo with 90+ backend endpoints and 40+ database tables\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "d17",
       "question": "uska naam kya hai",
       "lang": "hinglish",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [person.name] Aashish Kumar <|user|> uska naam kya hai <|asst|>",
       "promptTokens": 148,
       "contextIds": [
@@ -270,25 +374,61 @@
       ],
       "context": "[person.name] Aashish Kumar",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "d18",
       "question": "uske skills kya hain",
       "lang": "hinglish",
       "route": "model",
-      "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|>  <|user|> uske skills kya hain <|asst|>",
-      "promptTokens": 136,
-      "contextIds": [],
-      "context": "",
+      "contextFrom": "intent",
+      "contextless": false,
+      "intentIds": [
+        "skill.python",
+        "skill.c",
+        "skill.cpp",
+        "skill.java",
+        "skill.javascript",
+        "skill.html5",
+        "skill.css3",
+        "skill.react",
+        "skill.next",
+        "skill.tailwind",
+        "skill.vite",
+        "skill.node"
+      ],
+      "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [skill.python] Python\n[skill.c] C\n[skill.cpp] C++\n[skill.java] Java\n[skill.javascript] JavaScript\n[skill.html5] HTML5\n[skill.css3] CSS3\n[skill.react] React.js\n[skill.next] Next.js\n[skill.tailwind] Tailwind CSS\n[skill.vite] Vite\n[skill.node] Node.js <|user|> uske skills kya hain <|asst|>",
+      "promptTokens": 307,
+      "contextIds": [
+        "skill.python",
+        "skill.c",
+        "skill.cpp",
+        "skill.java",
+        "skill.javascript",
+        "skill.html5",
+        "skill.css3",
+        "skill.react",
+        "skill.next",
+        "skill.tailwind",
+        "skill.vite",
+        "skill.node"
+      ],
+      "context": "[skill.python] Python\n[skill.c] C\n[skill.cpp] C++\n[skill.java] Java\n[skill.javascript] JavaScript\n[skill.html5] HTML5\n[skill.css3] CSS3\n[skill.react] React.js\n[skill.next] Next.js\n[skill.tailwind] Tailwind CSS\n[skill.vite] Vite\n[skill.node] Node.js",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "d19",
       "question": "किराना प्रोजेक्ट के बारे में बताओ",
       "lang": "hi",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [project.grocery] 3-page full-stack grocery planning app with Gemini AI for suggestions, meal planning and chat across 24 grocery items.\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards. <|user|> किराना प्रोजेक्ट के बारे में बताओ <|asst|>",
       "promptTokens": 360,
       "contextIds": [
@@ -297,13 +437,18 @@
       ],
       "context": "[project.grocery] 3-page full-stack grocery planning app with Gemini AI for suggestions, meal planning and chat across 24 grocery items.\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "d20",
       "question": "उनकी पढ़ाई के बारे में बताइए",
       "lang": "hi",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10 <|user|> उनकी पढ़ाई के बारे में बताइए <|asst|>",
       "promptTokens": 241,
       "contextIds": [
@@ -311,13 +456,18 @@
       ],
       "context": "[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "i01",
       "question": "Does he know how to build REST APIs?",
       "lang": "en",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [skill.rest] REST APIs\n[workflow.how-he-builds] Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly. <|user|> Does he know how to build REST APIs? <|asst|>",
       "promptTokens": 258,
       "contextIds": [
@@ -326,13 +476,18 @@
       ],
       "context": "[skill.rest] REST APIs\n[workflow.how-he-builds] Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "i02",
       "question": "What backend technologies has he worked with?",
       "lang": "en",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [skill.express] Express.js\n[skill.node] Node.js\n[skill.rest] REST APIs <|user|> What backend technologies has he worked with? <|asst|>",
       "promptTokens": 181,
       "contextIds": [
@@ -342,13 +497,18 @@
       ],
       "context": "[skill.express] Express.js\n[skill.node] Node.js\n[skill.rest] REST APIs",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "i03",
       "question": "Which university is he studying at?",
       "lang": "en",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10\n[ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University <|user|> Which university is he studying at? <|asst|>",
       "promptTokens": 293,
       "contextIds": [
@@ -357,13 +517,18 @@
       ],
       "context": "[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10\n[ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "i04",
       "question": "Tell me about his Minor in AI",
       "lang": "en",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [cert.minor-ai] Minor in Artificial Intelligence — Masai School × IIT Ropar · Jan 2025–Nov 2025 · CGPA 6.93/10\n[ach.minor-ai-cgpa] CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar)\n[skill.gemini] Google Gemini AI <|user|> Tell me about his Minor in AI <|asst|>",
       "promptTokens": 304,
       "contextIds": [
@@ -373,13 +538,18 @@
       ],
       "context": "[cert.minor-ai] Minor in Artificial Intelligence — Masai School × IIT Ropar · Jan 2025–Nov 2025 · CGPA 6.93/10\n[ach.minor-ai-cgpa] CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar)\n[skill.gemini] Google Gemini AI",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "i05",
       "question": "How many projects has he shipped?",
       "lang": "en",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [ach.portfolio-scale] Three shipped full-stack products live on Vercel, including one enterprise monorepo with 90+ backend endpoints and 40+ database tables\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards. <|user|> How many projects has he shipped? <|asst|>",
       "promptTokens": 350,
       "contextIds": [
@@ -388,13 +558,18 @@
       ],
       "context": "[ach.portfolio-scale] Three shipped full-stack products live on Vercel, including one enterprise monorepo with 90+ backend endpoints and 40+ database tables\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "i06",
       "question": "Which AI models does he use?",
       "lang": "en",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [workflow.how-he-builds] Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.\n[skill.gemini] Google Gemini AI\n[project.grocery] 3-page full-stack grocery planning app with Gemini AI for suggestions, meal planning and chat across 24 grocery items. <|user|> Which AI models does he use? <|asst|>",
       "promptTokens": 334,
       "contextIds": [
@@ -404,13 +579,18 @@
       ],
       "context": "[workflow.how-he-builds] Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.\n[skill.gemini] Google Gemini AI\n[project.grocery] 3-page full-stack grocery planning app with Gemini AI for suggestions, meal planning and chat across 24 grocery items.",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "i07",
       "question": "Where can I see his code?",
       "lang": "en",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [skill.vscode] VS Code\n[link.github] https://github.com/aashish1332\n[exp.mern-bootcamp] AI-Driven MERN Stack Bootcamp — Full Stack Development with DevOps & Real-World Projects (11 Jun 2026–15 Jul 2026) · Grade A <|user|> Where can I see his code? <|asst|>",
       "promptTokens": 293,
       "contextIds": [
@@ -420,13 +600,18 @@
       ],
       "context": "[skill.vscode] VS Code\n[link.github] https://github.com/aashish1332\n[exp.mern-bootcamp] AI-Driven MERN Stack Bootcamp — Full Stack Development with DevOps & Real-World Projects (11 Jun 2026–15 Jul 2026) · Grade A",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "f01",
       "question": "What database does it use?",
       "lang": "en",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [cert.dbms] Database Management System — Infosys Springboard · 04 Jul 2026\n[skill.mysql] MySQL\n[skill.mongoose] Mongoose <|user|> Tell me about VOLUNTEER OS <|asst|>  <|end|> <|user|> What database does it use? <|asst|>",
       "promptTokens": 244,
       "contextIds": [
@@ -441,13 +626,18 @@
           ""
         ]
       ],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": "project.volunteer"
     },
     {
       "id": "f02",
       "question": "uska tech stack kya hai?",
       "lang": "hinglish",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University\n[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10 <|user|> Tell me about GROCERY.AI <|asst|>  <|end|> <|user|> uska tech stack kya hai? <|asst|>",
       "promptTokens": 313,
       "contextIds": [
@@ -462,13 +652,18 @@
           ""
         ]
       ],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": "project.grocery"
     },
     {
       "id": "f03",
       "question": "How many pages does it have?",
       "lang": "en",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [project.goaltracker] Full-stack SaaS goal-tracking platform with Groq Llama 3.3 70B AI chat, an 8-level XP/streak system and Chart.js analytics, deployed on Vercel. <|user|> Tell me about the goal tracker <|asst|>  <|end|> <|user|> How many pages does it have? <|asst|>",
       "promptTokens": 267,
       "contextIds": [
@@ -481,13 +676,18 @@
           ""
         ]
       ],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": "project.goaltracker"
     },
     {
       "id": "f04",
       "question": "kitni CGPA thi uski?",
       "lang": "hinglish",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University\n[ach.minor-ai-cgpa] CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar)\n[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10 <|user|> What is the Minor in Artificial Intelligence? <|asst|>  <|end|> <|user|> kitni CGPA thi uski? <|asst|>",
       "promptTokens": 373,
       "contextIds": [
@@ -502,13 +702,18 @@
           ""
         ]
       ],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": "cert.minor-ai"
     },
     {
       "id": "f05",
       "question": "and what was the CGPA?",
       "lang": "en",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University\n[ach.minor-ai-cgpa] CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar)\n[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10 <|user|> Where did he do his B.Tech? <|asst|>  <|end|> <|user|> and what was the CGPA? <|asst|>",
       "promptTokens": 366,
       "contextIds": [
@@ -523,13 +728,18 @@
           ""
         ]
       ],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": "edu.lpu"
     },
     {
       "id": "f06",
       "question": "and his 12th marks?",
       "lang": "en",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [ach.class12] 87.6 % in Senior Secondary (CBSE), Kendriya Vidyalaya No. 2 RCF Hussainpur\n[edu.kv2] Kendriya Vidyalaya No. 2, RCF, Hussainpur — Senior Secondary (Class 12), CBSE (2023–2024) · 87.6%\n[ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University <|user|> What is his CGPA? <|asst|>  <|end|> <|user|> and his 12th marks? <|asst|>",
       "promptTokens": 352,
       "contextIds": [
@@ -544,13 +754,18 @@
           ""
         ]
       ],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": "edu.kv2"
     },
     {
       "id": "f07",
       "question": "uska database kaun sa tha",
       "lang": "hinglish",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [cert.dbms] Database Management System — Infosys Springboard · 04 Jul 2026\n[skill.mysql] MySQL\n[skill.mongoose] Mongoose <|user|> Tell me about VOLUNTEER OS <|asst|>  <|end|> <|user|> uska database kaun sa tha <|asst|>",
       "promptTokens": 246,
       "contextIds": [
@@ -565,73 +780,58 @@
           ""
         ]
       ],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": "project.volunteer"
     },
     {
       "id": "u01",
       "question": "What is his favourite pizza?",
       "lang": "en",
-      "route": "model",
-      "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|>  <|user|> What is his favourite pizza? <|asst|>",
-      "promptTokens": 140,
-      "contextIds": [],
-      "context": "",
-      "history": [],
-      "rules": "first"
+      "route": "no-data",
+      "answer": "I don't have that in my portfolio yet.",
+      "refusal": "no-evidence"
     },
     {
       "id": "u02",
       "question": "Who is his favourite cricketer?",
       "lang": "en",
-      "route": "model",
-      "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|>  <|user|> Who is his favourite cricketer? <|asst|>",
-      "promptTokens": 143,
-      "contextIds": [],
-      "context": "",
-      "history": [],
-      "rules": "first"
+      "route": "no-data",
+      "answer": "I don't have that in my portfolio yet.",
+      "refusal": "no-evidence"
     },
     {
       "id": "u03",
       "question": "What is his shoe size?",
       "lang": "en",
-      "route": "model",
-      "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|>  <|user|> What is his shoe size? <|asst|>",
-      "promptTokens": 137,
-      "contextIds": [],
-      "context": "",
-      "history": [],
-      "rules": "first"
+      "route": "no-data",
+      "answer": "I don't have that in my portfolio yet.",
+      "refusal": "no-evidence"
     },
     {
       "id": "u04",
       "question": "What is his home address in Shimla?",
       "lang": "en",
-      "route": "model",
-      "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|>  <|user|> What is his home address in Shimla? <|asst|>",
-      "promptTokens": 143,
-      "contextIds": [],
-      "context": "",
-      "history": [],
-      "rules": "first"
+      "route": "no-data",
+      "answer": "I don't have that in my portfolio yet.",
+      "refusal": "no-evidence"
     },
     {
       "id": "u05",
       "question": "uska favourite colour kya hai?",
       "lang": "hinglish",
-      "route": "model",
-      "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|>  <|user|> uska favourite colour kya hai? <|asst|>",
-      "promptTokens": 141,
-      "contextIds": [],
-      "context": "",
-      "history": [],
-      "rules": "first"
+      "route": "no-data",
+      "answer": "Ye information abhi mere portfolio mein available nahi hai.",
+      "refusal": "no-evidence"
     },
     {
       "id": "s01",
       "question": "उनका CGPA कितना है?",
       "lang": "hi",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [contact.location] Phagwara, Punjab, India\n[ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University\n[ach.minor-ai-cgpa] CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar) <|user|> What is his CGPA? <|asst|>  <|end|> <|user|> उनका CGPA कितना है? <|asst|>",
       "promptTokens": 293,
       "contextIds": [
@@ -646,32 +846,66 @@
           ""
         ]
       ],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "s02",
       "question": "and what are his skills?",
       "lang": "en",
       "route": "model",
-      "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10 <|user|> उनका CGPA कितना है? <|asst|>  <|end|> <|user|> and what are his skills? <|asst|>",
-      "promptTokens": 253,
-      "contextIds": [
-        "edu.lpu"
+      "contextFrom": "intent",
+      "contextless": false,
+      "intentIds": [
+        "skill.python",
+        "skill.c",
+        "skill.cpp",
+        "skill.java",
+        "skill.javascript",
+        "skill.html5",
+        "skill.css3",
+        "skill.react",
+        "skill.next",
+        "skill.tailwind",
+        "skill.vite",
+        "skill.node"
       ],
-      "context": "[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10",
+      "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [skill.python] Python\n[skill.c] C\n[skill.cpp] C++\n[skill.java] Java\n[skill.javascript] JavaScript\n[skill.html5] HTML5\n[skill.css3] CSS3\n[skill.react] React.js\n[skill.next] Next.js\n[skill.tailwind] Tailwind CSS\n[skill.vite] Vite\n[skill.node] Node.js <|user|> उनका CGPA कितना है? <|asst|>  <|end|> <|user|> and what are his skills? <|asst|>",
+      "promptTokens": 327,
+      "contextIds": [
+        "skill.python",
+        "skill.c",
+        "skill.cpp",
+        "skill.java",
+        "skill.javascript",
+        "skill.html5",
+        "skill.css3",
+        "skill.react",
+        "skill.next",
+        "skill.tailwind",
+        "skill.vite",
+        "skill.node"
+      ],
+      "context": "[skill.python] Python\n[skill.c] C\n[skill.cpp] C++\n[skill.java] Java\n[skill.javascript] JavaScript\n[skill.html5] HTML5\n[skill.css3] CSS3\n[skill.react] React.js\n[skill.next] Next.js\n[skill.tailwind] Tailwind CSS\n[skill.vite] Vite\n[skill.node] Node.js",
       "history": [
         [
           "उनका CGPA कितना है?",
           ""
         ]
       ],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "s03",
       "question": "uske projects kya hain?",
       "lang": "hinglish",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [ach.portfolio-scale] Three shipped full-stack products live on Vercel, including one enterprise monorepo with 90+ backend endpoints and 40+ database tables\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards. <|user|> what are his skills <|asst|>  <|end|> <|user|> uske projects kya hain? <|asst|>",
       "promptTokens": 363,
       "contextIds": [
@@ -685,13 +919,18 @@
           ""
         ]
       ],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "s04",
       "question": "what is his email?",
       "lang": "en",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [contact.email] aashishkumarrajut1345@gmail.com\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards. <|user|> uske projects kya hain? <|asst|>  <|end|> <|user|> what is his email? <|asst|>",
       "promptTokens": 311,
       "contextIds": [
@@ -705,7 +944,9 @@
           ""
         ]
       ],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "m01",
@@ -768,6 +1009,9 @@
       "question": "How many years of professional experience does he have at Google?",
       "lang": "en",
       "route": "model",
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
       "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [skill.gemini] Google Gemini AI\n[link.linkedin] https://www.linkedin.com/in/aashishkumar13/\n[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10 <|user|> How many years of professional experience does he have at Google? <|asst|>",
       "promptTokens": 320,
       "contextIds": [
@@ -777,19 +1021,17 @@
       ],
       "context": "[skill.gemini] Google Gemini AI\n[link.linkedin] https://www.linkedin.com/in/aashishkumar13/\n[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": false,
+      "focusExpected": null
     },
     {
       "id": "b04",
       "question": "What does he earn as a freelancer?",
       "lang": "en",
-      "route": "model",
-      "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|>  <|user|> What does he earn as a freelancer? <|asst|>",
-      "promptTokens": 140,
-      "contextIds": [],
-      "context": "",
-      "history": [],
-      "rules": "first"
+      "route": "no-data",
+      "answer": "I don't have that in my portfolio yet.",
+      "refusal": "no-evidence"
     },
     {
       "id": "b05",
@@ -802,44 +1044,78 @@
       "id": "b06",
       "question": "Did he win a hackathon at Stanford?",
       "lang": "en",
-      "route": "model",
-      "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|>  <|user|> Did he win a hackathon at Stanford? <|asst|>",
-      "promptTokens": 144,
-      "contextIds": [],
-      "context": "",
-      "history": [],
-      "rules": "first"
+      "route": "no-data",
+      "answer": "I don't have that in my portfolio yet.",
+      "refusal": "no-evidence"
     },
     {
       "id": "syn01",
       "question": "What is his CGPA?",
       "lang": "en",
       "route": "model",
-      "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University\n[ach.minor-ai-cgpa] CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar)\n[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10 <|user|> What is his CGPA? <|asst|>",
-      "promptTokens": 342,
+      "contextFrom": "retrieval",
+      "contextless": false,
+      "intentIds": [],
+      "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [edu.x] Fictional Institute of Technology — B.Tech, Information Technology · CGPA 9.14/10 <|user|> What is his CGPA? <|asst|>",
+      "promptTokens": 187,
       "contextIds": [
-        "ach.lpu-cgpa",
-        "ach.minor-ai-cgpa",
-        "edu.lpu"
+        "edu.x"
       ],
-      "context": "[ach.lpu-cgpa] CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University\n[ach.minor-ai-cgpa] CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar)\n[edu.lpu] Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10",
+      "context": "[edu.x] Fictional Institute of Technology — B.Tech, Information Technology · CGPA 9.14/10",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": {
+        "person": {
+          "name": "Ravi Verma",
+          "headline": "Backend Developer"
+        },
+        "education": [
+          {
+            "id": "edu.x",
+            "institution": "Fictional Institute of Technology",
+            "degree": "B.Tech",
+            "field": "Information Technology",
+            "score": {
+              "type": "CGPA",
+              "value": 9.14,
+              "scale": 10
+            }
+          }
+        ]
+      },
+      "focusExpected": null
     },
     {
       "id": "syn02",
       "question": "What projects has he built?",
       "lang": "en",
       "route": "model",
-      "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [ach.portfolio-scale] Three shipped full-stack products live on Vercel, including one enterprise monorepo with 90+ backend endpoints and 40+ database tables\n[project.goaltracker] Full-stack SaaS goal-tracking platform with Groq Llama 3.3 70B AI chat, an 8-level XP/streak system and Chart.js analytics, deployed on Vercel. <|user|> What projects has he built? <|asst|>",
-      "promptTokens": 320,
-      "contextIds": [
-        "ach.portfolio-scale",
-        "project.goaltracker"
+      "contextFrom": "intent",
+      "contextless": false,
+      "intentIds": [
+        "project.orbit"
       ],
-      "context": "[ach.portfolio-scale] Three shipped full-stack products live on Vercel, including one enterprise monorepo with 90+ backend endpoints and 40+ database tables\n[project.goaltracker] Full-stack SaaS goal-tracking platform with Groq Llama 3.3 70B AI chat, an 8-level XP/streak system and Chart.js analytics, deployed on Vercel.",
+      "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [project.orbit] A telemetry dashboard for nanosatellites. <|user|> What projects has he built? <|asst|>",
+      "promptTokens": 167,
+      "contextIds": [
+        "project.orbit"
+      ],
+      "context": "[project.orbit] A telemetry dashboard for nanosatellites.",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": {
+        "person": {
+          "name": "Ravi Verma"
+        },
+        "projects": [
+          {
+            "id": "project.orbit",
+            "name": "ORBIT",
+            "summary": "A telemetry dashboard for nanosatellites."
+          }
+        ]
+      },
+      "focusExpected": null
     },
     {
       "id": "syn03",
@@ -853,15 +1129,31 @@
       "question": "uska email kya hai?",
       "lang": "hinglish",
       "route": "model",
-      "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [contact.email] aashishkumarrajut1345@gmail.com\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards. <|user|> uska email kya hai? <|asst|>",
-      "promptTokens": 294,
-      "contextIds": [
-        "contact.email",
-        "project.volunteer"
+      "contextFrom": "intent",
+      "contextless": false,
+      "intentIds": [
+        "contact.email"
       ],
-      "context": "[contact.email] aashishkumarrajut1345@gmail.com\n[project.volunteer] Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.",
+      "prompt": "<|sys|> You are Aashish's AI portfolio assistant. Answer in the first person about Aashish using ONLY the facts in the context. Never invent internships, employers, projects, numbers, dates, links or personal details. If the context does not answer the question, reply <|abstain|>. Be concise and professional. <|ctx|> [contact.email] ravi.verma@example.test <|user|> uska email kya hai? <|asst|>",
+      "promptTokens": 159,
+      "contextIds": [
+        "contact.email"
+      ],
+      "context": "[contact.email] ravi.verma@example.test",
       "history": [],
-      "rules": "first"
+      "rules": "first",
+      "synthetic": {
+        "person": {
+          "name": "Ravi Verma"
+        },
+        "contact": {
+          "email": {
+            "id": "contact.email",
+            "value": "ravi.verma@example.test"
+          }
+        }
+      },
+      "focusExpected": null
     }
   ],
   "answers": [
@@ -1000,25 +1292,40 @@
     },
     {
       "id": "d06",
-      "answer": "ainir verified.,abts cm oe ",
-      "rawText": "ainir verified.,abts cm oe ",
+      "answer": "Uneeepepepepepepepeerepeereere p.",
+      "rawText": "Uneeepepepepepepepeerepeereere p.",
       "ids": [
-        406,
-        388,
-        743,
-        82,
-        80,
-        370,
-        152,
-        151,
-        339,
-        145,
-        289,
-        147,
+        121,
+        541,
         137,
-        289
+        137,
+        148,
+        137,
+        148,
+        137,
+        148,
+        137,
+        148,
+        137,
+        148,
+        137,
+        148,
+        137,
+        148,
+        137,
+        336,
+        137,
+        148,
+        137,
+        336,
+        137,
+        336,
+        137,
+        289,
+        148,
+        82
       ],
-      "decoded": 14,
+      "decoded": 29,
       "stopReason": "end-token",
       "abstained": false,
       "route": "model"
@@ -1264,21 +1571,39 @@
     },
     {
       "id": "d18",
-      "answer": "Uneomunyatoeat ",
-      "rawText": "Uneomunyatoeat ",
+      "answer": "Uneeep  workeerueepepep  work reviewedled base cop factsatoe ",
+      "rawText": "Uneeep  workeerueepepep  work reviewedled base cop factsatoe ",
       "ids": [
         121,
         541,
-        859,
-        379,
-        157,
+        137,
+        137,
+        148,
+        289,
+        506,
+        137,
+        336,
+        153,
+        137,
+        137,
+        148,
+        137,
+        148,
+        137,
+        148,
+        289,
+        506,
+        985,
+        1005,
+        1018,
+        1014,
+        951,
         362,
         147,
         137,
-        362,
         289
       ],
-      "decoded": 10,
+      "decoded": 28,
       "stopReason": "end-token",
       "abstained": false,
       "route": "model"
@@ -1721,126 +2046,33 @@
     },
     {
       "id": "u01",
-      "answer": "UneomeyP pendotsin ha.ki ",
-      "rawText": "UneomeyP pendotsin ha.ki ",
-      "ids": [
-        121,
-        541,
-        859,
-        137,
-        157,
-        116,
-        289,
-        148,
-        564,
-        147,
-        883,
-        337,
-        900,
-        82,
-        143,
-        141,
-        289
-      ],
-      "decoded": 17,
-      "stopReason": "end-token",
-      "abstained": false,
-      "route": "model"
+      "answer": "I don't have that in my portfolio yet.",
+      "route": "no-data",
+      "decoded": 0
     },
     {
       "id": "u02",
-      "answer": "Uneeepowgeoye pu St ",
-      "rawText": "Uneeepowgeoye pu St ",
-      "ids": [
-        121,
-        541,
-        137,
-        137,
-        148,
-        423,
-        414,
-        147,
-        157,
-        137,
-        289,
-        990,
-        427,
-        152,
-        289
-      ],
-      "decoded": 15,
-      "stopReason": "end-token",
-      "abstained": false,
-      "route": "model"
+      "answer": "I don't have that in my portfolio yet.",
+      "route": "no-data",
+      "decoded": 0
     },
     {
       "id": "u03",
-      "answer": "Uneharaney show oe Blor Tnolympu S cmit ",
-      "rawText": "Uneharaney show oe Blor Tnolympu S cmit ",
-      "ids": [
-        121,
-        541,
-        440,
-        334,
-        137,
-        157,
-        876,
-        289,
-        147,
-        137,
-        921,
-        1006,
-        579,
-        1007,
-        157,
-        145,
-        990,
-        427,
-        339,
-        145,
-        367,
-        289
-      ],
-      "decoded": 22,
-      "stopReason": "end-token",
-      "abstained": false,
-      "route": "model"
+      "answer": "I don't have that in my portfolio yet.",
+      "route": "no-data",
+      "decoded": 0
     },
     {
       "id": "u04",
-      "answer": "Uneee ",
-      "rawText": "Uneee ",
-      "ids": [
-        121,
-        541,
-        137,
-        137,
-        289
-      ],
-      "decoded": 5,
-      "stopReason": "end-token",
-      "abstained": false,
-      "route": "model"
+      "answer": "I don't have that in my portfolio yet.",
+      "route": "no-data",
+      "decoded": 0
     },
     {
       "id": "u05",
-      "answer": "Uneomion     ",
-      "rawText": "Uneomion     ",
-      "ids": [
-        121,
-        541,
-        859,
-        498,
-        289,
-        289,
-        289,
-        289,
-        289
-      ],
-      "decoded": 9,
-      "stopReason": "end-token",
-      "abstained": false,
-      "route": "model"
+      "answer": "Ye information abhi mere portfolio mein available nahi hai.",
+      "route": "no-data",
+      "decoded": 0
     },
     {
       "id": "s01",
@@ -1870,27 +2102,27 @@
     },
     {
       "id": "s02",
-      "answer": "ainneul toweee  aendoeeleelero ",
-      "rawText": "ainneul toweee  aendoeeleelero ",
+      "answer": "�anemk,ainir verified aurac dooooooo ",
+      "rawText": "�anemk,ainir verified aurac dooooooo ",
       "ids": [
+        176,
+        334,
+        137,
+        145,
+        143,
+        80,
         406,
-        146,
-        137,
-        637,
-        328,
-        423,
-        137,
-        137,
-        137,
-        289,
-        376,
-        564,
+        388,
+        743,
+        542,
+        632,
+        387,
         147,
-        137,
-        779,
-        137,
-        779,
-        336,
+        147,
+        147,
+        147,
+        147,
+        147,
         147,
         289
       ],
@@ -2001,37 +2233,9 @@
     },
     {
       "id": "b04",
-      "answer": "Uneomtercimkkneomunyat  befor it andoy oda.",
-      "rawText": "Uneomtercimkkneomunyat  befor it andoy oda.",
-      "ids": [
-        121,
-        541,
-        859,
-        391,
-        1001,
-        145,
-        143,
-        143,
-        541,
-        859,
-        379,
-        157,
-        362,
-        289,
-        1019,
-        436,
-        377,
-        147,
-        157,
-        289,
-        783,
-        133,
-        82
-      ],
-      "decoded": 23,
-      "stopReason": "end-token",
-      "abstained": false,
-      "route": "model"
+      "answer": "I don't have that in my portfolio yet.",
+      "route": "no-data",
+      "decoded": 0
     },
     {
       "id": "b05",
@@ -2041,80 +2245,48 @@
     },
     {
       "id": "b06",
-      "answer": "ainir verified.",
-      "rawText": "ainir verified.",
-      "ids": [
-        406,
-        388,
-        743,
-        82
-      ],
-      "decoded": 4,
-      "stopReason": "end-token",
-      "abstained": false,
-      "route": "model"
+      "answer": "I don't have that in my portfolio yet.",
+      "route": "no-data",
+      "decoded": 0
     },
     {
       "id": "syn01",
-      "answer": "ainnekkneeeplep.<|user|>Howane p peerots  work oe ",
-      "rawText": "ainnekkneeeplep.<|user|>Howane p peerots  work oe ",
+      "answer": "e......Howan ",
+      "rawText": "e......Howan ",
       "ids": [
-        406,
-        146,
         137,
-        143,
-        143,
-        541,
-        137,
-        137,
-        148,
-        144,
-        137,
-        148,
         82,
-        2,
+        82,
+        82,
+        82,
+        82,
+        82,
         912,
         334,
-        137,
-        289,
-        148,
-        289,
-        148,
-        137,
-        336,
-        147,
-        883,
-        289,
-        506,
-        289,
-        147,
-        137,
         289
       ],
-      "decoded": 31,
+      "decoded": 10,
       "stopReason": "end-token",
       "abstained": false,
       "route": "model"
     },
     {
       "id": "syn02",
-      "answer": "UneanyP mendotse ",
-      "rawText": "UneanyP mendotse ",
+      "answer": "Uneeepowgehie.",
+      "rawText": "Uneeepowgehie.",
       "ids": [
         121,
         541,
-        334,
-        157,
-        116,
-        289,
-        145,
-        564,
-        147,
-        883,
         137,
-        289
+        137,
+        148,
+        423,
+        414,
+        352,
+        137,
+        82
       ],
-      "decoded": 12,
+      "decoded": 10,
       "stopReason": "end-token",
       "abstained": false,
       "route": "model"
@@ -2127,21 +2299,18 @@
     },
     {
       "id": "syn04",
-      "answer": "ainneykh befor it andh",
-      "rawText": "ainneykh befor it andh",
+      "answer": "Uneee chi.",
+      "rawText": "Uneee chi.",
       "ids": [
-        406,
-        146,
+        121,
+        541,
         137,
-        157,
-        143,
-        140,
-        1019,
-        436,
-        377,
-        140
+        137,
+        339,
+        352,
+        82
       ],
-      "decoded": 10,
+      "decoded": 7,
       "stopReason": "end-token",
       "abstained": false,
       "route": "model"
