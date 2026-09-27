@@ -66,6 +66,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--kb", type=Path, default=None)
     p.add_argument("--review-count", type=int, default=100)
     p.add_argument("--dry-run", action="store_true", help="report counts without writing")
+    p.add_argument("--tokenizer", type=Path,
+                   default=inst.REPO_ROOT / "ai" / "tokenizer" / "artifacts" / "seed-1k",
+                   help="tokenizer to measure the real token count with")
+    p.add_argument("--no-measure", action="store_true",
+                   help="skip the measured count (the ESTIMATED figure is then all there is)")
     return p
 
 
@@ -97,6 +102,31 @@ def summarise(examples: list[dict], requested: dict) -> dict:
         "tokens_estimated": int(chars / 3.4),
         "token_estimate_method": "ESTIMATED — characters / 3.4; real count needs the P4 tokenizer",
     }
+
+
+def measure(sft_path: Path, tokenizer_dir: Path) -> dict | None:
+    """The real token count, with the shipping tokenizer.
+
+    The ESTIMATED figure (characters / 3.4) is written before the tokenizer
+    exists and it is *wrong in an unhelpful direction*: on the 40k set the
+    real count is 10,582,713 tokens against an estimate of 7,263,142, i.e.
+    31% low, because Hindi and Hinglish tokenize far below 3.4 chars/token.
+    A Stage B schedule picked from the estimate would under-run the token
+    budget by a third. So the data file is read back and counted for real
+    whenever the tokenizer is on this machine; a missing tokenizer is not an
+    error, it just leaves the estimate as the only number.
+    """
+    if not (Path(tokenizer_dir) / "tokenizer.json").is_file():
+        return None
+    from ai.data import sft as sft_data
+    from ai.tokenizer.train import load
+
+    tokenizer, meta = load(tokenizer_dir)
+    examples = sft_data.read_examples(sft_path)
+    counts = sft_data.measured_token_counts(tokenizer, examples)
+    counts["tokenizer_version"] = meta["tokenizer_version"]
+    counts["vocab_size"] = meta["vocab_size"]
+    return counts
 
 
 def write_jsonl(examples: list[dict], path: Path) -> None:
@@ -195,14 +225,26 @@ def main(argv: list[str] | None = None) -> int:
 
     sft = args.out / "sft.jsonl"
     write_jsonl(examples, sft)
+    measured = None if args.no_measure else measure(sft, args.tokenizer)
     manifest = {**summary, "seed": args.seed, "share": args.share,
                 "knowledge": kb.get("meta", {}).get("version"),
                 "sft_bytes": sft.stat().st_size,
-                "format": "§7.4 <|sys|> <|ctx|> <|user|> <|asst|> <|end|>"}
+                "format": "§7.4 <|sys|> <|ctx|> <|user|> <|asst|> <|end|>",
+                "tokens_measured": (measured or {}).get("tokens"),
+                "supervised_tokens_measured": (measured or {}).get("supervised_tokens"),
+                "token_measure_method": (measured or {}).get("method")}
     (args.out / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     n = write_review(examples, args.review, random.Random(args.seed + 1), args.review_count)
+    if measured:
+        print(f"\n  measured tokens    {measured['tokens']:>7,}  "
+              f"({measured['method']}, {measured['tokenizer_version']})")
+        print(f"  supervised tokens  {measured['supervised_tokens']:>7,}  "
+              f"({measured['supervised_share'] * 100:.1f}% — §7.4 trains on these only)")
+        print(f"  longest example    {measured['longest_example']:>7,} tokens")
+    elif not args.no_measure:
+        print(f"\n  no tokenizer at {args.tokenizer} — only the ESTIMATED count is available")
     print(f"\n  wrote {_rel(sft)} ({manifest['sft_bytes']:,} B)")
     print(f"  wrote {_rel(args.out / 'manifest.json')}")
     print(f"  wrote {_rel(args.review)} ({n} hi/hinglish examples)")

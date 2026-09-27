@@ -194,7 +194,7 @@ idle page cost a measured 1.2 s of blocked main thread (`docs/BENCHMARKS.md` §1
 | [experiments/ternary/README.md](experiments/ternary/README.md) | §13's written go/no-go on the ternary experiment (no-go, and why) |
 
 ```bash
-npm run test:all     # 451 JS + 326 Python tests
+npm run test:all     # 451 JS + 343 Python tests
 node dev-ai-probe.js     # the click → answer gate in a real browser (43 checks, real GPU; SW_GL=1 software GL, THROTTLE=4 weak-device profile)
 node dev-offline-probe.js # §9.3 cache: a second visit with model-export blocked
 node dev-degrade-probe.js # §14: the T0 path and the download-failure path, end to end
@@ -202,9 +202,12 @@ npm run probe:resources  # §15.3: heap, nodes, listeners, long tasks → docs/R
 npm run calibrate    # sweep the §8.4 retrieval gate against the evaluation set → docs/CALIBRATION.json
 npm run params       # parameter count + its band gate
 npm run bench:cpu    # §14 CPU inference: load, RAM, prefill/decode tok/s, file size
-npm run sft          # §7.4 Stage B instruction data (40k examples + review sample)
+npm run sft          # §7.4 Stage B instruction data (40k examples + review sample, real token count when the tokenizer exists)
+npm run sft:check    # the Stage B data path with no torch: the assistant-only mask, printed
 npm run smoke        # tokenizer contract, shards, data cursor, checkpoints
 npm run train:local  # the largest model this laptop trains for real → training/checkpoints/local
+npm run train:sft    # Stage B: continue that checkpoint on the §7.4 data → training/checkpoints/sft-local
+npm run sample:answers -- --checkpoint stage-A=training/checkpoints/local --checkpoint stage-B=training/checkpoints/sft-local  # what a checkpoint answers, no browser
 npm run export:model # checkpoint → the browser artifact: q8 shards + manifest + parity fixture
 npm run verify:engine # §9.2: does the JavaScript engine match the numpy reference, on the SHIPPING weights?
 npm run build        # production bundle → dist/ (stripped knowledge base, no dev tooling)

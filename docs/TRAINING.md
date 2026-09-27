@@ -173,7 +173,100 @@ synthetic seed corpus is not the shipping target, which is still config A
 `4,984,064 + 262,144 = 5,246,208`. `npm run params` prints that arithmetic
 where the confusion happens, and `tests/py/test_model_schema.py` pins it.
 
-## 5. Checkpoints and resume (§7.5)
+## 5. Stage B — instruction tuning (§7.4)
+
+```bash
+# what a machine with no torch can check (this one): the mask, shown, not claimed
+npm run sft:check
+
+# generate the data (40k examples, ~11 s)
+npm run sft
+
+# continue a Stage A checkpoint on it — the local shape, CPU
+npm run train:sft
+
+# see what a checkpoint answers, without a browser
+npm run sample:answers -- --checkpoint stage-A=training/checkpoints/local \
+    --checkpoint stage-B=training/checkpoints/sft-local --n 4
+```
+
+The Stage B *data* has existed since the §7.4 pass; **the trainer did not.**
+That is a §7 gap with a measurable shape, and it is worth stating plainly
+because it explains the shipped answers being language-shaped noise:
+
+| Measured | Value |
+|---|---|
+| `data/instruction/sft.jsonl` | 40,000 examples, 24,694,864 characters, 31,187,143 B |
+| Tokens, **MEASURED** with the shipping tokenizer | **10,582,527** · **1,155,200 supervised (10.9%)** · longest example 538 |
+| What the file's own manifest estimated | 7,263,195 tokens (characters / 3.4) — **31% low**, because Hindi and Hinglish tokenize at ~2.3 chars/token. A schedule picked from it would under-run the token budget by a third |
+| The runtime frame in the **pretraining** corpus | 17,265 documents: `<|sys|>` in 415, **`<|ctx|>` in 4**, `<|asst|>` in 1,108 |
+
+That last row is the finding. The shipped checkpoint had been asked to continue
+a frame — a context block, an assistant turn — that its pretraining corpus
+almost never contained. No amount of extra steps on the same shards fixes
+that; only Stage B does, and Stage B had no training path.
+
+`training/scripts/train_stage_b.py` is `train_smoke.py`'s loop with a
+different **data path**, not a second implementation: the scaler, scheduler,
+clip, checkpoint manager and manifest writer are imported from it, so
+"verified resume" keeps meaning one thing.
+
+| | Stage A | Stage B |
+|---|---|---|
+| data | memmapped token shards (`TokenBatcher`) | `data/instruction/sft.jsonl` (`ai.data.sft.SftStream`) |
+| loss | every token | **assistant tokens only** — `-100` elsewhere (§7.4) |
+| starts from | random init | a Stage A checkpoint (`--init`, weights only) |
+| learning rate | 3e-4 | **5e-5** — starting an SFT run at the pretraining LR undoes the pretraining |
+
+**The mask is the deliverable, so it is printed rather than asserted.**
+A wrong mask does not crash: the run trains on the question, or drops the
+first word of every answer, and the loss curve looks fine. Three things had
+to be right and are pinned by `tests/py/test_sft.py` on real data:
+
+* **characters → tokens.** Byte-level BPE folds a word's leading space into
+the word's own token, and `assistant_spans` starts *after* that space — so a
+containment test silently drops the first word of every answer, which is the
+word that names the value ("My CGPA is …"). A token counts when it overlaps
+the span and everything it contributes outside it is whitespace.
+* **the closing `<|end|>` is supervised.** `assistant_spans` stops before it
+and generation stops *by emitting it*; a turn that is never taught to end
+rambles to the token ceiling. Checked on 2,000 examples: `holes 0, leaks 0,
+missing <|end|> 0`.
+* **no window without loss.** A window whose targets are all `-100` makes
+`cross_entropy` return **NaN**, and one NaN step poisons every weight in the
+run. Windows with no supervised token are skipped and counted instead.
+
+### 5.1 The local run (config `local`, CPU, 2026-09-27 · R1)
+
+```bash
+python -m training.scripts.train_stage_b \
+    --tokenizer ai/tokenizer/artifacts/seed-1k --config local \
+    --init training/checkpoints/local/latest.pt --limit 3000 \
+    --run-dir training/checkpoints/sft-local \
+    --steps 60 --batch 4 --block 256 --grad-accum 2 --lr 5e-5 --eval-every 30
+```
+
+| Metric | Value |
+|---|---|
+| Steps | **60** in 66.6 s (**1.11 s/step**, batch 4 × block 256, grad-accum 2, CPU) |
+| Loss | 7.5571 → 6.3133; windowed gate **PASS** (7.6043 → 6.0065) |
+| Val loss (assistant tokens only) | 6.2715 → **5.5403** |
+| Tokens seen / supervised | 61,440 / **7,440 (12.1%)** |
+| Checkpoints | `best`, `step_30`, `step_60`, `latest`; `RUN_MANIFEST.json` written |
+
+`npm run sample:answers` on the same three prompts, Stage A vs those 60
+steps of Stage B (`MEASURED`):
+
+| | continuation |
+|---|---|
+| Stage A | `'Uneomunyatml.<|user|>Howanany show a assistantedation?<|asst|>Unehar'` — no turn end, a `<|asst|>` emitted mid-answer |
+| Stage B, 60 steps | `'ेe Aashishe.<|asst|>ेाoo<|end|>'`, `'ehieeee I answer Aashish <|end|>'` — **the frame and the terminator appear** |
+
+The structure is what changed, and structure is what Stage B is for. Sixty
+steps on 3,000 examples is not a quality result: the words are still wrong,
+and the honest summary is that the format gap is now closable, not closed.
+
+## 6. Checkpoints and resume (§7.5)
 
 | Requirement | Implementation | Verified how |
 |---|---|---|
@@ -207,13 +300,13 @@ is absent, and `npm run train:local` (which resumes from `latest`) is what write
 it. Worth doing before the GPU run, so the pipeline's own record-keeping is
 proven end to end on a run that finishes.
 
-## 6. Kaggle (P4) — the runbook
+## 7. Kaggle (P4) — the runbook
 
 The notebook `training/notebooks/train_stage_a.ipynb` is a **driver**, not an
 implementation: every step calls a module that is already in the repository and
 tested, because §7.5 requires training to work without the notebook.
 
-### 6.1 The licence gate comes first
+### 7.1 The licence gate comes first
 
 Nothing can be downloaded until the terms have been read and recorded:
 
@@ -236,7 +329,7 @@ request, hashed, and **deleted** if the hash does not match — so a corrupt
 shard cannot later look like a real one, and a restarted session does not begin
 a 2 GB dump again.
 
-### 6.1a A download is not text
+### 7.1a A download is not text
 
 Between fetching and the pipeline there is one more step, and it did not exist
 until the P4 notebook was read against the modules it calls:
@@ -260,7 +353,7 @@ corpus is assembled. The file is *not* filtered: `extract_manifest.json` records
 mistake a download for a clean corpus. `strip_wikitext` is a minimal stripper
 and not a wikitext parser; `MARKUP_LIMITATIONS` names what it misses.
 
-### 6.2 The order that catches problems cheapest
+### 7.2 The order that catches problems cheapest
 
 1. **extract**, then **`prepare_data` without `--tokenizer`** — cleanup stats,
    the leakage verdict, and `corpus.txt`. Read the drop counts: a pipeline that
@@ -314,14 +407,14 @@ and not a wikitext parser; `MARKUP_LIMITATIONS` names what it misses.
    thing that actually trained. Every later session runs the identical command:
    it resumes from `latest.pt` and reports the step and the tokens consumed.
 
-### 6.3 Persistence, because sessions die
+### 7.3 Persistence, because sessions die
 
 Checkpoints must be pushed outside the ephemeral session (§7.5): a Kaggle
 Dataset, Drive, or the Hub — or `/kaggle/working` plus a Save Version each time.
 `--max-minutes` stops cleanly and writes a checkpoint before the time box ends,
 so an interrupted run is a resume rather than a loss.
 
-### 6.4 What is still blocked on a decision
+### 7.4 What is still blocked on a decision
 
 Everything above is code that exists and is tested without torch. What remains
 is genuinely not mine to decide: putting a name on the licence verifications

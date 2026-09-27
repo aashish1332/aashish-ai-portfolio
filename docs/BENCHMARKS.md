@@ -587,17 +587,24 @@ string work (no GPU). Both were run on R1.
 | Instruction tests | 25 pass | `python -m unittest tests.py.test_instruction` |
 | Stage B examples | 40,000 | `python -m training.scripts.make_instruction_data --count 40000` |
 | Generation wall clock | ~11 s | `time` on R1 |
-| Stage B characters | 24,707,841 | manifest |
-| Stage B tokens | 7,262,881 | **ESTIMATED** — characters / 3.4; a real count needs the P4 tokenizer |
-| `sft.jsonl` size | 31,186,963 B | build output, git-ignored |
+| Stage B characters | 24,694,864 | manifest (regenerated 2026-09-27) |
+| Stage B tokens | **10,582,527** | **MEASURED** — encoded with the shipping tokenizer (`ai.data.sft.measured_token_counts`) |
+| Stage B supervised tokens | **1,155,200** (10.9% of the stream) | **MEASURED** — §7.4 trains on assistant tokens only |
+| Stage B tokens, as estimated | 7,263,195 | **ESTIMATED** — characters / 3.4, i.e. **31% low**: the real ratio is ~2.3 chars/token, not 3.4 |
+| Longest example | 538 tokens | **MEASURED** |
+| `sft.jsonl` size | 31,187,143 B | build output, git-ignored |
 | Counterfactual share | 0.35 | every counterfactual context asserted to differ from the real rendering |
 | Mix deviation from §7.4 | 0.0 pp | exact by largest-remainder allocation |
 | Build after the guard joined the allow-list | 29 files · **448,578 B** | `npm run build` |
 | JS / Python tests | **327 / 244** | `npm run test:all` |
 
 **NOT TESTED:** the guard has never been run against a model's output (no
-checkpoint exists), so its false-acceptment rate is unknown; and no model has
-been trained on the Stage B data, so the data's *effect* is unmeasured.
+checkpoint exists), so its false-acceptment rate is unknown.
+
+**Superseded 2026-09-27:** the second half of that sentence is no longer true
+of *data*, but of *quality*. Stage B now has a trainer
+(`training/scripts/train_stage_b.py`) and it has been run locally — see
+"Stage B instruction tuning" below.
 
 ---
 
@@ -1153,3 +1160,31 @@ rather than implemented and unverifiable.
 running, on a device that is not this laptop. Every figure above is Node on R1.
 The measured numbers also depend on the *retrieved* fact count, so they move
 with the knowledge base, not only with the code.
+
+---
+
+## Stage B instruction tuning (§7.4) — 2026-09-27, R1
+
+`training/scripts/train_stage_b.py` is new: Stage B had data and no trainer, so
+the shipped checkpoint had been asked to continue a frame (`<|ctx|>`,
+`<|asst|>`) its pretraining corpus almost never contained.
+
+| Metric | Value | Method |
+|---|---|---|
+| Instruction data | 40,000 examples · 24,694,864 characters · 31,187,143 B | `npm run sft` |
+| Tokens, measured | **10,582,527** total · **1,155,200 supervised (10.9%)** · longest 538 | shipping tokenizer, `ai.data.sft.measured_token_counts` |
+| The manifest's estimate | 7,263,195 (**31% low**) | characters / 3.4, the ratio the first budget assumed |
+| The frame in the pretraining corpus | 17,265 docs: `<|sys|>` 415 · **`<|ctx|>` 4** · `<|asst|>` 1,108 | `data/processed/seed/corpus.jsonl` |
+| Mask structure | holes **0** · non-whitespace leaks **0** · missing `<|end|>` **0** | `tests/py/test_sft.py`, 2,000 real examples |
+| Local run | 60 steps in **66.6 s** (1.11 s/step, batch 4 × block 256, grad-accum 2, CPU) | `--config local`, `--init training/checkpoints/local/latest.pt` |
+| Loss | 7.5571 → **6.3133**; windowed gate **PASS** (7.6043 → 6.0065) | 60 steps |
+| Val loss (assistant tokens only) | 6.2715 → **5.5403** | fixed held-out windows |
+| Tokens seen / supervised | 61,440 / **7,440 (12.1%)** | run manifest |
+| Format before / after | Stage A: no turn end, `<|asst|>` emitted mid-answer · Stage B (60 steps): frame **and** `<|end|>` appear | `npm run sample:answers`, same 3 prompts |
+| JS / Python tests | **451 / 343** | `npm run test:all` |
+
+**NOT TESTED:** a Stage B run at any real scale. Sixty steps on 3,000 examples
+proves the path and the format, not the answers — the words are still wrong,
+and the shipped export remains the Stage A artifact until a config-A run
+(a GPU, owner-side) produces something worth shipping. The mask's effect on
+quality at 40k examples is therefore **unmeasured**.

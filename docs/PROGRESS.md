@@ -2423,3 +2423,79 @@ The §6.3 frame monitor must also *reuse* the film's GSAP ticker: the test
 requires both `.ticker.add(` and `.ticker.remove(` in `ai/ui/chat.mjs`, because
 a callback that can be added but not removed would turn `close()` into a leak
 the resource probe only catches after five cycles.
+
+---
+
+## Stage B gets a trainer, because the shipped model had never seen the frame (§7.4)
+
+Before this pass, the Stage B *data* existed (40,000 examples, `npm run sft`)
+and **no trainer read it**. Every trainer in the repo was a Stage A trainer.
+That is a §7 gap, and it has a measurable shape — the runtime frame is
+essentially absent from the pretraining corpus:
+
+| The frame in `data/processed/seed/corpus.jsonl` (17,265 documents) | | |
+|---|---|---|
+| `<|sys|>` | 415 | the rules, once in a while |
+| `<|ctx|>` | **4** | the context block, effectively never |
+| `<|asst|>` | 1,108 | an assistant turn, mostly in the plain-text QA docs |
+
+The shipped artifact had been trained for 1,100 steps on shards that do not
+contain the format it is asked to continue at inference time. Extra steps on
+the same shards cannot fix that. So `training/scripts/train_stage_b.py`
+continues the Stage A checkpoint on the instruction data with **assistant-only
+loss** (§7.4), reusing `train_smoke.py`'s loop, scaler, scheduler, checkpoint
+manager and manifest writer so "verified resume" keeps meaning one thing.
+
+### What the mask had to get right (and three things it did not, at first)
+
+1. **The first word of every answer was unsupervised.** The mask first used
+   plain containment of `assistant_spans`. Byte-level BPE folds a word's
+   leading space into the word's own token (" My" is one token) and
+   `assistant_spans` starts *after* that space, so every answer's first word
+   failed the containment test — the word that names the value ("My CGPA is
+   …"). A token now counts when it overlaps the span and everything it
+   contributes outside the span is whitespace. Measured over 2,000 real
+   examples: **holes 0, leaks 0**.
+2. **The closing `<|end|>` was never supervised.** `assistant_spans` stops one
+   character before it, and the runtime stops generation *by emitting it* — so
+   the model was never taught to end a turn. The mask now includes the
+   terminator and a test requires exactly one per turn (`501/501` on the
+   sample; `<|asst|>` never leaks in).
+3. **A window with no supervised token would have produced NaN.** Stages are
+   cut as fixed windows over a packed stream; a 128-token stretch of context
+   and question has no supervised position at all, `cross_entropy` over an
+   all-`-100` target returns NaN, and one NaN step poisons every weight in the
+   run. Windows with no supervision are now **skipped and counted**, and
+   validation windows are drawn from the ones that carry supervision — a val
+   loss averaged over answerless windows is not comparable between runs.
+
+Also fixed while measuring: `masked_text` decoded with
+`skip_special_tokens=True`, so an abstention example (whose whole answer is
+`<|abstain|><|end|>`) printed as an empty string. A diagnostic that shows
+nothing is worse than none.
+
+### Measured
+
+| Claim | Result |
+|---|---|
+| Data | 40,000 examples · 24,694,864 chars · 31,187,143 B |
+| Tokens **MEASURED** (shipping tokenizer) | **10,582,527**, of which **1,155,200 supervised (10.9%)**; longest example 538 |
+| The file's own ESTIMATE | 7,263,195 — **31% low** (chars/3.4; the real ratio is ~2.3) |
+| `make_instruction_data.py` | now measures the real count when the tokenizer is present, and keeps the estimate as a labelled fallback |
+| Local Stage B run | **60 steps, 66.6 s**, 1.11 s/step (batch 4 × block 256, grad-accum 2, CPU) |
+| Loss | 7.5571 → **6.3133**; windowed gate **PASS** (7.6043 → 6.0065); val 6.2715 → **5.5403** |
+| Format change, same prompts | Stage A: no turn end, `<|asst|>` mid-answer. Stage B @60 steps: **frame and `<|end|>` appear** (`npm run sample:answers`) |
+| New tool | `inference/sample_answers.py` — greedy-decode a checkpoint on real prompts via `inference/reference.py`, no browser |
+| Tests | **451 JS / 343 Python**, 0 failures |
+
+### Still open
+
+* **Quality is not achieved and not claimed.** Sixty steps on 3,000 examples
+  proves the path and the format; the words are still wrong. The shipped
+  export remains the Stage A artifact, and the config-A Stage A → Stage B run
+  is owner-side (a GPU).
+* The mask is verified **structurally** (coverage, leaks, terminators) and its
+  effect on quality is **NOT TESTED** at any real scale.
+* `--init` refuses a checkpoint whose vocab/width/depth differ from the run's
+  config — tested against a mismatched checkpoint written by the checkpoint
+  manager itself, so the refusal is exercised, not just written.

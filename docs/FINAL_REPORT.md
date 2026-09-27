@@ -26,7 +26,7 @@ this report says so in the same breath as the good news.
 | "custom … trained from scratch" | **MEASURED** — our tokenizer, our model code, random init, our trainer, our export, our engine. No pretrained weights anywhere in the shipping path. |
 | "running locally in the visitor's browser" | **MEASURED** — `dev-ai-probe.js` **43/43 checks** (real GPU), run against the **built bundle** (`dist/`, served the way production serves it, via the probe's `AI_BASE`) rather than the source tree; one real answer with `AI ANSWER · ON-DEVICE MODEL`, 12 facts read, 12 sources; zero requests to any third party. |
 | "no LLM API, no backend" | **MEASURED** — `npm run build` ships a static bundle; the model is fetched from the site's own path and cached locally. Checked on the built bytes rather than asserted: `tests/build-bundle.test.mjs` fails if any shipped `ai/**` script contains an absolute URL, if the shipped AI code makes more than the **one** outbound call it makes (`fetch(KB_URL)`, this site's own knowledge file), if it opens an XHR/WebSocket/EventSource/sendBeacon, if any shipped file carries a secret-shaped string, or if any names a hosted LLM service. |
-| "training from scratch" (the full spec-sized model) | **NOT TESTED** — Stage A + Stage B at config A have never run; they need a GPU. What has run is the 4.98M CPU pipeline config. |
+| "training from scratch" (the full spec-sized model) | **NOT TESTED** — Stage A + Stage B at config A have never run; they need a GPU. What has run is the 4.98M CPU pipeline config, and both trainers now exist for it: Stage A for 1,100 steps and Stage B (new, assistant-only loss) for 60. |
 | "answering questions about my work" | **NOT TESTED in the sense that matters** — the shipped checkpoint answers, but it answers *badly*, because it has had 1,100 steps on a ~3 MB corpus. |
 
 So: the claim is true about **architecture, privacy and locality**, and not yet
@@ -44,7 +44,7 @@ true about **answer quality**. See "What I need from you".
 | Vocab | **1,024**, our own BPE, version `portfolio-bpe-1k-45395d2ebc83`, 66,667 B | **MEASURED** |
 | Specials | `<|sys|> <|ctx|> <|user|> <|asst|> <|end|> <|abstain|>` | **MEASURED** |
 | Real token ratio | **1.44–1.72 chars/token** (≈1.5), not the 4 the first budget assumed | **MEASURED** |
-| Stages | Stage A causal pretrain → Stage B instruction SFT, one tokenizer for both | **MEASURED as code** · **NOT TESTED as quality** |
+| Stages | Stage A causal pretrain → Stage B instruction SFT, one tokenizer for both | **MEASURED as code, both trainers exercised** · **NOT TESTED as quality** |
 | Shipping quality target | `CONFIG_A`: ~37.9M params, vocab 16,384, 10 layers, context 1024 | **ESTIMATED** (arithmetic; `count_parameters.py` confirms the arithmetic) |
 | Contingency | `CONFIG_LITE` ~17M, only if T1 budgets fail | **NOT TESTED** |
 
@@ -62,6 +62,9 @@ true about **answer quality**. See "What I need from you".
 | Did more steps help the answers? | **No.** 800 → 1100 steps changed the output (`"work reviewed cor byandeeer why"` → `"Uneomunyatoe thek, reviewed cor byandeainir…"`) but not its quality. The corpus is ~3 MB of generated text and the model is 5M params: it is memorising, not learning to answer. **The blocker is data and scale, not step count** | **MEASURED** |
 | Checkpoint + resume | Verified, including config/tokenizer-version validation on load | **MEASURED** (`checkpoint.py`, resume test) |
 | Run record for the shipped artifact | `RUN_MANIFEST.json` is written by `_finish()`, which every run and resume reaches, so the 800-step artifact's missing manifest proved that run was **interrupted**. Resuming it (`--resume auto`, step 800 → 1100) **finished the run and wrote the manifest** (23 KB: seed, config, tokenizer version, hyperparameters, data-shard hashes for 68 shards, full loss history) — the record-keeping is now proven on a run that completes | **MEASURED** |
+| Stage B (instruction tuning, §7.4) | Trainer `training/scripts/train_stage_b.py`, assistant-only loss, run locally at config `local`: **60 steps in 66.6 s**, loss 7.5571 → 6.3133 (**windowed PASS**), val 6.2715 → **5.5403**, 12.1% of seen tokens supervised. Same prompts through `npm run sample:answers`: Stage A ends nowhere and emits `<|asst|>` mid-answer, Stage B at 60 steps emits the frame **and** `<|end|>` | **MEASURED (path + format) / NOT TESTED (quality)** |
+| Why Stage B was necessary, not a refinement | The runtime frame is essentially absent from the pretraining corpus: of 17,265 seed documents, `<|sys|>` appears in 415, `<|ctx|>` in **4**, `<|asst|>` in 1,108. The shipped checkpoint was asked to continue a format it had never seen | **MEASURED** |
+| Stage B data, real token counts | 40,000 examples = **10,582,527 tokens**, of which **1,155,200 (10.9%) supervised**; the data manifest's own figure (7,263,195, characters/3.4) was **31% low**. `make_instruction_data.py` now measures it with the shipping tokenizer when one is present | **MEASURED** |
 | GPU / Kaggle Stage A+B | **Never run.** Scripts and notebook exist; the run is owner-side | **NOT TESTED** |
 | P4 verify gate (9/9 sources) | **NOT TESTED** — no trained-for-quality checkpoint to gate | **NOT TESTED** |
 
@@ -170,7 +173,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
 | No AI-caused jank | **MEASURED** — **0 % median frame drift / 1.00× p95** with the film's tier pinned on the real GPU, and 65 ms worst long task vs the page's own 88 ms |
 | Three.js not duplicated, no new WebGL scene, no permanent extra rAF | **MEASURED** — 0 GL programs compiled while answering (browser probe), and a static gate over the shipped code: the whole `ai/` tree has no `getContext`, no canvas, no `THREE` object, no `setInterval`, and exactly one `requestAnimationFrame` (a one-shot class toggle). The frame monitor adds *and removes* a callback on the film's own GSAP ticker |
 | Scratch tokenizer + model, random init | **MEASURED** |
-| Stage A + Stage B done | **NOT TESTED** — owner-side GPU |
+| Stage A + Stage B done | **Stage B now has a trainer** and it ran here at the `local` config (60 steps, loss 7.5571 → 6.3133, windowed PASS, val 6.2715 → 5.5403). The config-A pair is **NOT TESTED** — owner-side GPU |
 | Retrieval / guard / EN-HI-Hinglish / auto language detection | **MEASURED** |
 | No language selector | **MEASURED** — none exists |
 | No backend, no API key, local inference | **MEASURED** — the built bundle is scanned: no external URL in any shipped AI script, exactly one outbound call site (the site's own `knowledge.json`), no XHR/WebSocket/EventSource/sendBeacon, no secret-shaped string, no hosted-LLM hostname |
@@ -237,10 +240,15 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
 1. **A GPU run** — the Kaggle notebook and scripts are in `training/notebooks/`
    and `training/scripts/`. Stage A + Stage B at config A is the single thing
    that turns the quality claim from false to true, and it is the only item on
-   this list that nothing on this machine can substitute for. Before it, worth
-   running `npm run train:local` to completion: it resumes from `latest` and
-   writes the `RUN_MANIFEST.json` the interrupted run never wrote, so the
-   record-keeping is proven on a run that finishes.
+   this list that nothing on this machine can substitute for. The recipe is
+   now two commands, and both have been run at the local shape:
+   `npm run train:local` (Stage A) then `npm run train:sft -- --init
+   training/checkpoints/stage-a/latest.pt --config A --steps 3000 --amp`
+   (Stage B, assistant-only loss). Stage B is not optional: the runtime frame
+   `<|ctx|>…<|asst|>` appears in **4 of 17,265** pretraining documents, so a
+   Stage A-only checkpoint has never seen the format it is asked to continue.
+   `npm run sample:answers` shows what a checkpoint actually answers without
+   exporting it or opening a browser.
 2. **Then a decision on the P4 gate** — whether the 9/9-source verify gate is
    the bar, or the §14 evaluation numbers replace it.
 3. **A real-device pass** — one mid-range Android and one iPhone, for the T1/T2
