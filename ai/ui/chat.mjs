@@ -177,6 +177,8 @@ let working = 0;
   let voice = null;            /* built on the first tap, never on open */
   let micBtn = null;
   let disclosureSpoken = false;
+  /* A disclosure waiting on the on-device question (§19) — see voiceChanged. */
+  let disclosurePending = false;
   let voiceFailure = null;      /* the reason last spoken for a stop nobody asked for */
 
   /* ── section: DOM ─────────────────────────────────────────────── */
@@ -786,6 +788,15 @@ let working = 0;
       voiceFailure = st.reason;
       bubble('bot', st.reason, { badge: 'VOICE OFF', badgeClass: 'is-note' });
     }
+    /* The disclosure that was waiting for the platform to say where
+       recognition runs (see toggleVoice): now that it has answered, the
+       sentence can be the true one. Nothing is spoken for a session that
+       ended while the question was open. */
+    if (disclosurePending && st?.enabled && st.onDevice !== null) {
+      disclosurePending = false;
+      disclosureSpoken = true;
+      bubble('bot', st.disclosure, { badge: 'VOICE ON', badgeClass: 'is-note' });
+    }
   }
 
   /* §2 N6: the recognizer, the VAD and the speaker arrive on the first tap,
@@ -844,10 +855,20 @@ let working = 0;
     voiceFailure = null;
     /* Said once, in the open, before anything is listened to: this engine
        sends audio off the device, and the panel's usual "what you type stays
-       in your browser" does not stretch to cover speech. */
+       in your browser" does not stretch to cover speech.
+
+       §19 turned up one exception worth asking about — an experimental mode
+       where the platform recognises speech on this device instead. That
+       question is answered in a few milliseconds, and this is a sentence
+       about where the audio goes, so it waits for the answer rather than
+       guessing at it: `onDevice === null` means the question is still open. */
     if (!disclosureSpoken) {
-      disclosureSpoken = true;
-      bubble('bot', st.disclosure, { badge: 'VOICE ON', badgeClass: 'is-note' });
+      if (st.onDevice === null) {
+        disclosurePending = true;
+      } else {
+        disclosureSpoken = true;
+        bubble('bot', st.disclosure, { badge: 'VOICE ON', badgeClass: 'is-note' });
+      }
     }
   }
 

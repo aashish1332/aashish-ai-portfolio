@@ -707,14 +707,14 @@ worst abs Δ logit **3.58e-07**.
 
 | Budget | §4 | Measured |
 |---|---|---|
-| AI chat **code** chunk, conservative reading (every shipped `ai/**` module + `knowledge.json`) | ≤ 150 KB gz | **69,079 B** (45.0 %) — was 138,896 B (90.4 %) before shipped `ai/**` stopped carrying comments |
-| — of that, §4's chat-UI chunk proper (UI + KB + retrieval + language + guard + intent + anchors + governor) | — | 46,978 B (30.6 %) |
-| — of that, voice add-ons (loaded only on the tap that picks voice, §2 N6) | §4 lists separately | 7,432 B |
+| AI chat **code** chunk, conservative reading (every shipped `ai/**` module + `knowledge.json`) | ≤ 150 KB gz | **69,664 B** (45.4 %) — was 138,896 B (90.4 %) before shipped `ai/**` stopped carrying comments; 69,079 B before the on-device voice path (+585 B gz, `ai/voice/index.mjs` to 4,861 B) |
+| — of that, §4's chat-UI chunk proper (UI + KB + retrieval + language + guard + intent + anchors + governor) | — | 47,037 B (30.6 %) |
+| — of that, voice add-ons (loaded only on the tap that picks voice, §2 N6) | §4 lists separately | 7,958 B |
 | — of that, LLM runtime + tokenizer (§4 "LLM runtime" row) | — | 14,669 B |
-| AI assets actually fetched by **the click** (static reach of `ai/ui/chat.mjs`) | §4's number to keep small | **41,221 B gz (40.3 KB), 14 files** |
+| AI assets actually fetched by **the click** (static reach of `ai/ui/chat.mjs`) | §4's number to keep small | **41,280 B gz (40.3 KB), 14 files** |
 | Rest of the page | regression guard 250 KB | 65,649 B |
-| Model payload (weights + tokenizer + manifest) | ≤ 25 MB preferred, ≤ 40 MB hard | **5,144,357 B** raw · 4,731,918 B gz (step 1100) |
-| First-use download, T1/T2 | ≤ ~40 MB | **4,798,585 B** gz (**12 %**) |
+| Model payload (weights + tokenizer + manifest) | ≤ 25 MB preferred, ≤ 40 MB hard | **5,144,357 B** raw · 4,741,050 B gz (step 1100) |
+| First-use download, T1/T2 | ≤ ~40 MB | **4,810,714 B** gz (**11.5 %**) |
 | Any single AI asset | ≤ ~100 MB | 5,059,584 B raw / 4,732,964 B gz |
 | Files | — | 44 |
 
@@ -810,9 +810,11 @@ asserted byte-identical to source, because §2 N7 says the AI layer does not
 touch the film.
 
 The conservative §4 figure is the number that guards the budget, and after the
-comment strip it is at **45.0 % — 84 KB of headroom** — with the runtime
-(14.7 KB) and the voice add-ons (7.4 KB) inside it, both of which §4 lists on
-their own rows. The click's static reach fell with it, to **41,221 B gz**.
+comment strip it is at **45.4 % — 82 KB of headroom** — with the runtime
+(14.7 KB) and the voice add-ons (8.0 KB) inside it, both of which §4 lists on
+their own rows. The click's static reach fell with it, to **41,280 B gz** (every
+figure in this paragraph is the 2026-09-27 re-run, after the on-device voice
+path added 585 B gz to the chunk).
 **The budget is no longer the binding constraint on what `ai/` may grow into; it
 is a regression guard now.**
 
@@ -908,7 +910,34 @@ testing itself, and both would have produced a green result for a broken path:
 
 | | |
 |---|---|
-| chat code chunk (§4, conservative) | **69,079 B gz = 45.0 %** after the 2026-09-27 comment strip (before it: 138,896 B = 90.4 %, and 138,779 before the badge fix and its comment) |
+| chat code chunk (§4, conservative) | **69,664 B gz = 45.4 %** after the 2026-09-27 comment strip (before it: 138,896 B = 90.4 %, and 138,779 before the badge fix and its comment). +585 B gz of the current figure is the on-device voice path (`ai/voice/index.mjs` 4,861 B gz, `ai/ui/chat.mjs` 9,163 B gz) — see `docs/RESEARCH_VERIFICATION.md` row 6 |
+
+### Where voice recognition runs (2026-09-27, §19 row 6)
+
+Not a performance measurement — a claim with a test behind it, recorded here
+because it decides what the panel is allowed to say. `probeOnDevice()` asks the
+platform once per session, and the microphone does not open until it answers or
+the 1.5 s cap is lost:
+
+| Case | Behaviour | Instrument |
+|---|---|---|
+| `available()` answers `'available'` | `processLocally = true`; sentence becomes `SPEECH_DISCLOSURE_ON_DEVICE` | `tests/voice.test.mjs` VOICE-12 (double) |
+| `'downloadable'` / `'downloading'` / `'unavailable'` / a word we do not know | server-side engine; cautious sentence; **no** `processLocally` | same |
+| no `available()` API (Firefox, Safari, older Chrome) | not waited for at all — the microphone opens on the same tick, as before | same |
+| never answers | cap fires, silence counted as **no** (`settled`), engine built server-side, sentence spoken | same |
+| engine refuses the on-device session (`language-not-supported`) | fallback to the server-side engine **once**, reported, cautious sentence back; not asked again in the session | same |
+
+**NOT TESTED:** on a real browser or phone — no machine has yet reported
+`'available'` to us. `docs/MANUAL_TEST_CHECKLIST.md` §D asks the tester to
+compare the sentence against `SpeechRecognition.available()` by hand.
+
+`dev-ai-probe.js` gained the browser-side half: it now checks that the
+**sentence matches `st.onDevice`** (a panel promising on-device while
+`onDevice` is false is the failure; so is a `null` that never settles), and its
+post-tap wait went from 1.5 s to 2.5 s because the recognizer holds the
+microphone for up to 1.5 s while it asks. That check is **written and not
+re-run** — headless Chrome on this box has the API and no microphone, so this
+machine takes the refusal branch and the assertion never executes here.
 
 ### Frame health, on the real GPU (§6.3/§14, 2026-09-27)
 

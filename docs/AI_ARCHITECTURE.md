@@ -283,6 +283,20 @@ while it listens, your audio leaves this device. Typed questions never do."*
 The panel's older promise ("what you type stays in your browser") is still
 true, and it is deliberately not stretched to cover speech.
 
+**That sentence is now a question, not an assumption** (added 2026-09-27,
+after re-verifying §19 — see [RESEARCH_VERIFICATION.md](RESEARCH_VERIFICATION.md)
+row 6). Before the microphone opens, the recognizer asks the platform
+`SpeechRecognition.available({ processLocally: true, langs })`, and sets
+`processLocally` **only on `'available'`** — a pack that still has to be
+downloaded would fail the session, and a dead microphone is a worse outcome
+than a disclosed one. `install()` is deliberately not used: it starts a
+download, which is not something to do on a click. The panel then says the
+sentence that matches: the cautious one while the question is open, the
+on-device one once the platform has answered yes (`SPEECH_DISCLOSURE_ON_DEVICE`).
+If the engine refuses anyway — the shape of a known Chrome regression — the
+server-side engine is the fallback, **once**, reported, with the cautious
+sentence coming back. **NOT TESTED against a real microphone.**
+
 **The order, stated exactly** (the first draft of this doc said "before
 anything is listened to", which the code did not quite do). `enable()` calls
 the engine's `start()` and the disclosure bubble is appended in the **same
@@ -543,7 +557,8 @@ That is an allow-list entry with a reason, not a default.
 | The model answering from **its own generation**, not a template | **built, and answered in a real browser** — `ai/answers/model.mjs` retrieves context, asks the worker, guards the result and resolves placeholders. MEASURED on R1 headless Chrome: `dev-ai-probe.js` 31/31, panel ready 20.0 s, first answer 91.6 s, `AI ANSWER · ON-DEVICE MODEL` with 2 sources, "what is his phone number?" → `NO ANSWER · NOT PUBLISHED`, and the intent-fallback question ("what are your skills?") reading **12 capped facts**. What its answers *SAY* is still **NOT TESTED as quality** — the 4.98M `local` checkpoint is an export exercise, and it answers with garbage |
 | An always-open microphone that still only transcribes speech | **built, unit-tested** — `ai/voice/vad.mjs` (energy VAD, adaptive floor, hysteresis, max segment, post-cut cooldown) opens a gate the recognizer is switched by. Whether it survives a real room is **NOT TESTED** |
 | **Voice**: microphone, wake phrase, speech output | **built, adapter-first, and browser-verified** — 0 AI requests before the tap, the audio disclosure in the DOM before any result can be handled, a wake phrase in continuous mode, the answer spoken in its own language, and a dead microphone turned off with a stated reason and the scene handed back (`dev-ai-probe.js`, 26/26 — the probe prints its own tally) |
-| **Voice with a live microphone** | **NOT TESTED.** Headless Chrome ships the API and has no microphone, so the *listening* path is covered by unit tests against doubles (34) and by a browser running a **stub** engine (`dev-resource-probe.js`), never by a real voice. A human saying "hey Aashish" into a laptop, in a noisy room, with an accent, has not happened. Chrome-only in practice; Firefox and Safari get the disabled button and the reason |
+| Where voice recognition runs: on the device when the platform says it can | **built and unit-tested, NOT TESTED on a machine** — `probeOnDevice()` asks once per session; `processLocally` is set only on `'available'`; the microphone does not open until the question is answered or the 1.5 s cap is lost (silence counts as no, so the sentence is never left unspoken); a refusal of the on-device mode falls back to the server-side engine once and switches the disclosure back. `tests/voice.test.mjs` VOICE-12 (7 cases) with a double that answers `available` / `unavailable` / never / throws / refuses the session. **No real browser has reported `available` to us yet** |
+| **Voice with a live microphone** | **NOT TESTED.** Headless Chrome ships the API and has no microphone, so the *listening* path is covered by unit tests against doubles (34 before VOICE-12, 47 in the file now) and by a browser running a **stub** engine (`dev-resource-probe.js`), never by a real voice. A human saying "hey Aashish" into a laptop, in a noisy room, with an accent, has not happened — and neither has the on-device path, which depends on a language pack being installed on the visitor's machine. Chrome-only in practice; Firefox and Safari get the disabled button and the reason |
 | Continuous mode's turn lifecycle: wake → follow-up → expiry | **verified in a browser with a stub engine** — unaddressed speech asked 0 questions, the wake phrase asked 1 and opened the turn, a bare follow-up asked 2, and after 12 s of silence the turn closed and the next unaddressed sentence asked nothing |
 | A cloned voice (his own) | **not started** — this is the browser's voice, chosen by language |
 

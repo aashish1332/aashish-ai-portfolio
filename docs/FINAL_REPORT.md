@@ -83,6 +83,7 @@ true about **answer quality**. See "What I need from you".
 | Language | EN / HI / Hinglish detection, no selector — by design | **MEASURED** |
 | §14 model-answer metrics | **MEASURED, and the gates FAIL** — a three-step pipeline (`eval:prompts` → `eval:decode` → `eval:report`) builds the client's own prompts, decodes them (shipping engine: 5.9 tok/s, q8 as exported) and scores the answers with the *shipped* guard/placeholders/language rules (`docs/EVALUATION.json`). On `training/checkpoints/sft-local` (60 steps), full 96-token budget: factual accuracy **0.0%** of the 34 cases that state a fact (gate 95%), abstention recall **92.3%** (gate 95%), language EN 100% / HI+Hinglish **78.6%** (gate 90%), unsupported-claim 7.3% pre-guard → **0.0% post-guard**, 0 fabrications on the adversarial set, turns terminated 100% | **MEASURED (a failing grade) / NOT TESTED (at a real scale)** |
 | §14 metric revoked | **The first §14 run reported factual accuracy 18.9%; that figure is withdrawn.** The scorer counted a case with an empty `expected_facts` as fully covered, and the seven answerable cases with no expected fact were the whole numerator (7 of 37 = 18.9%). Re-grading the same answers with the fixed scorer gives **0.0%**. A regression test now pins the rule. Recorded here rather than silently edited, because a number that was quoted before it was checked is exactly what §15.5 exists for | **MEASURED (correction)** |
+| §19's research notes, re-verified | **DONE 2026-09-27** → [`docs/RESEARCH_VERIFICATION.md`](RESEARCH_VERIFICATION.md): all 13 notes carried a verdict (11 CONFIRMED, 3 with version/size corrections, one figure — Kokoro's 86 MB q8 — left **ESTIMATED** for want of a primary source). One note changed the code: Web Speech's on-device mode (row 6 above). The check is a literature re-read, not a measurement, and says so | **MEASURED (a documented check)** |
 | Relevance of what is selected vs. what is asked | **MEASURED for the deterministic half, NOT TESTED for the model's** — grounding (every `expected_facts` cited) 100 %, 0 fabricated facts, alias routing 14 → 0 misroutes, gate ceiling 4.647 recomputed from the data. Whether a *generated sentence* is relevant to its question is **NOT TESTED**, and §14 asks for metrics (QA accuracy, unsupported-claim rate, abstention precision/recall) rather than a relevance judge: reading those needs a trained-for-quality checkpoint, which is owner-side. The checkpoint that exists answers with garbage, so a judge run against it would grade noise | **MEASURED / NOT TESTED** |
 
 ## BROWSER
@@ -125,7 +126,7 @@ The constraint that outranks everything else: *the portfolio must not get slower
 | §4's reference profiles (never run before 2026-09-27) | R1 as it is **0 %**, R1 @4× CPU **−2.5 %**, R1 @6× CPU **+0.3 %** — all **1.00×** p95, all **43/43 checks**; panel ready 815 / 1,091 / 1,502 ms; first answer 25.1 / 45.4 / 42.8 s | **MEASURED** |
 | A weak device, for real | **NOT TESTED** — the CDP throttle hits the main thread (frame time 18.3 → 35.3 ms) but not the Worker proportionally (first answer 25.1 → 45.4 s is 1.8×, not 4×), so this profile must not be quoted as a phone's latency | **NOT TESTED** |
 | …and why it took this long | The A/B ran under software GL until 2026-09-27, where it was inconclusive; the first real-GPU run without a pin reported **−49 %** (the *open* arm faster) because the film's own governor walked tier 1 → tier 4 during the session — a confound the probe now detects and refuses to attribute | **MEASURED** |
-| §4 code chunk | **69,079 B gz = 45.0 %** of 150 KB (84 KB headroom), conservative reading: every shipped `ai/**` + `knowledge.json`; was 138,896 B = 90.4 % until the build stopped shipping comments from `ai/**`. Asserted on every `npm test`, and reported by `npm run bundle` | **MEASURED** |
+| §4 code chunk | **69,664 B gz = 45.4 %** of 150 KB (82 KB headroom), conservative reading: every shipped `ai/**` + `knowledge.json`; was 138,896 B = 90.4 % until the build stopped shipping comments from `ai/**`. It moved 69,079 → 69,664 B on 2026-09-27 for the on-device voice path and its tests (+585 B gz, of which `ai/voice/index.mjs` is 4,861 B gz now). Asserted on every `npm test`, and reported by `npm run bundle` | **MEASURED** |
 
 ## CHAT
 
@@ -148,7 +149,8 @@ The constraint that outranks everything else: *the portfolio must not get slower
 |---|---|---|
 | Tap & Speak | Exists; recogniser is the platform's (`SpeechRecognition` / `webkitSpeechRecognition`) — an open pretrained component, disclosed | **MEASURED as code** |
 | Proactive | Wake phrase + hands-free mode, with a per-session limit and a stop word | **MEASURED as code** |
-| STT | Platform speech recognition, local on Chrome | **MEASURED as code** · live microphone **NOT TESTED** |
+| STT | Platform speech recognition — **server-side by default, and the code says so** (`ai/voice/index.mjs`'s own header: "that engine is *server-side*: while it listens, audio leaves the device", disclosed in those words). It is **not** "local on Chrome" unless the page asks; an earlier draft of this row said otherwise and was wrong | **MEASURED as code** · live microphone **NOT TESTED** |
+| STT, on-device when the platform allows it (§11.2 S0) | Added 2026-09-27 after re-verifying §19: `SpeechRecognition.available({ processLocally: true, langs })` is asked **once per session, before the microphone opens**; `processLocally` is set only on `'available'`; the disclosure switches to *"run on this device — what you say is not sent anywhere"* only after the platform says yes, and the shell waits for that answer instead of printing one sentence and contradicting it. Silence counts as no (the 1.5 s cap), so the sentence is never left unspoken; a refusal of the on-device mode falls back to the server-side engine **once**, reported. `install()` is not used — a language-pack download is not something to start on a click | **MEASURED as tests** (`tests/voice.test.mjs` VOICE-12, 7 cases, all against doubles) · **NOT TESTED** on a real browser or phone |
 | TTS | `speechSynthesis` with a voice picker; local, free | **MEASURED as code** · speech itself **NOT TESTED** |
 | VAD | Our own energy-based detector (`ai/voice/vad.mjs`) | **MEASURED as code** · thresholds unvalidated on real speech |
 | Laziness | §2 N6 enforced: only a capability table (`ai/voice/caps.mjs`) ships with the shell; the ~17 KB voice layer loads when a voice mode is chosen | **MEASURED** |
@@ -186,7 +188,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
 | WebGPU + WASM investigated | **MEASURED as investigation**; neither implemented, and the report says why |
 | Unsupported / mobile paths handled | **MEASURED** for unsupported (20/20) and the download-failure/retry path, both run against the **built bundle**; the responsive path under mobile emulation on the same bundle (43/43 at 390×844: the sheet pauses the film, closes cleanly, no horizontal overflow); a **real phone is NOT TESTED** |
 | Chat: streaming, Stop, Retry, Clear, bounded context, accessible, responsive | **MEASURED** except screen-reader and real-device behaviour |
-| Voice: both modes, local STT/TTS, lazy, permission paths, no selector, limits | **MEASURED as code/tests**; live speech **NOT TESTED** |
+| Voice: both modes, local STT/TTS, lazy, permission paths, no selector, limits | **MEASURED as code/tests**; live speech **NOT TESTED**. TTS is local (`speechSynthesis`); STT is the platform's — asked to stay on the device when the platform says it can (§19 row 6), disclosed either way |
 | Training resumable, checkpoints, evaluation, no fake results | **MEASURED** (resume verified); quality gates **NOT TESTED** |
 | Ternary separated from the baseline | **MEASURED** — separated by not existing; decision recorded |
 
@@ -208,7 +210,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
    microphone.** Every one of those is a NOT TESTED above.
 4. **WASM SIMD and WebGPU are unimplemented**, and the payoff cannot be measured
    here — this box runs scalar JS ~10× below its own specification.
-5. **The §4 code chunk is at 45.0 %** with 84 KB of headroom, so the budget is a
+5. **The §4 code chunk is at 45.4 %** with 82 KB of headroom, so the budget is a
    regression guard rather than a constraint on the next feature. It halved on
    2026-09-27 because half its gzip was comments in our own `ai/**` modules and
    the build stopped shipping them (−69,817 B gz, nothing a visitor runs
@@ -268,8 +270,8 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
 `AUDIT.md` · `docs/BASELINE.json` · `docs/BENCHMARKS.md` (every measurement, with
 its instrument) · `docs/CALIBRATION.json` · `docs/CPU_BENCHMARK.json` ·
 `docs/RESOURCES.json` · `docs/AI_ARCHITECTURE.md` · `docs/PROGRESS.md` ·
-`docs/PRIVACY.md` · `docs/MANUAL_TEST_CHECKLIST.md` ·
-`experiments/ternary/README.md`.
+`docs/PRIVACY.md` · `docs/RESEARCH_VERIFICATION.md` (the §19 check, claim by
+claim) · `docs/MANUAL_TEST_CHECKLIST.md` · `experiments/ternary/README.md`.
 
 Reproduce in this order: `npm run test:all` · `npm run build` · `npm run bundle`
 (the §4 figures) · `npm run verify:engine` · `npm run probe:resources` ·

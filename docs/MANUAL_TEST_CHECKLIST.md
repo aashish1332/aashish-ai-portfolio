@@ -89,14 +89,26 @@ automation; B8b/B8c (Stop and Retry) are covered mechanically by
 ## D. Voice (~2 min — the part that has never been done by a person)
 
 **Before you start:** know what will happen. Voice mode uses the browser's
-speech recognition, which **sends your audio to the browser's speech service**.
-The panel says this when you turn it on. Typed questions are never sent
-anywhere. If you do not want that, skip section D — it is the honest default.
+speech recognition, which as browsers ship it **sends your audio to the
+browser's speech service**. The panel says this when you turn it on. Typed
+questions are never sent anywhere. If you do not want that, skip section D —
+it is the honest default.
+
+The one exception is worth watching for, because it is the only claim in this
+project that depends on what the *browser* says rather than on us: since
+2026-09-27 the panel asks the platform whether it can keep recognition on the
+device (`SpeechRecognition.available({ processLocally: true })`), and if the
+answer is yes the sentence changes to "run on this device — what you say is not
+sent anywhere" and the session runs that way (see `docs/RESEARCH_VERIFICATION.md`
+§ row 6). **If you see that second sentence, we want to know** — it means the
+path works on your machine, and it has never been seen by a person.
 
 | # | Step | Expected |
 |---|---|---|
 | D0 | Click the mic button on a laptop/desktop (T2+) | **Proactive** mode: the button reads LISTENING and the microphone stays open — `window.PortfolioAI.voice.vad` should report `gated: true`, `available: true` |
-| D1 | Click the mic button | the disclosure appears **before** it listens; browser asks for permission |
+| D1 | Click the mic button | the disclosure appears **before** it listens; browser asks for permission. Read which sentence it is: *"sends what you say to your browser's speech service"* (server-side) or *"run on this device … not sent anywhere"* (on-device). Both are correct — the second one only appears when the platform said so |
+| D1b | In DevTools, before clicking: `SpeechRecognition.available({ processLocally: true, langs: ['en-IN'] })` | note the answer (`available` / `downloadable` / `unavailable`), and check that the sentence in D1 matches it — `available` ⟺ the on-device sentence |
+| D1c | Turn voice on with the mic muted or the language unsupported | if the engine refuses the on-device session, the panel must fall back **once** to the normal recogniser and say the cautious sentence — not go dead. Worth trying on a build with `processLocally` forced on |
 | D2 | **Deny** the permission | button goes dark, panel says why once, typing still works, and it does **not** ask again |
 | D3 | Turn voice on again and **allow** | button lights; say "what is your CGPA" | 
 | D4 | | the answer is spoken **as Aashish** ("my CGPA"), and the page **moves to the CGPA section** while it speaks |

@@ -563,7 +563,11 @@ const say = (label, ok, detail) => {
     for (let i = 0; i < 200 && !window.PortfolioAI.voice; i++) {
       await new Promise((r) => setTimeout(r, 200));
     }
-    await new Promise((r) => setTimeout(r, 1500));
+    /* 2.5 s, not 1.5 s: since §19 the recognizer asks the platform where
+       recognition runs and holds the microphone until it answers, or for
+       1.5 s, whichever comes first. Reading at exactly the cap would race
+       the very answer this is about to check. */
+    await new Promise((r) => setTimeout(r, 2500));
     const bots = [...document.querySelectorAll('.ai__msg.is-bot')];
     const last = bots[bots.length - 1];
     return {
@@ -576,7 +580,10 @@ const say = (label, ok, detail) => {
          is 221 chars and "leaves this device" sits at 151, so slicing to 120
          made a shown disclosure look absent — the check could not pass, and
          nobody noticed because on this machine the refusal branch ran
-         instead for the whole of §11. */
+         instead for the whole of §11. Since §19 there are TWO possible
+         sentences (server-side if the platform cannot recognise on-device),
+         so the check above compares against `onDevice` rather than against
+         one string. */
       text: last?.textContent,
       snippet: last?.textContent?.slice(0, 90),
       pressed: document.querySelector('.ai__mic')?.getAttribute('aria-pressed'),
@@ -585,7 +592,7 @@ const say = (label, ok, detail) => {
 
   if (voiceRun) {
     const st = voiceRun.st || {};
-    console.log(`  voice state                   level=${st.level} supported=${st.supported} enabled=${st.enabled} mode=${st.mode}`);
+    console.log(`  voice state                   level=${st.level} supported=${st.supported} enabled=${st.enabled} mode=${st.mode} onDevice=${st.onDevice}`);
     console.log(`  voice tap (80 ms in)          "${voiceRun.whileLoading?.text}" disabled=${voiceRun.whileLoading?.disabled} ${voiceRun.whileLoading?.title || ''}`);
     /* §2 N7: a tap must be acknowledged immediately. Either the button is
        already live, or it says it is loading — what it may NOT do is sit
@@ -594,8 +601,20 @@ const say = (label, ok, detail) => {
       voiceRun.whileLoading?.text !== 'VOICE' || voiceRun.whileLoading?.disabled === true,
       `"${voiceRun.whileLoading?.text}" disabled=${voiceRun.whileLoading?.disabled}`);
     if (st.enabled) {
-      say('voice: disclosure shown', /VOICE ON/.test(voiceRun.badge || '')
-        && /leaves this device/i.test(voiceRun.text || ''), `badge="${voiceRun.badge}" "${(voiceRun.snippet || '').trim()}…"`);
+      /* §19: which of the two sentences is correct now depends on the
+         platform's answer, so the check reads BOTH — the badge, and that the
+         sentence matches `st.onDevice`. A panel that promises on-device while
+         `onDevice` is false is the failure this guards, and so is the milder
+         one: `onDevice` still null after 2.5 s means the answer never came
+         and the disclosure was never spoken. */
+      const shown = String(voiceRun.text || '');
+      say('voice: the disclosure matches where recognition runs',
+        /VOICE ON/.test(voiceRun.badge || '')
+        && st.onDevice !== null
+        && (st.onDevice === true
+          ? /not sent anywhere/i.test(shown) && !/speech service/i.test(shown)
+          : /speech service/i.test(shown) && /leaves this device/i.test(shown)),
+        `onDevice=${st.onDevice} badge="${voiceRun.badge}" "${(voiceRun.snippet || '').trim()}…"`);
       say('voice: proactive mode on', voiceRun.handsFree === true, `handsFree=${voiceRun.handsFree} mode=${st.mode}`);
       /* The other branch cannot check this, and it is the browser-only half:
          the button has to SAY it is live, because a microphone nobody can see

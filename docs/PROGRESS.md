@@ -2585,3 +2585,58 @@ was withheld (7.3% → 0.0%).
 * `--init` refuses a checkpoint whose vocab/width/depth differ from the run's
   config — tested against a mismatched checkpoint written by the checkpoint
   manager itself, so the refusal is exercised, not just written.
+
+## Phase: §19 research notes re-verified, and the one that became behaviour
+
+§2 item 7 ("Verify, then claim … §19 research is dated Sep 2026") and §19's own
+heading ("re-verify before relying on them") asked for a check that had never
+been recorded. All thirteen notes now carry a verdict in
+[`docs/RESEARCH_VERIFICATION.md`](RESEARCH_VERIFICATION.md) — ten confirmed as
+written, two corrected in detail (Moonshine's size range, Silero's), one partly
+verified with one figure left ESTIMATED (Kokoro's). It is a literature
+re-read, not a measurement, and the file says so in its first line.
+
+**Two corrections worth naming.** Moonshine's "~26 MB-class" is now the top of
+its range, not the bottom (tiny 1 MB-class models, and 27M ones reported to
+match Whisper Medium on six languages) — the argument for it got *stronger*,
+and it is still not adopted. Silero VAD is **~2.3 MB** ONNX, not ~1 MB, which
+makes the existing decision in `ai/voice/vad.mjs` to write an energy detector
+*easier*, not harder. Kokoro's "q8 ≈ 86 MB" could not be traced to a primary
+source and stays ESTIMATED rather than being quoted.
+
+**The one note that changed the code.** §19 said Web Speech has an experimental
+on-device mode. What it did not say is that the mode is *askable*:
+`SpeechRecognition.available({ processLocally: true, langs })` answers before a
+session starts. That turns a disclosure into a choice, and it exposed a real
+inconsistency first: `docs/FINAL_REPORT.md` called STT "local on Chrome" while
+`ai/voice/index.mjs`'s own header says the engine is server-side and that audio
+leaves the device. The code was right and the report was wrong (fixed).
+
+What was built on that: the recognizer asks **once per session, before the
+microphone opens**, sets `processLocally` **only on `'available'`** (a pack that
+still has to be downloaded would fail the session, and a dead microphone is
+worse than a disclosed one), and `install()` is deliberately unused — a
+language-pack download is not something to start on a click. The panel's
+sentence follows the answer: the cautious one while the question is open
+(`ai/ui/chat.mjs` waits for it rather than printing one and contradicting it),
+the on-device one after a yes. If the engine refuses anyway — the shape of the
+Sep 2025 Chrome regression this row cites — the server-side engine is the
+fallback **once**, reported, with the cautious sentence back.
+
+Two bugs the tests found while writing them, both in the new path:
+
+* **A platform that never answers** left the disclosure unspoken forever: the
+  cap opened the microphone but `onDevice` stayed `null`, which is exactly the
+  state the shell waits on. Silence now counts as **no** (`settled`), because
+  under-claiming privacy is survivable and saying nothing is not.
+* **A late answer could re-decide a running session.** Once the cap had passed,
+  an answer arriving seconds later would have flipped the panel to the
+  on-device sentence while the engine was already running the server-side way.
+  The mode is decided once (`settled`), and a late answer is ignored.
+
+Measured: §4 code chunk **69,664 B gz = 45.4 %** (was 69,079 / 45.0 %; the new
+path and its tests cost **+585 B gz**). Tests **483 JS + 343 Python, 0
+failures**; `npm run build` clean. The on-device path itself is **NOT TESTED**
+against a real microphone or a real browser — `docs/MANUAL_TEST_CHECKLIST.md` §D
+now asks the tester to compare the sentence against `SpeechRecognition.available()`
+on their own machine.

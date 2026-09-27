@@ -190,6 +190,7 @@ idle page cost a measured 1.2 s of blocked main thread (`docs/BENCHMARKS.md` §1
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | hosting requirements, build/preview, what ships |
 | [docs/MANUAL_TEST_CHECKLIST.md](docs/MANUAL_TEST_CHECKLIST.md) | the ~10-minute routine for a real phone and microphone |
 | [docs/PROGRESS.md](docs/PROGRESS.md) | phase-by-phase log, including what is unfinished |
+| [docs/RESEARCH_VERIFICATION.md](docs/RESEARCH_VERIFICATION.md) | §19's research notes, re-verified claim by claim, with what each one is relied on for |
 | [docs/FINAL_REPORT.md](docs/FINAL_REPORT.md) | §18's final report: every value tagged MEASURED / ESTIMATED / NOT TESTED |
 | [experiments/ternary/README.md](experiments/ternary/README.md) | §13's written go/no-go on the ternary experiment (no-go, and why) |
 

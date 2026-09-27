@@ -1,7 +1,7 @@
 # PRIVACY — what leaves the visitor's device, and what never does
 
 **Status:** describes the **shipped configuration** as it stands on
-2026-09-23. Every claim here is checked against code, and anything not yet
+2026-09-27. Every claim here is checked against code, and anything not yet
 true is marked **NOT YET TRUE** rather than written in the present tense.
 Rules come from §1, §2 (N2/N3), §17 and §8.4 of the brief.
 
@@ -22,17 +22,24 @@ can be declined by simply not using it.
 |---|---|---|
 | Typed questions | **No.** There is no backend, no LLM API, no analytics on chat content | `ai/answers/model.mjs` (the answer path) and `ai/answers/quick.mjs` (the routing and the §8.4 gate) are each asserted by test to contain no `fetch`, no `XMLHttpRequest` and no URL; `evaluation/answer-text.mjs` (the retired §5.1 step-4 wording, which is **not shipped** at all) is asserted the same way |
 | Answers | **No.** Composed on the device from `knowledge.json` | same |
-| Voice input (SpeechRecognition) | **Yes — the browser's own speech service.** Disclosed once in the panel, in these words: *"Voice mode uses your browser's speech recognition, which sends what you say to your browser's speech service — so while it listens, your audio leaves this device. Typed questions never do."* | `ai/voice/index.mjs` (`SPEECH_DISCLOSURE`), shown on the click that enables voice |
+| Voice input (SpeechRecognition) | **The default is yes — the browser's own speech service — and since 2026-09-27 we ask whether it can be avoided.** The session first calls `SpeechRecognition.available({ processLocally: true, langs })`; only on `'available'` does it set `processLocally` and recognise on-device. The sentence follows the answer: *"…sends what you say to your browser's speech service — so while it listens, your audio leaves this device. Typed questions never do."* on the server-side path, and *"…run on this device — what you say is not sent anywhere, and no audio leaves this device."* when the platform said yes. The cautious sentence is the one shown while the question is still open (`ai/ui/chat.mjs`, `disclosurePending`), because a privacy claim may be under-made while waiting and never over-made | `ai/voice/index.mjs` (`SPEECH_DISCLOSURE`, `SPEECH_DISCLOSURE_ON_DEVICE`, `probeOnDevice`), shown on the click that enables voice; `tests/voice.test.mjs` VOICE-12 |
 | Voice output (speechSynthesis) | **No.** OS voices are local | §11.4 V0 |
-| Model download (P6/P7) | Only the model files themselves are fetched from the static host — **no question, no transcript, no telemetry** | NOT YET TRUE: no model exists yet |
+| Model download (P6/P7) | Only the model files themselves are fetched from the static host — **no question, no transcript, no telemetry** | The shipped export (`ai/model-export/aashish-ai-1/`, 4.8 MB gz first visit) is fetched from this site's own path and cached by version (§9.3); `dev-ai-probe.js` asserts no third-party request, and `tests/build-bundle.test.mjs` fails on any absolute URL in a shipped AI script |
 | Page load | The portfolio's own assets only. **+0 AI requests before the click** | `dev-ai-probe.js`, `npm run build` |
 | Analytics | **None exists.** No analytics library is loaded and no chat content is sent anywhere | repo-wide grep; AUDIT §"analytics" |
 
 **Consequence to state plainly:** the "runs on your device" promise is true
-for the typed experience today, and is true for voice only in the sense that
-*the model is local* — the browser's speech recognizer is a network service
-in its default mode. The panel says so rather than hiding it. §11.2 S0
-(`processLocally`) is the on-device alternative and is not implemented yet.
+for the typed experience today, and is true for voice in two parts — *the model
+is local* always, and *the recogniser is local* when the browser says it can be
+(§11.2 S0, `processLocally`, verified against the platform and implemented
+2026-09-27; the platform's default remains a network service, and the panel says
+which one you are in rather than implying the better one).
+
+**And a limit on that:** the on-device path is exercised by tests against a
+double, never against a real microphone on a real machine. Treat the sentence
+as the platform's claim, relayed — see `docs/RESEARCH_VERIFICATION.md` row 6
+and `docs/MANUAL_TEST_CHECKLIST.md` §D, which asks the tester to check that the
+sentence matches `SpeechRecognition.available()` on their own browser.
 
 ---
 

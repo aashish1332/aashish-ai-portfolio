@@ -5,11 +5,19 @@
 
      · INPUT  uses the browser's own speech recognition
        (`SpeechRecognition` / `webkitSpeechRecognition`). That is not a
-       neutrality choice — that engine is *server-side*: while it listens,
-       audio leaves the device. So nothing here touches the microphone until
-       the visitor presses the button, and when they do, the panel says so in
-       as many words (`SPEECH_DISCLOSURE`). The typed chat still keeps its old
-       promise, because typing never involved an engine at all.
+       neutrality choice — as browsers ship it, that engine is *server-side*:
+       while it listens, audio leaves the device. So nothing here touches the
+       microphone until the visitor presses the button, and when they do, the
+       panel says so in as many words (`SPEECH_DISCLOSURE`). The typed chat
+       still keeps its old promise, because typing never involved an engine
+       at all.
+
+       §19 turned up the one way that can be improved without giving up the
+       browser's recognizer: an experimental on-device mode. When the platform
+       says its language pack is installed, the session asks for it, the
+       disclosure becomes `SPEECH_DISCLOSURE_ON_DEVICE`, and if the engine
+       still refuses, the server-side engine is the fallback rather than a
+       dead microphone. Neither sentence is ever shown on a guess.
      · OUTPUT uses `speechSynthesis`, which is local and free. The voice is
        picked from the answer's own language (`voiceHint`) — a Hindi answer
        must not be read by an English voice.
@@ -81,11 +89,30 @@ export const VOICE_TIMING = {
 
 /* ── the disclosure ────────────────────────────────────────────── */
 
-/** Said once, when the visitor turns voice on, instead of being buried. */
+/**
+ * Said once, when the visitor turns voice on, instead of being buried.
+ *
+ * This is the text for the engine as browsers ship it — server-side — and it
+ * stays the default, because it is the one that claims the LEAST privacy. The
+ * panel only says the better version below when the platform has said, on the
+ * record, that it can keep recognition on the device (§19).
+ */
 export const SPEECH_DISCLOSURE =
   'Voice mode uses your browser\'s speech recognition, which sends what you '
   + 'say to your browser\'s speech service — so while it listens, your audio '
   + 'leaves this device. Typed questions never do. Turn voice off any time.';
+
+/** The same sentence, for a session the platform confirmed stays on-device. */
+export const SPEECH_DISCLOSURE_ON_DEVICE =
+  'Voice mode uses your browser\'s speech recognition, run on this device — '
+  + 'what you say is not sent anywhere, and no audio leaves this device. '
+  + 'Typed questions never leave it either. Turn voice off any time.';
+
+/* How long the platform is given to say whether it can recognise speech
+   on-device before the microphone opens anyway. A few milliseconds is a
+   normal answer; this cap is only here so an engine that never answers
+   cannot leave the visitor pressing a button that does nothing. */
+export const ON_DEVICE_PROBE_MS = 1500;
 
 /* ── the wake phrase ───────────────────────────────────────────── */
 
@@ -150,6 +177,32 @@ const FATAL_ENGINE_ERRORS = new Set([
 export const THRASH_LIMIT = 6;
 const THRASH_WINDOW_MS = 120;
 
+/**
+ * Ask the platform whether it can recognise speech without a server (§19).
+ *
+ * The shipping `SpeechRecognition` is server-side, and the on-device mode is
+ * experimental: `available({ processLocally: true, langs })` answers
+ * `'available' | 'downloadable' | 'downloading' | 'unavailable'`. Only
+ * `'available'` means the language pack is on this device now — asking for
+ * on-device recognition whose pack is missing fails the session, which is a
+ * worse outcome than a disclosed one.
+ *
+ * Returns a **promise only when there is an API to ask**, and `false` when
+ * there is not, because "cannot be asked" is information a caller must not
+ * have to wait for: a browser without this API opens the microphone on the
+ * same tick, exactly as it did before this existed. `null` — an engine that
+ * errors, or answers with a word we do not know — counts as no.
+ */
+export function probeOnDevice(env, lang) {
+  const Ctor = speechRecognitionCtor(env);
+  if (!Ctor || typeof Ctor.available !== 'function') return false;
+  try {
+    return Promise.resolve(Ctor.available({ processLocally: true, langs: [lang] }))
+      .then((answer) => answer === 'available')
+      .catch(() => false);
+  } catch { return false; }
+}
+
 export function createRecognizer(env, opts = {}) {
   const Ctor = speechRecognitionCtor(env);
   const supported = !!Ctor;
@@ -163,6 +216,31 @@ export function createRecognizer(env, opts = {}) {
   let thrash = 0;
   let lang = opts.lang || 'en-US';
   let reason = supported ? null : NO_ENGINE;
+/* §19: whether the platform can keep recognition ON the device. `null` is
+   "not asked", which is deliberately not the same as "no": the panel reads
+   this to choose its disclosure, and a claim of privacy has to wait for the
+   answer rather than assume it. */
+let onDevice = null;
+let asked = false;
+/* Whether the microphone's mode has been decided — by the platform's answer,
+   or by the cap in start() when no answer came. A late answer must not be
+   able to re-decide it: the engine is already running the other way, and a
+   disclosure that describes the wrong session is worse than a cautious one. */
+let settled = false;
+/* Whether on-device recognition has already been tried and abandoned, so a
+   platform that rejects it cannot be asked for it twice in one session. */
+let triedOnDevice = false;
+
+  /** Ask once. Returns a promise when the answer can take time, else null. */
+  function ask() {
+    asked = true;
+    const answer = (opts.probeOnDevice || ((l) => probeOnDevice(env, l)))(lang);
+    if (!answer || typeof answer.then !== 'function') { onDevice = answer === true; return null; }
+    return Promise.resolve(answer).then(
+      (v) => { if (settled) return; settled = true; onDevice = v === true; opts.onState?.(); },
+      () => { if (settled) return; settled = true; onDevice = false; opts.onState?.(); },
+    );
+  }
 
   function giveUp(why) {
     wanted = false;
@@ -205,11 +283,30 @@ export function createRecognizer(env, opts = {}) {
     r.interimResults = opts.interim !== false;
     r.continuous = !!opts.continuous;
     r.maxAlternatives = 1;
+    /* Only on a confirmed answer (see probeOnDevice): an engine asked to run
+       on-device without the language pack installed ends the session with
+       `language-not-supported`, and a microphone that does not work is a
+       worse outcome than a disclosed one. */
+    if (onDevice === true) r.processLocally = true;
     r.onstart = () => { listening = true; opts.onStart?.(); opts.onState?.(); };
     r.onresult = handleResult;
     r.onerror = (e) => {
       const code = String(e?.error || 'error');
       if (FATAL_ENGINE_ERRORS.has(code)) {
+        /* If asking for on-device recognition is what broke this session, the
+           server-side engine is the fallback — once, reported, and with the
+           disclosure switching back to the honest one. Never silent: the
+           caller sees the error code either way. */
+        if (onDevice === true && !triedOnDevice) {
+          triedOnDevice = true;
+          onDevice = false;
+          opts.onError?.(code, e);
+          try { r.abort?.(); } catch { /* noop */ }
+          rec = null;
+          opts.onState?.();
+          lag(() => { if (wanted) start(); }, THRASH_WINDOW_MS);
+          return;
+        }
         giveUp('The microphone is not available, so voice mode is off. Typing works.');
         try { r.abort?.(); } catch { /* noop */ }
         return;
@@ -228,6 +325,28 @@ export function createRecognizer(env, opts = {}) {
   function start() {
     if (!supported) return false;
     wanted = true;
+    if (!asked) {
+      const answering = ask();
+      if (answering) {
+        /* The microphone waits for the answer, so that what the panel says
+           about where the audio goes and where it goes cannot disagree. If
+           the platform never answers, the race is lost on purpose and the
+           session starts on the engine's default. `start()` still reports
+           true: the microphone is coming up, not open — `listening` says
+           which, and it is the field the button reads. */
+        Promise.race([answering, new Promise((resolve) => lag(resolve, ON_DEVICE_PROBE_MS))])
+          .then(() => {
+            /* Silence counts as no. The alternative is a session nobody can
+               describe, and the sentence that says where the audio goes is
+               not optional — under-claiming privacy is survivable, not
+               saying anything is not. */
+            if (!settled) { settled = true; if (onDevice === null) { onDevice = false; opts.onState?.(); } }
+            if (wanted && !listening) start();
+          })
+          .catch(() => { /* the probe never rejects; a defensive catch only */ });
+        return true;
+      }
+    }
     if (!rec) rec = build();
     try {
       rec.start();
@@ -247,6 +366,12 @@ export function createRecognizer(env, opts = {}) {
     get listening() { return listening; },
     get constructions() { return started; },
     get thrash() { return thrash; },
+    /** `true` only while the platform says recognition can stay on the device;
+     *  `false` once it has said otherwise; `null` before it has been asked or
+     *  while the answer is in flight. The tri-state is the point: a caller
+     *  that has to describe the session must be able to tell "no" from "not
+     *  known yet", and only the second one should keep it quiet. */
+    get onDevice() { return onDevice; },
     start,
     setLang(l) { lang = l; if (rec) rec.lang = l; },
     stop() { wanted = false; try { rec?.stop?.(); } catch { /* noop */ } },
@@ -421,7 +546,16 @@ const tabHidden = () => (typeof env.document?.hidden === 'boolean'
       continuous: p.continuous,
       reason: !support.supported ? support.reason
         : (!p.pushToTalk ? p.reason : (enabled ? null : failure)),
-      disclosure: enabled ? SPEECH_DISCLOSURE : null,
+      /* Where the audio actually goes, as the engine reports it, and the
+         disclosure text that follows from it — so the panel cannot promise
+         more privacy than this session has (§19, docs/PRIVACY.md). `null`
+         while the platform is being asked: the text below is already the
+         cautious one in that state, and this field is how the panel knows
+         the question is not settled yet. */
+      onDevice: enabled ? (nick?.onDevice ?? null) : null,
+      disclosure: enabled
+        ? (nick?.onDevice ? SPEECH_DISCLOSURE_ON_DEVICE : SPEECH_DISCLOSURE)
+        : null,
     };
   }
 

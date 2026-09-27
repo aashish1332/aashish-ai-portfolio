@@ -27,7 +27,11 @@ import {
   VOICE_POLICY, VOICE_TIMING, voicePolicy, voiceSummary, pickVoice, stripWake,
   recognizeSupported, createRecognizer, createSpeaker, createVoice,
   speechRecognitionCtor, WAKE_PHRASES, SPEECH_DISCLOSURE, NO_ENGINE, THRASH_LIMIT,
+  SPEECH_DISCLOSURE_ON_DEVICE, ON_DEVICE_PROBE_MS, probeOnDevice,
 } from '../ai/voice/index.mjs';
+
+/** Let the recognizer's own promise chain settle (real timers, not the fake). */
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -62,6 +66,10 @@ function makeEnv(over = {}) {
   }
 
   class FakeUtterance { constructor(text) { this.text = text; } }
+
+  /* §19: the on-device capability API, present only when a test asks for it —
+     which is also what a browser without it looks like. */
+  if (typeof over.available === 'function') FakeRecognition.available = over.available;
 
   const synth = {
     speaking: false,
@@ -745,6 +753,119 @@ test('VOICE-9: interim results arrive as partials and only finals are answered',
   assert.deepEqual(finals, ['what are your projects']);
 });
 
+/* ── VOICE-12 · where the audio goes, asked rather than assumed ──
+   §19's research notes say the browser's recogniser is server-side and that
+   an experimental on-device mode exists. The consequence for this module is a
+   claim in the panel, so what is tested here is the CLAIM'S PRECONDITION: the
+   sentence that promises privacy may only appear after the platform said so. */
+
+test('VOICE-12: a browser that cannot be asked is not waited for', async () => {
+  const { env } = makeEnv();
+  assert.equal(probeOnDevice(env, 'en-IN'), false,
+    'with no available() there is no promise to wait for; the microphone must not be held up by one');
+  const { env: can } = makeEnv({ available: async () => 'available' });
+  const answer = probeOnDevice(can, 'en-IN');
+  assert.equal(typeof answer.then, 'function', 'an API that exists is asked asynchronously');
+  assert.equal(await answer, true);
+});
+
+test('VOICE-12: only "available" counts, and it is asked the way the API wants', async () => {
+  const asked = [];
+  const { env } = makeEnv({
+    available: async (opts) => { asked.push(opts); return opts.langs[0] === 'hi-IN' ? 'downloadable' : 'available'; },
+  });
+  assert.equal(await probeOnDevice(env, 'en-IN'), true);
+  assert.equal(await probeOnDevice(env, 'hi-IN'), false,
+    'a language pack that still has to be downloaded is not a pack on this device');
+  assert.equal(asked[0].processLocally, true, 'the question has to be the on-device one');
+  assert.deepEqual(asked[0].langs, ['en-IN'], 'and it has to be about the language being spoken');
+  const { env: throws } = makeEnv({ available: async () => { throw new Error('nope'); } });
+  assert.equal(await probeOnDevice(throws, 'en-IN'), false);
+  const { env: odd } = makeEnv({ available: async () => 'sure' });
+  assert.equal(await probeOnDevice(odd, 'en-IN'), false, 'an unrecognised answer is not a yes');
+  assert.equal(await probeOnDevice(makeEnv().env, 'en-IN'), false);
+});
+
+test('VOICE-12: the microphone waits for the answer, then asks for on-device', async () => {
+  const { env, events } = makeEnv({ available: async () => 'available' });
+  const nick = createRecognizer(env, {});
+  assert.equal(nick.start(), true, 'the press is acknowledged at once');
+  assert.equal(events.constructed, 0, 'but the engine is not opened on a guess');
+  await tick();
+  assert.equal(events.constructed, 1);
+  assert.equal(events.instances[0].processLocally, true);
+  assert.equal(nick.onDevice, true);
+  assert.equal(nick.listening, true);
+});
+
+test('VOICE-12: an unavailable pack is not asked for, and the session still runs', async () => {
+  const { env, events } = makeEnv({ available: async () => 'unavailable' });
+  const nick = createRecognizer(env, {});
+  nick.start();
+  await tick();
+  assert.equal(events.constructed, 1);
+  assert.equal(events.instances[0].processLocally, undefined,
+    'asking for on-device recognition without the pack is how a session dies');
+  assert.equal(nick.onDevice, false);
+  assert.equal(nick.listening, true);
+});
+
+test('VOICE-12: a platform that never answers does not hold the microphone', async () => {
+  const { env, events, flush } = makeEnv({ available: () => new Promise(() => {}) });
+  const nick = createRecognizer(env, {});
+  nick.start();
+  await tick();
+  assert.equal(events.constructed, 0, 'still waiting, which is the point of the wait');
+  assert.equal(ON_DEVICE_PROBE_MS <= 2000, true, 'a wait longer than this is a dead button');
+  flush();                                   /* the cap fires */
+  await tick();
+  assert.equal(events.constructed, 1, 'an unanswered probe must not leave the visitor pressing nothing');
+  assert.equal(nick.onDevice, false, 'and unanswered is not a yes');
+});
+
+test('VOICE-12: on-device recognition the engine refuses falls back once, reported', async () => {
+  const { env, events, flush } = makeEnv({ available: async () => 'available' });
+  const errors = [];
+  const nick = createRecognizer(env, { onError: (code) => errors.push(code) });
+  nick.start();
+  await tick();
+  assert.equal(events.instances[0].processLocally, true);
+  events.instances[0].fail('language-not-supported');
+  assert.equal(nick.reason, null,
+    'the experimental mode failing is not the same as the microphone being unavailable');
+  assert.deepEqual(errors, ['language-not-supported'], 'and it is reported, not swallowed');
+  flush();
+  assert.equal(events.constructed, 2, 'the server-side engine is the fallback');
+  assert.equal(events.instances[1].processLocally, undefined);
+  assert.equal(nick.onDevice, false, 'the panel has to go back to the cautious sentence');
+  assert.equal(nick.listening, true);
+  /* asked for exactly once per session: a second refusal is a real refusal */
+  events.instances[1].fail('language-not-supported');
+  assert.match(nick.reason, /microphone is not available/);
+  assert.equal(events.constructed, 2);
+});
+
+test('VOICE-12: the panel claims on-device only while the session is', async () => {
+  const { env, events } = makeEnv({ available: async () => 'available' });
+  const chat = fakeChat();
+  const v = createVoice(env, { tier: 3, chat, speaker: fakeSpeaker() });
+  assert.equal(v.status().onDevice, null, 'voice is off; there is nothing to describe');
+  assert.equal(v.status().disclosure, null);
+  assert.equal(v.enable().enabled, true);
+  assert.equal(events.constructed, 0, 'the engine waits for the platform, as above');
+  assert.equal(v.status().disclosure, SPEECH_DISCLOSURE,
+    'the FIRST sentence is the cautious one: privacy may be under-claimed while waiting, never over-claimed');
+  await tick();
+  assert.equal(v.status().onDevice, true);
+  assert.equal(v.status().disclosure, SPEECH_DISCLOSURE_ON_DEVICE);
+  assert.match(SPEECH_DISCLOSURE_ON_DEVICE, /not sent anywhere/i);
+  assert.doesNotMatch(SPEECH_DISCLOSURE_ON_DEVICE, /sends what you say/i,
+    'the two sentences must not both be quotable for the same session');
+  v.disable();
+  assert.equal(v.status().onDevice, null);
+  assert.equal(v.status().disclosure, null);
+});
+
 /* ── VOICE-10 · what the panel may claim ────────────────────────── */
 
 test('VOICE-10: the disclosure says the audio leaves the device', () => {
@@ -756,6 +877,8 @@ test('VOICE-10: the disclosure says the audio leaves the device', () => {
   st.enable();
   assert.equal(st.status().disclosure, SPEECH_DISCLOSURE,
     'the sentence is only shown while it is true');
+  assert.equal(st.status().onDevice, null,
+    'a recogniser nobody has asked (this double; a browser with no capability API is asked and says no) is never reported as on-device');
 });
 
 test('VOICE-10: the module carries no string that narrates its own navigation', () => {
