@@ -259,6 +259,7 @@ its instrument) · `docs/CALIBRATION.json` · `docs/CPU_BENCHMARK.json` ·
 `docs/PRIVACY.md` · `docs/MANUAL_TEST_CHECKLIST.md` ·
 `experiments/ternary/README.md`.
 
-Reproduce in this order: `npm run test:all` · `npm run build` ·
-`npm run verify:engine` · `npm run probe:resources` · `npm run probe:latency` ·
-`npm run probe:offline` · `node dev-ai-probe.js` · `node dev-degrade-probe.js`.
+Reproduce in this order: `npm run test:all` · `npm run build` · `npm run bundle`
+(the §4 figures) · `npm run verify:engine` · `npm run probe:resources` ·
+`npm run probe:latency` · `npm run probe:offline` · `node dev-ai-probe.js` ·
+`node dev-degrade-probe.js`.

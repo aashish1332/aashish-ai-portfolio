@@ -335,7 +335,7 @@ run on.
 Run everything (no torch required, ~15 s):
 
 ```bash
-npm run test:all          # 393 JS tests + 326 Python tests (0 skip: torch is installed)
+npm run test:all          # 448 JS tests + 326 Python tests (0 skip: torch is installed)
 npm run params            # analytic parameter counts + each config's own band gate
 npm run smoke             # tokenizer contract, shards, cursor, checkpoints
 npm run export:model      # checkpoint → browser artifact + parity fixture
