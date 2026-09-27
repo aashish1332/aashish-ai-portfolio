@@ -641,8 +641,8 @@ worst abs Δ logit **3.58e-07**.
 
 | Budget | §4 | Measured |
 |---|---|---|
-| AI chat **code** chunk, conservative reading (every shipped `ai/**` module + `knowledge.json`) | ≤ 150 KB gz | **137,039 B** (89.2 %) |
-| — of that, §4's chat-UI chunk proper (UI + KB + retrieval + language + guard + intent + anchors + governor) | — | 91,923 B (59.8 %) |
+| AI chat **code** chunk, conservative reading (every shipped `ai/**` module + `knowledge.json`) | ≤ 150 KB gz | **134,175 B** (87.4 %) |
+| — of that, §4's chat-UI chunk proper (UI + KB + retrieval + language + guard + intent + anchors + governor) | — | 89,088 B (58.0 %) |
 | — of that, voice add-ons (loaded only when a voice mode is chosen, §2 N6) | §4 lists separately | 18,464 B |
 | — of that, LLM runtime + tokenizer (§4 "LLM runtime" row) | — | 26,652 B |
 | Rest of the page | regression guard 250 KB | 65,649 B |
@@ -690,18 +690,33 @@ been measured at **390 ms** and at **20–22 s** on this box in the same hour, b
 two probes with two different wait conditions; the 50× spread is a machine-load
 artifact and neither number should be quoted alone.
 
-The chat **code** chunk is **89.2 %** of its budget — 16 KB of headroom left —
+The chat **code** chunk is **87.4 %** of its budget — 19 KB of headroom left —
 and this is the number to watch. It grew from 133,891 B (87 %) as §10's Stop and
 Retry landed (the two controls, their styles, the `partial` badge and the
 `cancelled` refusal in three languages), from 127,836 B (83 %) with the §8.2
 window work, from 118,561 B with the model-only answer path, and from 79,555 B
-before that as the engine, voice and guard landed. The last **+776 B** did not
-buy a feature: `createSessionBudget` moved §6.3's rung wiring out of
+before that as the engine, voice and guard landed. It went the other way **once**,
+by **+776 B**: `createSessionBudget` moved §6.3's rung wiring out of
 `ai/ui/chat.mjs` (−533 B gz) and into `ai/governor/index.mjs` (+1,309 B gz),
 where it takes its dependencies as arguments and can therefore be **run** by
 tests — the source-text check it replaced passed while two of the four rungs
-were dead. **The next feature that lands in `ai/` should be paired with a look at
-what could move out of this chunk.**
+were dead.
+
+Then it came down by **2,864 B gz (2.1 %)**, and it did not cost a feature: the
+retired Quick Answers *wording* left the bundle entirely. §5.1 step 4's
+deterministic half is a **planner** now (`ai/answers/quick.mjs`) — intent,
+the §8.4 gate, which public facts a question is about, the §2 focus entity and
+the follow-up graph — and the sentences it used to build moved to
+`evaluation/answer-text.mjs`, which `SHIP_PATHS` never copies. MEASURED:
+`ai/answers/quick.mjs` 14,354 → **11,490 B gz**, and nothing in the built
+bundle contains a template phrase (asserted by test, both by string and by the
+planner coming back empty). The saving is smaller than the 6.9 KB the block
+looked like on its own, because the *selection* logic — which project, which
+skills, whether the question is answerable at all — has to stay on the visitor's
+side of the wire, and it is now the bulk of the file.
+
+**The next feature that lands in `ai/` should be paired with a look at what could
+move out of this chunk.**
 The weights are deliberately **not**
 in that number —
 folding a 5 MB artifact into a 150 KB limit makes both budgets unmeasurable.

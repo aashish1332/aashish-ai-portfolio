@@ -37,7 +37,7 @@ import { loadTokenizer } from './ai/engine/bpe.mjs';
 import { frame, framePrefix } from './ai/engine/prompt.mjs';
 import { buildIndex, search, estimateTokens, MAX_CHUNKS } from './ai/retrieval/index.mjs';
 import { contextLines } from './ai/answers/model.mjs';
-import { quickAnswer, renderFact } from './ai/answers/quick.mjs';
+import { quickAnswer, renderFact } from './evaluation/answer-text.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const EXPORT_DIR = resolve(HERE, 'ai/model-export/aashish-ai-1');

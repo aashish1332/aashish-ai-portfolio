@@ -24,7 +24,7 @@ import {
   hasEntityPronoun, resolveFocus, contentTokens, estimateTokens, RETRIEVAL_STOP,
   MAX_CHUNKS, MAX_CONTEXT_TOKENS, MIN_TOP_SCORE, CHARS_PER_TOKEN,
 } from '../ai/retrieval/index.mjs';
-import { quickAnswer, contextSizer } from '../ai/answers/quick.mjs';
+import { quickAnswer, contextSizer } from '../evaluation/answer-text.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const KB = JSON.parse(readFileSync(join(HERE, '..', 'knowledge', 'knowledge.json'), 'utf8'));

@@ -1826,3 +1826,69 @@ restored 160 tokens onto a device with no model. Both now read `TIERS` through
   reading — every shipped `ai/**` module except the model counted as one chunk
   — and `tests/build-bundle.test.mjs` asserts that one, because it can never
   flatter the result.
+
+---
+
+## The retired Quick Answers leave the bundle — 2026-09-27
+
+The owner retired Quick Answers as *answers*, so the shell has been throwing
+their text away since P7 — and §4's chunk was paying for it on **every**
+visitor's device. Measured on the shipped files, that wording was the largest
+block of bytes in the chunk that no visitor could ever read:
+
+| block (`dist`, gz, measured by slicing the file) | |
+|---|---|
+| `BUILD` — the per-intent templates | **4,596 B** |
+| `extractive()` — the workflow and project prose | 1,242 B |
+| `factAnswer()` — the single-fact sentences | 1,372 B |
+| `FOLLOWUPS` + `FOLLOWUPS_FIRST` (chips are still rendered — stay) | 1,175 B |
+
+§5.1 step 4 is split along the seam that was always there: **decide** vs
+**say**.
+
+* `ai/answers/quick.mjs` is a **planner**. It returns the same result object as
+  before — intent, `abstained`, `injection`, `private`, `focus`, `sources`,
+  `followups` — plus a serializable **`plan`** describing what was selected
+  (`{kind:'skills', ids, category}`, `{kind:'project_detail', id}`, …). Its
+  `text` is filled only for the two replies that are fixed statements about the
+  *assistant*: the §9 injection refusal and the identity disclosure. Those are
+  not templates standing in for a model answer, so they still ship.
+* `evaluation/answer-text.mjs` owns the wording, one entry per plan kind, and
+  exports a drop-in `quickAnswer` that passes `say` in. `SHIP_PATHS` never
+  copies `evaluation/`, so not one byte of it reaches a browser — and because
+  the build refuses a shipped module that imports something it does not ship,
+  no shipped file can start depending on it by accident.
+
+One decision came *out* of a template while the seam was being cut: "is this
+question about a `public:false` field?" used to be answered inside the contact
+*template*, which meant it happened only because the intent happened to be
+`contact`. It is routing, so it is in the planner now.
+
+### MEASURED
+
+| | before | after |
+|---|---|---|
+| chat code chunk (§4, conservative) | 137,039 B gz · 89.2 % | **134,175 B gz · 87.4 %** |
+| §4's chat-UI chunk proper | 91,923 B gz | **89,088 B gz** (58.0 %) |
+| `ai/answers/quick.mjs` | 14,354 B gz | **11,490 B gz** |
+| tests | 434 JS + 326 Python | **435 JS + 326 Python, 0 failures** |
+
+The saving is **2,864 B gz (−2.1 %)**, not the ~6.9 KB the block looked like on
+its own, and the gap is worth stating: everything that *decides* — which
+project, which skills, whether a question is answerable at all — has to stay on
+the visitor's side of the wire, and after the move that logic is most of the
+file. The templates were the prose on top of it.
+
+**Verified, not assumed:** `tests/quick-answers.test.mjs` (28 tests, unchanged
+assertions in all three languages) and `tests/evaluation.test.mjs` now run the
+non-shipped module, so the wording still has to be right; an added assertion in
+`tests/build-bundle.test.mjs` fails if any built text file contains a template
+phrase **or** if the shipped planner returns text for a portfolio question; and
+the fact-hardcoding check now reads *both* halves, because a baked value in the
+wording would fake a pass on the evaluation set. The new guard was verified by
+re-injecting a template phrase into the planner, which failed it.
+
+`dev-token-budget-probe.js` and `npm run calibrate` follow the wording to its
+new home. Nothing visitor-facing changed: the panel refused those paths before
+this commit (`noAnswerLine`) and refuses them now — the bytes are simply no
+longer downloaded to produce text that was discarded.

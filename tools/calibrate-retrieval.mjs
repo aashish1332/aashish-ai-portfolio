@@ -33,7 +33,13 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { buildIndex, resolveFocus, search, contentTokens, MIN_TOP_SCORE } from '../ai/retrieval/index.mjs';
 import { createLanguageTracker } from '../ai/language/detect.mjs';
-import { quickAnswer, factIds } from '../ai/answers/quick.mjs';
+import { factIds } from '../ai/answers/quick.mjs';
+/* The sweep grades the deterministic ANSWERS, and two of its five failure
+   modes read the text (`baitAnswered` looks for the known-fact follow-up,
+   `fabrication` for a forbidden phrase). §5.1 step 4's wording is not shipped
+   any more, so it is imported from its own module — the same one the
+   evaluation set uses. */
+import { quickAnswer } from '../evaluation/answer-text.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const KB = JSON.parse(readFileSync(join(HERE, '..', 'knowledge', 'knowledge.json'), 'utf8'));

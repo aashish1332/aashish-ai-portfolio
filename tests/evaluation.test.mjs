@@ -27,7 +27,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { buildIndex, resolveFocus } from '../ai/retrieval/index.mjs';
 import { createLanguageTracker } from '../ai/language/detect.mjs';
-import { quickAnswer, factIds, MAX_ANSWER_CHARS } from '../ai/answers/quick.mjs';
+import { quickAnswer, factIds, MAX_ANSWER_CHARS } from '../evaluation/answer-text.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const KB = JSON.parse(readFileSync(join(HERE, '..', 'knowledge', 'knowledge.json'), 'utf8'));

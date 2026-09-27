@@ -30,7 +30,7 @@ import {
   createModelAnswerer, routeQuestion, noAnswerLine, NO_ANSWER_KINDS, MODEL_BADGES,
   MAX_INTENT_FACTS, partialAnswer,
 } from '../ai/answers/model.mjs';
-import { quickAnswer, renderFact } from '../ai/answers/quick.mjs';
+import { quickAnswer, renderFact } from '../evaluation/answer-text.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const KB = JSON.parse(readFileSync(join(HERE, '..', 'knowledge', 'knowledge.json'), 'utf8'));

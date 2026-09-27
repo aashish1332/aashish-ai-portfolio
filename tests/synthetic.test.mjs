@@ -42,10 +42,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { quickAnswer } from '../ai/answers/quick.mjs';
+import { quickAnswer } from '../evaluation/answer-text.mjs';
 import { guard, GUARD_CODES } from '../ai/guard/index.mjs';
 import { buildIndex } from '../ai/retrieval/index.mjs';
-import { factIds } from '../ai/answers/quick.mjs';
+import { factIds } from '../evaluation/answer-text.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REAL = JSON.parse(readFileSync(join(HERE, '..', 'knowledge', 'knowledge.json'), 'utf8'));

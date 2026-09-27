@@ -30,7 +30,7 @@ import { dirname, join } from 'node:path';
 import {
   quickAnswer, renderFact, resolveFacts, factIds, followupsFor, tri,
   fmtDate, MAX_ANSWER_CHARS, PERSONAS, DEFAULT_PERSONA,
-} from '../ai/answers/quick.mjs';
+} from '../evaluation/answer-text.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(join(HERE, '..', 'ai', 'answers', 'quick.mjs'), 'utf8');
@@ -40,11 +40,16 @@ const ask = (q, lang) => quickAnswer(KB, q, lang ? { lang } : undefined);
 
 /* ── exact by construction ──────────────────────────────────────── */
 test('facts are never hardcoded: every value is read from knowledge.json', () => {
-  /* the module ships no fact values — if this fails, a value was baked in and
-     knowledge.json stopped being the single source of truth */
+  /* BOTH halves of §5.1 step 4 — the shipped planner and the non-shipped
+     wording — ship no fact values. If this fails, a value was baked in and
+     knowledge.json stopped being the single source of truth. The wording half
+     is checked even though it never reaches a visitor: it is what the
+     evaluation set grades, so a baked value there would fake a pass. */
+  const WORDING = readFileSync(join(HERE, '..', 'evaluation', 'answer-text.mjs'), 'utf8');
   for (const leak of [KB.contact.email.value, KB.contact.phone.value,
     KB.links[0].url, KB.links[1].url, KB.projects[0].links[0].url, '8.28', '87.6']) {
     assert.ok(!SRC.includes(leak), `quick.mjs hardcodes the value "${leak}"`);
+    assert.ok(!WORDING.includes(leak), `answer-text.mjs hardcodes the value "${leak}"`);
   }
   /* …and the answers really do carry the approved ones.
      (contact.phone is public:false by the owner's decision — see QA-9 — so it
@@ -57,9 +62,15 @@ test('facts are never hardcoded: every value is read from knowledge.json', () =>
 });
 
 test('§5.1: no model, no network, no dynamic import anywhere in the engine', () => {
-  assert.ok(!/\bfetch\s*\(|XMLHttpRequest|WebSocket|navigator\./.test(SRC), 'network access in the engine');
-  assert.ok(!/import\s*\(/.test(SRC), 'dynamic import in the engine');
-  assert.ok(!/https?:\/\//.test(SRC), 'a URL is hardcoded in the engine');
+  const WORDING = readFileSync(join(HERE, '..', 'evaluation', 'answer-text.mjs'), 'utf8');
+  /* The wording module is not shipped, but it is held to the same rule: it is
+     the module `docs/PRIVACY.md` names, and a wording layer that could reach
+     the network would be a privacy hole in whichever half of §5.1 read it. */
+  for (const [name, src] of [['quick.mjs', SRC], ['answer-text.mjs', WORDING]]) {
+    assert.ok(!/\bfetch\s*\(|XMLHttpRequest|WebSocket|navigator\./.test(src), `network access in ${name}`);
+    assert.ok(!/import\s*\(/.test(src), `dynamic import in ${name}`);
+    assert.ok(!/https?:\/\//.test(src), `a URL is hardcoded in ${name}`);
+  }
 });
 
 test('every public fact id is renderable; non-public facts are unreachable', () => {
