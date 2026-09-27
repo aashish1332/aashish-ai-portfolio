@@ -101,7 +101,7 @@ The constraint that outranks everything else: *the portfolio must not get slower
 
 | Metric | Value | Tag |
 |---|---|---|
-| Anything AI on initial load | The launcher only (goal ≤2 KB gz); a network assertion in the probe fails the test if any AI asset is fetched pre-click | **MEASURED** (`dev-ai-probe.js`) |
+| Anything AI on initial load | The launcher only — **945 B gz**, and it is inert (no fetch, no worker, no network API, one dynamic import). `tests/launcher.test.mjs` gates it deterministically: the 2 KB budget, the single `import(CHUNK)` resolving to the chat shell, and that `index.html` names nothing under `ai/` (no script, link, import-map entry or preload). The browser half is `dev-ai-probe.js`'s network assertion | **MEASURED** (probe + gate) |
 | What the click fetches | **41,221 B gz** static reach of `ai/ui/chat.mjs` (86,096 B before the comment strip, 102,596 B before the voice split) | **MEASURED** |
 | First open | UI **221–405 ms**, knowledge + capability probe **285–722 ms** | **MEASURED** |
 | Worst main-thread long task, AI windows | **65 ms** — against the page's own worst of **88 ms** with the panel never opened | **MEASURED** |
@@ -173,7 +173,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
 | Retrieval / guard / EN-HI-Hinglish / auto language detection | **MEASURED** |
 | No language selector | **MEASURED** — none exists |
 | No backend, no API key, local inference | **MEASURED** — the built bundle is scanned: no external URL in any shipped AI script, exactly one outbound call site (the site's own `knowledge.json`), no XHR/WebSocket/EventSource/sendBeacon, no secret-shaped string, no hosted-LLM hostname |
-| Lazy-loaded; nothing AI on initial load | **MEASURED** with a failing network assertion as the guard |
+| Lazy-loaded; nothing AI on initial load | **MEASURED** — a failing network assertion in the e2e probe, plus a deterministic gate (`tests/launcher.test.mjs`) on the launcher's size, its single dynamic import and every `ai/` reference in `index.html` |
 | Download + file sizes measured, caching + versioning | **MEASURED** — including 0 bytes on the second visit |
 | Main thread protected, workers used | **MEASURED** — prefill (90–95 % of the wait) never touches the main thread, the model's arithmetic is only reachable from the worker (import-graph test), and the worst AI long task is 65 ms against the page's own 88 ms |
 | WebGPU + WASM investigated | **MEASURED as investigation**; neither implemented, and the report says why |

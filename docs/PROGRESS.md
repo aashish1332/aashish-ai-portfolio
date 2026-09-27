@@ -2223,7 +2223,7 @@ because §2 N7 says the AI layer does not touch the film.
 | — voice add-ons (§2 N6) | 19,215 B | 7,432 B |
 | — LLM runtime + tokenizer | 30,042 B | 14,669 B |
 | what the **click** fetches (static reach) | 86,096 B gz | **41,221 B gz, 14 files** |
-| tests | 444 JS + 326 Python, 0 failures | **448 JS + 326 Python, 0 failures** · `npm run build` clean |
+| tests | 444 JS + 326 Python, 0 failures | **450 JS + 326 Python, 0 failures** · `npm run build` clean |
 
 Three new tests. Two are the strip's two directions: `stripComments` on
 adversarial input (a regex holding a quote, a URL in a string, a CSS comment
@@ -2284,3 +2284,28 @@ regressed, the symptom would be the exact cost §4 forbids: several hundred KB o
 script parsed on the main thread before the first token — the same class as the
 material recompile behind the 1,221 ms long task this project already had to
 remove.
+
+### 8. §2 N6's pre-click promise — now a gate, not just a probe
+
+"Nothing AI is loaded before the visitor clicks" was asserted in exactly one
+place, and that place needs Chrome, the dev server and ~40 s: the e2e probe's
+network watch. That is the right way to *prove* it and the wrong shape for a
+regression guard, because a promise broken by a stray `<link rel="preload">`
+or a static import would not be noticed until somebody ran the probe.
+
+`tests/launcher.test.mjs` is the deterministic half, on the two files that can
+break it. On `js/ai/launcher.js`: it must stay inside its **2 KB gz** budget
+(MEASURED: **945 B**), it must be inert — no `fetch`, `XMLHttpRequest`, `new
+Worker`, `WebSocket`, `sendBeacon`, no `.wasm` reference, no knowledge base —
+and it must contain exactly **one** dynamic call, `import(CHUNK)`, with `CHUNK`
+pinned to `/ai/ui/chat.mjs`. On `index.html`: the launcher is the only `ai/`
+script it loads, no `src`/`href` and no import-map value points under `ai/`, and
+there is no `preload`/`prefetch`/`modulepreload` for the chunk. The second test
+re-checks the same files in `dist/`, where a visitor actually is, and that the
+chunk the click imports exists there — a 404 on click would be the panel dying
+without a word, which §2 N7 forbids.
+
+Why `import(CHUNK)` and not a literal: the launcher is a classic script that
+names its chunk once, in a constant. The test pins the *call shape* and the
+*constant's value* separately, so a rewrite that changes either fails rather
+than silently passing.
