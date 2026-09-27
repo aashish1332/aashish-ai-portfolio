@@ -1409,19 +1409,28 @@ unflattering to the obvious suspects:
   so the budget checks run on `npm test`.
 * **PII open questions stand:** C4 (bootcamp provider unknown, excluded from
   answers) and C5 (which of two CV files is current).
-* **§14's "offline-after-cache" e2e test is still not written, and will not
-  arrive by itself.** The 2026-09-23 entry deferred it (with
-  "worker-terminate frees memory") to P6/P7 on the grounds that there was no
-  worker and no download to test. P6/P7 have now landed: worker-terminate is
-  covered by `tests/engine.test.mjs` ENG-14, but **nothing here implements or
-  tests an offline path** — there is no HTTP cache layer, the engine's `fetch`
-  is injected, and every load in the suite is a filesystem stub. So this is an
-  honest remaining gap for P7/P8, not a pending arrival. Recording it here
-  because the older entry now reads as a promise rather than an open item.
-* **§12's test counts in this log are per-entry snapshots.** The current
-  numbers are the 393 + 326 above; earlier entries quote their own totals.
+**Superseded/closed:** §14's offline-after-cache e2e test was later written
+(`dev-offline-probe.js`, with `docs/BENCHMARKS.md` measuring **0 bytes on the
+second visit** and `tests/model-cache.test.mjs` pinning the unit half), and the
+T0 and download-failure paths are now automated too (`dev-degrade-probe.js`,
+**20/20**). What remains open from this entry is only the real-device half.
 
-### Evidence
+* **The shipped export's source run never finished, and that is visible in the
+  filesystem.** `_finish()` in `training/scripts/train_smoke.py` is the only
+  writer of `RUN_MANIFEST.json` and it returns from every run, resume included —
+  yet `training/checkpoints/local/` holds `best.pt`, `latest.pt`, `step_600/700/800.pt`
+  and **no manifest**. So the run that produced the shipping artifact was
+  interrupted after its last save rather than completed, and its own record
+  (data hashes, hyperparameters, full loss history) was never written. The
+  provenance is not lost — `ai/model-export/aashish-ai-1/manifest.json` carries
+  `run/step/sha256/gitCommit/savedAt` — but the run-dir record is absent, and the
+  fix is the resume run (`npm run train:local`, which resumes from `latest`).
+* **Real GPU, 4×/6× throttling and the frame A/B are no longer NOT TESTED** —
+  they were measured on 2026-09-27; the bullets above this entry that call them
+  untested are superseded by the last section of this log.
+* **§12's test counts in this log are per-entry snapshots.**
+
+### Evidence (this entry)
 `ai/engine/` · `ai/answers/model.mjs` · `ai/voice/vad.mjs` ·
 `inference/export_browser.py` · `inference/reference.py` · `tools/verify-engine.mjs` ·
 `evaluation/voice/` · `ai/model-export/aashish-ai-1/{manifest.json,model-00000.bin,tokenizer.json}` ·

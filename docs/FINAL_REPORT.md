@@ -60,6 +60,7 @@ true about **answer quality**. See "What I need from you".
 | Throughput on R1 | **1,335 tokens/s** (batch 4 × block 128, smoke config); ~850 tok/s for the local config | **MEASURED** |
 | Loss behaviour | 6.6847 → 4.3151 over 50 steps (windowed verdict) | **MEASURED** |
 | Checkpoint + resume | Verified, including config/tokenizer-version validation on load | **MEASURED** (`checkpoint.py`, resume test) |
+| Run record for the shipped artifact | **Absent, and that is itself a measurement:** `RUN_MANIFEST.json` is written by `_finish()`, which every run and resume reaches, and `training/checkpoints/local/` has none — so the 800-step artifact came from a run that was **interrupted**, not completed. Provenance survives in the export manifest; the run-dir record does not. `npm run train:local` writes it by resuming | **MEASURED** |
 | GPU / Kaggle Stage A+B | **Never run.** Scripts and notebook exist; the run is owner-side | **NOT TESTED** |
 | P4 verify gate (9/9 sources) | **NOT TESTED** — no trained-for-quality checkpoint to gate | **NOT TESTED** |
 
@@ -226,7 +227,10 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
 1. **A GPU run** — the Kaggle notebook and scripts are in `training/notebooks/`
    and `training/scripts/`. Stage A + Stage B at config A is the single thing
    that turns the quality claim from false to true, and it is the only item on
-   this list that nothing on this machine can substitute for.
+   this list that nothing on this machine can substitute for. Before it, worth
+   running `npm run train:local` to completion: it resumes from `latest` and
+   writes the `RUN_MANIFEST.json` the interrupted run never wrote, so the
+   record-keeping is proven on a run that finishes.
 2. **Then a decision on the P4 gate** — whether the 9/9-source verify gate is
    the bar, or the §14 evaluation numbers replace it.
 3. **A real-device pass** — one mid-range Android and one iPhone, for the T1/T2

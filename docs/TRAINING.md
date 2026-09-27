@@ -178,6 +178,7 @@ where the confusion happens, and `tests/py/test_model_schema.py` pins it.
 | Requirement | Implementation | Verified how |
 |---|---|---|
 | `latest`, `best`, `step_N` | all written; `step_N` pruned to `keep_last` | `test_checkpoint.py` |
+| `RUN_MANIFEST.json` | written by `_finish()`, so its absence means the run was interrupted | `training/checkpoints/{smoke,throughput}/` |
 | model + optimizer + scheduler + GradScaler + step + epoch | one state dict, **required keys enforced on save and on load** | same (a state missing `scaler` is refused) |
 | config + tokenizer version | in the state; compared to the live run before resuming | `train_smoke.py` |
 | RNG states | python + numpy + torch (+CUDA) captured/restored | `test_checkpoint.Rng` |
@@ -193,6 +194,18 @@ no repeated tokens, no skipped span.
 
 `training/RUN_MANIFEST.json` is written per run: seed, config, tokenizer
 version, hyperparameters, shard hashes and git commit.
+
+**It is written by `_finish()`, which returns from every run and every resume** —
+so a run directory without one was interrupted after its last save, not stopped
+cleanly. `training/checkpoints/local/` (the run behind the shipped export) is in
+that state: it has `best/latest/step_600/700/800.pt` and **no manifest**, which
+is how we know the 800-step artifact came from a run that was killed rather than
+one that completed. The run's provenance is not lost —
+`ai/model-export/aashish-ai-1/manifest.json` records `run/step/sha256/gitCommit/
+savedAt` — but the run-dir record (data hashes, full loss history, hyperparameters)
+is absent, and `npm run train:local` (which resumes from `latest`) is what writes
+it. Worth doing before the GPU run, so the pipeline's own record-keeping is
+proven end to end on a run that finishes.
 
 ## 6. Kaggle (P4) — the runbook
 
