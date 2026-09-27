@@ -16,12 +16,19 @@
                 own HTML offline even when the model is safely cached.
 
    Run:  node dev-offline-probe.js      (needs `node dev-server.mjs` on :5577)
+
+   `AI_BASE` points it at something else — in particular at the built bundle,
+   which is what a visitor receives and which nothing in this repo had ever
+   loaded before (see the same note in `dev-ai-probe.js`):
+
+     npm run build && ROOT=dist PORT=5582 node dev-server.mjs &
+     AI_BASE=http://localhost:5582/ node dev-offline-probe.js
    ═══════════════════════════════════════════════════════════════ */
 'use strict';
 const puppeteer = require('puppeteer-core');
 
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const URL = 'http://localhost:5577/';
+const URL = process.env.AI_BASE || 'http://localhost:5577/';
 const MODEL_DIR = /model-export/;
 
 let checks = 0;

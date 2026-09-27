@@ -20,6 +20,13 @@
        reaches ready — which is the retry the panel promises in words.
 
    Run:  node dev-degrade-probe.js   (needs `node dev-server.mjs` on :5577)
+
+   `AI_BASE` points the healthy page at something else, and `ROOT` is inherited
+   by the failing server this probe spawns — so `ROOT=dist AI_BASE=…` runs both
+   halves against the built bundle:
+
+     npm run build && ROOT=dist PORT=5582 node dev-server.mjs &
+     ROOT=dist AI_BASE=http://localhost:5582/ node dev-degrade-probe.js
    ═══════════════════════════════════════════════════════════════ */
 
 'use strict';
@@ -28,7 +35,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const URL = 'http://localhost:5577/';
+const URL = process.env.AI_BASE || 'http://localhost:5577/';
 /* The failing server runs the SAME server with /ai/model-export/ 404ing. It
    has to be the server and not the browser: the weights are fetched inside a
    module Worker, and Network.setBlockedURLs on the page session does not

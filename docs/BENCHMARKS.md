@@ -258,6 +258,39 @@ whole snapshot unserializable — puppeteer returns `undefined` instead of
 raising, so every anchor read as "nothing found". The snapshot stays pure data
 and the element is reached by a call inside the page.
 
+**A third instrument bug, found 2026-09-27, and this one was measuring the
+wrong moment entirely.** The page is moved in `finish()` — when the answer
+*ends* — but `lastAnchor` is set synchronously *before* generation starts, so
+the probe fired `ask()` and then watched the scroll. While answers were
+templates that was about a second of work and the check passed; the moment
+every answer became a model generation of seconds-to-tens-of-seconds it began
+measuring a page nobody had asked anything of, and reported `scrollY 0 → 0` —
+identically on the source tree and on the built bundle. The same race sat in
+the visibility phase, whose `settle()` returns as soon as the position has
+been stable for ~600 ms, i.e. immediately.
+
+Two fixes, and one distinction that matters more than either. The probe now
+waits for a **new answer** (object identity on `model.last`) and then for the
+scroll it causes, and `settle()` only accepts stability *after the page has
+actually moved*. And the assertions now depend on the **kind** of turn, because
+the two correct behaviours are opposite: a model answer moves the page to where
+it came from, and a refusal moves nothing at all — "the panel made no claim and
+must not move the page to where a claim it did not make came from"
+(`ai/ui/chat.mjs`). Requiring a move unconditionally scored correct refusals as
+anchor failures, and with a checkpoint that answers badly most turns *are*
+refusals.
+
+Verified after the fix, against the **built bundle** (`AI_BASE`):
+`an anchor was found for every question 7/7`, every landing assertion correct,
+`hands-free: the answer moved the page kind=model, scrollY 0 → 14609`, one
+visibility measurement at `800/800 px of the element in view, in #scene-story`,
+resolution cost `10.60 ms/call` (§4's budget is 50 ms), 0 page errors. The full
+7×2 visibility sweep was **not** re-run — it needs ~14 generations and this box
+timed out at 420 s — so the `7/7 / 6/7` table above is from the earlier runs
+rather than re-measured today. `PROBE_MAX_VIS=n` and
+`PROBE_SKIP_VISIBILITY=1` exist so a fix like this can be checked without a
+ten-minute probe.
+
 ### Training gates, CPU smoke (1.82M params)
 
 | Metric | Value |
@@ -793,6 +826,7 @@ same MIME table as `npm run preview`).
 | frame health, closed → open | 33.2 ms (115 frames) → 33.3 ms (105 frames), **0.3 %** drift, **1×** p95, both arms `tier 2 · BALANCED @72% y=0`; the double-sampled control read −0.3 % |
 | assets fetched on first open | **31** — the 14 of the click's static reach plus the worker's own `ai/engine/**` |
 | the phone viewport (`MOBILE=1`, 390×844) | **43/43** as well — sheet open pauses the film, closing resumes it, **no horizontal overflow (390 vs 390)**, withheld phone declined in the UI |
+| §9.3's cache, on the same bundle (`dev-offline-probe.js`, now also `AI_BASE`) | **7/7** — visit 1 ready **26.3 s**, 3 puts, `hits: 0`; visit 2 with `*model-export*` blocked ready **22.0 s**, `hits: 3`, `misses: 0`, **0 network responses** for the weights, cache `aashish-ai-model:aashish-ai-1` holding 3 files / 5,144,354 B |
 
 R1 on a loaded box, so the absolute milliseconds move 2–3× between runs; what
 this establishes is that the **stripped** bundle loads, mounts, spawns its

@@ -131,7 +131,8 @@ The constraint that outranks everything else: *the portfolio must not get slower
 | Stop / Retry / Clear | All three; Stop keeps the partial text and badges it `PARTIAL ANSWER · STOPPED BY YOU`; stopping during prefill gives an honest `cancelled` line, never "model stopped" | **MEASURED** |
 | Language detection | EN / HI / Hinglish, automatic, **no selector** | **MEASURED** |
 | When there is no model | The panel says so and answers nothing — its own line per reason (unsupported / failed / stopped) | **MEASURED** (20/20 degrade probe) |
-| Anchors | 7/7 questions resolve to the right section; content-based, so moving a section keeps the answer right | **MEASURED** |
+| Anchors | 7/7 questions resolve to the right section, content-based (moving a section keeps the answer right); the hands-free move verified on the **built bundle** (`scrollY 0 → 14609`, `kind=model`) | **MEASURED** |
+| …and its instrument | The anchor probe had **three** measurement bugs, the last found 2026-09-27: it watched for a scroll before the answer that causes one existed, and it required a move even from refusals (which must not move). Both fixed; the full 7×2 visibility sweep was not re-run (14 generations, box timed out) | **MEASURED (fix) / NOT RE-RUN** |
 | Accessibility | `role`, `aria-modal`, `aria-labelledby`, `aria-live="polite"` on the transcript (announced complete, not per token), labelled Stop/Retry/Clear, `aria-pressed` mic, Escape closes | **MEASURED as code** · screen reader **NOT TESTED** |
 | Responsive | Panel covers the scene below 640 px and pauses it | **MEASURED as code** · real device **NOT TESTED** |
 

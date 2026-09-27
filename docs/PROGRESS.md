@@ -2345,7 +2345,55 @@ So the deliverable is verified, not just its source. What remains unverified is
 unchanged and listed in `docs/FINAL_REPORT.md`: a real phone, a real microphone,
 a screen reader, Firefox and Safari.
 
-### 10. §2 N8 — "no second renderer, no new loop" was a sentence; now it is measured
+### 10. The anchor probe was measuring the wrong moment — third instrument bug
+
+With `AI_BASE` in place the §12 anchor probe was pointed at the shipped bundle,
+and it **failed**: `hands-free mode moved the page by itself  scrollY 0 → 0`,
+plus six of seven questions OFF SCREEN. The same failure appeared against the
+source tree, which is what said it was not a bundle regression — and then a
+four-line page-drive said what it was: `scrollY 0 → 14609`, target
+`#scene-credits`, the anchored element in the DOM, **no page errors**. The move
+was fine; the measurement was not.
+
+**The bug.** The page moves in `finish()` — when the answer *ends* — but the
+shell sets `lastAnchor` synchronously *before* it starts generating. So a probe
+that fired `ask()` and then watched the scroll was watching a page nobody had
+asked anything of yet. That was harmless while answers were templates (about a
+second) and became a failure the moment every answer turned into a model
+generation of seconds-to-tens-of-seconds — two runs of unchanged code on the
+same box, one reporting `0 → 0` and one `0 → 14609`. The visibility phase had
+the same race in a worse form: its `settle()` returns as soon as the position
+has been stable for ~600 ms, so it returned immediately.
+
+**And a second, subtler mistake in the same check.** It asserted "the page
+moved" unconditionally. But the two correct behaviours are opposite: a model
+answer moves the page to where it came from, and a **refusal moves nothing** —
+"the panel made no claim and must not move the page to where a claim it did not
+make came from" (`ai/ui/chat.mjs`). With a checkpoint that answers badly, most
+turns are refusals, so the probe was scoring correct behaviour as an anchors
+regression, and would have kept doing it.
+
+**Fixed:** wait for a NEW answer (object identity on `model.last`) and then for
+the scroll it causes; `settle()` accepts stability only *after* the page has
+moved; and both assertions are now chosen by the kind of turn. Two knobs
+(`PROBE_MAX_VIS=n`, `PROBE_SKIP_VISIBILITY=1`) exist so a change to these waits
+can be checked without a ten-minute probe.
+
+**Re-verified on the built bundle:** `7/7` anchors found and every landing
+assertion correct; `hands-free: the answer moved the page  kind=model, scrollY
+0 → 14609`; a visibility measurement at `800/800 px of the element in view, in
+#scene-story`; resolution cost `10.60 ms/call` (§4 allows 50 ms); **0 page
+errors**. The full 7×2 visibility sweep was **not** re-run: it needs ~14
+generations and this box timed out at 420 s, so the `7/7 as shipped, 6/7 after
+the edit` figures in `docs/BENCHMARKS.md` remain from the earlier runs and are
+marked as such rather than re-quoted.
+
+This is the third instrument bug in this one probe, and the pattern is worth
+naming: **all three made the page look worse than it is**, and all three were
+found only by running the probe against hardware it was not written on. None
+was a product defect.
+
+### 11. §2 N8 — "no second renderer, no new loop" was a sentence; now it is measured
 
 N8 is the rule that keeps the film the only thing competing for the frame, and
 it is the kind of rule that breaks quietly: a `setInterval` in a retry path or a

@@ -10,12 +10,13 @@
    an index would pass the first half and fail the second.
 
    Run:  node dev-anchor-probe.js     (needs: npm run dev)
+         AI_BASE=http://localhost:5582/ node dev-anchor-probe.js   (against dist/)
    ═══════════════════════════════════════════════════════════════ */
 'use strict';
 const puppeteer = require('puppeteer-core');
 
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const URL = 'http://localhost:5577/';
+const URL = process.env.AI_BASE || 'http://localhost:5577/';
 
 let checks = 0;
 const say = (label, ok, detail) => {
@@ -36,10 +37,21 @@ const QUESTIONS = [
   ['what certifications do you have', null],
 ];
 
+/* A full run asks seven questions TWICE, and each one now waits for a model
+   generation before it measures, which is minutes on a loaded box.
+   `PROBE_MAX_VIS=n` limits the visibility phase to the first n questions, and
+   `PROBE_SKIP_VISIBILITY=1` drops it entirely — the §12 resolution checks, the
+   landing assertions and the hands-free move all still run — so a fix to the
+   waits can be verified without a ten-minute probe. */
+const MAX_VIS = Number(process.env.PROBE_MAX_VIS || 0) || QUESTIONS.length;
+const SKIP_VISIBILITY = process.env.PROBE_SKIP_VISIBILITY === '1';
+const VIS_QUESTIONS = QUESTIONS.slice(0, MAX_VIS);
+
 (async () => {
   /* Generous, because the visibility phase WAITS for the page to settle rather
      than for a fixed duration, and this software-GL renderer moves slowly. */
-  const hardStop = setTimeout(() => { console.log('PROBE TIMEOUT'); process.exit(2); }, 900000);
+  const hardStop = setTimeout(() => { console.log('PROBE TIMEOUT'); process.exit(2); },
+    Number(process.env.PROBE_TIMEOUT || 900000));
   const browser = await puppeteer.launch({
     executablePath: CHROME,
     headless: 'new',
@@ -100,17 +112,52 @@ const QUESTIONS = [
   console.log('── as shipped ─────────────────────────────────────────');
   report(before);
 
+  /* Ask one question and DO NOT MEASURE until its answer exists.
+
+     This is the fix for a measurement that was reporting a product failure.
+     The page is moved in `finish()`, i.e. when the answer ENDS — but the
+     shell sets `lastAnchor` synchronously before it starts generating, so a
+     probe that fired `ask()` and then watched the scroll saw `scrollY`
+     perfectly stable at 0 (nothing had been asked yet) and reported "the
+     visitor cannot see it". It worked while answers were templates and a
+     probe could read the result within a second; the moment every answer
+     became a model generation of seconds-to-tens-of-seconds it began to
+     fail on unchanged code, on the source tree and on the built bundle
+     alike. A diagnostic page-drive showed the move itself is fine:
+     `scrollY 0 → 14609`, target `#scene-credits`, the anchored element in the
+     DOM, no page errors.
+
+     So: wait for a NEW answer (object identity — `model.last` is replaced per
+     turn), then for the scroll it causes to stop. */
+  const askAndWait = async (question, maxMs = 180000) => {
+    await page.evaluate((q) => {
+      window.__prevAnswer = window.PortfolioAI.model.last;
+      window.PortfolioAI.setHandsFree(true);
+      window.PortfolioAI.ask(q);
+    }, question);
+    await page.waitForFunction(() => {
+      const m = window.PortfolioAI.model;
+      return !!m.last && m.last !== window.__prevAnswer;
+    }, { timeout: maxMs, polling: 300 });
+  };
+
   /* Resolve once the scroll position has stopped changing, or give up after a
-     generous bound and let the measurement say what it found. */
-  const settle = async (maxMs = 15000) => {
+     generous bound and let the measurement say what it found.
+
+     `movesNeeded` is what keeps this from returning instantly when the answer
+     has arrive but its scroll has not started yet: stability only counts
+     after the page has actually moved that many times. The pre-ask reset
+     passes 0, because it is supposed to find the page already still. */
+  const settle = async (maxMs = 20000, movesNeeded = 1) => {
     const t0 = Date.now();
     let last = -1;
     let stable = 0;
+    let moves = 0;
     while (Date.now() - t0 < maxMs) {
       const y = await page.evaluate(() => window.scrollY);
-      stable = Math.abs(y - last) < 1 ? stable + 1 : 0;
+      if (Math.abs(y - last) < 1) stable += 1; else { stable = 0; moves += 1; }
       last = y;
-      if (stable >= 3) return y;
+      if (stable >= 3 && moves >= movesNeeded) return y;
       await new Promise((r) => setTimeout(r, 200));
     }
     return last;
@@ -126,25 +173,32 @@ const QUESTIONS = [
      see the note at the call site. */
   const measureVisibility = async () => {
     const rows = [];
-    for (const [q] of QUESTIONS) {
+    if (SKIP_VISIBILITY) return rows;
+    for (const [q] of VIS_QUESTIONS) {
       await page.evaluate(() => { window.scrollTo(0, 0); });
-      await settle();
-      await page.evaluate((question) => {
-        window.PortfolioAI.setHandsFree(true);
-        window.PortfolioAI.ask(question);
-      }, q);
-      /* WAIT FOR THE PAGE TO STOP, not for a duration. The move is a smooth
-         Lenis scroll driven by rAF, a target can be 18,000 px away, and this
-         software-GL renderer runs the film at well under 1 fps — so a fixed
-         2.6 s wait measured "the scroll had not arrived yet" and reported it
-         as "the visitor cannot see it" (7/7 became 4/7 between two runs of
-         unchanged code). */
-      await settle();
+      await settle(8000, 0);
+      await askAndWait(q);
+      /* WAIT FOR THE PAGE TO STOP, not for a duration — and only accept
+         "stopped" once it has actually moved. The move is a smooth Lenis
+         scroll driven by rAF, a target can be 18,000 px away, and this
+         software-GL renderer runs the film at well under 1 fps, so a fixed
+         wait measures "the scroll had not arrived yet" and reports it as
+         "the visitor cannot see it". */
+      await settle(20000, 1);
       rows.push([q, await page.evaluate(() => {
         const a = window.PortfolioAI.lastAnchor;
         /* read INSIDE the page — the node never crosses the boundary */
         const el = window.PortfolioAI.anchorElement?.();
-        if (!el) return { found: false };
+        /* WHICH KIND of turn this was. A model answer moves the page to where
+           it came from; a refusal deliberately does not — the panel made no
+           claim, so there is no place for it to point at (see `finish()` in
+           ai/ui/chat.mjs). The two need opposite assertions, and with a
+           checkpoint that answers badly most turns are refusals, so scoring
+           them both as "the visitor cannot see it" measured the model's
+           quality and called it an anchors regression. */
+        const kind = window.PortfolioAI.model.last?.kind || null;
+        const scrollY = Math.round(window.scrollY);
+        if (!el) return { found: false, kind, scrollY };
         const r = el.getBoundingClientRect();
         const h = window.innerHeight || 1;
         const px = Math.max(0, Math.min(r.bottom, h) - Math.max(r.top, 0));
@@ -152,7 +206,8 @@ const QUESTIONS = [
         const sr = scene.getBoundingClientRect ? scene.getBoundingClientRect() : r;
         const sPx = Math.max(0, Math.min(sr.bottom, h) - Math.max(sr.top, 0));
         return {
-          found: true, target: scene.id || '', tag: String(a.tag || ''),
+          found: true, kind, scrollY,
+          target: scene.id || '', tag: String(a.tag || ''),
           top: Math.round(r.top), height: Math.round(r.height), px: Math.round(px),
           ratio: r.height ? +(px / r.height).toFixed(2) : 0,
           onScreen: r.top < h && r.bottom > 0,
@@ -172,25 +227,42 @@ const QUESTIONS = [
   };
 
   const reportVisibility = (rows, label) => {
+    if (!rows.length) {
+      console.log(`\n── ${label}: visibility phase skipped (PROBE_SKIP_VISIBILITY=1)`);
+      return;
+    }
     console.log(`\n── ${label} ──────────────────────────`);
     for (const [q, v] of rows) {
       const what = ` <${String(v.tag).toLowerCase()}> in #${v.target}`;
-      const state = v.onScreen ? 'visible' : (v.rendered ? 'OFF SCREEN' : 'not rendered');
+      const state = v.kind !== 'model' ? `refused:${v.kind}`
+        : (v.onScreen ? 'visible' : (v.rendered ? 'OFF SCREEN' : 'not rendered'));
       console.log(`${state.padEnd(13)} ${String(v.ratio).padStart(5)}${what.padEnd(34)}`
         + ` el top=${v.top}px h=${v.height}px · section ${v.sectionPx}px, ${v.sectionVisible ? 'on screen' : 'OFF SCREEN'}  ← "${q}"`);
     }
     for (const [q, v] of rows) {
-      /* Two ways to be shown the right place, and they are not the same
-         claim: the element itself is in view, or the element is something
-         the page does not render (an edited-in section the film has no
-         layout for) and therefore the SECTION is what the visitor gets.
-         Both are honest; "the page scrolled somewhere" is not. */
-      const ok = !!(v.found && (v.onScreen || !v.laidOut));
-      say(`${label}: "${q}" is on screen`, ok,
+      /* The assertion depends on the KIND of turn, because the two correct
+         behaviours are opposite.
+
+         A model ANSWER must put the element in view — or, if the film does
+         not lay the element out (an edited-in section with no layout), the
+         SECTION is what the visitor gets; both are honest, and "the page
+         scrolled somewhere" is not.
+
+         A REFUSAL must move nothing at all: "the panel made no claim and must
+         not move the page to where a claim it did not make came from".
+         Requiring a move here made correct behaviour fail, and with a
+         checkpoint that answers badly it made most of the phase fail. */
+      const answered = v.kind === 'model';
+      const ok = answered
+        ? !!(v.found && (v.onScreen || !v.laidOut))
+        : !!(v.found && v.scrollY < 50);
+      say(`${label}: "${q}" ${answered ? 'is on screen' : 'refusal moved nothing'}`, ok,
         !v.found ? 'nothing resolved'
-          : v.onScreen ? `${v.px}/${v.height} px of the element in view, in #${v.target}`
-            : v.laidOut ? `element ${v.px}/${v.height} px — OFF SCREEN, in #${v.target}`
-              : `#${v.section} is not laid out by the film (0 px), so there is nothing to show`);
+          : answered
+            ? (v.onScreen ? `${v.px}/${v.height} px of the element in view, in #${v.target}`
+              : v.laidOut ? `element ${v.px}/${v.height} px — OFF SCREEN, in #${v.target}`
+                : `#${v.section} is not laid out by the film (0 px), so there is nothing to show`)
+            : `kind=${v.kind}, page at ${v.scrollY} px — a refusal claims nothing to point at`);
     }
     const missing = rows.filter(([, v]) => v.found && !v.rendered).length;
     if (missing) {
@@ -220,13 +292,27 @@ const QUESTIONS = [
   await page.evaluate(() => { window.scrollTo(0, 0); });
   await new Promise((r) => setTimeout(r, 400));
   const y0 = await page.evaluate(() => window.scrollY);
-  await page.evaluate(() => {
-    window.PortfolioAI.setHandsFree(true);
-    window.PortfolioAI.ask('what projects have you built');
-  });
-  await new Promise((r) => setTimeout(r, 2600));
-  const y1 = await page.evaluate(() => window.scrollY);
-  say('hands-free mode moved the page by itself', y1 > y0 + 50, `scrollY ${y0} → ${Math.round(y1)}`);
+  /* the same race, in its purest form: a fixed 2.6 s wait is shorter than a
+     generation, so this measured a page nobody had asked anything of */
+  await askAndWait('what projects have you built');
+  await settle(20000, 1);
+  const turn = await page.evaluate(() => ({
+    y: window.scrollY,
+    kind: window.PortfolioAI.model.last?.kind || null,
+  }));
+  const moved = turn.y > y0 + 50;
+  /* Both outcomes are correct, and they are not the same assertion: an ANSWER
+     moves the page, a REFUSAL moves nothing because there is no claim to
+     point at. Requiring a move unconditionally made this check fail whenever
+     the guard rejected an answer — which, with a checkpoint that answers
+     badly, is most of the time. */
+  if (turn.kind === 'model') {
+    say('hands-free: the answer moved the page', moved,
+      `kind=model, scrollY ${Math.round(y0)} → ${Math.round(turn.y)}`);
+  } else {
+    say('hands-free: a refusal moved nothing', !moved,
+      `kind=${turn.kind}, scrollY ${Math.round(y0)} → ${Math.round(turn.y)} (a refusal makes no claim to show)`);
+  }
 
   await page.evaluate(() => window.PortfolioAI.setHandsFree(false));
 
