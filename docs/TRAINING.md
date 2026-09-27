@@ -310,9 +310,24 @@ proven end to end on a run that finishes.
 
 ## 7. Kaggle (P4) — the runbook
 
-The notebook `training/notebooks/train_stage_a.ipynb` is a **driver**, not an
-implementation: every step calls a module that is already in the repository and
-tested, because §7.5 requires training to work without the notebook.
+The notebooks in `training/notebooks/` are **drivers**, not implementations:
+every step calls a module that is already in the repository and tested, because
+§7.5 requires training to work without the notebook.
+
+| Notebook | Runs |
+|---|---|
+| `train_stage_a.ipynb` | licence gate → extract → shard → tokenizer → smoke → Stage A (~20k steps, config A) |
+| `train_stage_b.ipynb` | the instruction data → **the mask, printed** → Stage B (`--init` the Stage A checkpoint, assistant-only loss) → sample the answers |
+
+Both are validated offline by `tests/py/test_notebook_refs.py`: every
+`python -m …` names a module that exists, every CLI answers `--help`, every flag
+is one that CLI accepts, and no cell uses a `$VAR` a later cell defines. That
+test found real defects the moment it existed — a shard/tokenizer mismatch, a
+missing extraction step, and (when the Stage B notebook was added) that
+`make_instruction_data --help` **crashed on Windows**: its help text contains
+`≥`, cp1252 cannot encode it, and the module never reconfigured stdout. The
+CLI was unrunnable on the platform it is developed on, and nothing had ever
+asked it for `--help`.
 
 ### 7.1 The licence gate comes first
 

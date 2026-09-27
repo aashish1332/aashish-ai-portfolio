@@ -2489,6 +2489,26 @@ nothing is worse than none.
 | New tool | `inference/sample_answers.py` — greedy-decode a checkpoint on real prompts via `inference/reference.py`, no browser |
 | Tests | **451 JS / 343 Python**, 0 failures |
 
+### The GPU runbook could not run Stage B (found by extending the notebook test)
+
+Stage A had `training/notebooks/train_stage_a.ipynb`; Stage B had a trainer and
+**no way to drive it on Kaggle**. `training/notebooks/train_stage_b.ipynb` now
+does: check what Stage A left (`--init`), generate the instruction data, print
+the mask *before* spending GPU hours, persist, train with `--amp --gate
+--max-minutes --resume auto`, then see the answers through
+`inference/sample_answers.py`.
+
+`tests/py/test_notebook_refs.py` was extended from one notebook to all of them
+(structure, every invoked module exists, every CLI answers `--help`, every flag
+is accepted, no `$VAR` used before it is assigned; sources normalised because
+nbformat allows a string or a list of lines). The sweep immediately failed on
+`python -m training.scripts.make_instruction_data --help`: its help text
+contains `≥`, **cp1252 cannot encode it**, and the module never reconfigured
+stdout — so the CLI was unrunnable on Windows, the platform it is also
+developed on. Fixed by reconfiguring stdout like every other script in
+`training/scripts/` does; a `SyntaxWarning` in the same file (an unescaped `\|`
+in a docstring) went with it.
+
 ### Still open
 
 * **Quality is not achieved and not claimed.** Sixty steps on 3,000 examples

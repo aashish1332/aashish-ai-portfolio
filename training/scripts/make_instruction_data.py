@@ -147,7 +147,7 @@ def write_jsonl(examples: list[dict], path: Path) -> None:
 
 
 def _readable(text: str) -> str:
-    """Show a placeholder as a label a human reads at a glance.
+    r"""Show a placeholder as a label a human reads at a glance.
 
     `<|fact:edu.lpu|>` inside a markdown table has to be escaped or it
     breaks the table, and an escaped `<\|fact:edu.lpu\|>` stops looking
@@ -201,6 +201,14 @@ def write_review(examples: list[dict], path: Path, rng: random.Random, count: in
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Windows consoles default to cp1252 and this module's help text is not
+    # cp1252 ("≥"): argparse died printing `--help`, which made the CLI
+    # unrunnable on the one platform it is also developed on. Every script in
+    # training/scripts does this, which is why `--help` is part of the
+    # notebook test's checks.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
     args = build_parser().parse_args(argv)
     if not 0.30 <= args.share <= 1.0:
         print(f"refusing: counterfactual share {args.share} is below §7.4's 0.30 minimum")

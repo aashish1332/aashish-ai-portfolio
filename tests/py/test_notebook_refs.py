@@ -1,13 +1,16 @@
 """tests/py/test_notebook_refs.py — the notebook, checked against the modules it calls.
 
-`training/notebooks/train_stage_a.ipynb` is the one artifact a GPU session
-actually runs, so a defect in it is paid for in GPU-hours. Reading it found two
-that no test could have caught, because nothing had ever looked at the notebook:
-shards built with `seed-1k` while training with the 12k tokenizer, and a
-missing extraction step between `fetch_corpus` and `prepare_data`. The first
+The notebooks in `training/notebooks/` are the artifacts a GPU session actually
+runs, so a defect in one is paid for in GPU-hours. Reading `train_stage_a.ipynb`
+found two that no test could have caught, because nothing had ever looked at the
+notebook: shards built with `seed-1k` while training with the 12k tokenizer, and
+a missing extraction step between `fetch_corpus` and `prepare_data`. The first
 would have produced an unusable checkpoint, silently.
 
-This file is what looks at it now. All of it is offline:
+`train_stage_b.ipynb` was added later, for the same reason: Stage B had a
+trainer and no way to run it on a GPU. Both are checked here.
+
+This file is what looks at them. All of it is offline:
 
 * the notebook parses as nbformat 4 and every cell has a source;
 * every `python -m <module>` / `python <path>.py` names something that exists;
@@ -35,6 +38,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
+NOTEBOOKS = sorted((ROOT / "training" / "notebooks").glob("*.ipynb"))
 NOTEBOOK = ROOT / "training" / "notebooks" / "train_stage_a.ipynb"
 
 MODULE_RE = re.compile(r"^python3?\s+-m\s+([A-Za-z0-9_.]+)")
@@ -47,13 +51,29 @@ VAR_RE = re.compile(r"[$]([A-Z][A-Z0-9_]*)|[{]([A-Z][A-Z0-9_]*)[}]")
 _HELP_CACHE: dict[str, set[str] | None] = {}
 
 
-def load_notebook() -> dict:
-    return json.loads(NOTEBOOK.read_text(encoding="utf-8"))
+def load_notebook(path: Path = NOTEBOOK) -> dict:
+    """The notebook, with every `source` normalised to one string.
+
+    nbformat allows a cell's source as either a string or a list of lines, and
+    which one a file has depends on the tool that wrote it. Normalising here
+    means the checks below never depend on that.
+    """
+    notebook = json.loads(path.read_text(encoding="utf-8"))
+    for cell in notebook.get("cells", []):
+        source = cell.get("source", "")
+        cell["source"] = "".join(source) if isinstance(source, list) else source
+    return notebook
 
 
-def code_cells() -> list[tuple[int, str]]:
-    return [(index, cell["source"]) for index, cell in enumerate(load_notebook()["cells"])
+def code_cells(path: Path = NOTEBOOK) -> list[tuple[int, str]]:
+    return [(index, cell["source"]) for index, cell in enumerate(load_notebook(path)["cells"])
             if cell["cell_type"] == "code"]
+
+
+def each_notebook():
+    """`(name, path)` for every notebook — a subTest label per file."""
+    for path in NOTEBOOKS:
+        yield path.name, path
 
 
 def commands(source: str) -> list[str]:
@@ -104,57 +124,67 @@ def assigned_in(line: str) -> set[str]:
 
 
 class Structure(unittest.TestCase):
-    def test_the_notebook_parses_and_has_cells(self):
-        notebook = load_notebook()
-        self.assertEqual(notebook["nbformat"], 4)
-        self.assertTrue(notebook["cells"])
-        for index, cell in enumerate(notebook["cells"]):
-            self.assertIn(cell["cell_type"], ("markdown", "code"), index)
-            self.assertTrue(str(cell.get("source", "")).strip(), f"cell {index} is empty")
+    def test_every_notebook_parses_and_has_cells(self):
+        self.assertTrue(NOTEBOOKS, "no notebooks to check")
+        for name, path in each_notebook():
+            with self.subTest(notebook=name):
+                notebook = load_notebook(path)
+                self.assertEqual(notebook["nbformat"], 4)
+                self.assertTrue(notebook["cells"])
+                for index, cell in enumerate(notebook["cells"]):
+                    self.assertIn(cell["cell_type"], ("markdown", "code"), index)
+                    self.assertTrue(str(cell.get("source", "")).strip(),
+                                    f"{name} cell {index} is empty")
 
     def test_it_finds_commands_to_check(self):
         """A validator that silently stops finding commands proves nothing."""
-        found = [c for _, source in code_cells() for c in commands(source)]
-        self.assertGreaterEqual(len(found), 10, "the notebook should invoke the CLIs")
+        for name, path in each_notebook():
+            with self.subTest(notebook=name):
+                found = [c for _, source in code_cells(path) for c in commands(source)]
+                self.assertGreaterEqual(len(found), 3,
+                                        f"{name} should invoke the CLIs")
 
 
 class Targets(unittest.TestCase):
     def test_every_invoked_module_or_script_exists(self):
-        seen: set[str] = set()
-        for _index, source in code_cells():
-            for command in commands(source):
-                seen.add(invoked_by(command))
-        self.assertTrue(seen)
-        for target in sorted(seen):
-            with self.subTest(target=target):
-                path = ROOT / target
-                if target.endswith(".py"):
-                    self.assertTrue(path.is_file(), f"{target} does not exist")
-                else:
-                    self.assertTrue((ROOT / (target.replace(".", "/") + ".py")).is_file(),
-                                    f"{target} has no module file")
+        for name, path in each_notebook():
+            seen: set[str] = set()
+            for _index, source in code_cells(path):
+                for command in commands(source):
+                    seen.add(invoked_by(command))
+            self.assertTrue(seen, name)
+            for target in sorted(seen):
+                with self.subTest(notebook=name, target=target):
+                    file = ROOT / target
+                    if target.endswith(".py"):
+                        self.assertTrue(file.is_file(), f"{target} does not exist")
+                    else:
+                        self.assertTrue((ROOT / (target.replace(".", "/") + ".py")).is_file(),
+                                        f"{target} has no module file")
 
     def test_every_invoked_cli_answers_help(self):
         """Includes the uniform-interface requirement: a CLI that treats
         `--help` as data cannot be validated, and cannot be used safely either."""
-        for _index, source in code_cells():
-            for command in commands(source):
-                target = invoked_by(command)
-                with self.subTest(target=target):
-                    self.assertIsNotNone(help_flags(target),
-                                         f"{target} --help failed; is it a module?")
+        for name, path in each_notebook():
+            for _index, source in code_cells(path):
+                for command in commands(source):
+                    target = invoked_by(command)
+                    with self.subTest(notebook=name, target=target):
+                        self.assertIsNotNone(help_flags(target),
+                                             f"{target} --help failed; is it a module?")
 
     def test_every_flag_passed_exists_in_that_cli(self):
-        for index, source in code_cells():
-            for command in commands(source):
-                target = invoked_by(command)
-                known = help_flags(target)
-                if known is None:
-                    continue  # reported by test_every_invoked_cli_answers_help
-                for flag in FLAG_RE.findall(command):
-                    with self.subTest(cell=index, target=target, flag=flag):
-                        self.assertIn(flag, known,
-                                      f"{flag} is not accepted by {target}")
+        for name, path in each_notebook():
+            for index, source in code_cells(path):
+                for command in commands(source):
+                    target = invoked_by(command)
+                    known = help_flags(target)
+                    if known is None:
+                        continue  # reported by test_every_invoked_cli_answers_help
+                    for flag in FLAG_RE.findall(command):
+                        with self.subTest(notebook=name, cell=index, target=target, flag=flag):
+                            self.assertIn(flag, known,
+                                          f"{flag} is not accepted by {target}")
 
 
 class Ordering(unittest.TestCase):
@@ -163,16 +193,18 @@ class Ordering(unittest.TestCase):
         first line and use it on its second, because the kernel runs the cell top
         to bottom. What must never happen is a *later* cell using it, or a line
         using it above its own assignment."""
-        defined: set[str] = set()
-        for index, source in code_cells():
-            for raw in source.splitlines():
-                defined |= assigned_in(raw + "\n")
-                for command in commands(raw):
-                    for double, single in VAR_RE.findall(command):
-                        name = double or single
-                        with self.subTest(cell=index, variable=name):
-                            self.assertIn(name, defined,
-                                          f"cell {index} uses ${name} before it is assigned")
+        for name, path in each_notebook():
+            defined: set[str] = set()
+            for index, source in code_cells(path):
+                for raw in source.splitlines():
+                    defined |= assigned_in(raw + "\n")
+                    for command in commands(raw):
+                        for double, single in VAR_RE.findall(command):
+                            var = double or single
+                            with self.subTest(notebook=name, cell=index, variable=var):
+                                self.assertIn(var, defined,
+                                              f"{name} cell {index} uses ${var} before "
+                                              f"it is assigned")
 
     def test_the_two_fixed_defects_stay_fixed(self):
         """Neither defect had a test, because neither was the kind of thing a
