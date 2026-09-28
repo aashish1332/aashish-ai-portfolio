@@ -22,7 +22,7 @@ import { ScratchLlamaEngine, createEngine, LLMEngine } from '../ai/engine/index.
 import { LlamaEngine, applyRope, ropeCache } from '../ai/engine/llama.mjs';
 import { manifestIssues, parseManifest, sha256hex } from '../ai/engine/manifest.mjs';
 import { dequantiseQ8, matvecQ8, rmsNorm, rowQ8 } from '../ai/engine/quant.mjs';
-import { defaultStopIds, fitToBudget, frame, frameParts, framePrefix, promptIds }
+import { abstainId, defaultStopIds, fitToBudget, frame, frameParts, framePrefix, promptIds }
   from '../ai/engine/prompt.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -591,5 +591,95 @@ test('ENG-18 a context that does not fit is trimmed from the tail, never thrown'
     assert.equal(summary.contextTokens, fitted.contextTokens);
     assert.ok(summary.promptTokens + maxNewTokens <= maxSeq);
 
+    engine.dispose();
+  });
+
+/* ── §10's Stop, as the worker actually receives it ─────────────────
+
+   MEASURED 2026-09-28, and the reason these two exist: a Stop reaches the
+   engine as a `postMessage`, and a message is a TASK. The decode loop used to
+   await `Promise.resolve()` — a microtask — and a chain of microtasks never
+   returns to the event loop, so the abort stayed in the queue until the
+   generation it was meant to stop had finished. The engine looked like it
+   supported Stop; what actually stopped was the answer, while the worker kept
+   computing and the next question queued behind the abandoned work. The P2
+   probe found it as a `Retry` that took minutes to stream.
+
+   The event-loop property under test is not node-specific: a worker's message
+   queue is a task queue there too, which is why the probe reproduced it in a
+   browser and the timer below reproduces it here. */
+test('ENG-19 a prefill is cut short when the Stop is delivered', async () => {
+  const engine = await loadEngine();
+  /* Long enough that the prefill has several breath points. The fixture's
+     window is 256 tokens, so `fitToBudget` trims this back to fit. */
+  const context = Array.from({ length: 120 },
+    (_, i) => `[project.p${i}] a shipped thing with a name ${i}`).join('\n');
+  const opts = { question: 'What is your name?', context, maxNewTokens: 8 };
+
+  let forwards = 0;
+  const realForward = engine.model.forward.bind(engine.model);
+  engine.model.forward = (id) => { forwards += 1; return realForward(id); };
+
+  const controller = new AbortController();
+  /* The timer stands in for the worker's message: both are tasks, and a task
+     queued before the generation starts must run DURING it. */
+  let delivered = false;
+  const timer = setTimeout(() => { delivered = true; controller.abort(); }, 0);
+  const summary = await collect(engine.generate({ ...opts, signal: controller.signal }));
+  clearTimeout(timer);
+
+  assert.equal(delivered, true,
+    'the abort must be delivered during the generation, not after it');
+  assert.equal(summary.stopReason, 'stopped');
+  assert.equal(summary.tokens, 0, 'a stopped prefill has no tokens to give');
+  assert.ok(summary.promptTokens > 32,
+    `the fixture prompt must be long enough to have breath points (${summary.promptTokens})`);
+  assert.ok(forwards > 0 && forwards < summary.promptTokens,
+    `the prefill must stop early: ${forwards} of ${summary.promptTokens} forwards`);
+
+  /* And the half-filled K/V cache is NOT remembered. `reusePrefix` matches on
+     token ids, so a remembered half-prompt would let the next question skip a
+     prefix the model never actually read. */
+  forwards = 0;
+  const after = await collect(engine.generate({ ...opts, maxNewTokens: 2 }));
+  assert.ok(forwards >= summary.promptTokens / 2,
+    `the next question must not reuse an aborted prefill (${forwards} forwards)`);
+  assert.ok(after.tokens >= 0);
+  engine.dispose();
+});
+
+test('ENG-20 the decode loop hands the event loop back, so a Stop is not queued behind the answer',
+  async () => {
+    const engine = await loadEngine();
+    const stops = defaultStopIds(engine.tokenizer);
+    const abstain = abstainId(engine.tokenizer);
+    let plain = 0;
+    while (stops.has(plain) || plain === abstain) plain += 1;
+
+    /* A stub model, because the fixture is random-init: whether it emits an end
+       token at step 2 or at step 40 is not something this test should depend
+       on, and the subject here is the LOOP's cooperation, not what the loop
+       produces. Every step returns the same ordinary token. */
+    const real = engine.model;
+    engine.model = {
+      maxSeq: real.maxSeq,
+      reset() {}, reusePrefix: () => 0, rememberPrefix() {},
+      forward: () => real.logits, argmax: () => plain,
+    };
+
+    const controller = new AbortController();
+    const iterator = engine.generate({
+      question: 'x', context: '', maxNewTokens: 60, signal: controller.signal,
+    });
+    const first = await iterator.next();
+    assert.equal(first.done, false, 'the stub model never stops on its own');
+    /* Queued DURING the decode loop: nothing but a real breath can deliver it. */
+    setTimeout(() => controller.abort(), 0);
+    const summary = await collect(iterator);
+
+    assert.equal(summary.stopReason, 'stopped',
+      `a Stop must stop the loop (it ran ${summary.tokens} tokens and stopped with ${summary.stopReason})`);
+    assert.ok(summary.tokens > 0 && summary.tokens < 60,
+      `stopped after ${summary.tokens} of 60 tokens`);
     engine.dispose();
   });

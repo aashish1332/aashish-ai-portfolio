@@ -33,6 +33,25 @@ import { LlamaEngine } from './llama.mjs';
 import { manifestIssues, loadWeights, parseManifest } from './manifest.mjs';
 import { abstainId, defaultStopIds, fitToBudget, frame } from './prompt.mjs';
 
+/* How often the generator hands the event loop back, in forwards.
+
+   It has to be a MACROTASK (`setTimeout`), not `await Promise.resolve()`.
+   §10's Stop reaches this engine as a `postMessage` from the main thread, and
+   a message is a task: it cannot be delivered while an await-chain of
+   already-resolved promises owns the loop. MEASURED (2026-09-28): a 50-step
+   loop that awaits `Promise.resolve()` every 16 steps left a `setTimeout(…, 0)`
+   scheduled before it un-run; the same loop with one `setTimeout` in the middle
+   ran the timer during the loop.
+
+   That mattered: the decode loop's `signal?.aborted` check could never fire in
+   the worker — the abort message was still in the queue — so Stop stopped the
+   *answer* while the worker ground on. A Retry then queued behind the whole of
+   the abandoned generation, which is exactly what the P2 probe saw on
+   2026-09-28: `retry()=true`, the answer eventually arrived, and it took more
+   than the probe's 180 s to start streaming. */
+const COOP_EVERY = 16;
+const breathe = () => new Promise((resolve) => setTimeout(resolve, 0));
+
 /** The interface. Subclasses implement `generate`; `load` is a static. */
 export class LLMEngine {
   get config() { throw new Error('LLMEngine.config is not implemented'); }
@@ -164,18 +183,32 @@ export class ScratchLlamaEngine extends LLMEngine {
        so a tokenizer that merges across a seam can only shorten the skip. */
     const reused = this.model.reusePrefix(promptTokens);
     if (reused === 0) this.model.reset();
+    let prefilled = true;
     for (let index = reused; index < promptTokens.length; index++) {
+      /* Checked here as well as in the decode loop: the prompt is 135–512
+         forwards — most of the wait — so a Stop that is only noticed at the
+         first generated token still costs the visitor the whole prefill. */
+      if (signal?.aborted || this.stopped) { prefilled = false; break; }
       this.model.forward(promptTokens[index]);
+      if ((index - reused) % COOP_EVERY === COOP_EVERY - 1) await breathe();
     }
-    this.model.rememberPrefix(promptTokens);
-
     // Greedy decode. The prefill above consumed the prompt, so each step
     // feeds back the token it just chose — one `forward` per generated token,
     // never a re-run of the prompt (§4's latency budget depends on that).
     const produced = [];
     let previous = promptTokens.at(-1);
     let stopReason = 'max-tokens';
-    for (let step = 0; step < maxNewTokens; step++) {
+    if (prefilled) this.model.rememberPrefix(promptTokens);
+    else {
+      /* Stopped mid-prefill. The K/V cache now holds HALF a prompt, so it must
+         not be remembered: `reusePrefix` skips forwards by comparing tokens
+         element-wise, and it would happily skip a prefix the model never
+         actually read. Drop the cache instead — the next question pays for its
+         own prefill, which is the honest cost of having asked for a Stop. */
+      this.model.reset();
+      stopReason = 'stopped';
+    }
+    for (let step = 0; prefilled && step < maxNewTokens; step++) {
       if (signal?.aborted || this.stopped) { stopReason = 'stopped'; break; }
       const id = this.model.argmax(this.model.forward(previous));
       if (id === abstain) { stopReason = 'abstain'; produced.push(id); break; }
@@ -189,7 +222,7 @@ export class ScratchLlamaEngine extends LLMEngine {
       // tokens gives the GSAP ticker its frame back without changing what is
       // computed. `paceMs` is set by the governor, not by this module.
       if (paceMs) await new Promise((resolve) => setTimeout(resolve, paceMs));
-      else if (step % 16 === 15) await Promise.resolve();
+      else if (step % COOP_EVERY === COOP_EVERY - 1) await breathe();
     }
 
     return {
