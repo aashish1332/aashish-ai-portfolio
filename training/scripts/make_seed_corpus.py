@@ -21,6 +21,7 @@ Output: `data/raw/seed/*.txt`, one line per example.
 
 from __future__ import annotations
 
+import argparse
 import random
 import sys
 from pathlib import Path
@@ -300,8 +301,8 @@ def _expand(frames, pairs, rng, limit=None):
     return out[:limit] if limit else out
 
 
-def build_files() -> dict[str, list[str]]:
-    rng = random.Random(SEED)
+def build_files(seed: int = SEED) -> dict[str, list[str]]:
+    rng = random.Random(seed)
 
     en_pairs = [(q.format(s=s), a.format(s=s))
                 for q in EN_QUESTIONS for s in EN_SUBJECTS for a in EN_ANSWERS]
@@ -364,20 +365,41 @@ def build_files() -> dict[str, list[str]]:
     }
 
 
-def write_corpus(out_dir: Path = OUT_DIR) -> dict[str, int]:
+def write_corpus(out_dir: Path = OUT_DIR, seed: int = SEED) -> dict[str, int]:
     out_dir.mkdir(parents=True, exist_ok=True)
     counts: dict[str, int] = {}
-    for name, lines in build_files().items():
+    for name, lines in build_files(seed).items():
         unique = list(dict.fromkeys(lines))  # exact dupes only; near-dup is the pipeline's job
         (out_dir / name).write_text("\n".join(unique) + "\n", encoding="utf-8")
         counts[name] = len(unique)
     return counts
 
 
-def main() -> int:
-    counts = write_corpus()
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="python -m training.scripts.make_seed_corpus",
+        description="Write the deterministic dev corpus to data/raw/seed/*.txt (the P3 "
+                    "fixture, not the Stage A corpus).",
+    )
+    p.add_argument("--out", type=Path, default=OUT_DIR,
+                   help="directory to write the *.txt files into")
+    p.add_argument("--seed", type=int, default=SEED,
+                   help="RNG seed; the default reproduces the committed fixture exactly")
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    # Windows consoles default to cp1252 and this module's output is not cp1252
+    # ("→"): the arrow killed the process on the one platform the fixture is
+    # built on. Every script in training/scripts does this, which is why
+    # `--help` is part of the notebook test's checks.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+    args = build_parser().parse_args(argv)
+    counts = write_corpus(args.out, args.seed)
     total = sum(counts.values())
-    print(f"seed corpus → {OUT_DIR}")
+    print(f"seed corpus → {args.out}")
     for name, count in counts.items():
         print(f"  {name:<22} {count:>5} lines")
     print(f"  {'total':<22} {total:>5} lines")

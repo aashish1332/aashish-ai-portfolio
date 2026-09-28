@@ -2832,3 +2832,66 @@ a test nobody had written.
 ### Evidence
 `dev-firefox-probe.js` · `package.json` (`probe:firefox`) · `docs/BENCHMARKS.md`
 (*"Firefox, on the shipped bundle"*) · `npm run probe:firefox`
+
+---
+
+## The docs get the validator the notebooks already had — 2026-09-28
+
+**Status:** ✅ `tests/py/test_docs_commands.py` — 10 tests, **125 commands across
+7 documents** — and it found a real defect on its first run.
+
+### Why
+`tests/py/test_notebook_refs.py` already checks every command a notebook runs
+against the CLI it names, because a stale notebook flag is paid for in GPU-hours.
+A README or a runbook fails differently but no less: a human follows it, it
+breaks, and the next thing they do is stop trusting the file. That is not
+hypothetical — while *writing* the Stage B step above I put
+`make_instruction_data --examples 40000` in `docs/TRAINING.md` for a CLI whose
+flag is `--count`, and caught it by hand, by reading `--help`. A document that
+is only correct when someone happens to look is not correct.
+
+### What it checks (all offline)
+| Check | Why it can be wrong |
+|---|---|
+| every `python -m <module>` / `python <path>.py` in a fenced block exists | a renamed module leaves a dead instruction |
+| every one of those answers `--help` | a CLI that treats `--help` as data cannot be validated |
+| every `--flag` it is given is in that CLI's own parser | this is the `--examples`/`--count` class |
+| every `npm run <script>` is a script in `package.json` | a renamed script is a broken copy-paste |
+| an npm script's `--` passthrough flags exist on the CLI behind it | `npm run sft -- --count 40000` is a flag on `make_instruction_data` |
+| every `node <file>` exists | renamed probes/tools |
+| every `dev-*.js` named **anywhere**, prose included, exists | a doc pointing at an old probe name reads as working |
+
+**Not checked, on purpose:** any number written in prose (test counts, byte
+sizes, latencies). A test cannot know those; a test that guessed would be worse
+than a reader who can see the date beside the figure.
+
+### The defect it found on the first run
+`python -m training.scripts.make_seed_corpus --help` **did not print help — it
+generated the corpus and then died:**
+
+```
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2192' in position 12
+```
+
+The module had **no argument parsing at all**, so `--help` was a request to do
+the work, and its one status line contains `→` on a console whose default codec
+is cp1252. Same two defects, in the same shape, as `make_instruction_data.py`
+earlier in this project — which is why that file already reconfigures stdout.
+Both are now fixed: `build_parser()` with `--out`/`--seed`, and the same
+`sys.stdout.reconfigure(encoding="utf-8", errors="replace")` idiom.
+
+**The fix was verified idempotent, not assumed:** the generator seeds
+`random.Random(SEED)`, and the corpus hashes **md5-identical** before and after
+the change, so the committed tokenizer artifact is unaffected.
+
+### MEASURED
+| | |
+|---|---|
+| `python -m unittest tests.py.test_docs_commands` | **10 tests, OK** |
+| commands checked | **125** across README + 6 docs |
+| `npm run test:all` | **492 JS + 353 Python, 0 failures** |
+| `npm run build` | clean |
+
+### Evidence
+`tests/py/test_docs_commands.py` · `training/scripts/make_seed_corpus.py`
+(`build_parser`, the stdout reconfigure) · `npm run test:py`
