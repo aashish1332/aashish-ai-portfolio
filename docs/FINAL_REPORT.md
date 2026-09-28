@@ -265,7 +265,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
     tour) is third-person about Aashish and first-person only about
     *itself* — that split is enforced by tests (`QA-10`, `TOUR-1`). Flipping
     the default is one constant plus test updates, and it needs a ruling on
-    which reading wins — see **WHAT I NEED FROM YOU** item 7.
+    which reading wins — see **WHAT I NEED FROM YOU** item 6.
 13. **§2 N3 is the one non-negotiable this build deviates from, and it must be
     read as a deviation.** N3 asks that "any remote speech-recognition mode is
     disabled"; the browser's `SpeechRecognition` has no switch that forbids its
@@ -321,7 +321,9 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
 its instrument) · `docs/CALIBRATION.json` · `docs/CPU_BENCHMARK.json` ·
 `docs/RESOURCES.json` · `docs/AI_ARCHITECTURE.md` · `docs/PROGRESS.md` ·
 `docs/PRIVACY.md` · `docs/RESEARCH_VERIFICATION.md` (the §19 check, claim by
-claim) · `docs/MANUAL_TEST_CHECKLIST.md` · `experiments/ternary/README.md`.
+claim) · `docs/MANUAL_TEST_CHECKLIST.md` · `experiments/ternary/README.md`. `docs/PROGRESS.md`
+also carries the clause-by-clause rollups: §2's eight non-negotiables with the
+gate behind each, §15's five steps, §16's eleven gates, §17's hygiene rows.
 
 Reproduce in this order: `npm run test:all` · `npm run build` · `npm run bundle`
 (the §4 figures) · `npm run verify:engine` · `npm run probe:resources` ·

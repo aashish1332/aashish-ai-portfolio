@@ -869,8 +869,18 @@ test('shipped ai/** scripts lose their comments and nothing else', async () => {
         `the built planner answers "${q}" differently from the module under test`);
     }
 
-    /* 3. the film is untouched on purpose (§2 N7) */
-    for (const rel of ['index.html', 'js/main.js', 'js/film3d.js', 'css/style.css']) {
+    /* 3. the film is untouched on purpose (§2 N7, and §2 N1's "stays intact").
+       EVERY file the AI layer does not own, not four hand-picked ones: the
+       paragraph above this test has claimed "`js/**` and `css/**` are
+       byte-identical to source" while the check read four files, and a claim
+       that outruns its check is the thing this project spends its time
+       finding. Walking the bundle makes the sentence true. */
+    const film = [...walkFiles(out)]
+      .map((entry) => entry.slice(out.length + 1).replaceAll('\\', '/'))
+      .filter((rel) => rel.startsWith('js/') || rel.startsWith('css/') || rel === 'index.html');
+    assert.ok(film.length >= 12,
+      `only ${film.length} film files in the bundle — did the walk break?`);
+    for (const rel of film) {
       assert.equal(readFileSync(join(out, rel), 'utf8'),
         readFileSync(join(ROOT, rel), 'utf8'),
         `${rel} was rewritten by the build — the AI layer must not touch the film`);
