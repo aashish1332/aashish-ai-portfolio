@@ -478,7 +478,10 @@ assuming one. That was not true before: the disclosure check was written
 against a truncated string (the phrase is at character 151 of a 221-character
 bubble) and **could never pass**, which went unnoticed because the refusal
 branch ran instead for the whole of §11. Both branches now carry three checks
-and the probe prints its own total (**26/26**). See PROGRESS §11.
+and the probe prints its own total (**26/26** at the time; **46/46** on the
+2026-09-27 re-run, which is a larger check set — the tallies are not comparable
+across revisions, and each is reported with its date for that reason). See
+PROGRESS §11.
 
 **NOT TESTED, and this is the honest limit of the above:** a **live
 microphone**. Headless Chrome ships `webkitSpeechRecognition` and has no
@@ -707,14 +710,14 @@ worst abs Δ logit **3.58e-07**.
 
 | Budget | §4 | Measured |
 |---|---|---|
-| AI chat **code** chunk, conservative reading (every shipped `ai/**` module + `knowledge.json`) | ≤ 150 KB gz | **70,544 B** (45.9 %) — was 138,896 B (90.4 %) before shipped `ai/**` stopped carrying comments; 69,079 B before the on-device voice path and §11.5's visual (+1,465 B gz total: `ai/voice/index.mjs` to 4,878 B, `ai/ui/chat.mjs` to 9,456 B, `ai/ui/styles.mjs` to 2,799 B) |
-| — of that, §4's chat-UI chunk proper (UI + KB + retrieval + language + guard + intent + anchors + governor) | — | 47,900 B (31.2 %) |
-| — of that, voice add-ons (loaded only on the tap that picks voice, §2 N6) | §4 lists separately | 7,975 B |
+| AI chat **code** chunk, conservative reading (every shipped `ai/**` module + `knowledge.json`) | ≤ 150 KB gz | **71,465 B** (46.5 %) — was 138,896 B (90.4 %) before shipped `ai/**` stopped carrying comments; 69,079 B before the day's §11 work (+2,386 B gz total: the on-device probe, §11.5's visual, §11.1's idle bounds and §11.2's transcript — `ai/voice/index.mjs` to 5,342 B, `ai/ui/chat.mjs` to 9,742 B, `ai/ui/styles.mjs` to 2,970 B) |
+| — of that, §4's chat-UI chunk proper (UI + KB + retrieval + language + guard + intent + anchors + governor) | — | 48,357 B (31.5 %) |
+| — of that, voice add-ons (loaded only on the tap that picks voice, §2 N6) | §4 lists separately | 8,439 B |
 | — of that, LLM runtime + tokenizer (§4 "LLM runtime" row) | — | 14,669 B |
-| AI assets actually fetched by **the click** (static reach of `ai/ui/chat.mjs`) | §4's number to keep small | **42,143 B gz (41.2 KB), 14 files** · the worker-only arithmetic the click does **not** parse is still **13,296 B gz** across 9 files |
+| AI assets actually fetched by **the click** (static reach of `ai/ui/chat.mjs`) | §4's number to keep small | **42,600 B gz (41.6 KB), 14 files** · the worker-only arithmetic the click does **not** parse is still **13,296 B gz** across 9 files |
 | Rest of the page | regression guard 250 KB | 65,649 B |
 | Model payload (weights + tokenizer + manifest) | ≤ 25 MB preferred, ≤ 40 MB hard | **5,144,357 B** raw · 4,741,050 B gz (step 1100) |
-| First-use download, T1/T2 | ≤ ~40 MB | **4,811,594 B** gz (**11.5 %**) |
+| First-use download, T1/T2 | ≤ ~40 MB | **4,812,515 B** gz (**11.5 %**) |
 | Any single AI asset | ≤ ~100 MB | 5,059,584 B raw / 4,732,964 B gz |
 | Files | — | 44 |
 
@@ -810,13 +813,13 @@ asserted byte-identical to source, because §2 N7 says the AI layer does not
 touch the film.
 
 The conservative §4 figure is the number that guards the budget, and after the
-comment strip it is at **45.9 % — 81 KB of headroom** — with the runtime
-(14.7 KB) and the voice add-ons (8.0 KB) inside it, both of which §4 lists on
-their own rows. The click's static reach fell with it, to **42,143 B gz** (every
-figure in this paragraph is the 2026-09-27 re-run, after the on-device voice
-path and §11.5's visual added 1,465 B gz to the chunk — and the worker-only
-arithmetic the click still does not parse is unchanged at 13,296 B gz, which is
-the part that matters for a 50 ms main-thread budget).
+comment strip it is at **46.5 % — 80 KB of headroom** — with the runtime
+(14.7 KB) and the voice add-ons (8.4 KB) inside it, both of which §4 lists on
+their own rows. The click's static reach fell with it, to **42,600 B gz** (every
+figure in this paragraph is the 2026-09-27 re-run, after §11's last four
+features added 2,386 B gz to the chunk — and the worker-only arithmetic the
+click still does not parse is unchanged at 13,296 B gz, which is the part that
+matters for a 50 ms main-thread budget).
 **The budget is no longer the binding constraint on what `ai/` may grow into; it
 is a regression guard now.**
 
@@ -832,6 +835,7 @@ same MIME table as `npm run preview`).
 | | |
 |---|---|
 | probe | **43/43 checks**, 0 console errors, 0 page errors, 0 failed requests |
+| probe, re-run 2026-09-27 after §11's last two features | **46/46 checks**, 0 console errors, 0 page errors, 0 failed requests — three checks are new (the transcript of a HEARD question, its EDIT control, and the words landing back in the box), and one instrument bug was fixed (see below) |
 | no AI asset before the click | ✔ — the network watch stayed empty until the button was pressed |
 | the answer | `kind=model`, badge `AI ANSWER · ON-DEVICE MODEL`, 12 facts read / 12 sources |
 | frame health, closed → open | 33.2 ms (115 frames) → 33.3 ms (105 frames), **0.3 %** drift, **1×** p95, both arms `tier 2 · BALANCED @72% y=0`; the double-sampled control read −0.3 % |
@@ -912,7 +916,7 @@ testing itself, and both would have produced a green result for a broken path:
 
 | | |
 |---|---|
-| chat code chunk (§4, conservative) | **70,544 B gz = 45.9 %** after the 2026-09-27 comment strip (before it: 138,896 B = 90.4 %, and 138,779 before the badge fix and its comment). +1,465 B gz of the current figure is the on-device voice path and §11.5's orb (`ai/voice/index.mjs` 4,878 B gz, `ai/ui/chat.mjs` 9,456 B gz, `ai/ui/styles.mjs` 2,799 B gz) — see `docs/RESEARCH_VERIFICATION.md` row 6 |
+| chat code chunk (§4, conservative) | **71,465 B gz = 46.5 %** after the 2026-09-27 comment strip (before it: 138,896 B = 90.4 %, and 138,779 before the badge fix and its comment). +2,386 B gz of the current figure is the day's §11 work: the on-device probe, the visual, the idle bounds and the transcript (`ai/voice/index.mjs` 5,342 B gz, `ai/ui/chat.mjs` 9,742 B gz, `ai/ui/styles.mjs` 2,970 B gz) — see `docs/RESEARCH_VERIFICATION.md` row 6 |
 
 ### Where voice recognition runs (2026-09-27, §19 row 6)
 
@@ -972,7 +976,9 @@ when they differ.
 | open (after 5 answers) | 126 | **18.3 ms** | 36.5 ms | `tier 2 · BALANCED @72% y=0` |
 | drift | | **0 %** (§14 allows ≤ 10 %) | **1.00×** | same film in both arms |
 
-`node dev-ai-probe.js` → **43/43 checks**. Panel ready **815–880 ms** after the click in these
+`node dev-ai-probe.js` → **43/43 checks** on that run (**46/46** on the
+2026-09-27 re-run, on a busier box: panel ready **2,132 ms**, first answer
+**30,660 ms**, frames 33.2 → 33.3 ms, ladder at step 0). Panel ready **815–880 ms** after the click in these
 two runs. **NOT TESTED:** the panel's ready time has been measured at 390 ms and 19.3–27.9 s
 within the same day, so 815 ms is the best case on an unloaded box and nothing more; the A/B is
 at a pinned tier, which is what makes it attributable, not what a visitor's film will choose;
@@ -1294,3 +1300,31 @@ post), **abstention recall 92.3%** counts the refusals a visitor actually meets
 (policy, bait and no-evidence) instead of only the model's own, and the
 remaining failure is quality, not plumbing. That is why a loss curve cannot be
 the quality gate, and why this pipeline exists.
+
+### The probe's own instrument bug, found by re-running it (2026-09-27)
+
+The re-run failed once, and the failure was the probe's, not the panel's:
+`answer is labelled` read the **last bot bubble**, and §6.3 appends a `NOTICE`
+bubble *after* the answer when the governor has shortened the session ("The
+scene was struggling, so answers are kept shorter"). On a box whose frames were
+in their slow mode (33.2 ms), the ladder fired, the notice landed last, and the
+probe reported the answer as unlabelled.
+
+The fix is in the instrument: an answer is the last bot bubble that is **not** a
+notice, and the run now prints a note when a NOTICE was seen so the situation
+cannot pass silently. Nothing in the panel changed. This is the fourth
+instrument bug this probe has produced (see §15.3's list), and the pattern is
+consistent: **it reads the screen, so a new bubble can break it.**
+
+Same run, for the record — `ROOT=dist PORT=5582`, `AI_BASE=http://localhost:5582/`,
+headless Chrome with the GPU:
+
+| | |
+|---|---|
+| checks | **46/46**, 0 console errors, 0 page errors, 0 failed requests |
+| tier / panel ready | **T1 · MODEL READY**, **2,132 ms** |
+| first answer | **30,660 ms** |
+| a topic question | `kind=model`, **12 facts**, 12 sources — one real answer |
+| frames, panel closed → open | 33.2 → 33.3 ms = **0.3 %** (p95 **1×**), ladder `step=0` |
+| control (open, sampled twice) | 33.3 → 33.2 ms = −0.3 % — this box's bimodal baseline |
+| §11.2 checks | `badge="HEARD"`, EDIT present, and pressing it puts `"who are you"` back in the box |

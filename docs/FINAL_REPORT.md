@@ -24,7 +24,7 @@ this report says so in the same breath as the good news.
 | Clause | State |
 |---|---|
 | "custom … trained from scratch" | **MEASURED** — our tokenizer, our model code, random init, our trainer, our export, our engine. No pretrained weights anywhere in the shipping path. |
-| "running locally in the visitor's browser" | **MEASURED** — `dev-ai-probe.js` **43/43 checks** (real GPU), run against the **built bundle** (`dist/`, served the way production serves it, via the probe's `AI_BASE`) rather than the source tree; one real answer with `AI ANSWER · ON-DEVICE MODEL`, 12 facts read, 12 sources; zero requests to any third party. |
+| "running locally in the visitor's browser" | **MEASURED** — `dev-ai-probe.js` **46/46 checks** (real GPU) on the 2026-09-27 run, against the **built bundle** (`dist/`, served the way production serves it, via the probe's `AI_BASE`) rather than the source tree; one real answer with `AI ANSWER · ON-DEVICE MODEL`, 12 facts read, 12 sources; zero requests to any third party. |
 | "no LLM API, no backend" | **MEASURED** — `npm run build` ships a static bundle; the model is fetched from the site's own path and cached locally. Checked on the built bytes rather than asserted: `tests/build-bundle.test.mjs` fails if any shipped `ai/**` script contains an absolute URL, if the shipped AI code makes more than the **one** outbound call it makes (`fetch(KB_URL)`, this site's own knowledge file), if it opens an XHR/WebSocket/EventSource/sendBeacon, if any shipped file carries a secret-shaped string, or if any names a hosted LLM service. |
 | "training from scratch" (the full spec-sized model) | **NOT TESTED** — Stage A + Stage B at config A have never run; they need a GPU. What has run is the 4.98M CPU pipeline config, and both trainers now exist for it: Stage A for 1,100 steps and Stage B (new, assistant-only loss) for 60. |
 | "answering questions about my work" | **NOT TESTED in the sense that matters** — the shipped checkpoint answers, but it answers *badly*, because it has had 1,100 steps on a ~3 MB corpus. |
@@ -158,6 +158,8 @@ The constraint that outranks everything else: *the portfolio must not get slower
 | Mic denied / unsupported | Unit-tested paths; state machine covered | **MEASURED as tests** · real permission prompt **NOT TESTED** |
 | Resource use per tier | Not measured for voice specifically | **NOT TESTED** |
 | Wake-phrase stability | Flips between runs on the stub engine (0/1 vs 1/2 wake events) | **INCONCLUSIVE** |
+| The one idle nudge, then auto-standby (§11.1 d/e) | After **25 s** of a hands-free session with nothing happening the panel shows one deterministic nudge (not spoken), and after **90 s** the **recognizer is released while voice stays on** — the VAD gate brings it back when the visitor speaks. Never entered without a gate: a released recognizer with nothing to wake it would be a dead microphone | **MEASURED as tests** (`tests/voice.test.mjs` VOICE-14: the nudge, the standby, the resume through the gate, the reset-on-interaction, and that a session with no gate is never released) · **NOT TESTED** with a live microphone |
+| The transcript, with tap-to-edit (§11.2) | A question that was **heard** is shown as the recognizer's own words, badged `HEARD`, with an `EDIT` control that puts it back in the box to correct and send again. Verified **in a real browser**: the probe asks through the same call the voice layer makes (`ask(text, { source: 'voice' })`), finds `badge="HEARD"`, presses EDIT and reads back `input="who are you"` | **MEASURED in a browser** (`dev-ai-probe.js`, 46/46) · typing a correction and resending it by hand is **NOT TESTED** |
 
 ## TERNARY
 
@@ -189,7 +191,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
 | WebGPU + WASM investigated | **MEASURED as investigation**; neither implemented, and the report says why |
 | Unsupported / mobile paths handled | **MEASURED** for unsupported (20/20) and the download-failure/retry path, both run against the **built bundle**; the responsive path under mobile emulation on the same bundle (43/43 at 390×844: the sheet pauses the film, closes cleanly, no horizontal overflow); a **real phone is NOT TESTED** |
 | Chat: streaming, Stop, Retry, Clear, bounded context, accessible, responsive | **MEASURED** except screen-reader and real-device behaviour |
-| Voice: both modes, local STT/TTS, lazy, permission paths, no selector, limits, visual state (§11.5) | **MEASURED as code/tests**; live speech **NOT TESTED**. TTS is local (`speechSynthesis`); STT is the platform's — asked to stay on the device when the platform says it can (§19 row 6), disclosed either way |
+| Voice: both modes, local STT/TTS, lazy, permission paths, no selector, limits, visual state (§11.5), idle nudge/standby (§11.1 d/e), transcript with edit (§11.2) | **MEASURED as code/tests**, and the transcript half **in a browser** (46/46); live speech **NOT TESTED**. TTS is local (`speechSynthesis`); STT is the platform's — asked to stay on the device when the platform says it can (§19 row 6), disclosed either way |
 | Training resumable, checkpoints, evaluation, no fake results | **MEASURED** (resume verified); quality gates **NOT TESTED** |
 | Ternary separated from the baseline | **MEASURED** — separated by not existing; decision recorded |
 

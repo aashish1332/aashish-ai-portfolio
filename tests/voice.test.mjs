@@ -28,6 +28,7 @@ import {
   recognizeSupported, createRecognizer, createSpeaker, createVoice,
   speechRecognitionCtor, WAKE_PHRASES, SPEECH_DISCLOSURE, NO_ENGINE, THRASH_LIMIT,
   SPEECH_DISCLOSURE_ON_DEVICE, ON_DEVICE_PROBE_MS, probeOnDevice,
+  VOICE_IDLE, IDLE_NUDGE,
 } from '../ai/voice/index.mjs';
 /* §11.5's visual state lives with the shell, because it is a UI decision made
    from the voice layer's status object — so the test imports it from there. */
@@ -141,11 +142,12 @@ function fakeSpeaker() {
  */
 function fakeChat(over = {}) {
   return {
-    asked: [], working: 0, handsFree: over.handsFree === true,
+    asked: [], askedOpts: [], working: 0, handsFree: over.handsFree === true,
     answerFor: null,
     onAsk: null,
-    ask(q) {
+    ask(q, opts) {
       this.asked.push(q);
+      this.askedOpts.push(opts);
       const res = this.answerFor ? this.answerFor(q) : { text: 'answer' };
       this.onAsk?.(res);
       return res;
@@ -1022,4 +1024,205 @@ test('VOICE-13: the visual is CSS, and reduced motion leaves it still', () => {
     'an ungated copy of the animation would move for a visitor who asked it not to');
   assert.doesNotMatch(css, /requestAnimationFrame|getContext\(/,
     'the visual has to stay CSS: no frame loop and no canvas inside the shell');
+});
+
+/* ── VOICE-14 · §11.1's idle nudge, then the standby ───────────────
+   A hands-free session nobody talks to must not keep a recognizer running
+   forever. §11.1 asks for one nudge after ~20–30 s and a standby after
+   ~60–90 s of no interaction, and the standby releases the RECOGNIZER, not
+   the mode — so speaking again brings it back. The gate is the only thing
+   that can catch that speech, which is why standby is never entered without
+   one: a released microphone that cannot be woken by speaking is worse than
+   an open one. */
+
+/** An env whose timers can be fired by their delay rather than by queue order. */
+function makeTimerEnv(over = {}) {
+  const made = makeEnv(over);
+  const pending = [];
+  made.env.setTimeout = (fn, ms) => {
+    const id = ++made.env.nextTimerId;
+    made.env.timers.set(id, fn);
+    pending.push({ id, ms, fn });
+    return id;
+  };
+  /** Run the first timer queued with exactly this delay. */
+  const fire = (ms) => {
+    const i = pending.findIndex((t) => t.ms === ms);
+    if (i < 0) return false;
+    const [t] = pending.splice(i, 1);
+    made.env.timers.delete(t.id);
+    t.fn();
+    return true;
+  };
+  return { ...made, fire, pending };
+}
+
+/** A §6.2-ready env with an injected VAD, so the gate can be opened by hand. */
+function makeGatedEnv() {
+  const made = makeTimerEnv();
+  made.env.navigator = { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [] }) } };
+  made.env.AudioContext = class {
+    createMediaStreamSource() { return { connect() {} }; }
+    createAnalyser() {
+      return { fftSize: 512, smoothingTimeConstant: 0,
+               getFloatTimeDomainData: (b) => b.fill(0) };
+    }
+    close() {}
+  };
+  const gate = {};
+  const createVad = (env, o) => {
+    Object.assign(gate, o);
+    return {
+      available: true, speaking: false, gateOpen: false, reason: null,
+      level: () => 0,
+      start: async () => true,
+      stop() {},
+    };
+  };
+  const spk = fakeSpeaker();
+  let t = 0;                     /* a clock the test moves, so a turn can expire */
+  const voice = createVoice(made.env, {
+    tier: 2, chat: fakeChat(), recognizer: fakeRecognizer(), speaker: spk,
+    clock: () => t, createVad,
+    onNudge: (t) => made.nudges.push(t),
+  });
+  made.nudges = [];
+  made.gate = gate;
+  made.spk = spk;
+  made.at = (ms) => { t = ms; };
+  made.voice = voice;
+  return made;
+}
+
+test('VOICE-14: the idle clock nudges once, then releases the recognizer', async () => {
+  const g = makeGatedEnv();
+  g.voice.enable({ continuous: true });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(g.voice.status().vad.gated, true, 'the test needs a gated session');
+  assert.equal(g.voice.status().nudged, false);
+  assert.equal(g.voice.status().standby, false);
+
+  assert.equal(g.fire(VOICE_IDLE.nudgeMs), true, 'no idle clock was armed at all');
+  assert.deepEqual(g.nudges, [IDLE_NUDGE], 'the nudge is §11.1 (d), once');
+  assert.equal(g.voice.status().nudged, true);
+  assert.equal(g.voice.status().standby, false, 'the nudge is not the standby');
+
+  const stoppedBefore = g.voice.status().enabled;
+  assert.equal(g.fire(VOICE_IDLE.standbyMs - VOICE_IDLE.nudgeMs), true,
+    'the standby clock was never armed after the nudge');
+  assert.equal(g.voice.status().standby, true, 'the session is still holding the microphone');
+  assert.equal(g.voice.status().enabled, true, 'standby releases the recognizer, not the mode');
+  assert.equal(g.voice.status().listening, false);
+  assert.deepEqual(g.nudges.length, 1, 'more than one nudge per idle stretch');
+  assert.equal(typeof stoppedBefore, 'boolean');
+  g.voice.disable();
+});
+
+test('VOICE-14: speaking again ends the standby, and the clock restarts', async () => {
+  const g = makeGatedEnv();
+  g.voice.enable({ continuous: true });
+  await new Promise((r) => setImmediate(r));
+  g.fire(VOICE_IDLE.nudgeMs);
+  g.fire(VOICE_IDLE.standbyMs - VOICE_IDLE.nudgeMs);
+  assert.equal(g.voice.status().standby, true);
+
+  /* the gate opening IS the visitor speaking — the only signal a released
+     recognizer can hear */
+  const startsBefore = g.voice.status().listening;
+  g.gate.onGateOpen();
+  assert.equal(g.voice.status().standby, false, 'speaking has to bring it back');
+  assert.equal(g.voice.status().nudged, false, 'a new stretch gets its own nudge allowance');
+  assert.equal(startsBefore, false);
+  /* …and the clock is armed again, so a second silence is treated the same */
+  assert.equal(g.fire(VOICE_IDLE.nudgeMs), true, 'the idle clock did not restart');
+  assert.equal(g.nudges.length, 2, 'the nudge allowance did not reset');
+  g.voice.disable();
+});
+
+test('VOICE-14: an answer is interaction, and being spoken to is not idle', async () => {
+  const g = makeGatedEnv();
+  g.voice.enable({ continuous: true });
+  await new Promise((r) => setImmediate(r));
+  g.fire(VOICE_IDLE.nudgeMs);
+  assert.equal(g.nudges.length, 1);
+
+  /* An answer restarts the idle stretch — the visitor is not idle just
+     because the assistant is talking to them. */
+  g.voice.onAnswer({ text: 'My name is Aashish Kumar.' }, { lang: 'en' });
+  assert.equal(g.voice.status().nudged, false, 'answering resets the stretch');
+  assert.equal(g.voice.status().standby, false);
+
+  /* …and a nudge that comes due while the answer is being READ OUT is
+     deferred, not delivered over the top of it (§11.6: strictly sequential). */
+  assert.equal(g.spk.speaking, true, 'the fake speaker is reading the answer');
+  g.fire(VOICE_IDLE.nudgeMs);
+  assert.equal(g.nudges.length, 1, 'a nudge fired while the answer was being spoken');
+  assert.equal(g.voice.status().standby, false, 'and it must not go to standby mid-answer');
+
+  /* once the answer has finished — and its turn window has closed — the
+     clock is real again */
+  g.spk.speaking = false;
+  g.at(VOICE_IDLE.standbyMs);
+  g.fire(VOICE_IDLE.nudgeMs);
+  assert.equal(g.nudges.length, 2);
+  g.voice.disable();
+});
+
+test('VOICE-14: a session with no gate is never released', async () => {
+  /* Push-to-talk has its own end (the press window), and a continuous session
+     without a VAD has nothing to wake it — so neither may enter standby, and
+     no idle clock is armed for them at all. */
+  const { env, flush } = makeTimerEnv();
+  const nick = fakeRecognizer();
+  const voice = createVoice(env, {
+    tier: 1, chat: fakeChat(), recognizer: nick, speaker: fakeSpeaker(), clock: () => 0,
+    onNudge: () => { throw new Error('a push-to-talk session must never be nudged'); },
+  });
+  voice.enable({ continuous: true });
+  assert.equal(voice.status().mode, 'push', 'tier 1 is push-to-talk');
+  /* Flushing runs every timer this session armed — including the press
+     window, which ends the session by design (that is the stop this counts).
+     What may NOT happen is a nudge or a standby: the callback below throws if
+     one is ever delivered, and there is no gate here to bring it back. */
+  flush();
+  assert.equal(voice.status().enabled, false, 'the press window is what ends a push session');
+  assert.equal(voice.status().standby, false);
+  assert.equal(voice.status().nudged, false);
+  voice.disable();
+});
+
+/* ── VOICE-15 · §11.2's transcript, with a way to fix a misheard word ──
+   The shell shows a voice question as the recognizer heard it, so the visitor
+   can see that a wrong answer began with a wrong question — and can correct
+   it in one tap instead of retyping. Two halves: the voice layer has to say
+   the question was HEARD (tested here behaviourally, through the same fake
+   chat the shell is driven with), and the shell has to render the transcript
+   and the control (checked at the source, because there is no DOM in this
+   suite — the e2e probe is what presses it for real). */
+
+test('VOICE-15: every question the voice layer asks is marked as heard', () => {
+  const { voice, chat } = build(1);   /* push-to-talk: the press IS the address */
+  voice.enable();
+  voice.onFinal('what are your skills');
+  assert.deepEqual(chat.askedOpts, [{ source: 'voice' }],
+    'the shell cannot label or correct a question it does not know came from speech');
+  voice.disable();
+});
+
+test('VOICE-15: the shell renders the heard question, and one tap puts it back', () => {
+  const src = readFileSync(join(HERE, '..', 'ai', 'ui', 'chat.mjs'), 'utf8');
+  assert.match(src, /opts\.source === 'voice'/, 'the shell ignores where a question came from');
+  assert.match(src, /badge: 'HEARD'/, 'a recognised question is shown as if it were typed');
+  assert.match(src, /meta\.edit/, 'the EDIT control is gone from the bubble');
+  assert.match(src, /input\.value = text;/, 'EDIT no longer puts the words back in the box');
+  assert.match(src, /edit\(text\)/, 'the probe-facing edit() entry point is gone');
+  /* The badge has to be distinguishable from an answer's own badge: the
+     transcript is the visitor's words, not a claim by the assistant. */
+  assert.doesNotMatch(src, /badge: 'HEARD', badgeClass: 'is-ai'/,
+    'a heard question must not carry the AI badge — it is not an answer');
+
+  const css = readFileSync(join(HERE, '..', 'ai', 'ui', 'styles.mjs'), 'utf8');
+  assert.match(css, /\.ai__edit \{/, 'the edit control has no styles');
+  assert.match(css, /\.ai__edit:hover, \.ai__edit:focus-visible/,
+    'the control has to show focus and hover like every other one in the panel');
 });

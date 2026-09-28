@@ -122,6 +122,9 @@ path works on your machine, and it has never been seen by a person.
 | D10c | Turn on **Reduce motion** in the OS/browser settings, then repeat D10b | the dot still changes brightness per state but **stops pulsing** — motion is the enhancement, never the message |
 | D11 | Leave the tab and use another app, then come back | it must not have been listening while hidden (`voice.status().suspended === true` while hidden), the dot goes **dim but stays visible**, and listening resumes on return |
 | D12 | Keep the mic on through **a quiet room with a fan/TV** for ~2 minutes | it must not open a segment on the room tone alone, and a normal speaking voice must still open one within ~1.5 s |
+| D13 | In **Proactive** mode, say nothing for ~25 s, then keep waiting | **one** line appears — *"Still here — ask about my projects…"* — and it never repeats (§11.1 d) |
+| D14 | Keep saying nothing until ~90 s | the dot goes **dim** and the microphone is released (the browser's recording indicator should go out) while voice mode stays **on**; **say something** and it comes back listening (§11.1 e). If the dot stays bright and the microphone never releases, that is a bug worth reporting |
+| D15 | Say a question with a word the recognizer will get wrong (a name, an acronym) | the question bubble is badged **HEARD** with an **EDIT** control; press it, fix the word, press Enter |
 
 **Record:** did D3–D5 work the first time, or did you have to say it twice?
 That number is the whole point of the exercise, and it is mine to fix, not

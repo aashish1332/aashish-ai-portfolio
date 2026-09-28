@@ -107,6 +107,7 @@ const STREAM_FLUSH_MS = 64;
 export function voiceVisualState(info) {
   if (!info?.enabled) return 'off';
   if (info.suspended) return 'suspended';   /* §11.1: hidden tab, not listening */
+  if (info.standby) return 'standby';       /* §11.1 (e): released until spoken to */
   if (info.speaking) return 'speaking';
   if (info.listening) return 'listening';
   return 'armed';
@@ -121,6 +122,7 @@ export const VOICE_STATE_WORDS = Object.freeze({
   listening: 'Voice mode is listening',
   speaking: 'Voice mode is reading the answer aloud',
   suspended: 'Voice mode is paused while this tab is hidden',
+  standby: 'Voice mode is on, microphone released until you speak',
 });
 
 export function createChat(opts = {}) {
@@ -357,6 +359,33 @@ let working = 0;
       wrap.appendChild(b);
     }
     wrap.appendChild(el('span', null, text));
+    if (meta.edit) {
+      /* §11.2's "show the transcript in the UI with tap-to-edit/resend". A
+         voice question is shown as the recognizer HEARD it — that is the
+         honest thing to display, and it is also the only way a visitor can
+         see that a wrong answer started with a wrong question. One tap puts
+         the words back in the box to be corrected and sent again; without
+         it, the only fix for a misheard word is to type the whole question. */
+      const edit = el('button', 'ai__edit', 'EDIT');
+      edit.type = 'button';
+      edit.setAttribute('aria-label', `Edit what was heard and send it again: "${text}"`);
+      edit.addEventListener('click', () => {
+        if (!input) return;
+        input.value = text;
+        /* The box grows with its content, and that is done by a real `input`
+           listener — so one is dispatched. It has to be an Event: a plain
+           `{type:'input'}` looks harmless and throws in a real browser
+           ("parameter 1 is not of type 'Event'"), which is how the e2e probe
+           found this rather than a visitor. The height is cosmetic, so a
+           browser without the constructor still gets the edit. */
+        try {
+          const Ev = env.Event || (typeof Event === 'function' ? Event : null);
+          if (Ev) input.dispatchEvent(new Ev('input', { bubbles: true }));
+        } catch { /* the words are in the box either way */ }
+        input.focus();
+      });
+      wrap.appendChild(edit);
+    }
     if (meta.sources?.length) {
       const src = el('div', 'ai__sources');
       for (const s of meta.sources) src.appendChild(el('span', 'ai__source', s));
@@ -510,8 +539,8 @@ let working = 0;
     return out;
   }
 
-  function ask(text) {
-    return whileWorking(() => answer(text));
+  function ask(text, opts) {
+    return whileWorking(() => answer(text, opts));
   }
 
   /** Everything after the text is settled: the page follows the answer when
@@ -644,10 +673,15 @@ let working = 0;
    * Async since P7: the model runs in a worker, tokens arrive over time, and
    * `whileWorking()` arms the §6.3 ladder around the whole of it.
    */
-  async function answer(text) {
+  async function answer(text, opts = {}) {
     if (!kb) return { error: 'not-ready' };
 
-    bubble('user', text);
+    /* `source` is how a question arrived, and it is only ever used to label
+       what the visitor is looking at: a recognised question is shown as
+       heard, with §11.2's EDIT control on it. Nothing about the answer path
+       changes, which is the point — speech and typing share one pipeline. */
+    const fromVoice = opts.source === 'voice';
+    bubble('user', text, fromVoice ? { badge: 'HEARD', badgeClass: 'is-note', edit: true } : {});
     lastQuestion = text;
 
     /* §8.3 per-message detection with turn smoothing; §8.2 carried entity */
@@ -859,6 +893,10 @@ let working = 0;
           tier: tier ?? 0,
           chat: api,
           onStatus: voiceChanged,
+          /* §11.1 (d): the one idle nudge. Deterministic, shown rather than
+             spoken — a sentence out of a quiet room is a worse interruption
+             than a line on screen, and the line says how to make it stop. */
+          onNudge: (text) => bubble('bot', text, { badge: 'STILL HERE', badgeClass: 'is-note' }),
         });
         return voice;
       })
@@ -1216,6 +1254,15 @@ let working = 0;
     setHandsFree(on) { handsFree = !!on; return handsFree; },
     enableVoice: toggleVoice,
     disableVoice: stopVoice,
+    /* §11.2's tap-to-edit: the same box, filled from the bubble. Exposed for
+       the probes, which cannot click a button inside a bubble that only
+       exists after a voice question. */
+    edit(text) {
+      if (!input || !text) return false;
+      input.value = String(text);
+      input.focus();
+      return true;
+    },
     setVoiceTier,
     get voice() { return voice?.status() || null; },
     get state() { return state; },

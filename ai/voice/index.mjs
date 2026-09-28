@@ -76,6 +76,26 @@ export {
    follow-up, so its length is the pause between two questions to the same
    person ("…and your projects?"), NOT the pause before a different
    conversation. An answer that made no claim closes the turn immediately. */
+/**
+ * §11.1's idle behaviour, which is what stops a hands-free microphone from
+ * being an open microphone forever.
+ *
+ * `nudgeMs` is the one nudge: "at most one idle nudge after ~20–30 s of
+ * silence, then standby". `standbyMs` is the standby itself — the recognizer
+ * is released, not the mode, so the visitor speaks and it comes back. Both are
+ * measured from the last thing that actually happened (a question, an answer,
+ * the gate opening), never from a fixed point. */
+export const VOICE_IDLE = {
+  nudgeMs: 25000,
+  standbyMs: 90000,
+};
+
+/** The nudge itself: deterministic, no model call (§11.1 "all deterministic,
+ *  no extra LLM cost"), and it says how to make it stop. */
+export const IDLE_NUDGE =
+  'Still here — ask about my projects, skills or experience. Stop turns the '
+  + 'microphone off.';
+
 export const VOICE_TIMING = {
   followUpMs: 12000,
   /* How long a PRESS keeps the microphone open (T1/T2). "Tap" has to mean
@@ -468,6 +488,12 @@ export function createVoice(env = {}, opts = {}) {
    open is evaluated on read, so there is no timer to leak for that part; what
    needs a timer is only the microphone actually closing (see windowTimer). */
 let sessionAt = null;
+/* §11.1 (d)/(e). `nudged` allows at most ONE nudge per idle stretch; `standby`
+   means the recognizer is released while voice stays on. Both reset the moment
+   anything real happens. */
+let nudged = false;
+let standby = false;
+let idleTimer = null;
 /* The pending end of a press. A handle, not a flag: a stale timer from a
    finished press must not be able to close the NEXT one — see the test that
    presses, disables, presses again. */
@@ -505,6 +531,69 @@ const tabHidden = () => (typeof env.document?.hidden === 'boolean'
   /* One window, two reasons: a continuous turn (`followUpMs`, extended by each
      answer) and a press (`tapWindowMs`, never extended — extending it is how
      a press turns back into an open microphone). */
+  /* ── §11.1 (d)/(e): the nudge, then standby ─────────────────────
+     A hands-free session that nobody talks to must not keep a microphone
+     open indefinitely: §11.1 asks for one nudge and then a standby, and the
+     visitor's device is the reason. Standby is only ever entered when the VAD
+     gate can bring it back — with no gate there is no signal that would
+     resume it, and a microphone that cannot be woken by speaking is worse
+     than one that is left open. */
+  const cancelIdle = () => { cancel(idleTimer); idleTimer = null; };
+
+  function armIdle() {
+    cancelIdle();
+    if (!enabled || suspended || standby) return;
+    if (mode !== 'continuous' || !vadGated) return;
+    let id = null;
+    id = after(() => {
+      if (idleTimer !== id) return;        /* a stale timer owns nothing */
+      idleTimer = null;
+      if (!enabled || suspended || standby || mode !== 'continuous') return;
+      /* Something is happening: an open turn, or an answer being read. The
+         clock restarts rather than counting down through it. */
+      if (sessionLive(now()) || speaker?.speaking) { armIdle(); return; }
+      if (!nudged) {
+        nudged = true;
+        opts.onNudge?.(IDLE_NUDGE);
+        opts.onStatus?.(status());
+        armIdle();                         /* the standby clock, then */
+        return;
+      }
+      enterStandby();
+    }, nudged ? VOICE_IDLE.standbyMs - VOICE_IDLE.nudgeMs : VOICE_IDLE.nudgeMs);
+    idleTimer = id;
+  }
+
+  function enterStandby() {
+    cancelIdle();
+    closeSession();
+    standby = true;
+    /* The recognizer, not the mode: `vad` keeps watching (an energy detector
+       on 30 ms frames — no network, no service) so speaking again resumes. */
+    nick?.stop?.();
+    opts.onStatus?.(status());
+    return status();
+  }
+
+  /** Anything the visitor actually did resets the idle clock. */
+  function touch() {
+    nudged = false;
+    if (standby) return resume();
+    armIdle();
+    return false;
+  }
+
+  /** §11.1 (e): standby ends on speech (the gate) or on a fresh press. */
+  function resume() {
+    if (!enabled || suspended) return false;
+    const was = standby;
+    standby = false;
+    nudged = false;
+    armIdle();
+    if (was) opts.onStatus?.(status());
+    return was;
+  }
+
   const windowMs = () => (mode === 'push' ? tapWindowMs : followUpMs);
   const sessionLive = (at) => sessionAt !== null && (at - sessionAt) < windowMs();
   const openSession = (at) => { sessionAt = at; };
@@ -527,6 +616,12 @@ const tabHidden = () => (typeof env.document?.hidden === 'boolean'
       session: enabled ? sessionLive(now()) : false,
       followUpMs,
       tapWindowMs,
+      /* §11.1 (d)/(e): whether the one nudge has been given, and whether the
+         recognizer has been released while voice stays on. `standby` is the
+         honest answer to "is it listening right now" for a hands-free
+         session nobody has spoken to. */
+      nudged,
+      standby,
       /* §11.3's VAD: `gated` means the recognizer is switched by detected
          speech rather than left running, `speaking` is the segment state,
          and `level` is the 0–1 number §11.5's orb is drawn from. */
@@ -605,9 +700,21 @@ const tabHidden = () => (typeof env.document?.hidden === 'boolean'
        the recognizer falls back to its restart loop, which still works, and
        the status says which of the two this is rather than pretending. */
     if (mode === 'continuous' && opts.vad !== false && vadCapable()) {
-      vad = createMicVad(env, {
+      /* The detector itself is injectable for the same reason the recognizer
+         and the speaker are: the gate's wiring (which is what §11.1's standby
+         and §6.2's "(VAD-gated)" both depend on) can then be tested without a
+         microphone, and a stub cannot accidentally become the real path. */
+      const makeVad = opts.createVad || createMicVad;
+      vad = makeVad(env, {
         trackerOpts: opts.vadOpts,
-        onGateOpen: () => { if (enabled && mode === 'continuous') nick?.start?.(); },
+        /* §11.1 (e): the visitor speaking is what ends a standby — the gate
+           is the only signal a released recognizer can hear, which is why
+           standby is never entered without it (see armIdle). */
+        onGateOpen: () => {
+          if (!enabled || mode !== 'continuous') return;
+          resume();
+          nick?.start?.();
+        },
         onGateClose: () => { if (enabled && mode === 'continuous') nick?.stop?.(); },
         onFrame: (frame) => opts.onVadFrame?.(frame),
         onError: (message) => { vadReason = message; },
@@ -668,6 +775,7 @@ const tabHidden = () => (typeof env.document?.hidden === 'boolean'
       }, tapWindowMs);
       windowTimer = id;
     }
+    touch();                                  /* §11.1: the idle clock starts */
     opts.onStatus?.(status());
     return status();
   }
@@ -679,11 +787,18 @@ const tabHidden = () => (typeof env.document?.hidden === 'boolean'
     if (!enabled) return;
     if (tabHidden()) {
       suspended = true;
+      cancelIdle();
       speaker?.stop();
       nick?.stop?.();
     } else if (suspended) {
       suspended = false;
+      /* Coming back is a fresh start: a standby that began before the tab was
+         hidden would otherwise keep a visible tab released with no gate open
+         to explain it. */
+      standby = false;
+      nudged = false;
       if (!vadGated) nick?.start?.();
+      armIdle();
     }
     opts.onStatus?.(status());
   }
@@ -692,6 +807,9 @@ const tabHidden = () => (typeof env.document?.hidden === 'boolean'
     if (!enabled) return status();
     enabled = false;
     cancelWindow();
+    cancelIdle();
+    standby = false;
+    nudged = false;
     closeSession();
     env.document?.removeEventListener?.('visibilitychange', onVisibility);
     suspended = false;
@@ -753,6 +871,7 @@ const tabHidden = () => (typeof env.document?.hidden === 'boolean'
          the turn at this point would undo the close that an abstention had
          just performed. The turn's length belongs to the answer, below. */
       const asked = ask(question);
+      touch();                                     /* §11.1: it was addressed */
       return { wake: heard, question: asked ? question : '' };
     }
 
@@ -760,13 +879,19 @@ const tabHidden = () => (typeof env.document?.hidden === 'boolean'
        window closed belongs to a microphone that is no longer listening for
        an answer — it is dropped, not answered. */
     if (!question || !sessionLive(at)) return null;
-    return { wake: heard, question: ask(question) ? question : '' };
+    const answered = ask(question);
+    touch();
+    return { wake: heard, question: answered ? question : '' };
   }
 
   function ask(question) {
     if (!question) return false;
     if (!chat.ask) return false;
-    chat.ask(question);
+    /* §11.2: the shell is told the question was HEARD, so it can show the
+       transcript as the recognizer's own words with a way to correct them.
+       A recognizer that mishears a word should be visible and fixable rather
+       than producing a confidently wrong answer about nothing. */
+    chat.ask(question, { source: 'voice' });
     return true;
   }
 
@@ -777,6 +902,10 @@ const tabHidden = () => (typeof env.document?.hidden === 'boolean'
    */
   function onAnswer(res, { lang: turnLang } = {}) {
     if (!enabled || suspended) return false;
+    /* An answer is interaction: it restarts the idle clock (§11.1 d/e), so a
+       visitor who asked something is never nudged a second later for being
+       quiet while the assistant was talking. */
+    touch();
     if (turnLang) lang = turnLang;
     /* The turn's length is decided by what the answer WAS, not by the fact
        that something was heard: one question that landed on the portfolio

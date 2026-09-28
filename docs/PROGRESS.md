@@ -2682,3 +2682,53 @@ unchanged at **13,296 B gz**, which is the number that matters for §4's 50 ms
 main-thread budget. Tests **486 JS + 343 Python, 0 failures**; `npm run build`
 clean. What the dot looks like on a real screen is **NOT TESTED** — no browser
 has been shown it.
+
+## Phase: §11 completed — the idle bounds, the transcript, and a probe that caught two bugs
+
+The rest of §11, read against the tree after §11.5, had two more items with no
+code behind them and one instrument that needed re-running.
+
+**§11.1 (d)/(e) — the idle bounds.** Nothing stopped a hands-free session from
+holding the recognizer up forever. Now a single clock is armed from the last
+real interaction; at **25 s** it delivers **one** deterministic nudge
+(`IDLE_NUDGE` — shown as a line, not spoken: a sentence out of a quiet room is
+a worse interruption than a line on screen, and the line says how to stop), and
+at **90 s** it enters standby, which calls `nick.stop()` while `enabled` stays
+true. The design decision worth naming: **standby is only ever entered with a
+VAD gate**, because the gate is the only signal that can bring it back — a
+released recognizer nobody can wake is a dead microphone, which is worse than
+an open one. So push-to-talk (its press window already ends the turn) and
+ungated sessions never enter it, and a nudge that comes due while an answer is
+being read is deferred rather than delivered over the top of it (§11.6).
+
+**§11.2 — the transcript.** A recognised question is now shown as the
+recognizer's own words, badged `HEARD`, with an `EDIT` control that puts them
+back in the box. Speech and typing still share one answer path: the voice layer
+passes `{ source: 'voice' }` and nothing else changes.
+
+**Two bugs, both caught by running things rather than reading them.**
+
+1. The e2e probe failed on `page errors`: *"Failed to execute 'dispatchEvent'
+   on 'EventTarget': parameter 1 is not of type 'Event'"*. My edit handler
+   dispatched a plain `{type:'input'}` to trigger the textarea's height fix-up.
+   It looks harmless and throws in a real browser. Now an actual `Event`, in a
+   `try`, because the height is cosmetic and the edit still works without it.
+2. The re-run then failed on `answer is labelled`, and **the probe was wrong**:
+   it read the last bot bubble, and §6.3 appends a `NOTICE` bubble *after* the
+   answer when the governor has shortened the session. On a box in its slow
+   frame mode (33.2 ms) the ladder fired and the notice landed last, so a
+   correctly labelled answer was reported as unlabelled. The instrument now
+   looks for the last non-NOTICE bubble and prints a note when a notice was
+   seen. Fourth instrument bug in this probe, same shape every time: **it reads
+   the screen, so a new bubble can break it.**
+
+**Re-run, against the built bundle** (`ROOT=dist PORT=5582`): **46/46 checks**,
+0 console errors, 0 page errors, 0 failed requests, tier **T1 · MODEL READY**,
+panel ready **2,132 ms**, first answer **30,660 ms**, one real answer with
+**12 facts / 12 sources**, frames 33.2 → 33.3 ms (**0.3 %**, p95 1×), ladder
+`step=0`, and the three new §11.2 checks green — `badge="HEARD"`, an EDIT
+control exists, and pressing it reads back `input="who are you"`.
+
+Tests: **492 JS + 343 Python, 0 failures**; `npm run build` clean. Still
+**NOT TESTED**: any of this with a live microphone, and §11.6's per-tier voice
+resource numbers — both need a real device.

@@ -85,7 +85,7 @@ export const STYLES = `
   vertical-align: baseline;
 }
 .ai__mic[data-voice='listening'] .ai__orb, .ai__mic[data-voice='speaking'] .ai__orb { opacity: 1; }
-.ai__mic[data-voice='suspended'] .ai__orb { opacity: .3; }
+.ai__mic[data-voice='suspended'] .ai__orb, .ai__mic[data-voice='standby'] .ai__orb { opacity: .3; }
 .ai__mic[data-voice='off'] .ai__orb, .ai__mic:disabled .ai__orb { display: none; }
 
 /* Motion is the enhancement, never the message: the dot is already brighter
@@ -125,6 +125,19 @@ export const STYLES = `
 }
 
 .ai__badge.is-note { color: var(--gold); }
+
+/* §11.2's edit control, on a question that was heard rather than typed. It
+   has to look like the panel's other small controls, because it does the
+   same kind of job as a chip: one tap, and the words are back in the box. */
+.ai__edit {
+  display: block; margin-top: 6px; background: none;
+  font-family: var(--font-mono); font-size: 8.5px; letter-spacing: .14em;
+  color: var(--paper-faint); border: 1px solid var(--line);
+  padding: 3px 7px; cursor: pointer;
+  transition: color .2s, border-color .2s;
+}
+.ai__msg.is-user .ai__edit { margin-left: auto; }
+.ai__edit:hover, .ai__edit:focus-visible { color: var(--accent); border-color: var(--accent); }
 
 .ai__sources { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
 .ai__source {

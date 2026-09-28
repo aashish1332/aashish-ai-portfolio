@@ -271,18 +271,28 @@ const say = (label, ok, detail) => {
   else console.log('  first answer                 NOT REACHED — nothing appeared before the timeout');
   const answered = await page.evaluate(() => {
     const bots = [...document.querySelectorAll('.ai__msg.is-bot')];
-    const last = bots[bots.length - 1];
+    /* A NOTICE is not an answer. §6.3 steps 1–2 append one AFTER the answer
+       when the governor has shortened the session, so taking the last bot
+       bubble outright reads the notice and reports the answer as unlabelled —
+       which is what this probe did on 2026-09-27, on a box whose frames were
+       slow enough for the ladder to fire. The answer is the last bubble that
+       is not a notice; a refused question has no notice either, so this
+       changes nothing about the refusal checks. */
+    const answerBubbles = bots.filter((el) => el.querySelector('.ai__badge')?.textContent !== 'NOTICE');
+    const last = answerBubbles[answerBubbles.length - 1];
     return {
       text: last?.textContent?.slice(0, 160),
       badge: last?.querySelector('.ai__badge')?.textContent,
       sources: last?.querySelectorAll('.ai__source').length,
       hasMarkup: !!last?.querySelector('script,img,iframe'),
+      notice: bots.some((el) => el.querySelector('.ai__badge')?.textContent === 'NOTICE'),
     };
   });
   say('answered a question', !!answered.text && !/could not start/i.test(answered.text), `"${(answered.text || '').slice(0, 70)}…"`);
   /* There is one answer path now, so a badge either names the model or says
      which refusal this was. What must never happen is a sentence with no
      label at all — the visitor has to be able to tell them apart. */
+  if (answered.notice) console.log('  note                          a §6.3 NOTICE was shown for this session (the ladder fired); the answer is the bubble before it');
   say('answer is labelled', /AI ANSWER|NO ANSWER|SAFE REPLY/.test(answered.badge || ''),
     `badge="${answered.badge}"`);
   if (/AI ANSWER/.test(answered.badge || '')) {
@@ -627,6 +637,37 @@ const say = (label, ok, detail) => {
       say('voice: button went back off', voiceRun.pressed === 'false', `aria-pressed=${voiceRun.pressed}`);
     }
   }
+
+  /* ── 6b. §11.2 — the transcript of a question that was HEARD ─────
+     This is not a mock. `ask(text, { source: 'voice' })` is the exact call
+     `ai/voice/index.mjs` makes when a recognizer returns a final result; the
+     question used here refuses before the model is reached (it asks about the
+     assistant, not about Aashish), so the check costs no generation and
+     nothing has to be waited for. */
+  const heard = await page.evaluate(async () => {
+    window.PortfolioAI.ask('who are you', { source: 'voice' });
+    await new Promise((r) => setTimeout(r, 400));
+    const user = [...document.querySelectorAll('.ai__msg.is-user')].pop();
+    const btn = user?.querySelector('button.ai__edit') || null;
+    const input = document.getElementById('aiInput');
+    const before = input?.value ?? null;
+    btn?.click();
+    const after = input?.value ?? null;
+    /* leave the box as it was found, or the next check types into a filled one */
+    if (input) { input.value = ''; input.dispatchEvent(new Event('input', { bubbles: true })); }
+    return {
+      badge: user?.querySelector('.ai__badge')?.textContent || null,
+      hasButton: !!btn,
+      before, after,
+      text: (user?.textContent || '').trim().slice(0, 90),
+    };
+  });
+  say('voice: a heard question is shown as heard', heard.badge === 'HEARD',
+    `badge="${heard.badge}" "${heard.text}…"`);
+  say('voice: a misheard question can be edited (§11.2)', heard.hasButton === true,
+    'no EDIT control on the transcript');
+  say('voice: EDIT puts the words back in the box', heard.after === 'who are you',
+    `input="${heard.after}"`);
 
   /* ── 7. Escape closes and returns focus ─────────────────────────── */
   await page.keyboard.press('Escape');
