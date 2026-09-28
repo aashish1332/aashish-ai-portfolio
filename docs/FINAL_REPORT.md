@@ -227,7 +227,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
    2026-09-27 because half its gzip was comments in our own `ai/**` modules and
    the build stopped shipping them (−69,817 B gz, nothing a visitor runs
    changed). The retired Quick Answers wording had already moved out
-   (−2,864 B gz, no feature lost).
+   (−2,864 B gz, no feature lost — see limitation 16).
 6. **Three open observations, recorded not explained:** the panel's own ready
    time has been measured at 390 ms, 815 ms and 19.3–27.9 s on this box within
    the same day; two of four resource runs showed +21 GL programs during an AI
@@ -283,14 +283,28 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
     gate). The difference between the two runs is the prompt's RULES block, so
     the guarded metrics (abstention, unsupported claims, language) *should* be
     unchanged — **NOT re-measured**, and it must not be quoted as if it were.
-15. **§2 N3 is the one non-negotiable this build deviates from, and it must be
-    read as a deviation.** N3 asks that "any remote speech-recognition mode is
-    disabled"; the browser's `SpeechRecognition` has no switch that forbids its
-    network path, so voice input is the platform's recogniser — asked to stay on
-    device when the platform says it can, disclosed in words either way, and
-    opt-in. Typed text is unaffected. The full reasoning, and the one-line policy
-    switch that would satisfy the strict reading, are in `docs/PRIVACY.md`
-    §"§2 N3, and the one place this build deviates from it".
+15. **§2 N3 is the first of the two clauses this build deviates from, and it
+    must be read as a deviation.** N3 asks that "any remote speech-recognition
+    mode is disabled"; the browser's `SpeechRecognition` has no switch that
+    forbids its network path, so voice input is the platform's recogniser —
+    asked to stay on device when the platform says it can, disclosed in words
+    either way, and opt-in. Typed text is unaffected. The full reasoning, and
+    the one-line policy switch that would satisfy the strict reading, are in
+    `docs/PRIVACY.md` §"§2 N3, and the one place this build deviates from it".
+16. **§3's promise to the worst device is the second deviation: a T0 visitor is
+    answered by nothing.** §3 says every visitor "gets something useful: the
+    Quick Answers engine … works even on T0 devices and while the model is
+    still downloading", labelled *"Quick answer — no AI model on this device"*.
+    The owner retired Quick Answers **as answers** — a deterministic template
+    presented in the same bubble as a model answer was judged worse than a
+    clearly-labelled absence — so the engine still computes but is no longer an
+    answer source, and the label is gone with it. What a T0 device now shows is
+    the truth instead: `T0 · NO AI MODEL HERE`, one per-reason line, and no
+    answer. The clause's *purpose* (nobody is left with a panel that looks
+    broken) is met; its *letter* is not. This was the owner's decision rather
+    than an unbuilt requirement, so unlike item 15 there is nothing here to
+    approve — it is recorded because the brief asks for the Quick Answers engine
+    and this build does not give it to anyone.
 
 ## WHAT I NEED FROM YOU
 

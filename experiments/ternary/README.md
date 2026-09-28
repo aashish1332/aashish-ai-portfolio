@@ -33,7 +33,7 @@ rather than implying an experiment exists.
 | …brotli | 4,713,956 B | same manifest (`brotliMeasured: true`) |
 | fp32 equivalent | 19,936,256 B | same manifest |
 | Tokenizer | 66,667 B | same manifest |
-| First visit, everything | **4,926,379 B gz** = 12 % of §4's 40 MB | `docs/AI_ARCHITECTURE.md` |
+| First visit, everything | **4,815,416 B gz** = 11.5 % of §4's 40 MB | `docs/AI_ARCHITECTURE.md` (recomputed 2026-09-28) |
 | Quality | **untrained for quality** — see `docs/FINAL_REPORT.md` | R1 CPU pipeline run, 800 steps |
 
 ## What ternary would and would not buy (ESTIMATED, arithmetic only)
@@ -41,14 +41,13 @@ rather than implying an experiment exists.
 **Size.** 4,984,064 params at ~1.58 bits is ~984 KB of packed weights; with
 per-group absmean scales the real figure lands near **1.2–1.4 MB raw** against
 5,060 KB today, i.e. **3.6–3.9 MB saved**. Gzip's leverage on already-near-random
-ternary codes is small (it only buys ~6 % on q8 today), so the compressed saving
-is roughly the same order — call it **~3 MB gz off a 4.93 MB first visit, ≈ 6 %
+ternary codes is small (it only buys ~6 % on q8 today), so thecompressed saving is roughly the same order — call it **~3 MB gz off a 4.82 MB first visit, ≈ 6 %
 of the §4 first-use budget of 40 MB**.
 
 That saving is real and it is at the *bottom* of the specification's own
 priority order: §2 ranks download/RAM size **below** latency, language handling
 and useful answers. Nothing in the budgets is currently under pressure —
-4.93 MB of a 40 MB allowance is not a reason to open a research direction.
+4.82 MB of a 40 MB allowance is not a reason to open a research direction.
 
 **Speed.** §13's speed benefit lives in dedicated kernels, and there is no
 browser-reachable one to adopt: `bitnet.cpp` is the CPU-native reference
@@ -87,7 +86,7 @@ cannot adjudicate a kernel speedup.
    means a trained-for-quality checkpoint at config A with the §14 evaluation
    results behind it, and Stage A + Stage B done. Neither exists yet.
 2. **Download size becomes a constraint** — if the first-use total ever
-   approaches §4's budget (measured today at 12 % of it), ternary moves from
+   approaches §4's budget (measured today at 11.5 % of it), ternary moves from
    "interesting" to "the obvious lever".
 3. **A browser ternary kernel becomes available off the shelf** — a maintained
    WGSL implementation that we can run through our own parity gate rather than

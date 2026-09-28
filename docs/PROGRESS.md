@@ -3215,6 +3215,7 @@ Aashish and nothing else.
 | what the answers say now | `"His full name is Aashish Kumar."` · `"Aashish's skills (38): …"` · `"Aashish has 3 shipped projects: …"` · `"Here's how to reach Aashish:"` — and, in the other voice, `"My name is …"` · `"My skills (38): …"` · `"I've shipped 3 projects: …"` |
 | the identity disclosure | `"I'm Aashish's AI Portfolio Assistant — not Aashish himself."` (the first-person build said "That's me — Aashish Kumar") |
 | what did NOT change | the weights, the manifest, the SFT corpus, the prompt contract (both RULES blocks still ship), and every §11.1 fixed string — the greeting and the tour were already in this voice, which is why they no longer disagreed with the answers |
+| `dev-ai-probe.js`, built bundle, Chrome, real GPU | **58/58** — re-run *after* the copy sweep, so the numbers above and the page agree: 8 §2 N4 disclosure checks, 4 §11.1 (c) tour checks (including `scrollY 0 → 2659, section top 0`), and the voice-off-on-close check |
 | the copy the flip left behind | **six strings, found after the tests were green.** The persona tests run the *planner*; the fixed sentences are chosen by the answer layer and the shell, so nothing asserted their voice — and they still spoke as Aashish: `"ask me for my email instead"` (and its Hindi/Hinglish twins), `"I couldn't answer that from my portfolio data"` (×3), the opening line `"Ask me about my projects … how to reach me"`, the ready label `"answering from my portfolio data only"`, and §11.1 (d)'s idle nudge `"Still here — ask about my projects…"`. All six now say his/him/उनका, held by two new tests that were verified by putting the stale copy back (both fail). `IDLE_NUDGE` means `docs/MANUAL_TEST_CHECKLIST.md` D13 changed with it |
 | what is now out of step, and left that way | `docs/EVAL_PROMPTS.json` + `EVAL_ANSWERS.json` — 41 of the 60 prompts pin `rules: "first"`, and the answers were decoded from exactly those prompts. They stay a **matched pair** describing the previous voice rather than being half-refreshed: re-emitting the prompts alone would leave two files disagreeing with nothing to catch it, and re-decoding means an export plus 60 generations to re-measure a FAIL. `docs/FINAL_REPORT.md` limitation 14 states it, including what was **not** re-measured |
 
@@ -3245,3 +3246,69 @@ deviation, now closed), §6 and §7 (nothing unbuilt), §11.1 (two clauses built
 §14 (measured, failing, at a scale that cannot pass), §15/§16/§17/§18/§19
 (rolled up). Every one of them is now a table with the thing that would fail
 next to it, which is the only form of "done" that survives a second reader.
+
+## §3, §12 and §13: the sweep reaches the sections nobody had audited
+
+§2, §5, §6, §7, §11, §14–§19 all had a table by 2026-09-28. §3, §12 and §13
+did not — they were read, believed and never written down. Two of the three
+turn out to be clean; §3 is the third deviation from the brief, and it is worth
+the space because the other two were the kind you only find by grepping.
+
+### §3 "what works on all devices means here" — a deviation, decided by the owner
+
+| Clause | Verdict |
+|---|---|
+| Voice is opt-in, tiered, and downgrades automatically | **MET** — `ai/voice/caps.mjs` gates on the recogniser's existence, the governor's rungs take voice down before the scene, and the button is disabled **with its reason in `title`** when there is none (Firefox probe, 11/11) |
+| Capable devices additionally get the scratch-trained LLM | **MET** — tier decision + the weight download, both measured (`T1 · MODEL READY` in every browser probe) |
+| **Every** visitor gets something useful: the **Quick Answers engine** (deterministic, from `knowledge.json`, no model, no download) works even on T0 devices and while the model is still downloading, labelled *"Quick answer — no AI model on this device"* | **NOT MET — retired by the owner, and the label with it.** `ai/answers/quick.mjs` still exists and still computes, but §5.1 step 4's template is no longer an answer: a T0 device now answers **nothing**, and the badge says `T0 · NO AI MODEL HERE` / `T1 · NO MODEL YET` rather than advertising a capability that is gone (`ai/ui/chat.mjs` `setModelState`). The promise §3 makes to the worst device is therefore the one clause of §3 this build does not keep. What *is* kept is the honesty half: the outcome is stated in words (per-reason line for unsupported / failed / stopped, `dev-degrade-probe.js` 20/20) instead of being left to look like a failure |
+
+This is the same shape as §2 N3 — a clause whose literal text and whose purpose
+pull apart. §3's purpose ("nobody gets a dead panel") is met; its letter ("the
+Quick Answers engine answers them") is not, deliberately, because the owner
+judged a template in the same bubble as a model answer to be worse than a
+clearly-labelled absence. Recorded as **deviation 2** in `docs/FINAL_REPORT.md`;
+unlike §2 N3 there is nothing to ask the owner to confirm, because it was their
+decision.
+
+### §12 GSAP / Lenis / Three.js — no unbuilt clause, and one interaction measured
+
+| Clause | Verdict |
+|---|---|
+| Reuse the existing GSAP ticker; no new rAF loops | **MET** — `gsap.ticker.add(tickerFn)` with the ladder fed from it, and `gsap.ticker.remove` in `stopFrameHealth()` (`ai/ui/chat.mjs` 1186–1195). `ai/governor/index.mjs` starts no loop of its own and says so at the seam. The one `requestAnimationFrame` in the panel is a single class flip on open, not a loop (N8's guard covers the difference) |
+| No per-token DOM churn | **MET** — tokens append to a **buffer** and one `textContent` write per `STREAM_FLUSH_MS` (~64 ms, inside §10's 50–80 ms window) into a single text node; `aria-live` is told only about the finished text (`ai/ui/chat.mjs` `streamBubble`) |
+| `lenis.stop()` on open, start on close | **MET** — `hooks.stopScroll` at `show()`, `hooks.startScroll` at `close()`, plus `releaseScroll` on the "show me" path; all three resolve to `Director.getLenis().stop()/start()` |
+| Mark the chat scroll container so wheel/touch scrolls the chat | **MET** — `data-lenis-prevent` on the log, verified for the installed version (lenis **1.1.14**, from jsDelivr; the CSS that makes it bite is in `css/style.css`) |
+| Guided-tour scrolling uses `lenis.scrollTo` | **MET, and this one was not obvious** — `Director.scrollTo` calls `lenis.scrollTo` (js/director.js:48) and the tour goes through it. But Lenis is **stopped** while the panel is open, which is exactly when the tour runs, so the question "does a programmatic scroll still move a stopped Lenis?" was live rather than rhetorical. Measured: the probe's tour check reports **`scrollY 0 → 2659, section top 0`** with the panel open — a stopped Lenis still honours `scrollTo` in 1.1.14, so the tour works instead of silently doing nothing |
+| Three.js: `setQuality('low'\|'normal')`, `pause()/resume()`, used only while a full-viewport panel covers the scene or the governor sees drops, always restored | **MET** — `Film3D.setQuality/pause/resume` are the hooks §12 asks for and are deliberately dumb (js/film3d.js:1214–1238); the governor's rung 3 calls `setSceneQuality?.('low')` and restores `'normal'` on recovery, and `show()`/`close()` call `pauseScene`/`resumeScene` when `max-width: 640px` matches. Every path that sets has the matching restore |
+| Cleanup on close: listeners, timers, idle workers, mic tracks, audio | **MET** — `close()` calls `stopVoice()` (mic never outlives the panel), `stopFrameHealth()` (ticker removed), `unloadLater()` (§6.4, ~2 min then `dispose()`), `stopTour()` (timer), `resumeScene`, `startScroll`. Both browser probes assert the voice-off-on-close half from outside |
+
+### §13 ternary — the go/no-go is written, and the answer is no-go
+
+**No clause of §13 is built, and that is what §13 asks for at this point in the
+project.** Its own precondition is "only **after** the baseline passes its
+gates", and §14's gates fail — so writing QAT now would be the violation, not
+the deliverable. What §13 *does* require is an honest written go/no-go, and
+`experiments/ternary/README.md` is it: **NO-GO for this iteration**, with the
+baseline measured (4,984,064 params, 5,059,584 B q8, 4,732,964 B gz), the size
+win estimated at ~1.2–1.4 MB raw against 5,060 KB today, the speed win traced
+to kernels that do not exist for the browser, and the four conditions that
+would re-open it — the first of which is the checkpoint that does not exist yet.
+It sits under `experiments/` so that nothing there can reach the shipping path,
+and nothing does: no QAT flag in the trainer, no second quantizer in the export,
+no ternary kernel in the engine. §18's "clearly separated" is satisfied the
+plainest possible way — by there being only one model path to separate.
+
+One figure in that README was stale against the source it cites (a first-visit
+total of 4,926,379 B gz against `AI_ARCHITECTURE.md`'s 4,815,416 B gz, 11.5 %);
+corrected rather than left to disagree, because the same page uses it to reason
+about whether size pressure exists.
+
+### The sweep, four sections later
+
+§1 (inputs: the CV, the knowledge base, the PII list — all built, `knowledge/CONFLICTS.md`
+and the phone withholding in the build output), §3 (**one deviation, above**),
+§4 (budgets, measured), §6, §7, §11.1, §12, §13 (above), §14–§19 (rolled up).
+With §3 recorded, the build now deviates from the brief in exactly **two**
+places, both written down with what was traded: §2 N3's recogniser, and §3's
+retired Quick Answers. Everything else that is missing is missing for a reason
+the report states — a GPU, a phone, a Safari host.
