@@ -112,7 +112,7 @@ path works on your machine, and it has never been seen by a person.
 | D1c | Turn voice on with the mic muted or the language unsupported | if the engine refuses the on-device session, the panel must fall back **once** to the normal recogniser and say the cautious sentence — not go dead. Worth trying on a build with `processLocally` forced on |
 | D2 | **Deny** the permission | button goes dark, panel says why once, typing still works, and it does **not** ask again |
 | D3 | Turn voice on again and **allow** | button lights; say "what is your CGPA" | 
-| D4 | | the answer is spoken **as Aashish** ("my CGPA"), and the page **moves to the CGPA section** while it speaks |
+| D4 | | the answer is spoken **about Aashish** ("His CGPA is 8.28"), never as him — §5 — and the page **moves to the CGPA section** while it speaks |
 | D5 | Say something unrelated: "I'm going to get coffee" | **silence** — no answer, no bubble |
 | D6 | Say "hey Aashish" then ask a follow-up without the name | the follow-up is answered (the turn stays open ~12 s) |
 | D7 | Stay silent for ~15 s, then say something unaddressed | **ignored** — the turn closed by itself |

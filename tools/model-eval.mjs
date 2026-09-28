@@ -50,7 +50,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve as pathResolve } from 'node:path';
 
 import { buildIndex, search, MIN_TOP_SCORE } from '../ai/retrieval/index.mjs';
-import { contextSizer, quickAnswer, renderFact } from '../ai/answers/quick.mjs';
+import { contextSizer, DEFAULT_PERSONA, quickAnswer, renderFact } from '../ai/answers/quick.mjs';
 import { MAX_INTENT_FACTS, contextLines, noAnswerLine, routeQuestion } from '../ai/answers/model.mjs';
 import { abstainId, defaultStopIds, fitToBudget, frame } from '../ai/engine/prompt.mjs';
 import { ByteLevelBPE } from '../ai/engine/bpe.mjs';
@@ -100,7 +100,10 @@ export function norm(text) {
  */
 export function promptFor(kb, tokenizer, c, opts = {}) {
   const minScore = opts.minScore ?? MIN_TOP_SCORE;
-  const persona = opts.persona ?? 'first';
+  /* §5's default, from the one module that owns the choice — an evaluation
+     that measured a different voice from the one that ships would be
+     measuring the wrong thing. `--persona first` still evaluates the other. */
+  const persona = opts.persona ?? DEFAULT_PERSONA;
   const maxNewTokens = opts.maxNewTokens ?? 96;
   /* A `synthetic` case carries a complete fictional mini-portfolio. Merging it
      over the real one is not enough: a shallow merge leaves the REAL education,

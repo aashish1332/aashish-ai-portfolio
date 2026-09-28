@@ -737,11 +737,11 @@ worst abs Δ logit **3.58e-07**.
 
 | Budget | §4 | Measured |
 |---|---|---|
-| AI chat **code** chunk, conservative reading (every shipped `ai/**` module + `knowledge.json`) | ≤ 150 KB gz | **74,341 B** (48.4 %) — was 71,465 B (46.5 %) after §11's first pass, 138,896 B (90.4 %) before shipped `ai/**` stopped carrying comments; the 2026-09-28 additions are §11.1 (a)/(c) and the engine's Stop fix (**+1,564 B gz** over the 72,777 B of the §2 N4 build): `ai/ui/chat.mjs` to 11,418 B, `ai/voice/index.mjs` to 5,919 B, `ai/ui/anchors.mjs` to 2,709 B, `ai/ui/styles.mjs` to 3,376 B) |
-| — of that, §4's chat-UI chunk proper (UI + KB + retrieval + language + guard + intent + anchors + governor) | — | 50,570 B (32.9 %) |
+| AI chat **code** chunk, conservative reading (every shipped `ai/**` module + `knowledge.json`) | ≤ 150 KB gz | **74,373 B** (48.4 %) — was 71,465 B (46.5 %) after §11's first pass, 138,896 B (90.4 %) before shipped `ai/**` stopped carrying comments; the 2026-09-28 additions are §11.1 (a)/(c), the engine's Stop fix and §5's persona flip (**+1,596 B gz** over the 72,777 B of the §2 N4 build): `ai/ui/chat.mjs` to 11,418 B, `ai/voice/index.mjs` to 5,919 B, `ai/ui/anchors.mjs` to 2,709 B, `ai/ui/styles.mjs` to 3,376 B) |
+| — of that, §4's chat-UI chunk proper (UI + KB + retrieval + language + guard + intent + anchors + governor) | — | 50,602 B (32.9 %) |
 | — of that, voice add-ons (loaded only on the tap that picks voice, §2 N6) | §4 lists separately | 9,016 B |
 | — of that, LLM runtime + tokenizer (§4 "LLM runtime" row) | — | 14,755 B |
-| AI assets actually fetched by **the click** (static reach of `ai/ui/chat.mjs`) | §4's number to keep small | **44,804 B gz (43.8 KB), 14 files** · the worker-only arithmetic the click does **not** parse is **13,382 B gz** across 9 files (both recomputed 2026-09-28 from `dist/`) |
+| AI assets actually fetched by **the click** (static reach of `ai/ui/chat.mjs`) | §4's number to keep small | **44,845 B gz (43.8 KB), 14 files** · the worker-only arithmetic the click does **not** parse is **13,382 B gz** across 9 files (both recomputed 2026-09-28 from `dist/`) |
 | Rest of the page | regression guard 250 KB | 65,860 B |
 | Model payload (weights + tokenizer + manifest) | ≤ 25 MB preferred, ≤ 40 MB hard | **5,144,354 B** raw · 4,741,050 B gz (step 1100) |
 | First-use download, T1/T2 | ≤ ~40 MB | **4,815,382 B** gz (**11.5 %**) |
@@ -842,9 +842,9 @@ touch the film.
 The conservative §4 figure is the number that guards the budget, and after the
 comment strip it is at **48.4 % — 77 KB of headroom** — with the runtime
 (14.8 KB) and the voice add-ons (9.0 KB) inside it, both of which §4 lists on
-their own rows. The click's static reach sits at **44,804 B gz** (every figure
-in this paragraph is the 2026-09-28 re-run, after §11.1 (a)/(c) and the
-engine's Stop fix added 2,867 B gz to the chunk — and the worker-only
+their own rows. The click's static reach sits at **44,845 B gz** (every figure
+in this paragraph is the 2026-09-28 re-run, after §11.1 (a)/(c), the
+engine's Stop fix and §5's persona flip added 1,596 B gz to the chunk — and the worker-only
 arithmetic the click still does not parse is 13,382 B gz, which is the part
 that matters for a 50 ms main-thread budget).
 **The budget is no longer the binding constraint on what `ai/` may grow into; it

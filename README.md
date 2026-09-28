@@ -150,13 +150,12 @@ on a GPU in P4/P5; nothing about the runtime changes when it lands, only the
 weights. Until then the quality is visibly a small model's, and the panel never
 pretends otherwise.
 
-The answers are written **as Aashish** — "my CGPA", not "his CGPA" — because
-the visitor is being introduced to him. **This is a deviation from the brief,
-which asks for the third person ("never pretends to be him"), and it is
-recorded as one** — `docs/FINAL_REPORT.md` limitation 12b, with the one-line
-switch that changes it. The assistant's own fixed lines (its identity
-disclosure, its refusals, the spoken greeting and the tour) are in the brief's
-voice: first person about itself, third person about Aashish. In **Proactive
+The answers are written **about Aashish, in the third person** — "his CGPA",
+not "my CGPA" — which is what the brief asks for ("never pretends to be him").
+The assistant's own lines are the same shape: first person about *itself* ("I'm
+Aashish's AI portfolio assistant"), third person about him. The first-person
+voice still exists in full — `persona: 'first'` — because the evaluation set
+measures both, but nothing ships with it on. In **Proactive
 mode** the page
 moves by itself to the part an answer came from. That part is found by looking
 at the page's own content every time, not at a stored position, so it still

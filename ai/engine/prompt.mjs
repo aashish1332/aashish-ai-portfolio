@@ -34,7 +34,11 @@ export const SPECIALS = contract.frames;
  *
  * `frame()` is defined in terms of this, so the split can never drift from
  * the string the model was trained on. */
-export function framePrefix({ rules = 'first' }) {
+/* `rules: 'third'` is the default for the same reason `DEFAULT_PERSONA` is
+   (§5): an unlabelled call must not answer in the voice the spec forbids. Both
+   RULES blocks are still in the contract, and `frame({ rules: 'first' })` is
+   what a caller asks for when it wants the other voice. */
+export function framePrefix({ rules = 'third' }) {
   const sys = contract.rules[rules];
   if (!sys) throw new Error(`unknown rules key ${rules}`);
   return `${SPECIALS.sys} ${sys} ${SPECIALS.ctx} `;
@@ -43,7 +47,7 @@ export function framePrefix({ rules = 'first' }) {
 /** `{ prefix, rest }` — `frame(args) === framePrefix(args) + rest`, asserted
  *  in `tests/engine.test.mjs` so a layout change cannot silently make the
  *  cached prefix a different string from the one being prefilled. */
-export function frameParts({ question, context, rules = 'first', history = [] }) {
+export function frameParts({ question, context, rules = 'third', history = [] }) {
   const parts = [context ?? ''];
   for (const [user, assistant] of history) {
     parts.push(SPECIALS.user, user, SPECIALS.asst, assistant, SPECIALS.end);
@@ -97,7 +101,7 @@ export function promptIds(tokenizer, args) {
    guard against the context that was actually read, so a trimmed line can
    never ground a claim. */
 export function fitToBudget({
-  tokenizer, question, context = '', history = [], rules = 'first',
+  tokenizer, question, context = '', history = [], rules = 'third',
   maxNewTokens = 96, maxSeq,
 }) {
   if (!Number.isFinite(maxSeq)) throw new Error('fitToBudget needs maxSeq');

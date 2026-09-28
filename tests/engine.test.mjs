@@ -286,10 +286,13 @@ test('ENG-11 a mismatched tokenizer version is refused (§9.3)', async () => {
 
 // ── generation ───────────────────────────────────────────────────────
 test('ENG-12 the prompt frame is the §7.4 layout, joined by spaces', () => {
+  /* No `rules` passed on purpose: this is the DEFAULT frame, and since §5 the
+     default voice is the third person, so an unlabelled call cannot quietly
+     ask the model to answer as Aashish. */
   const text = frame({ question: 'Q', context: '[a] b', history: [['u0', 'a0']] });
-  assert.equal(text, '<|sys|> ' + PROMPT_RULES.first
+  assert.equal(text, '<|sys|> ' + PROMPT_RULES.third
     + ' <|ctx|> [a] b <|user|> u0 <|asst|> a0 <|end|> <|user|> Q <|asst|>');
-  assert.equal(frame({ question: 'Q', context: '', rules: 'third' }).includes(PROMPT_RULES.third),
+  assert.equal(frame({ question: 'Q', context: '', rules: 'first' }).includes(PROMPT_RULES.first),
     true);
   assert.throws(() => frame({ question: 'Q', rules: 'nope' }), /unknown rules key/);
 });
@@ -447,7 +450,7 @@ test('ENG-15 the prompt-prefix cache changes nothing, and only fires on a real m
        fed. If the wrong thing is remembered, nothing is ever reused and the
        latency win silently never happens. */
     engine.model.reset();
-    await collect(engine.generate({ question, context, maxNewTokens: 4 }));
+    await collect(engine.generate({ question, context, rules: 'first', maxNewTokens: 4 }));
     assert.deepEqual([...engine.model.prefixIds], all,
       'generate() did not remember the prompt it prefilled, so nothing is reused');
 

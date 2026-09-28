@@ -36,7 +36,7 @@
 import { guardedAnswer } from '../guard/index.mjs';
 import { buildIndex, search, MIN_TOP_SCORE } from '../retrieval/index.mjs';
 import { abstainFor } from '../intent/rules.mjs';
-import { contextSizer, resolveFacts, renderFact } from './quick.mjs';
+import { contextSizer, DEFAULT_PERSONA, resolveFacts, renderFact } from './quick.mjs';
 
 /* ── how many facts the intent fallback may paste ────────────────
    §8.2's budget is "top-k ≤ 3 chunks, ≤ ~300 tokens", and retrieval keeps it.
@@ -146,7 +146,7 @@ export function noAnswerLine(kind, lang = 'en') {
   /* "not in the portfolio" already has one wording and one owner (§8.4's
      abstention), and a second copy here would be a second thing to keep in
      three languages. */
-  if (kind === 'notFound') return abstainFor(lang, 'first');
+  if (kind === 'notFound') return abstainFor(lang);
   const table = NO_ANSWER_TEXT[kind];
   if (!table) throw new Error(`unknown no-answer kind: ${kind}`);
   return table[lang] || table.en;
@@ -262,7 +262,7 @@ export function routeQuestion({
  */
 export function createModelAnswerer(opts = {}) {
   const {
-    kb, session, persona = 'first', history = [],
+    kb, session, persona = DEFAULT_PERSONA, history = [],
     minScore = MIN_TOP_SCORE, onNotice = null,
   } = opts;
   /* Mutable because §6.3's degrade ladder lowers the budget mid-session and

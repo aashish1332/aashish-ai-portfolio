@@ -145,7 +145,7 @@ export class ScratchLlamaEngine extends LLMEngine {
    *   token; `return` value carries the assembled text and why it stopped.
    */
   async *generate({
-    question, context = '', history = [], rules = 'first', maxNewTokens = 96,
+    question, context = '', history = [], rules = 'third', maxNewTokens = 96,
     stopIds = null, paceMs = 0, signal = null, onToken = null,
   } = {}) {
     const stops = stopIds ?? defaultStopIds(this.tokenizer);

@@ -15,7 +15,7 @@
    messages, so `aria-live` announces them once, completed — no per-token
    announcements (§10).
    ═══════════════════════════════════════════════════════════════ */
-import { quickAnswer } from '../answers/quick.mjs';
+import { DEFAULT_PERSONA, quickAnswer } from '../answers/quick.mjs';
 import {
   MODEL_BADGES, createModelAnswerer, noAnswerLine, partialAnswer, routeQuestion,
 } from '../answers/model.mjs';
@@ -1273,7 +1273,10 @@ let working = 0;
     preparing = session.prepare()
       .then((ready) => {
         answerer = createModelAnswerer({
-          kb, session, persona: 'first', maxNewTokens: budget.maxNewTokens,
+          /* §5's voice, from its one owner rather than a literal here: the
+             shell may not be the second place that decides how the assistant
+             refers to Aashish. */
+          kb, session, persona: DEFAULT_PERSONA, maxNewTokens: budget.maxNewTokens,
           onNotice: (text) => noticeOnce(text),
         });
         /* Seeds the budget if the tier never set one, and re-pushes whatever a

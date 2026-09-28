@@ -782,6 +782,14 @@ available here. Raw output `docs/RESOURCES.json`, panel-closed control
 an answer comes from somewhere on the page, the page moves to that place —
 and keeps working after the page is edited.
 
+> **SUPERSEDED 2026-09-28 — the gate above was the wrong gate.** §5 does not
+> leave this to a product call: *"it speaks about Aashish in the third person
+> and never pretends to be him."* `DEFAULT_PERSONA` is now `'third'`, and the
+> first person is the option rather than the norm — see **§5's persona: the
+> build was arguing with the brief, and lost** below. The rest of this section
+> (the templates, the two exceptions, the intent rules) is unchanged and still
+> true; only which voice is *default* moved.
+
 ### Done
 
 * **The answers are written in Aashish's voice (§10).** `persona: 'first'` is
@@ -3077,7 +3085,7 @@ let the next question skip a prefix the model never actually read.
 | ENG-19 / ENG-20 with the fix stashed | **both FAIL** (`the abort must be delivered during the generation, not after it`; `it ran 60 tokens and stopped with max-tokens`) |
 | ENG-19 / ENG-20 with the fix | **both pass** — the prefill stops after **16 of 229** forwards, the decode loop stops at **16 of 60** tokens (`ENG-19 promptTokens=229 forwards=16` · `ENG-20 tokens=16 stopReason=stopped`) |
 | tests | **516 JS + 353 Python, 0 failures** · `npm run build` clean |
-| §4 chat **code** chunk | **74,341 B gz = 48.4 %** of the 150 KB budget (74,246 / 48.3 % after the tour alone, +86 B for the engine fix's comments, +9 B for the tour-copy note; **+1,564 B gz** over the whole session from 72,777, ≈77 KB headroom) |
+| §4 chat **code** chunk | **74,373 B gz = 48.4 %** of the 150 KB budget (74,246 / 48.3 % after the tour alone; **+1,596 B gz** over the day from 72,777, ≈77 KB headroom — §5's persona flip below is the last +32 B of it) |
 
 ### Evidence
 `ai/voice/index.mjs` (`GREETINGS`, `greetingFor`, `greet`, `speak`) ·
@@ -3129,3 +3137,88 @@ device, and a later eviction replays the same path. Recorded, not rewritten: the
 catastrophic case is already gated at T0, and the fix (carry `quota − usage`
 alongside `quota`) is a behaviour change worth making with a device to test it
 on, not at the end of a day.
+
+---
+
+## §5's persona: the build was arguing with the brief, and lost — 2026-09-28
+
+**Status:** ✅ **built, tested, and the deviation is closed.**
+
+### What was wrong
+
+§5 says it in one clause: the assistant *"speaks about Aashish in the third
+person and never pretends to be him."* The build shipped the opposite default —
+`DEFAULT_PERSONA = 'first'`, so the panel answered **as** Aashish ("My CGPA is
+8.28", "I built …"). That was a deliberate product choice, made and written
+down: on a page he wrote, a recruiter asking "what is his CGPA?" gets a better
+answer from the site's own voice. It was also, plainly, the thing the clause
+forbids, and it had been sitting in `docs/AI_ARCHITECTURE.md` as a *feature*
+("the answers are written as Aashish talking about himself") rather than in the
+limitations list. The §0–§19 sweep found it by reading §5 against
+`quickAnswer`'s signature.
+
+The choice was put to the owner and **overruled by the clause**. This is the
+second place the brief and the build disagreed and the brief won; the first was
+§2 N3, which the brief lost on a platform limit rather than a preference
+(`docs/PRIVACY.md`).
+
+### What moved
+
+| Where | Before | After |
+|---|---|---|
+| `ai/answers/quick.mjs` | `DEFAULT_PERSONA = 'first'` | `'third'` — and the reasoning comment now says why, with `'first'` as the option |
+| `ai/ui/chat.mjs` | `createModelAnswerer({ …, persona: 'first' })` | `persona: DEFAULT_PERSONA` — the shell no longer decides this a second time |
+| `ai/answers/model.mjs` | `persona = 'first'`; `abstainFor(lang, 'first')` | `persona = DEFAULT_PERSONA`; `abstainFor(lang)` |
+| `ai/intent/rules.mjs` | `abstainFor(lang, persona = 'first')` | `'third'` — the default refusal is the one about him |
+| `ai/engine/prompt.mjs`, `index.mjs` | `rules = 'first'` | `'third'` — an unlabelled `frame()`/`generate()` cannot ask the model to answer as Aashish |
+| `tools/model-eval.mjs`, `tools/eval-decode.mjs` | `'first'` fallbacks | `'third'` / `DEFAULT_PERSONA` — an evaluation must measure the shipped voice |
+| `README.md`, `docs/AI_ARCHITECTURE.md`, `docs/MANUAL_TEST_CHECKLIST.md`, `docs/FINAL_REPORT.md` | "answers are written as Aashish" | the third person, with the first person still documented as an option |
+
+**The SFT corpus did not need to change**, and that is worth stating because it
+looked like it would: `ai/data/instruction.py` samples `_pick(rng, PERSONAS)`
+per example, so both voices are already in the training data and the model is
+told which to use by the RULES block in the prompt. Nothing about the weights,
+the manifest or the persona counts moves — the voice is a prompt, not a
+retraining.
+
+### The bug the flip exposed, which is why the twin test exists
+
+`quickAnswer` normalised its argument with
+`opts.persona === 'third' ? 'third' : DEFAULT_PERSONA` — an *allow-list written
+against the old default*. The day `DEFAULT_PERSONA` became `'third'`, that
+expression started silently refusing an explicit `persona: 'first'` and
+answering in the third person anyway: the switch had stopped switching, and
+nothing about it looked wrong. It is now
+`PERSONAS.includes(opts.persona) ? opts.persona : DEFAULT_PERSONA`, and
+`tests/quick-answers.test.mjs` has both directions — QA-10 fails if any answer
+speaks as him, and the new twin test fails if the first-person voice stops
+working. The twin test is per *question* rather than per answer, because the
+list-style answers (education, the project bullets) carry no possessive at all
+and are byte-identical in both voices; asserting "every answer says my/I" would
+have been wrong, and asserting "they differ" would have been vacuous.
+
+Writing the marker for the twin test also produced two honest notes rather than
+two clever regexes: `me` and `I'm` are **not** markers of the wrong voice —
+the assistant says "Ask me anything" and "I'm Aashish's AI Portfolio Assistant"
+about *itself* in either voice — and neither is bare `मैं`/`main`, for the same
+reason. Every token that is in the marker set was checked against
+`knowledge.json`: **zero** collisions, so a hit is the assistant speaking as
+Aashish and nothing else.
+
+### MEASURED
+
+| | |
+|---|---|
+| `npm test` | **517 JS, 0 failures** (was 516; the twin test is the new one) |
+| `npm run test:py` | **353 Python, 0 failures** |
+| §4 chat **code** chunk | **74,373 B gz = 48.4 %** of 150 KB — **+32 B gz** for the flip (one comment explaining it, one import, and the normalisation branch; the constants themselves are the same size) |
+| what the answers say now | `"His full name is Aashish Kumar."` · `"Aashish's skills (38): …"` · `"Aashish has 3 shipped projects: …"` · `"Here's how to reach Aashish:"` — and, in the other voice, `"My name is …"` · `"My skills (38): …"` · `"I've shipped 3 projects: …"` |
+| the identity disclosure | `"I'm Aashish's AI Portfolio Assistant — not Aashish himself."` (the first-person build said "That's me — Aashish Kumar") |
+| what did NOT change | the weights, the manifest, the SFT corpus, the prompt contract (both RULES blocks still ship), and every §11.1 fixed string — the greeting and the tour were already in this voice, which is why they no longer disagreed with the answers |
+
+### Evidence
+`ai/answers/quick.mjs` · `ai/answers/model.mjs` · `ai/intent/rules.mjs` ·
+`ai/ui/chat.mjs` · `ai/engine/prompt.mjs` · `ai/engine/index.mjs` ·
+`tools/model-eval.mjs` · `tools/eval-decode.mjs` · `tests/quick-answers.test.mjs`
+(QA-10 ×6) · `tests/engine.test.mjs` (ENG-12, ENG-15) · `README.md` ·
+`docs/AI_ARCHITECTURE.md` · `docs/FINAL_REPORT.md` 12b + item 6

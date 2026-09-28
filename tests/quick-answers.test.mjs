@@ -322,57 +322,126 @@ const VOICE_BATTERY = [
  *  (checked), so any hit here is the assistant talking about Aashish. */
 const THIRD_PERSON = /\b(his|he|him)\b|\bAashish's\b/i;
 
-test('QA-10: the answers are written in the first person, for every intent', () => {
+/** The mirror image, for the voice that now ships: a first-person possessive
+ *  ("my CGPA") or a self-claim ("I built"). `me` is deliberately NOT in this
+ *  set — the assistant says "Ask me anything" about ITSELF in either voice,
+ *  and flagging that would make the test fail on a correct answer. Checked
+ *  against the knowledge base: **zero** values contain "my", so a hit here is
+ *  the assistant speaking as Aashish and nothing else. */
+/** The mirror image, for the voice that now ships: a first-person possessive or
+ *  self-claim ABOUT AASHISH ("my CGPA", "I've shipped"), in all three
+ *  languages. Two things deliberately excluded, both learned from a failing
+ *  run rather than from theory: `me` and `I'm` (the assistant says "Ask me
+ *  anything" and "I'm Aashish's AI Portfolio Assistant" about ITSELF in either
+ *  voice), and bare `मैं`/`main` for the same reason. Every token that IS in the
+ *  set was checked against the knowledge base: **zero** collisions, so a hit is
+ *  the assistant speaking as Aashish and nothing else. */
+const FIRST_PERSON = /\bmy\b|\bI[\u2019'](?:ve|m)\s+(?:shipped|built|worked|studied|been)\b|\bI\s+(?:have|built|work|studied|study|hold|graduated)\b|\breach me\b|\b(?:mera|mere|meri|maine|mujhse)\b|मेरा|मेरे|मेरी|मैंने|मुझे|मुझसे/i;
+
+test('QA-10: the answers are written in the third person, for every intent (§5)', () => {
   const offenders = [];
   for (const q of VOICE_BATTERY) {
     for (const lang of ['en', 'hi', 'hinglish']) {
       const r = quickAnswer(KB, q, { lang });
       /* the safety and identity replies are deliberately exempt — see QA-11 */
       if (r.intent === 'injection_suspect' || r.intent === 'meta') continue;
-      const m = THIRD_PERSON.exec(r.text);
+      const m = FIRST_PERSON.exec(r.text);
       if (m) offenders.push(`${lang}/${r.intent} "${q}" → ...${r.text.slice(Math.max(0, m.index - 30), m.index + 30)}...`);
     }
   }
-  assert.deepEqual(offenders, [], `the answer slipped back into third person:\n  ${offenders.join('\n  ')}`);
+  assert.deepEqual(offenders, [],
+    `§5: the assistant spoke as Aashish instead of about him:\n  ${offenders.join('\n  ')}`);
+});
+
+test('QA-10: the first-person voice is still whole — one option, not a removal (§5)', () => {
+  /* The other direction, so the test above cannot pass by the persona feature
+     having been deleted: every question whose answer refers to Aashish through
+     `pick(persona, …)` must CHANGE when asked for the other voice.
+
+     Per question rather than per answer, because the list-style answers
+     (education, the project bullets, a skills category list) carry no
+     possessive at all and are byte-identical in both voices — correct, and the
+     reason a "every answer says my/I" assertion would be wrong. */
+  const SWITCHED = [
+    ['what is your name', true],
+    ['what is his name', true],
+    ['what are your skills', true],
+    ['what projects has he built', true],
+    ['how can I contact him', true],
+    ['what is your favourite pizza', true],   /* the abstention follows the voice */
+    ['hi', true],                             /* and so does the greeting */
+    ['thanks', false],                        /* flips only by dropping "about Aashish" */
+  ];
+  const misses = [];
+  for (const [q, marker] of SWITCHED) {
+    for (const lang of ['en', 'hi', 'hinglish']) {
+      const third = quickAnswer(KB, q, { lang });
+      const first = quickAnswer(KB, q, { lang, persona: 'first' });
+      const where = `${lang} "${q}"`;
+      if (first.text === third.text) { misses.push(`${where}: identical in both voices`); continue; }
+      if (marker && !FIRST_PERSON.test(first.text)) {
+        misses.push(`${where}: his own voice has no "my"/"I" — ${first.text.slice(0, 56)}`);
+      }
+      if (!/\b(his|he|him)\b|Aashish/i.test(third.text)) {
+        misses.push(`${where}: the third-person answer never names him — ${third.text.slice(0, 56)}`);
+      }
+    }
+  }
+  assert.deepEqual(misses, [],
+    `the persona switch is no longer a switch:\n  ${misses.join('\n  ')}`);
 });
 
 test('QA-10: the name question introduces him, which is the whole example', () => {
   const r = quickAnswer(KB, 'what is your name');
-  assert.equal(r.text, `My name is ${KB.person.name}.`);
-  assert.ok(!THIRD_PERSON.test(r.text));
+  assert.equal(r.text, `His full name is ${KB.person.name}.`);
+  assert.ok(THIRD_PERSON.test(r.text));
   /* the second-person phrasing of the same question must reach the same place */
   assert.equal(quickAnswer(KB, 'what is his name').text, r.text);
+  /* and the same question in his own voice still works, which is what makes
+     this a persona rather than a loss */
+  assert.equal(quickAnswer(KB, 'what is your name', { persona: 'first' }).text,
+    `My name is ${KB.person.name}.`);
 });
 
-test('QA-10: `persona` is the whole switch — third person is one option away', () => {
+test('QA-10: `persona` is the whole switch — and its default is §5\u2019s', () => {
   /* the documented set and the accepted set must be the same set */
   assert.deepEqual(PERSONAS, ['first', 'third']);
   assert.ok(PERSONAS.includes(DEFAULT_PERSONA));
-  assert.equal(DEFAULT_PERSONA, 'first');
-  const first = quickAnswer(KB, 'what is your name');
-  const third = quickAnswer(KB, 'what is your name', { persona: 'third' });
-  assert.equal(first.persona, 'first', 'first person is not the default');
-  assert.equal(third.persona, 'third');
-  assert.equal(third.text, `His full name is ${KB.person.name}.`);
-  assert.notEqual(first.text, third.text);
-  assert.ok(!THIRD_PERSON.test(first.text));
+  assert.equal(DEFAULT_PERSONA, 'third', '§5 says third person: it is the default');
+  const byDefault = quickAnswer(KB, 'what is your name');
+  const first = quickAnswer(KB, 'what is your name', { persona: 'first' });
+  assert.equal(byDefault.persona, 'third', 'third person is not the default');
+  assert.equal(first.persona, 'first');
+  assert.equal(byDefault.text, `His full name is ${KB.person.name}.`);
+  assert.notEqual(byDefault.text, first.text);
+  assert.ok(FIRST_PERSON.test(first.text));
   /* an unknown persona must not silently disable the voice */
-  assert.equal(quickAnswer(KB, 'hi', { persona: 'nonsense' }).persona, 'first');
+  assert.equal(quickAnswer(KB, 'hi', { persona: 'nonsense' }).persona, DEFAULT_PERSONA);
 });
 
 test('QA-10: the refusal follows the voice too', () => {
   const r = quickAnswer(KB, 'what is your favourite pizza');
   assert.equal(r.abstained, true);
-  assert.ok(!THIRD_PERSON.test(r.text), `an abstention switched back: ${r.text}`);
+  assert.ok(/Aashish's/.test(r.text), `an abstention is not about him: ${r.text}`);
   const bait = quickAnswer(KB, 'which company hired him');
   assert.equal(bait.abstained, true);
-  assert.ok(!THIRD_PERSON.test(bait.text), `a bait refusal switched back: ${bait.text}`);
+  assert.ok(/Aashish's/.test(bait.text), `a bait refusal is not about him: ${bait.text}`);
+  /* and in the other voice the same two refusals are the first-person pair */
+  assert.ok(/\bmy\b/.test(quickAnswer(KB, 'what is your favourite pizza',
+    { persona: 'first' }).text));
 });
 
-test('QA-10: chips are the visitor\u2019s words, so they address him directly', () => {
+test('QA-10: chips are the visitor\u2019s words, so they follow the voice too', () => {
+  /* §5's default: the visitor is reading ABOUT Aashish, so a chip says "What
+     projects has he built?". Under the other persona it is said TO him
+     ("What projects have you built?"). Both tables are checked here so
+     neither can drift away from the voice it belongs to. */
   for (const intent of ['greeting', 'skills', 'contact', 'abstain']) {
     for (const chip of followupsFor(intent, 'en')) {
-      assert.ok(/\b(you|your)\b/i.test(chip), `chip is not addressed to him: ${chip}`);
+      assert.ok(/\b(he|his|him)\b/i.test(chip), `chip does not speak about him: ${chip}`);
+    }
+    for (const chip of followupsFor(intent, 'en', 'first')) {
+      assert.ok(/\b(you|your)\b/i.test(chip), `first-person chip is not addressed to him: ${chip}`);
     }
   }
   /* and they must still route, or a chip is a dead click */

@@ -109,7 +109,7 @@ The constraint that outranks everything else: *the portfolio must not get slower
 | Metric | Value | Tag |
 |---|---|---|
 | Anything AI on initial load | The launcher only — **945 B gz**, and it is inert (no fetch, no worker, no network API, one dynamic import). `tests/launcher.test.mjs` gates it deterministically: the 2 KB budget, the single `import(CHUNK)` resolving to the chat shell, and that `index.html` names nothing under `ai/` (no script, link, import-map entry or preload). The browser half is `dev-ai-probe.js`'s network assertion | **MEASURED** (probe + gate) |
-| What the click fetches | **44,804 B gz** static reach of `ai/ui/chat.mjs`, 14 files (86,096 B before the comment strip, 102,596 B before the voice split) | **MEASURED** |
+| What the click fetches | **44,845 B gz** static reach of `ai/ui/chat.mjs`, 14 files (86,096 B before the comment strip, 102,596 B before the voice split) | **MEASURED** |
 | First open | UI **221–405 ms**, knowledge + capability probe **285–722 ms** | **MEASURED** |
 | Worst main-thread long task, AI windows | **65 ms** — against the page's own worst of **88 ms** with the panel never opened | **MEASURED** |
 | Frame time, panel open vs closed | 25.2 ms vs 24.7 ms = **2 %** FPS drop (§4 allows 10 %); re-measured with the film's tier pinned: **18.3 vs 18.3 ms = 0 %** | **MEASURED** |
@@ -126,7 +126,7 @@ The constraint that outranks everything else: *the portfolio must not get slower
 | §4's reference profiles (never run before 2026-09-27) | R1 as it is **0 %**, R1 @4× CPU **−2.5 %**, R1 @6× CPU **+0.3 %** — all **1.00×** p95, all **43/43 checks**; panel ready 815 / 1,091 / 1,502 ms; first answer 25.1 / 45.4 / 42.8 s | **MEASURED** |
 | A weak device, for real | **NOT TESTED** — the CDP throttle hits the main thread (frame time 18.3 → 35.3 ms) but not the Worker proportionally (first answer 25.1 → 45.4 s is 1.8×, not 4×), so this profile must not be quoted as a phone's latency | **NOT TESTED** |
 | …and why it took this long | The A/B ran under software GL until 2026-09-27, where it was inconclusive; the first real-GPU run without a pin reported **−49 %** (the *open* arm faster) because the film's own governor walked tier 1 → tier 4 during the session — a confound the probe now detects and refuses to attribute | **MEASURED** |
-| §4 code chunk | **74,341 B gz = 48.4 %** of 150 KB (≈77 KB headroom) as of 2026-09-28 — §2 N4's disclosure card added 1,312 B gz and §11.1 (a)/(c) plus the engine's Stop fix added 1,564 B gz. It was 72,777 B gz = 47.4 % before the §11.1 work, 70,544 B = 45.9 % the day before, and 138,896 B = 90.4 % before the comment strip. Conservative reading: every shipped `ai/**` + `knowledge.json`. The click's static reach is 44,804 B gz across 14 files, and the arithmetic it does **not** parse is 13,382 B gz across 9. Asserted on every `npm test`, and reported by `npm run bundle` | **MEASURED** |
+| §4 code chunk | **74,373 B gz = 48.4 %** of 150 KB (≈77 KB headroom) as of 2026-09-28 — §2 N4's disclosure card added 1,312 B gz and §11.1 (a)/(c) plus the engine's Stop fix and §5's persona flip added 1,596 B gz. It was 72,777 B gz = 47.4 % before the §11.1 work, 70,544 B = 45.9 % the day before, and 138,896 B = 90.4 % before the comment strip. Conservative reading: every shipped `ai/**` + `knowledge.json`. The click's static reach is 44,845 B gz across 14 files, and the arithmetic it does **not** parse is 13,382 B gz across 9. Asserted on every `npm test`, and reported by `npm run bundle` | **MEASURED** |
 
 ## CHAT
 
@@ -220,9 +220,9 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
    (`npm run probe:firefox` 11/11, 2026-09-28).
 4. **WASM SIMD and WebGPU are unimplemented**, and the payoff cannot be measured
    here — this box runs scalar JS ~10× below its own specification.
-5. **The §4 code chunk is at 48.4 %** (74,341 B gz of 150 KB, ≈77 KB of headroom — it
-   moved 71,465 → 74,341 B gz on 2026-09-28 for §2 N4's disclosure, §11.1's greeting
-   and tour, and the engine's Stop fix), so the budget is a
+5. **The §4 code chunk is at 48.4 %** (74,373 B gz of 150 KB, ≈77 KB of headroom — it
+   moved 71,465 → 74,373 B gz on 2026-09-28 for §2 N4's disclosure, §11.1's greeting
+   and tour, the engine's Stop fix and §5's persona flip), so the budget is a
    regression guard rather than a constraint on the next feature. It halved on
    2026-09-27 because half its gzip was comments in our own `ai/**` modules and
    the build stopped shipping them (−69,817 B gz, nothing a visitor runs
@@ -251,21 +251,23 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
     programmatic data cannot reproduce human code-mixing — `data/sources.json`
     records that loss explicitly rather than papering over it with data we may
     not use.
-12b. **§5's persona line is the second deviation, and it is uncovered — the
-    spec says one thing and the build does another.** §5: *"it speaks about
-    Aashish in the third person and never pretends to be him."* The build ships
-    `DEFAULT_PERSONA = 'first'`: the panel answers as Aashish ("My CGPA is
-    8.28", "I built …"), which is deliberate — on a page he wrote, a recruiter
-    asking "what is his CGPA?" is better served by the site's own voice, and
-    both personas are implemented (`PERSONAS = ['first', 'third']`, the prompt
-    contract carries both RULES blocks, and the SFT corpus is generated in
-    both). But deliberate is not compliant: as shipped, the assistant **does**
-    pretend to be him, and that is what the clause forbids. The assistant's own
-    fixed copy (the identity disclosure, the refusals, the §11.1 greeting and
-    tour) is third-person about Aashish and first-person only about
-    *itself* — that split is enforced by tests (`QA-10`, `TOUR-1`). Flipping
-    the default is one constant plus test updates, and it needs a ruling on
-    which reading wins — see **WHAT I NEED FROM YOU** item 6.
+12b. **§5's persona line — CLOSED 2026-09-28, the build was arguing with the
+    brief and lost.** §5: *"it speaks about Aashish in the third person and
+    never pretends to be him."* This build shipped `DEFAULT_PERSONA = 'first'`
+    ("My CGPA is 8.28", "I built …") on the product reasoning that a recruiter
+    asking "what is his CGPA?" is better served by the site's own voice. That
+    reasoning was recorded as a deviation and then overruled by the clause:
+    the default is now `'third'` ("His CGPA is 8.28"), the shell takes it from
+    the one constant that owns it, and the engine's unlabelled prompt frame and
+    the evaluation tools' defaults moved with it, so no call site can quietly
+    answer as Aashish. **The first person is still whole** — `persona: 'first'`
+    is a supported option, the prompt contract still carries both RULES blocks,
+    and the SFT corpus is still sampled in both voices, so the 
+    `persona` switch is a switch and not a deletion. `tests/quick-answers.test.mjs`
+    holds both directions: QA-10 fails if any answer speaks as him, and its twin
+    fails if the first-person option stops working. The SFT corpus needed no
+    change precisely because it samples both personas per example — the voice
+    the model answers in is chosen by the RULES block, not baked into the data.
 13. **§2 N3 is the one non-negotiable this build deviates from, and it must be
     read as a deviation.** N3 asks that "any remote speech-recognition mode is
     disabled"; the browser's `SpeechRecognition` has no switch that forbids its
@@ -297,15 +299,13 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
 4. **A deployment host decision**, so caching and the offline-after-cache path
    are verified against the headers visitors will actually see.
 5. **Sign-off on the PII list** (C4/C5).
-6. **A ruling on §5's persona.** The spec asks for the third person, 
-   "never pretends to be him"; the build ships the first person because that
-   is how the rest of the page speaks and it is the voice a recruiter gets an
-   answer in. Neither reading is wrong, but only one can ship — say which, and
-   if it is the spec's, `DEFAULT_PERSONA` in `ai/answers/quick.mjs` flips to
-   `'third'` with the `QA-10` expectations and the SFT persona mix updated to
-   match. What is already done either way: the assistant's *own* copy — the
-   identity disclosure, the refusals, the §11.1 greeting, the tour lines — is
-   in the spec's voice, so the two do not contradict each other on screen.
+6. **§5's persona — ruled, and shipped.** You asked for the spec's reading; the
+   default is now the third person (limitation 12b above records what moved).
+   One thing worth your eye, because it is the only part of the change that a
+   reader would notice rather than a test: the **identity disclosure** now says
+   "I'm Aashish's AI Portfolio Assistant — not Aashish himself", where the
+   first-person build said "That's me — Aashish Kumar". Both were deliberate
+   sentences about who is speaking; only one of them is true.
 7. **A ruling on §2 N3 and voice.** The strict reading ("any remote
    speech-recognition mode is disabled") can be met exactly, at the cost of voice
    input on every browser whose recogniser is a network service — which is most

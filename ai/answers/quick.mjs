@@ -217,12 +217,21 @@ export function resolveFacts(kb, text, lang = 'en') {
 }
 
 /* ── voice (§10) ─────────────────────────────────────────────────
-   The visitor is being shown a portfolio and is reading it to decide whether
-   to talk to Aashish, so the answers are written as HIM: "my CGPA", not "his
-   CGPA" on a page he wrote himself. `'third'` is kept because the raw phrasing
-   is what the evaluation set and the older docs were written against. */
+   §5 is explicit: the assistant "speaks about Aashish in the third person and
+   never pretends to be him". This build used to ship the opposite default —
+   answers in his own voice, "my CGPA" — on the reasoning that a visitor is
+   being introduced to him on a page he wrote. That reasoning is a *product*
+   preference and the clause is a *requirement*, and only one of them can
+   decide a default: `'third'` is the default, `'first'` is one option away
+   (`quickAnswer(kb, q, { persona: 'first' })`), and both remain fully
+   implemented because the evaluation set, the SFT corpus and the prompt
+   contract are all written against both.
+
+   Everything the assistant says about ITSELF stays in the first person — the
+   identity disclosure, the refusals' framing, the §11.1 greeting and tour —
+   which is what makes this a persona switch rather than a silence switch. */
 export const PERSONAS = ['first', 'third'];
-export const DEFAULT_PERSONA = 'first';
+export const DEFAULT_PERSONA = 'third';
 export const pick = (persona, third, first) => (persona === 'first' ? first : third);
 
 const firstName = (kb) => String(kb?.person?.name || 'Aashish').split(' ')[0];
@@ -236,6 +245,10 @@ const fullName = (kb) => String(kb?.person?.name || 'Aashish Kumar');
  * generated (`routeQuestion` gives it its own path for the same reason).
  */
 export function disclosure(kb, lang, persona = DEFAULT_PERSONA) {
+  /* Under `'third'` — the default — this is the honest sentence: the assistant
+     says what it is and denies being him. The `'first'` variant is the one that
+     claims to be Aashish, which is exactly what §5 forbids; it stays for the
+     evaluation set that measures both voices. */
   return tri(lang,
     pick(persona,
       `I'm ${firstName(kb)}'s AI Portfolio Assistant — not ${firstName(kb)} himself. I answer questions about his work, skills and background using only his portfolio data.`,
@@ -526,8 +539,9 @@ function indexFor(kb) {
  *                             tracker (§8.3) — otherwise detected per message
  * @param {string|null} [opts.focus] the conversation's carried focus entity (§8.2)
  * @param {'first'|'third'} [opts.persona] whose voice a rendered answer would
- *        be in. Defaults to `'first'`; it is carried on the result so a caller
- *        that words the answer (or a chip) does not have to be told again.
+ *        be in. Defaults to `DEFAULT_PERSONA` (`'third'`, §5); it is carried on
+ *        the result so a caller that words the answer (or a chip) does not
+ *        have to be told again.
  * @param {(plan:object, ctx:object) => string} [opts.say] the wording. Omit it
  *        — as the chat shell does — and only the two fixed replies (the §9
  *        injection refusal and the identity disclosure) come back with text.
@@ -541,7 +555,13 @@ function indexFor(kb) {
 export function quickAnswer(kb, query, opts = {}) {
   const question = String(query || '');
   const lang = opts.lang || detectLanguage(question).lang;
-  const persona = opts.persona === 'third' ? 'third' : DEFAULT_PERSONA;
+  /* Both voices are accepted; anything else — including nothing — is the
+     default. This was `opts.persona === 'third' ? 'third' : DEFAULT_PERSONA`,
+     which was correct only while `'first'` WAS the default: the day the default
+     became §5's third person, that expression silently started refusing an
+     explicit `persona: 'first'` and answering in the third person anyway. The
+     QA-10 twin test caught it, not a reader. */
+  const persona = PERSONAS.includes(opts.persona) ? opts.persona : DEFAULT_PERSONA;
   const minScore = opts.minScore ?? MIN_TOP_SCORE;
   const det = detectIntent(question, kb);
 

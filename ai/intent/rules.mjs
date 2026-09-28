@@ -269,11 +269,12 @@ export const ABSTAIN = {
   hinglish: 'Ye information abhi Aashish ke portfolio mein available nahi hai.',
 };
 
-/* The same refusal in the first-person voice (§10). An abstention is not a
-   safety string — it asserts nothing — so it is free to follow the persona,
-   and a page that speaks as Aashish must not switch to third person exactly
-   when it has nothing to say. Only the *identity* answers are kept neutral;
-   see `BUILD.meta` and `INJECTION_REPLY`. */
+/* The same refusal in the first-person voice. An abstention is not a safety
+   string — it asserts nothing — so it is free to follow the persona, and a
+   caller that has ASKED for the first-person voice must not switch to third
+   person exactly when it has nothing to say. The default is the third-person
+   `ABSTAIN` above (§5); only the *identity* answers are kept neutral, see
+   `BUILD.meta` and `INJECTION_REPLY`. */
 export const ABSTAIN_FIRST = {
   en: "I don't have that in my portfolio yet.",
   hi: 'यह जानकारी अभी मेरे पोर्टफोलियो में उपलब्ध नहीं है।',
@@ -281,7 +282,7 @@ export const ABSTAIN_FIRST = {
 };
 
 /** The abstention line for a voice — unknown languages fall back to English. */
-export function abstainFor(lang, persona = 'first') {
+export function abstainFor(lang, persona = 'third') {
   const table = persona === 'first' ? ABSTAIN_FIRST : ABSTAIN;
   return table[lang] || table.en;
 }

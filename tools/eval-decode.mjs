@@ -73,7 +73,7 @@ export async function decodeWithEngine({ exportDir, prompts, maxNewTokens, onPro
     }
     const expected = frame({
       question: row.question, context: row.context,
-      history: row.history || [], rules: row.rules || 'first',
+      history: row.history || [], rules: row.rules || 'third',
     });
     if (expected !== row.prompt) {
       throw new Error(`the engine's frame and the emitter's prompt differ for ${row.id} — `
@@ -86,7 +86,7 @@ export async function decodeWithEngine({ exportDir, prompts, maxNewTokens, onPro
       question: row.question,
       context: row.context,
       history: row.history || [],
-      rules: row.rules || 'first',
+      rules: row.rules || 'third',
       maxNewTokens,
     });
     let step = await run.next();
