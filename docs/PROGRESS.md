@@ -21,16 +21,17 @@ whether the gate passed. Every ✅/⚠️ points at the phase entry or a
 | **P4** Stage A training | Val curve, samples, checkpoints, resume verified | ⚠️ **GAP — the config-A run has never executed** (needs a GPU this box does not have); the `local` config passes every item | Phase 4 below · `docs/TRAINING.md` |
 | **P5** Stage B + eval | Ship gates measured and reported | ✅ **MEASURED AND REPORTED — and they FAIL.**  factual accuracy **18.9 %** against the 95 % gate, abstention recall **0 %**, HI+Hinglish **80 %**. The *phase* gate is "measured and reported"; the quality gates themselves do not pass | §14 lane · `docs/EVALUATION.json` |
 | **P6** CPU inference + export | Parity OK; sizes measured | ✅ **PASSED** | `npm run verify:engine` · §9 lane |
-| **P7** Browser runtime | Chrome + Firefox (+ Safari); budgets met; frame-health A/B with Three.js | ⚠️ **PASSED on Chrome** (budgets met, A/B on the real GPU); **Firefox and Safari NOT TESTED** | §4 reference profiles · "shipped bundle in a browser" |
+| **P7** Browser runtime | Chrome + Firefox (+ Safari); budgets met; frame-health A/B with Three.js | ⚠️ **PASSED on Chrome AND Firefox** (2026-09-28, `dev-firefox-probe.js` 9/9 on the built bundle; budgets met; A/B on the real GPU); **Safari NOT TESTED** — no macOS/iOS host here | §4 reference profiles · "Firefox, on the shipped bundle" |
 | **P8** Voice | State-machine tests; mic-denied/unsupported; lazy-load assertion; per-tier memory | ⚠️ **PASSED except per-tier voice memory (NOT TESTED)** and any live microphone | §11 lanes (voice input + soak) |
 | **P9** Perf hardening | ≤ 10 % median-FPS regression; no leak over 5 open/close cycles | ⚠️ **PASSED on R1/R2** (0 %, −2.5 %, +0.3 % drift; 0 MB / 0 nodes / 0 listeners over 5 cycles); R3 is emulation only and **R4 a real phone is NOT TESTED** | §4 reference profiles · §15.3 lane |
 | **P10** Ternary | Written go/no-go | ✅ **PASSED** — written **NO-GO** | `experiments/ternary/README.md` |
 | **P11** Final QA + docs | Definition of Done met or gaps listed honestly | ✅ **PASSED** — every gap is listed in the report, not hidden | `docs/FINAL_REPORT.md` §18 checklist |
 
 **The three real gaps, one line each:** P4's config-A run needs a GPU this
-machine does not have; P7/P8/P9 have never seen Firefox, Safari, a real phone or
-a live microphone; and P5's quality gates fail on a checkpoint trained to prove
-the pipeline, not to answer well. None of the three is a code gap.
+machine does not have; P7/P8/P9 have never seen Safari, a real phone or a live
+microphone (Firefox was closed on 2026-09-28); and P5's quality gates fail on a
+checkpoint trained to prove the pipeline, not to answer well. None of the three
+is a code gap.
 
 ---
 
@@ -2778,3 +2779,56 @@ control exists, and pressing it reads back `input="who are you"`.
 Tests: **492 JS + 343 Python, 0 failures**; `npm run build` clean. Still
 **NOT TESTED**: any of this with a live microphone, and §11.6's per-tier voice
 resource numbers — both need a real device.
+
+---
+
+## Firefox, and §16's P7 gate — 2026-09-28
+
+**Status:** ✅ **P7's Firefox half met** (Chrome was already done; Safari remains
+a NOT TESTED with a named reason). This began as a spec sweep: §15 and §16 were
+rolled up into single tables (see the top of this file and `docs/BENCHMARKS.md`),
+and the rollup made one gap concrete — P7's gate says *"Chrome + Firefox (+
+Safari if available)"*, Firefox had never been run, and Firefox **156.0.1 is
+installed on this box**. The gate was not blocked on hardware; it was blocked on
+a test nobody had written.
+
+### Done
+* `dev-firefox-probe.js` (`npm run probe:firefox`) — a **9-check** Firefox smoke
+  against the built bundle. Deliberately **not** a port of the 46-check Chrome
+  probe: that one uses CDP (throttling, URL blocking, worker events) and Firefox
+  speaks WebDriver BiDi, so a port would be a second, drifting copy of it.
+* The MSIX trap, written down for the next person: the user-facing alias
+  (`…\WindowsApps\firefox.exe`) is **EACCES** to a non-packaged process, so
+  `executablePath` must point into the package VFS. `FF_BIN` overrides.
+* §15's five steps and §16's eleven gates rolled up, item by item, with the
+  verification behind each (and §17's hygiene claims audited the same way).
+* §18's pretrained-component clause made explicit in `docs/AI_ARCHITECTURE.md`
+  §8: **not used** — the voice stack ships no model file, so there is nothing
+  third-party to disclose.
+
+### Measured (R1 · Firefox 156.0.1 · headless · **built bundle** on `:5582`)
+| Check | Result |
+|---|---|
+| zero AI requests pre-click | **0** of 56 requests (the listener is proven first) |
+| panel | opens, `T1 · MODEL READY`, **1,787–2,028 ms** after the click (three runs) |
+| a real answer | **27.1–29.1 s** (three runs), badge `AI ANSWER · ON-DEVICE MODEL` |
+| §11 degradation | microphone **disabled with the reason in `title`** — Firefox has no `SpeechRecognition` |
+| page errors · console errors · failed requests | **0 · 0 · 0** |
+| verdict | **9/9** |
+
+### Bugs found (all three in the probe, not the product)
+| # | Bug | Why it mattered |
+|---|---|---|
+| **FF-1** | The probe declared `const URL = …`, shadowing the global `URL` constructor in module scope, and **crashed on `new URL(...)`** on its first run | A crash is loud; the same shadowing inside a `try` would have been silent |
+| **FF-2** | *"no third-party request"* failed on Google Fonts and the GSAP CDN — dependencies the portfolio has always had, and a page-wide same-origin assertion that was never true | The promise (§2 N6/§14) is about the **assistant**, so the check now asserts every **AI** asset is same-origin and merely reports the portfolio's own off-site list. A check that fails forever teaches nothing |
+| **FF-3** | The microphone's *reason* lives in `title` while `aria-label` carries only the state, so reading the label passed on `"Voice mode is off"` | The check now reads `title` and treats the working-microphone label as the distinguishable failure |
+
+### Still open
+* **Safari** (no macOS/iOS host), and Firefox on a **real device**. Firefox's own
+  off-site requests (fonts, GSAP CDN) are the portfolio's, unchanged by the AI.
+* The full §14/FX parity sweep is **not** ported: Firefox gets the smoke, and the
+  46-check Chrome probe stays the deep one.
+
+### Evidence
+`dev-firefox-probe.js` · `package.json` (`probe:firefox`) · `docs/BENCHMARKS.md`
+(*"Firefox, on the shipped bundle"*) · `npm run probe:firefox`

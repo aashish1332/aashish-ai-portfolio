@@ -19,6 +19,7 @@
     "probe:tokens": "node dev-token-budget-probe.js",
     "probe:offline": "node dev-offline-probe.js",
     "probe:degrade": "node dev-degrade-probe.js",
+    "probe:firefox": "node dev-firefox-probe.js",
     "calibrate": "node tools/calibrate-retrieval.mjs",
     "test": "node --test \"tests/*.test.mjs\"",
     "test:py": "python -m unittest discover -s tests/py -t .",

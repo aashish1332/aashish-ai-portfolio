@@ -100,7 +100,7 @@ true about **answer quality**. See "What I need from you".
 | WebGPU | Probed (`probeWebGPU`) and reported in the tier title; **no WGSL kernels are written**, so it accelerates nothing | **NOT TESTED / NOT IMPLEMENTED** |
 | WASM SIMD | Feature-detected (`hasSimd`) and reported; the kernels are JavaScript | **NOT TESTED / NOT IMPLEMENTED** |
 | Fallbacks | T0 (no model) and download failure both verified end to end on the **built bundle**: `dev-degrade-probe.js` **20/20** (`ROOT=dist`), including the reload on a healthy network recovering to `ready` with real weights and a real answer | **MEASURED** |
-| Firefox / Safari / iPhone | Never run | **NOT TESTED** |
+| Firefox / Safari / iPhone | **Firefox 156.0.1 now runs the built bundle** — `npm run probe:firefox` **9/9** on 2026-09-28: tier `T1 · MODEL READY`, a real `AI ANSWER · ON-DEVICE MODEL`, **0 AI requests pre-click**, microphone disabled with the reason in `title`, 0 page errors. **Safari and a real iPhone are NOT TESTED** (no macOS/iOS host here) | **MEASURED (Firefox) / NOT TESTED (Safari, iPhone)** |
 
 ## PERFORMANCE
 
@@ -167,7 +167,7 @@ The constraint that outranks everything else: *the portfolio must not get slower
 reasoning, the arithmetic and the four conditions that would re-open it are in
 [`experiments/ternary/README.md`](../experiments/ternary/README.md). The honest
 summary: at 4.98M params ternary's real benefit is **size** (~3 MB gz off a
-4.93 MB first visit, ≈6 % of a budget we are using 12 % of), the speed benefit
+4.81 MB first visit, ≈7 % of a budget we are using 11.5 % of), the speed benefit
 needs kernels that stock browser runtimes do not provide, and the decision
 belongs **after** the baseline passes its own gates — §13 says exactly that.
 
@@ -209,8 +209,12 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
 2. **This laptop cannot produce trustworthy absolute timings.** Its load moves
    wall-clock numbers 2–3× between runs. Only interleaved same-process
    comparisons (minimum-of-N) are quoted as findings.
-3. **No real GPU, no real phone, no Safari, no screen reader, no live
-   microphone.** Every one of those is a NOT TESTED above.
+3. **No real phone, no Safari, no screen reader, no live microphone.** Every one
+   of those is a NOT TESTED above. Two former entries on this list have since
+   been closed: the **real GPU** was reachable from `headless: 'new'` after all
+   (Intel HD 520, D3D11 — it is weak, and there is no discrete card, but it is
+   hardware), and **Firefox 156** now runs the built bundle end to end
+   (`npm run probe:firefox` 9/9, 2026-09-28).
 4. **WASM SIMD and WebGPU are unimplemented**, and the payoff cannot be measured
    here — this box runs scalar JS ~10× below its own specification.
 5. **The §4 code chunk is at 45.9 %** with 81 KB of headroom, so the budget is a

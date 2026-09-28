@@ -23,7 +23,7 @@ points at a lane in this file (or names why it does not exist).
 | Item | Status | Value / where |
 |---|---|---|
 | AI bundle size | MEASURED | §4 lanes: chat **code** chunk **71,465 B gz = 46.5 %** of budget; worker-only module **13,296 B gz** |
-| Model download size | MEASURED | **5,059,584 B** raw, **4.93 MB gz** on the first visit; **0 B on the second visit** (§9.3 cache) |
+| Model download size | MEASURED | **5,059,584 B** raw · **4,812,515 B gz** on the first visit (`npm run bundle` → `firstUseGz`, **11.5 %** of §4's 40 MB) · **0 B on the second visit** (§9.3 cache) |
 | WebGPU vs WASM behaviour | **NOT TESTED as speed**; investigated on paper (§19) | this box runs scalar JS ~10× below its own spec, so the comparison cannot be made here; no WGSL or wasm-SIMD kernel was written. `probeWebGPU()` reports the capability and **accelerates nothing** |
 | Mobile behaviour | **MEASURED under emulation only** (390×844, 43/43) | a **real phone is NOT TESTED** |
 | Voice model sizes | **N/A — nothing is shipped.** TTS is the browser's `speechSynthesis`, STT is the platform recogniser, VAD is hand-written energy code (`ai/voice/vad.mjs`). There is no model file under `ai/voice/` | — |
@@ -1073,6 +1073,56 @@ patched on a hunch.
 * Panel ready scales cleanly with CPU (815 → 1,091 → 1,502 ms). That is a useful signal about
   the *other* number: the same probe has reported 19.3–27.9 s for this same step on this same
   box, so that spread is machine load, not a property of the assistant.
+
+---
+
+### Firefox, on the shipped bundle (2026-09-28, R1, §16's P7 gate)
+
+P7's gate says the runtime must work on **"Chrome + Firefox (+ Safari if available)"**. Chrome
+had been driven end to end since P2; Firefox had *never* been run, and the report said so.
+Firefox **156.0.1 is installed on this box** (MSIX), so the "if available" clause did not
+apply — the gap was a missing test, not missing hardware.
+
+**New probe, `dev-firefox-probe.js` (`npm run probe:firefox`), scoped deliberately.** It is
+**not** a port of the 46-check Chrome probe: that one leans on CDP
+(`Emulation.setCPUThrottlingRate`, `Network.setBlockedURLs`, worker events) and Firefox speaks
+WebDriver BiDi, so a port would be a second, drifting copy. This is a 9-check smoke that answers
+one question — does the shipped bundle *run* here — and it says so in its own output.
+
+| Check | Result (R1 · Firefox 156.0.1 · `headless: true` · **built bundle** on `:5582` · 2026-09-28) |
+|---|---|
+| zero AI requests **before the click** | **0** of 56 requests (instrument proven: the listener saw the other 56) |
+| launcher → panel | opened, `state=ready`, **1,787–2,028 ms** after the click (three runs: 1,787 / 1,999 / 2,028) |
+| tier chosen | **T1 · LITE**, badge `T1 · MODEL READY` — the same tier Chrome picks on this box |
+| model phase | `ready` |
+| a real answer | **27.1–29.1 s** in-browser (three runs), badge `AI ANSWER · ON-DEVICE MODEL` |
+| answer is text, not markup | yes (no `script`/`img`/`iframe` in the bubble) |
+| §11 honest degradation | microphone **disabled with the reason in `title`**: *"This browser has no speech recognition, so voice mode stays off…"* — Firefox has no `SpeechRecognition`, and the button says so instead of going quietly dead |
+| capabilities read by the tier | `STT=false TTS=true moduleWorker=true storage=true` |
+| page errors · console errors/warnings · failed requests | **0 · 0 · 0** |
+| wasm SIMD + module worker + Cache Storage | all present and exercised (the answer *is* the evidence: weights are fetched, SHA-256 checked and run in a worker) |
+
+**Two instrument bugs this found, both in the probe rather than the product:**
+
+* The first run failed a check called *"no third-party request"* on Google Fonts and the GSAP
+  CDN — dependencies the portfolio has always had. The promise (§2 N6/§14) is about the
+  **assistant**, so the check now asserts *every AI asset is same-origin* and merely reports the
+  portfolio's own off-site list (**26** requests to `fonts.googleapis.com`, `fonts.gstatic.com`,
+  `cdn.jsdelivr.net`). A page-wide same-origin assertion was never true and would have failed
+  forever.
+* The reason the microphone is off lives in `title`, while `aria-label` carries only the state
+  (`"Voice mode is off"`). Reading the label as the reason passed on a string that explains
+  nothing; the check now reads `title` and treats the working-microphone label (`"Talk to the
+  assistant"`) as the distinguishable failure.
+
+**Firefox's own trap, for whoever runs this next:** the user-facing alias
+(`…\WindowsApps\firefox.exe`) is **EACCES** to a non-packaged process, so `executablePath` has to
+point into the package VFS (`…WindowsApps\Mozilla.Firefox_156.0.1.0_x64__n80bbvh6b1yt2\VFS\…`).
+`FF_BIN` overrides it.
+
+**Still NOT TESTED after this:** Firefox on a *real* device or a phone, Firefox with a live
+microphone (Firefox has no recogniser at all, so that path is a permanent no), and **Safari** —
+no macOS or iOS host exists here.
 
 ---
 

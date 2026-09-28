@@ -152,6 +152,7 @@ yours to work around.
 | F3 | If you have the dev machine: `npm run probe:resources` | paste the tail into the chat — it prints its own tally |
 | F4 | Optional: `npm run probe:degrade` | §14's T0 and download-failure paths are already **20/20 automated** (`docs/BENCHMARKS.md`); run it if you want to see them. Two of those checks can only be cheated by the probe itself, so if it ever prints fewer than 20/20, that is a real finding |
 | F5 | Optional, for a slow-network simulation: `PORT=5581 FAIL_MODEL=1 node dev-server.mjs` | 404s every model asset, which is how the failure path is driven without touching shipped code |
+| F6 | Optional: `npm run probe:firefox` | Firefox 156 already passes **9/9** on this machine (`docs/BENCHMARKS.md`); if it prints fewer, that is a real finding. On a fresh machine set `FF_BIN` to the Firefox binary — the Windows Store alias is unreadable to Node |
 
 ---
 
