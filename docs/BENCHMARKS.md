@@ -5,6 +5,32 @@ is labelled ESTIMATED or NOT TESTED — never rounded up into a pass.
 
 ---
 
+## §15 protocol, rolled up (written 2026-09-28)
+
+§15 asks for five things. This table says where each one landed; every claim
+points at a lane in this file (or names why it does not exist).
+
+| §15 step | Status | Where |
+|---|---|---|
+| 1. Baseline before any change — JS bytes + request count, Lighthouse (LCP/TBT), 30 s scroll (median, p95, dropped > 20 ms, main-thread busy %) | **MEASURED**, with two labels carried from `metricProvenance`: main-thread busy % is **ESTIMATED** (long-task ms / wall ms, excludes sub-50 ms tasks) and **Lighthouse TBT is NOT TESTED** (no `lighthouse` CLI run; `tbtProxyMs` is a long-task sum, not Lighthouse's TBT) | `docs/BASELINE.json` · "P0 baseline" below |
+| 2. Reference profiles — R1 laptop · R2 DevTools 4×/6× (+ Slow 4G for downloads) · R3 mobile emulation · R4 real Android/iPhone | **R1–R3 MEASURED; R4 NOT TESTED.** The throttles ran at **4× and 6× CPU**; **Slow 4G was not applied** — download behaviour was measured as first-visit size and the offline-after-cache path instead, not under bandwidth throttling | "§4's reference profiles" below · §9.3 cache lane · checklist §D |
+| 3. After-states — panel closed · chat idle · generating · voice active, plus a **10-minute Proactive soak** and **5 open/close cycles** | **MEASURED** (the soak ran 2026-09-22, microphone active) | "Resource + lifecycle (§15.3)" and "Lifecycle, and the 10-minute Proactive soak" below |
+| 4. Memory honesty — say what the heap figure covers, and carry manual Task Manager / Web Inspector numbers | **MEASURED and labelled** — every heap figure is the Chromium **JS heap only** (wasm and GPU are invisible to it); the manual cross-check is **NOT TESTED** | "What the heap numbers do not cover" below |
+| 5. AI bundle size · model download size · WebGPU vs WASM · mobile behaviour · voice model sizes · STT/TTS latency | see the item-by-item table below | — |
+
+### §15.5's list, item by item
+
+| Item | Status | Value / where |
+|---|---|---|
+| AI bundle size | MEASURED | §4 lanes: chat **code** chunk **71,465 B gz = 46.5 %** of budget; worker-only module **13,296 B gz** |
+| Model download size | MEASURED | **5,059,584 B** raw, **4.93 MB gz** on the first visit; **0 B on the second visit** (§9.3 cache) |
+| WebGPU vs WASM behaviour | **NOT TESTED as speed**; investigated on paper (§19) | this box runs scalar JS ~10× below its own spec, so the comparison cannot be made here; no WGSL or wasm-SIMD kernel was written. `probeWebGPU()` reports the capability and **accelerates nothing** |
+| Mobile behaviour | **MEASURED under emulation only** (390×844, 43/43) | a **real phone is NOT TESTED** |
+| Voice model sizes | **N/A — nothing is shipped.** TTS is the browser's `speechSynthesis`, STT is the platform recogniser, VAD is hand-written energy code (`ai/voice/vad.mjs`). There is no model file under `ai/voice/` | — |
+| STT/TTS latency | **NOT TESTED** | no microphone and no audio output here; headless Chrome only ever reaches the refusal path |
+
+---
+
 ## The retrieval gate, calibrated (§8.2/§8.4) — 2026-09-22
 
 **Method:** `npm run calibrate` → `docs/CALIBRATION.json`. It sweeps
@@ -185,10 +211,11 @@ governor's unit tests pin both directions, and the gate was mutation-tested
 
 ### NOT MEASURED (the honest gaps)
 
-* **The 10-minute Proactive soak has not been run.** The probe supports it
-  (`SOAK_MS=600000 CYCLES=5 node dev-resource-probe.js`) and no soak is claimed
-  without it. There is also no microphone in this build, so "Proactive" is a
-  mode flag, not a running feature — a soak today would measure an idle panel.
+* ~~**The 10-minute Proactive soak has not been run.**~~ **Superseded 2026-09-22:**
+  it was then run, with the microphone active — see *"Lifecycle, and the
+  10-minute Proactive soak"* below. At the time of this lane the probe's
+  `SOAK_MS=600000 CYCLES=5` path existed but had not been exercised, and with no
+  microphone in the build a soak would have measured an idle panel.
 * **No real GPU.** Every number above is software GL, where shader compilation
   is pathologically slow. The 1.2 s relink is *expected* to be far smaller on
   real hardware — **and that is an expectation, not a measurement.**

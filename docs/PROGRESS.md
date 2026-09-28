@@ -5,6 +5,35 @@ Never report a phase as done unless its gate passed (or the gap is written down 
 
 ---
 
+## §16 phase gates, rolled up (written 2026-09-28)
+
+§16 gives every phase a Gate. The phase entries below each carry their own
+verdict; this table is the single place that states, for all eleven at once,
+whether the gate passed. Every ✅/⚠️ points at the phase entry or a
+`docs/BENCHMARKS.md` lane that produced it — nothing here is asserted.
+
+| Phase | Gate (§16) | Verdict | Evidence |
+|---|---|---|---|
+| **P0** Audit + baseline | `AUDIT.md` + baseline JSON exist | ✅ **PASSED** | `docs/AUDIT.md`, `docs/BASELINE.json` · Phase 0 below |
+| **P1** Knowledge | Tests pass; Quick Answers usable standalone; PII list approved | ✅ **PASSED in code and tests** — Quick Answers answers with **no model**; the **PII list sign-off is owner-side and still open** (C4/C5) | Phase 1 below · `docs/PRIVACY.md` |
+| **P2** Chat shell + Governor | Budgets met with UI alone; network assertion; a11y checks; no jank vs baseline | ⚠️ **PASSED, one item qualified** — budgets, the pre-click network assertion and no-jank are measured; accessibility is **mechanical only** (focus, Esc, roles, overflow), **no screen-reader pass** | Phase 2 below · §15.3 lane |
+| **P3** Tokenizer + model code | Loss decreases; resume verified; param count printed | ✅ **PASSED** | Phase 3 below |
+| **P4** Stage A training | Val curve, samples, checkpoints, resume verified | ⚠️ **GAP — the config-A run has never executed** (needs a GPU this box does not have); the `local` config passes every item | Phase 4 below · `docs/TRAINING.md` |
+| **P5** Stage B + eval | Ship gates measured and reported | ✅ **MEASURED AND REPORTED — and they FAIL.**  factual accuracy **18.9 %** against the 95 % gate, abstention recall **0 %**, HI+Hinglish **80 %**. The *phase* gate is "measured and reported"; the quality gates themselves do not pass | §14 lane · `docs/EVALUATION.json` |
+| **P6** CPU inference + export | Parity OK; sizes measured | ✅ **PASSED** | `npm run verify:engine` · §9 lane |
+| **P7** Browser runtime | Chrome + Firefox (+ Safari); budgets met; frame-health A/B with Three.js | ⚠️ **PASSED on Chrome** (budgets met, A/B on the real GPU); **Firefox and Safari NOT TESTED** | §4 reference profiles · "shipped bundle in a browser" |
+| **P8** Voice | State-machine tests; mic-denied/unsupported; lazy-load assertion; per-tier memory | ⚠️ **PASSED except per-tier voice memory (NOT TESTED)** and any live microphone | §11 lanes (voice input + soak) |
+| **P9** Perf hardening | ≤ 10 % median-FPS regression; no leak over 5 open/close cycles | ⚠️ **PASSED on R1/R2** (0 %, −2.5 %, +0.3 % drift; 0 MB / 0 nodes / 0 listeners over 5 cycles); R3 is emulation only and **R4 a real phone is NOT TESTED** | §4 reference profiles · §15.3 lane |
+| **P10** Ternary | Written go/no-go | ✅ **PASSED** — written **NO-GO** | `experiments/ternary/README.md` |
+| **P11** Final QA + docs | Definition of Done met or gaps listed honestly | ✅ **PASSED** — every gap is listed in the report, not hidden | `docs/FINAL_REPORT.md` §18 checklist |
+
+**The three real gaps, one line each:** P4's config-A run needs a GPU this
+machine does not have; P7/P8/P9 have never seen Firefox, Safari, a real phone or
+a live microphone; and P5's quality gates fail on a checkpoint trained to prove
+the pipeline, not to answer well. None of the three is a code gap.
+
+---
+
 ## Phase 0 — Audit + baseline
 
 **Status:** ✅ **GATE PASSED** (both gate artefacts exist)
