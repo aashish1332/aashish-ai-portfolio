@@ -413,7 +413,7 @@ and not a wikitext parser; `MARKUP_LIMITATIONS` names what it misses.
    the free tier's ~30 h/week; on a T4 expect the *measured* figure to differ by
    a large factor, which is exactly why it is measured first.
 
-6. **Stage A training, resumable:**
+7. **Stage A training, resumable:**
 
    ```bash
    python -m training.scripts.train_stage_a \
@@ -429,6 +429,56 @@ and not a wikitext parser; `MARKUP_LIMITATIONS` names what it misses.
    second training loop is how "the resume is verified" stops being true of the
    thing that actually trained. Every later session runs the identical command:
    it resumes from `latest.pt` and reports the step and the tokens consumed.
+
+8. **Stage B (instruction tuning) — not optional, and it needs the Stage A
+   checkpoint as its `--init`.** §7.4's frame `<|ctx|>…<|asst|>` appears in
+   **4 of 17,265** pretraining documents, so a Stage A-only checkpoint has never
+   seen the format it is asked to continue. The data is generated first (it is a
+   build output and git-ignored, ~31 MB at 40k examples):
+
+   ```bash
+   python -m training.scripts.make_instruction_data \
+       --tokenizer ai/tokenizer/artifacts/stage-a-12k \
+       --out data/instruction/sft.jsonl --count 40000
+
+   python -m training.scripts.train_stage_b \
+       --config A --init /kaggle/working/checkpoints/stage-a/latest.pt \
+       --tokenizer ai/tokenizer/artifacts/stage-a-12k \
+       --data data/instruction/sft.jsonl \
+       --run-dir /kaggle/working/checkpoints/sft-a \
+       --steps 3000 --batch 8 --block 1024 --grad-accum 2 --lr 5e-5 --warmup 100 \
+       --eval-every 100 --save-every 100 --amp \
+       --max-minutes 540 --resume auto --gate
+   ```
+
+   The mask is the thing to get right, and it is measured rather than assumed:
+   loss is taken **only on assistant tokens** (`-100` elsewhere), the BPE leading
+   space is part of the first answer token, and every example must carry exactly
+   one `<|eot|>` or the window supervises nothing and the step goes NaN. At the
+   `local` config, 40,000 examples measured **10,582,527 tokens**, of which
+   **1,155,200 (10.9 %)** are supervised — the manifest had estimated that figure
+   **31 % low**. `training/notebooks/train_stage_b.ipynb` drives the identical
+   command (its flags are the ones quoted above, not a parallel set); the
+   notebook also runs `train_stage_b --pipeline-only` **first**, because the
+   mask is the failure mode that produces NaN rather than an error;
+   `tests/py/test_notebook_refs.py` checks the notebook against the modules it
+   calls, so a renamed flag is a test failure rather than a session that dies an
+   hour in.
+
+   Then read the result without exporting or opening a browser — locally, on the
+   machine that holds the checkpoint (the `npm run` wrappers default to
+   `training/checkpoints/sft-local`, so a Kaggle run is copied back into that
+   path or the flags are passed explicitly):
+
+   ```bash
+   npm run sample:answers   # what a checkpoint actually answers, no browser
+   npm run eval:prompts && npm run eval:export && npm run eval:decode && npm run eval:report
+   ```
+
+   The last line is §14's pipeline, and it writes `docs/EVALUATION.json` with the
+   gate verdict. **Expect it to fail today** — at the `local` config the gates
+   are factual **18.9 %** against a 95 % bar. A quality gate that passes on a
+   pipeline artifact would be the alarming result, not the reassuring one.
 
 ### 7.3 Persistence, because sessions die
 
