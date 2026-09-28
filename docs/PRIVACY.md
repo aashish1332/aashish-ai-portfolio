@@ -38,8 +38,53 @@ which one you are in rather than implying the better one).
 **And a limit on that:** the on-device path is exercised by tests against a
 double, never against a real microphone on a real machine. Treat the sentence
 as the platform's claim, relayed — see `docs/RESEARCH_VERIFICATION.md` row 6
-and `docs/MANUAL_TEST_CHECKLIST.md` §D, which asks the tester to check that the
-sentence matches `SpeechRecognition.available()` on their own browser.
+and `docs/MANUAL_TEST_CHECKLIST.md` §D, which asks the tester to check thatthe sentence matches `SpeechRecognition.available()` on their own browser.
+
+### §2 N3, and the one place this build deviates from it
+
+**N3 says: "Visitor text and voice never leave the device… Any remote
+speech-recognition mode is disabled."** Everything above is true of typed text,
+and true of voice only in the two-part sense described — so this is a
+**recorded deviation**, not something the docs should be read as satisfying.
+
+The reason is a platform limit, stated plainly: the browser's `SpeechRecognition`
+has **no on-device-only switch**. `processLocally: true` is a *request*, honoured
+only when the machine already has the language pack and the platform reports
+`available`; there is no flag that forbids the network path, and no callback that
+tells you the audio reached a server. Shipping speech input therefore means
+either accepting the platform's default, or shipping our own STT model — which
+§2 N4 explicitly permits ("STT / TTS / VAD may use open pretrained models") at the
+cost of a download §4 budgets against a 40 MB first use we are already spending
+12 % of.
+
+What was done instead, so the deviation is minimised rather than merely admitted:
+
+1. the platform is **asked** once per session (`SpeechRecognition.available({ processLocally: true, langs })`);
+2. `processLocally` is set **only** on `'available'` — never speculatively;
+3. `install()` is **never called**, because a press of a microphone button is not
+   consent to start a language-pack download;
+4. the panel **says which mode it is in, in words**, at the moment voice turns on,
+   and shows the *cautious* sentence while the question is still open — a privacy
+   claim may be under-made while waiting and never over-made;
+5. **voice is opt-in**, and the typed path is unaffected, which the build gate
+   proves structurally: no shipped `ai/**` script contains an absolute URL, so
+   there is no host for a question, an answer or an audio buffer of ours to reach;
+6. if a visitor or the owner wants the strict reading, the switch is to treat
+   "no on-device recognition" as *voice unsupported* rather than as *server-side
+   voice* — a policy decision on `caps.mjs`, deliberately **not taken here**,
+   because it would remove voice from most browsers. It is listed in
+   `docs/FINAL_REPORT.md` under "What I need from you".
+
+---
+
+**And the product says it as well as this file does.** The panel's **ABOUT**
+control (footer, beside the trust line) opens a card built from
+`ABOUT_SECTIONS` in `ai/ui/chat.mjs`, which names the model as ours and
+scratch-built, names speech recognition and speech output as the browser's, and
+states **both** voice outcomes — the on-device request and the server-side
+fallback — rather than only the better one. `tests/disclosure.test.mjs` holds
+that text and its wiring, and the e2e probes open the card the way a visitor
+does once per engine.
 
 ---
 

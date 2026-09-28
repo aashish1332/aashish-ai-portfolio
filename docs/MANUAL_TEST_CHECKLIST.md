@@ -48,6 +48,7 @@ Do this **first** — most of what follows is a comparison against it.
 | B7c | In DevTools, look at the `[id] value` lines the answer used (`window.PortfolioAI.model.last.context`) | every claim in the sentence is traceable to one of those lines |
 | B8b | Press **Stop** mid-answer | the panel stops waiting immediately; the partial text stays and the badge reads `PARTIAL ANSWER · STOPPED BY YOU` — never the verified one. **Stop during the prefill (the common case) shows the “stopped before I had written anything” line instead, and the worker still finishes that pass in the background** — that is by design, not a hang |
 | B8c | Press **Stop**, then **Retry** | Retry appears only when the last turn did not answer; pressing it asks the same question again as a fresh generation |
+| B8d | Press **ABOUT** in the panel footer | a card says which parts are ours (the model, from scratch) and which are the browser's (speech recognition, speech output). It must name **both** voice outcomes, and pressing Esc must close the card and leave the **panel** open |
 | B9 | Press Esc | panel closes, focus returns to the button |
 | B9b | Close the panel and leave it for **~2 minutes**, then reopen | the model is unloaded (no worker in DevTools) and reloads from cache on the next question |
 | B10 | Reload the page while the panel is open | page still works; nothing AI loads before a click |

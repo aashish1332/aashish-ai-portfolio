@@ -22,7 +22,7 @@ points at a lane in this file (or names why it does not exist).
 
 | Item | Status | Value / where |
 |---|---|---|
-| AI bundle size | MEASURED | §4 lanes: chat **code** chunk **71,465 B gz = 46.5 %** of budget; worker-only module **13,296 B gz** |
+| AI bundle size | MEASURED | §4 lanes: chat **code** chunk **72,777 B gz = 47.4 %** of budget (`npm run bundle` → `chatChunkGz`, 2026-09-28; 71,465 B gz before §2 N4's disclosure); worker-only module **13,296 B gz** |
 | Model download size | MEASURED | **5,059,584 B** raw · **4,812,515 B gz** on the first visit (`npm run bundle` → `firstUseGz`, **11.5 %** of §4's 40 MB) · **0 B on the second visit** (§9.3 cache) |
 | WebGPU vs WASM behaviour | **NOT TESTED as speed**; investigated on paper (§19) | this box runs scalar JS ~10× below its own spec, so the comparison cannot be made here; no WGSL or wasm-SIMD kernel was written. `probeWebGPU()` reports the capability and **accelerates nothing** |
 | Mobile behaviour | **MEASURED under emulation only** (390×844, 43/43) | a **real phone is NOT TESTED** |
@@ -1086,8 +1086,10 @@ apply — the gap was a missing test, not missing hardware.
 **New probe, `dev-firefox-probe.js` (`npm run probe:firefox`), scoped deliberately.** It is
 **not** a port of the 46-check Chrome probe: that one leans on CDP
 (`Emulation.setCPUThrottlingRate`, `Network.setBlockedURLs`, worker events) and Firefox speaks
-WebDriver BiDi, so a port would be a second, drifting copy. This is a 9-check smoke that answers
-one question — does the shipped bundle *run* here — and it says so in its own output.
+WebDriver BiDi, so a port would be a second, drifting copy. This is an **11-check** smoke that
+answers one question — does the shipped bundle *run* here — and it says so in its own output.
+(It was 9 checks when it was first written; the two §2 N4 checks were added with the disclosure
+they check.)
 
 | Check | Result (R1 · Firefox 156.0.1 · `headless: true` · **built bundle** on `:5582` · 2026-09-28) |
 |---|---|
@@ -1099,6 +1101,8 @@ one question — does the shipped bundle *run* here — and it says so in its ow
 | answer is text, not markup | yes (no `script`/`img`/`iframe` in the bubble) |
 | §11 honest degradation | microphone **disabled with the reason in `title`**: *"This browser has no speech recognition, so voice mode stays off…"* — Firefox has no `SpeechRecognition`, and the button says so instead of going quietly dead |
 | capabilities read by the tier | `STT=false TTS=true moduleWorker=true storage=true` |
+| §2 N4: the ABOUT control opens the disclosure card | yes |
+| §2 N4: the card names **both** voice outcomes | yes — Firefox is the engine where that matters, since it has no recogniser at all |
 | page errors · console errors/warnings · failed requests | **0 · 0 · 0** |
 | wasm SIMD + module worker + Cache Storage | all present and exercised (the answer *is* the evidence: weights are fetched, SHA-256 checked and run in a worker) |
 
@@ -1401,6 +1405,13 @@ headless Chrome with the GPU:
 | checks | **46/46**, 0 console errors, 0 page errors, 0 failed requests |
 | tier / panel ready | **T1 · MODEL READY**, **2,132 ms** |
 | first answer | **30,660 ms** |
+
+**Updated 2026-09-28:** the check set has since grown to **54** (the eight §2 N4 disclosure checks
+were added with the feature), and a full run on the built bundle passes **54/54** — 0 console
+errors, 0 page errors, 0 failed requests, `T1 · MODEL READY`. One earlier run of the same build
+lost a single check; the re-run did not reproduce it, and the failing line is not recorded because
+the first run's output was piped through `tail`. That is an instrument gap in how the probe was
+invoked, not a result.
 | a topic question | `kind=model`, **12 facts**, 12 sources — one real answer |
 | frames, panel closed → open | 33.2 → 33.3 ms = **0.3 %** (p95 **1×**), ladder `step=0` |
 | control (open, sampled twice) | 33.3 → 33.2 ms = −0.3 % — this box's bimodal baseline |

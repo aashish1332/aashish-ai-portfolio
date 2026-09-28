@@ -21,7 +21,7 @@ whether the gate passed. Every ✅/⚠️ points at the phase entry or a
 | **P4** Stage A training | Val curve, samples, checkpoints, resume verified | ⚠️ **GAP — the config-A run has never executed** (needs a GPU this box does not have); the `local` config passes every item | Phase 4 below · `docs/TRAINING.md` |
 | **P5** Stage B + eval | Ship gates measured and reported | ✅ **MEASURED AND REPORTED — and they FAIL.**  factual accuracy **18.9 %** against the 95 % gate, abstention recall **0 %**, HI+Hinglish **80 %**. The *phase* gate is "measured and reported"; the quality gates themselves do not pass | §14 lane · `docs/EVALUATION.json` |
 | **P6** CPU inference + export | Parity OK; sizes measured | ✅ **PASSED** | `npm run verify:engine` · §9 lane |
-| **P7** Browser runtime | Chrome + Firefox (+ Safari); budgets met; frame-health A/B with Three.js | ⚠️ **PASSED on Chrome AND Firefox** (2026-09-28, `dev-firefox-probe.js` 9/9 on the built bundle; budgets met; A/B on the real GPU); **Safari NOT TESTED** — no macOS/iOS host here | §4 reference profiles · "Firefox, on the shipped bundle" |
+| **P7** Browser runtime | Chrome + Firefox (+ Safari); budgets met; frame-health A/B with Three.js | ⚠️ **PASSED on Chrome AND Firefox** (2026-09-28: `dev-ai-probe.js` **54/54** and `dev-firefox-probe.js` **11/11**, both on the built bundle; budgets met; A/B on the real GPU); **Safari NOT TESTED** — no macOS/iOS host here | §4 reference profiles · "Firefox, on the shipped bundle" |
 | **P8** Voice | State-machine tests; mic-denied/unsupported; lazy-load assertion; per-tier memory | ⚠️ **PASSED except per-tier voice memory (NOT TESTED)** and any live microphone | §11 lanes (voice input + soak) |
 | **P9** Perf hardening | ≤ 10 % median-FPS regression; no leak over 5 open/close cycles | ⚠️ **PASSED on R1/R2** (0 %, −2.5 %, +0.3 % drift; 0 MB / 0 nodes / 0 listeners over 5 cycles); R3 is emulation only and **R4 a real phone is NOT TESTED** | §4 reference profiles · §15.3 lane |
 | **P10** Ternary | Written go/no-go | ✅ **PASSED** — written **NO-GO** | `experiments/ternary/README.md` |
@@ -44,7 +44,7 @@ verifies it — a hygiene claim nobody can check is not hygiene.
 | §17 requirement | State | What verifies it |
 |---|---|---|
 | Structure: the listed tree, *"roughly … adapt to the project's conventions"* | **ADAPTED, and the differences are named** — there is no bundler or framework (`docs/AUDIT.md`), so `ai/` holds the model/tokenizer/engine/retrieval/governor/voice modules and `js/ai/launcher.js` is the `components/` seam; `training/` · `inference/` · `evaluation/` · `experiments/ternary/` exist as named. `data/portfolio` and `data/general` are **not** directories: the portfolio source is the CV (parsed once, `docs/AUDIT.md`) and general text lives under `data/raw/*` | `docs/AUDIT.md` · repo tree |
-| Docs explain model · tokenizer · training · retrieval · browser runtime · quantisation · voice · performance · limitations · fallbacks · which parts are pretrained | **MET** | `docs/AI_ARCHITECTURE.md` (§2 tokenizer, §3 model, §4 retrieval/language, §5 voice, §6 runtime/export/quantisation, §7 dev-prod, §8 *what is deliberately not claimed*) · `docs/TRAINING.md` · `docs/BENCHMARKS.md` (performance) · `docs/DATA_LICENSES.md` (corpus licences, incl. the disabled Hinglish source) |
+| Docs explain model · tokenizer · training · retrieval · browser runtime · quantisation · voice · performance · limitations · fallbacks · which parts are pretrained | **MET** — and since 2026-09-28 the same answer is in the product: the panel's **ABOUT** control opens a disclosure card (`ai/ui/chat.mjs` `ABOUT_SECTIONS`, `tests/disclosure.test.mjs`) | `docs/AI_ARCHITECTURE.md` (§2 tokenizer, §3 model, §4 retrieval/language, §5 voice, §6 runtime/export/quantisation, §7 dev-prod, §8 *what is deliberately not claimed*) · `docs/TRAINING.md` · `docs/BENCHMARKS.md` (performance) · `docs/DATA_LICENSES.md` (corpus licences, incl. the disabled Hinglish source) |
 | Dev vs prod: verbose logs / benchmarks / debug overlays dev-only; prod minimal logs, graceful errors, compact assets | **MET, most of it by absence.** The shipped `ai/` tree contains **zero** `console.*` calls, so there is no verbose logging to strip; every debug overlay and probe lives outside the bundle; and the build strips comments from shipped `ai/**` (**−69,817 B gz** — that is the compact-asset half). The build **refuses** to ship a dev reference: `DEV_ONLY_PATTERNS` fails on a `dev-*.js` name, `shots/`, the dev port, `training/checkpoints`, `data/raw`, `data/processed` | `tools/build.mjs` · `tests/build-bundle.test.mjs` |
 | Secrets: none in the repo or the bundle; no LLM API credentials, ever | **MET** | `tests/build-bundle.test.mjs` fails on a secret-shaped string in any shipped file, on an absolute URL in a shipped `ai/**` script, and on a hosted-LLM hostname; `.env*` is git-ignored and there is no key to hold |
 | Analytics: never send chat/voice content; at most anonymous counters, disclosed | **MET by not existing** — the portfolio ships **no** analytics at all (every `analytics` string in it is a project title), so nothing can be sent and there is nothing to disclose | `docs/PRIVACY.md` · `index.html` |
@@ -2793,7 +2793,8 @@ installed on this box**. The gate was not blocked on hardware; it was blocked on
 a test nobody had written.
 
 ### Done
-* `dev-firefox-probe.js` (`npm run probe:firefox`) — a **9-check** Firefox smoke
+* `dev-firefox-probe.js` (`npm run probe:firefox`) — an **11-check** Firefox smoke
+  (9 when first written; the two §2 N4 checks came with the disclosure they check)
   against the built bundle. Deliberately **not** a port of the 46-check Chrome
   probe: that one uses CDP (throttling, URL blocking, worker events) and Firefox
   speaks WebDriver BiDi, so a port would be a second, drifting copy of it.
@@ -2814,7 +2815,7 @@ a test nobody had written.
 | a real answer | **27.1–29.1 s** (three runs), badge `AI ANSWER · ON-DEVICE MODEL` |
 | §11 degradation | microphone **disabled with the reason in `title`** — Firefox has no `SpeechRecognition` |
 | page errors · console errors · failed requests | **0 · 0 · 0** |
-| verdict | **9/9** |
+| verdict | **11/11** |
 
 ### Bugs found (all three in the probe, not the product)
 | # | Bug | Why it mattered |
@@ -2895,3 +2896,61 @@ the change, so the committed tokenizer artifact is unaffected.
 ### Evidence
 `tests/py/test_docs_commands.py` · `training/scripts/make_seed_corpus.py`
 (`build_parser`, the stdout reconfigure) · `npm run test:py`
+
+---
+
+## §2 N4's UI half — the disclosure the brief asked for — 2026-09-28
+
+**Status:** ✅ **built, tested, and verified in two browsers.**
+
+### The clause, and what was missing
+§2 N4 permits STT / TTS / VAD to be pretrained open components on **one
+condition**: disclose it *"in README, docs and the UI 'About' popover"*. The
+README and the docs had been true from the start (`docs/PRIVACY.md` §2,
+`docs/AI_ARCHITECTURE.md` §5/§8). A search for an About control in the panel
+returned **nothing** — the popover had never been built. Found by auditing §2
+clause by clause, the same way the §15/§16 rollups found P7's Firefox gap.
+
+Worth stating plainly, because it changes what the disclosure *says*: **N4's
+permission was never needed.** Nothing pretrained ships. The voice stack has no
+model file at all — STT is the platform's `SpeechRecognition`, TTS is the
+platform's `speechSynthesis`, and the VAD is our own energy gate. So the honest
+content is "these parts are the browser's, the rest is ours", which is more
+than the clause asks for.
+
+### Done
+* `ABOUT_TITLE` / `ABOUT_SECTIONS` exported from `ai/ui/chat.mjs` as **frozen
+data**, not strings buried in the DOM builder — so the claim is testable
+without a browser, exactly the way `VOICE_STATE_WORDS` is.
+* An **ABOUT** control in the panel footer beside the trust line, opening a card
+as an absolutely positioned child of the panel (§12: never a layer over the
+film; no `backdrop-filter`; no animation, no frame loop).
+* **Escape closes the card before the panel.** A key that closed the whole panel
+while a card the visitor had just opened was on screen reads as a bug.
+* Focus moves into the card on open and back to the control on close;
+`aria-expanded` / `aria-controls` are wired; the panel's `close()` resets it
+**without** stealing focus from the launcher.
+* `tests/disclosure.test.mjs` — 7 tests, and the one that matters asserts that
+the voice sentence names **both** outcomes rather than only the good one.
+* `README.md` now says which components are ours and which are the browser's.
+
+### MEASURED
+| | |
+|---|---|
+| `dev-ai-probe.js` (built bundle · real GPU · Chrome) | **54/54** — the eight new §2 N4 checks |
+| `dev-firefox-probe.js` (built bundle · Firefox 156.0.1) | **11/11** |
+| `tests/disclosure.test.mjs` | **7 tests** |
+| §4 chat code chunk | **72,777 B gz = 47.4 %** (was 71,465 · 46.5 %; **+1,312 B gz**, ≈79 KB headroom) |
+| tests | **499 JS + 353 Python, 0 failures** · `npm run build` clean |
+
+### One instrument note, recorded rather than smoothed over
+The first Chrome run of the new check set reported **53/54**; the re-run of the
+same build reported **54/54** with nothing changed, and the failing line is not
+recoverable because that first run's output was piped through `tail`. On this
+box a one-check difference between two runs is the norm — `docs/BENCHMARKS.md`
+records the frame A/B disagreeing with *itself* by 93 % — so it is written down
+as a probe-invocation gap, not as a result.
+
+### Evidence
+`ai/ui/chat.mjs` · `ai/ui/styles.mjs` · `tests/disclosure.test.mjs` ·
+`dev-ai-probe.js` · `dev-firefox-probe.js` · `docs/PRIVACY.md` §2 · `README.md`

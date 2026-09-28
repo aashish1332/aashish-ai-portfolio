@@ -125,6 +125,40 @@ export const VOICE_STATE_WORDS = Object.freeze({
   standby: 'Voice mode is on, microphone released until you speak',
 });
 
+/* ── §2 N4's disclosure, as data ─────────────────────────────────
+   The brief asks the UI itself to say which parts of this assistant are ours
+   and which belong to the browser, so the text is a constant here rather than
+   a string buried inside the DOM builder — the same reason
+   `VOICE_STATE_WORDS` is one. A claim in a constant can be tested without a
+   browser, and `tests/voice.test.mjs` does exactly that.
+
+   Nothing in it is a claim about Aashish, so it never goes near the
+   Faithfulness Guard; and like every other string in this file it is rendered
+   as text, never as markup. */
+export const ABOUT_TITLE = 'What this assistant is';
+
+export const ABOUT_SECTIONS = Object.freeze([
+  { term: 'Your questions',
+    detail: 'Never leave this device. There is no server behind this panel and '
+      + 'no analytics watching it.' },
+  { term: 'The model',
+    detail: 'Written and trained from scratch for this portfolio: our own '
+      + 'tokenizer, architecture, training loop and instruction tuning. No '
+      + 'pretrained language model is used anywhere in it.' },
+  { term: 'Voice input',
+    detail: 'Your browser\u2019s own speech recognition, not ours. It is asked to '
+      + 'run on this device, and when the browser says it cannot, what you say '
+      + 'goes to the browser\u2019s speech service instead \u2014 the panel tells you '
+      + 'which of the two you are in, in words, every time voice turns on.' },
+  { term: 'Answers spoken aloud',
+    detail: 'Your browser\u2019s own voice. Nothing is sent anywhere, and no '
+      + 'recording is stored.' },
+  { term: 'What gets downloaded',
+    detail: 'One file: the model, from this site\u2019s own path, on the click '
+      + 'that starts the download and not before. Everything else \u2014 the '
+      + 'knowledge base, the routing, the guard \u2014 is already in the page.' },
+]);
+
 export function createChat(opts = {}) {
   const doc = opts.doc || document;
   const env = opts.env || window;
@@ -209,6 +243,10 @@ let working = 0;
   /* A disclosure waiting on the on-device question (§19) — see voiceChanged. */
   let disclosurePending = false;
   let voiceFailure = null;      /* the reason last spoken for a stop nobody asked for */
+  let aboutBtn = null;          /* §2 N4's disclosure control, in the footer */
+  let aboutCard = null;
+  let aboutClose = null;
+  let aboutOpen = false;        /* the topmost layer while it is open */
 
   /* ── section: DOM ─────────────────────────────────────────────── */
   function injectStyles() {
@@ -304,8 +342,20 @@ let working = 0;
     form.addEventListener('submit', (e) => { e.preventDefault(); submit(); });
 
     const foot = el('footer', 'ai__foot');
-    foot.appendChild(el('p', 'ai__trust',
-      'Runs on your device. What you type stays in your browser.'));
+    const trust = el('p', 'ai__trust',
+      'Runs on your device. What you type stays in your browser.');
+    foot.appendChild(trust);
+    /* §2 N4: a control rather than another line of small print. A paragraph
+       of caveats in a footer is read as decoration; a button is opened on
+       purpose, and the text behind it can be as long as it needs to be. */
+    aboutBtn = el('button', 'ai__about', 'ABOUT');
+    aboutBtn.type = 'button';
+    aboutBtn.setAttribute('aria-label',
+      'About this assistant: what runs on this device and what your browser provides');
+    aboutBtn.setAttribute('aria-expanded', 'false');
+    aboutBtn.setAttribute('aria-controls', 'aiAbout');
+    aboutBtn.addEventListener('click', () => setAbout(!aboutOpen));
+    foot.appendChild(aboutBtn);
 
     /* §10's message controls: **Stop**, **Retry**, **Clear**. Each one is a
        real `<button>` and none of them narrates itself. They live together so
@@ -340,13 +390,35 @@ let working = 0;
     foot.appendChild(controls);
     syncControls();
 
-    panel.append(head, log, chips, form, foot);
+    aboutCard = buildAboutCard();
+    panel.append(head, log, chips, form, foot, aboutCard);
     body.append(scrim, panel);
     doc.body.appendChild(body);
     return { tierBadge, chips };
   }
 
   /* ── section: rendering ───────────────────────────────────────── */
+  function buildAboutCard() {
+    const card = el('section', 'ai__about-card');
+    card.id = 'aiAbout';
+    card.hidden = true;
+    card.setAttribute('role', 'region');
+    card.setAttribute('aria-labelledby', 'aiAboutTitle');
+    const title = el('h2', 'ai__about-title', ABOUT_TITLE);
+    title.id = 'aiAboutTitle';
+    const list = el('dl', 'ai__about-list');
+    for (const section of ABOUT_SECTIONS) {
+      list.appendChild(el('dt', null, section.term));
+      list.appendChild(el('dd', null, section.detail));
+    }
+    aboutClose = el('button', 'ai__link', 'CLOSE');
+    aboutClose.type = 'button';
+    aboutClose.setAttribute('aria-label', 'Close this explanation');
+    aboutClose.addEventListener('click', () => setAbout(false));
+    card.append(title, list, aboutClose);
+    return card;
+  }
+
   function scrollToEnd() {
     if (userScrolledUp || !log) return;
     log.scrollTop = log.scrollHeight;                  /* no smooth: no motion cost */
@@ -1219,6 +1291,13 @@ let working = 0;
     body.classList.remove('is-open');
     body.hidden = true;
     state = 'closed';
+    /* the explanation never outlives the panel, and it resets WITHOUT taking
+       focus, because focus belongs to the launcher on the way out */
+    if (aboutOpen) {
+      aboutOpen = false;
+      if (aboutCard) aboutCard.hidden = true;
+      aboutBtn?.setAttribute?.('aria-expanded', 'false');
+    }
     launcher?.setAttribute?.('aria-expanded', 'false');
     launcher?.focus?.();                               /* focus returns to the button */
   }
@@ -1244,12 +1323,29 @@ let working = 0;
     if (body && !body.hidden) close(); else open();
   }
 
+  /* §2 N4's explanation, and the topmost layer while it is open — Escape has
+     to close IT first, because closing the whole panel while a card the
+     visitor just opened is on screen reads as a bug. */
+  function setAbout(on) {
+    if (!aboutCard) return false;
+    aboutOpen = !!on;
+    aboutCard.hidden = !aboutOpen;
+    aboutBtn?.setAttribute?.('aria-expanded', aboutOpen ? 'true' : 'false');
+    if (aboutOpen) aboutClose?.focus?.();
+    else aboutBtn?.focus?.();
+    return aboutOpen;
+  }
+
   /* ── public API (also used by dev-ai-probe.js) ────────────────── */
   const api = {
     open, close, toggle, ask, showAnchor,
     /* §10's message controls, exposed so the e2e probe can press them the way
        a person would rather than reaching into the shell's internals */
     stop, retry,
+    /* §2 N4's disclosure — the probe opens it through the same control a
+       visitor uses, so the check cannot drift from the real interaction */
+    about(on = true) { return setAbout(on); },
+    isAboutOpen() { return aboutOpen; },
     /* the voice layer flips this on; nothing else has to change */
     setHandsFree(on) { handsFree = !!on; return handsFree; },
     enableVoice: toggleVoice,
@@ -1317,7 +1413,11 @@ let working = 0;
        above did exactly that to dev-anchor-probe.js. A probe calls this
        INSIDE the page, where the node is just a node. */
     anchorElement: () => lastAnchor?.el || null,
-    onKey: (e) => { if (e.key === 'Escape' && body && !body.hidden) close(); },
+    onKey: (e) => {
+      if (e.key !== 'Escape' || !body || body.hidden) return;
+      if (aboutOpen) { setAbout(false); return; }   /* topmost layer first */
+      close();
+    },
   };
 
   return api;

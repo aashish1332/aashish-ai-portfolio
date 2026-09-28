@@ -176,6 +176,30 @@ const skip = (label, why) => console.log(`⚠ ${label.padEnd(30)} NOT VERIFIED �
     note('microphone', 'Firefox reported a recogniser — path differs from the documented case');
   }
 
+  /* ── 3b. §2 N4's disclosure ───────────────────────────────────────── */
+  const about = await page.evaluate(() => {
+    const btn = document.querySelector('.ai__about');
+    btn?.click();
+    const card = document.getElementById('aiAbout');
+    return {
+      exists: !!btn,
+      open: card ? !card.hidden : null,
+      text: (card?.textContent || '').replace(/\s+/g, ' ').trim(),
+    };
+  });
+  if (!about.exists) {
+    skip('§2 N4: the disclosure opens', 'no .ai__about in the DOM');
+  } else {
+    say('§2 N4: the disclosure opens', about.open === true, '');
+    /* the same both-outcomes rule the Chrome probe checks, on the one engine
+       where the voice half of it actually applies today */
+    say('§2 N4: it names both voice outcomes',
+      /speech recognition/i.test(about.text) && /on this device/i.test(about.text)
+        && /speech service/i.test(about.text),
+      `"${about.text.slice(0, 70)}…"`);
+    await page.evaluate(() => document.querySelector('.ai__about')?.click());  /* leave it closed */
+  }
+
   /* ── 4. an answer, or an honest refusal ───────────────────────────── */
   const modelPhase = await page.evaluate(() => window.PortfolioAI?.model?.state);
   note('model phase', modelPhase);

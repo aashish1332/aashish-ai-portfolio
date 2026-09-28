@@ -669,6 +669,59 @@ const say = (label, ok, detail) => {
   say('voice: EDIT puts the words back in the box', heard.after === 'who are you',
     `input="${heard.after}"`);
 
+  /* ── 6c. §2 N4 — the disclosure the brief asks the UI to carry ────
+     N4 lets STT/TTS/VAD be pretrained components only if that is disclosed
+     "in README, docs and the UI 'About' popover". This is the popover half,
+     met the way a visitor meets it: a control in the footer, a card that
+     opens, text that names the browser's speech pieces and BOTH voice
+     outcomes, and an Escape that closes the card rather than the panel
+     underneath it. */
+  const about = await page.evaluate(() => {
+    const btn = document.querySelector('.ai__about');
+    const before = {
+      exists: !!btn,
+      expanded: btn?.getAttribute('aria-expanded') ?? null,
+      cardHidden: document.getElementById('aiAbout')?.hidden ?? null,
+    };
+    btn?.click();
+    const card = document.getElementById('aiAbout');
+    return {
+      ...before,
+      afterHidden: card ? card.hidden : null,
+      expandedAfter: btn?.getAttribute('aria-expanded') ?? null,
+      focusInside: !!document.activeElement?.closest?.('#aiAbout'),
+      text: (card?.textContent || '').replace(/\s+/g, ' ').trim(),
+      hasMarkup: !!card?.querySelector('script,img,iframe'),
+    };
+  });
+  say('§2 N4: an About control exists', about.exists === true, `aria-expanded=${about.expanded}`);
+  say('§2 N4: it opens a card, and says so',
+    about.afterHidden === false && about.expandedAfter === 'true',
+    `hidden=${about.afterHidden} aria-expanded=${about.expandedAfter}`);
+  say('§2 N4: focus moves into the card', about.focusInside === true, '');
+  say('§2 N4: it names the browser\u2019s parts and ours',
+    /speech recognition/i.test(about.text) && /browser/i.test(about.text)
+      && /no pretrained/i.test(about.text),
+    `"${about.text.slice(0, 74)}…"`);
+  say('§2 N4: both voice outcomes are disclosed',
+    /on this device/i.test(about.text) && /speech service/i.test(about.text),
+    'naming only the on-device outcome would be the misleading version');
+  say('§2 N4: rendered as text, not markup', about.hasMarkup === false, '');
+
+  /* Escape must close the CARD first; the panel underneath stays open, which
+     is why section 7's press below is a second, separate Escape. */
+  await page.keyboard.press('Escape');
+  await new Promise((r) => setTimeout(r, 250));
+  const afterEsc = await page.evaluate(() => ({
+    cardHidden: document.getElementById('aiAbout')?.hidden ?? null,
+    panelOpen: window.PortfolioAI?.isOpen,
+    focusOnAbout: document.activeElement === document.querySelector('.ai__about'),
+  }));
+  say('§2 N4: Escape closes the card, not the panel',
+    afterEsc.cardHidden === true && afterEsc.panelOpen === true,
+    `cardHidden=${afterEsc.cardHidden} panelOpen=${afterEsc.panelOpen}`);
+  say('§2 N4: focus returns to the control', afterEsc.focusOnAbout === true, '');
+
   /* ── 7. Escape closes and returns focus ─────────────────────────── */
   await page.keyboard.press('Escape');
   await new Promise((r) => setTimeout(r, 350));

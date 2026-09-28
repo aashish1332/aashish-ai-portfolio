@@ -173,6 +173,18 @@ turns itself off and says why, rather than leaving a dead one switched on. The
 voice available here is your browser's, chosen by the answer's language; a
 clone of Aashish's own voice is a future feature, not this one.
 
+**What is ours, and what is the browser's — said plainly, because the brief
+asks for it.** The **language model, the tokenizer, the training loop and the
+instruction tuning are all scratch-built** for this portfolio, from random
+initialisation; **no pretrained LLM is used anywhere in it**. **Voice is the
+browser's**: speech recognition is the platform's own `SpeechRecognition` and
+speech output is its `speechSynthesis`, asked to run on this device when the
+platform says they can and disclosed in the panel either way — the distinction
+matters, so the panel names which of the two you are in rather than implying
+the better one. The voice-activity gate (deciding where speech starts and
+stops) is ours, and it ships **no model file at all**. The panel's **ABOUT**
+control states the same thing in the product itself.
+
 Nothing AI-related loads until you click: the launcher is **958 B gz** and
 the page makes **zero** AI requests before that. Opening and closing the panel
 is measured, not assumed: **0 DOM nodes, 0 listeners and 0 MB per reopen**, and

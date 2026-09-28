@@ -197,6 +197,43 @@ export const STYLES = `
   color: var(--paper-dim); text-decoration: underline; text-underline-offset: 3px;
 }
 .ai__link:hover, .ai__link:focus-visible { color: var(--accent); }
+
+/* §2 N4's disclosure control. Styled as a link, because it is a side note to
+   the trust line rather than a call to action. */
+.ai__about {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: .1em;
+  color: var(--paper-dim); text-decoration: underline; text-underline-offset: 3px;
+}
+.ai__about:hover, .ai__about:focus-visible { color: var(--accent); }
+
+/* The explanation itself: a card INSIDE the panel (an absolutely positioned
+   child of it), never a layer over the film — §12's rule is that nothing the
+   assistant draws may touch the canvas — and it scrolls in its own box, so
+   opening it cannot move the page. No backdrop-filter, no animation, no
+   frame loop. */
+.ai__about-card {
+  position: absolute; inset: 0; z-index: 3;
+  display: flex; flex-direction: column;
+  padding: 16px; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--panel, #141418); color: var(--paper);
+}
+/* the stylesheet's own display rule would otherwise keep a closed card on
+   screen — the same trap §10's controls carry a comment about */
+.ai__about-card[hidden] { display: none; }
+.ai__about-title {
+  font-family: var(--font-display); font-size: 15px; letter-spacing: .08em;
+  margin: 0 0 4px; line-height: 1.2;
+}
+.ai__about-list { margin: 0; }
+.ai__about-list dt {
+  font-family: var(--font-mono); font-size: 9px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--cyan); margin-top: 12px;
+}
+.ai__about-list dd {
+  margin: 3px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--paper-dim);
+}
+.ai__about-card .ai__link { margin: 16px 0 0; align-self: flex-start; }
 /* §10's message controls (Stop / Retry / Clear) sit together at the right of
    the footer. They are revealed by the hidden attribute, so the stylesheet
    has to let that win — a display rule from this file would otherwise keep an
