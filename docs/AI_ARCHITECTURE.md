@@ -543,6 +543,8 @@ That is an allow-list entry with a reason, not a default.
 
 ## 8. What is deliberately not claimed
 
+**Which parts are pretrained, stated once (§17/§18).** §18's claim ends "(STT/TTS/VAD, if used, are disclosed as open pretrained components)". Here that clause resolves to **not used**: every weight that runs in the browser — tokenizer, model, retrieval ranks, guard — is ours, trained from random init (§7), and the voice stack ships **no model file at all**. STT is the browser's own `SpeechRecognition`, TTS is the browser's own `speechSynthesis`, and the VAD is hand-written energy code in `ai/voice/vad.mjs`. The §19 candidates (Moonshine, Silero, Kokoro, sherpa-onnx, wlama) were researched and **none is shipped** — see [RESEARCH_VERIFICATION.md](RESEARCH_VERIFICATION.md). Nothing third-party is downloaded, so there is nothing pretrained to disclose; the honest qualifier is that STT and TTS are then the *browser vendor's* components, which is why the disclosure bubble names them rather than claiming they are ours.
+
 | Claim | Status |
 |---|---|
 | Tokenizer trains, is spec-conformant, round-trips EN/HI/Hinglish/SQL/URL/emoji | **verified** (tests + artifact) |

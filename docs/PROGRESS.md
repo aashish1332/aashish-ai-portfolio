@@ -34,6 +34,23 @@ the pipeline, not to answer well. None of the three is a code gap.
 
 ---
 
+## §17 hygiene, audited (written 2026-09-28)
+
+§17 asks for four kinds of hygiene beyond structure. Each is either a gate in the
+build/test suite or a stated absence, and each is listed here with the thing that
+verifies it — a hygiene claim nobody can check is not hygiene.
+
+| §17 requirement | State | What verifies it |
+|---|---|---|
+| Structure: the listed tree, *"roughly … adapt to the project's conventions"* | **ADAPTED, and the differences are named** — there is no bundler or framework (`docs/AUDIT.md`), so `ai/` holds the model/tokenizer/engine/retrieval/governor/voice modules and `js/ai/launcher.js` is the `components/` seam; `training/` · `inference/` · `evaluation/` · `experiments/ternary/` exist as named. `data/portfolio` and `data/general` are **not** directories: the portfolio source is the CV (parsed once, `docs/AUDIT.md`) and general text lives under `data/raw/*` | `docs/AUDIT.md` · repo tree |
+| Docs explain model · tokenizer · training · retrieval · browser runtime · quantisation · voice · performance · limitations · fallbacks · which parts are pretrained | **MET** | `docs/AI_ARCHITECTURE.md` (§2 tokenizer, §3 model, §4 retrieval/language, §5 voice, §6 runtime/export/quantisation, §7 dev-prod, §8 *what is deliberately not claimed*) · `docs/TRAINING.md` · `docs/BENCHMARKS.md` (performance) · `docs/DATA_LICENSES.md` (corpus licences, incl. the disabled Hinglish source) |
+| Dev vs prod: verbose logs / benchmarks / debug overlays dev-only; prod minimal logs, graceful errors, compact assets | **MET, most of it by absence.** The shipped `ai/` tree contains **zero** `console.*` calls, so there is no verbose logging to strip; every debug overlay and probe lives outside the bundle; and the build strips comments from shipped `ai/**` (**−69,817 B gz** — that is the compact-asset half). The build **refuses** to ship a dev reference: `DEV_ONLY_PATTERNS` fails on a `dev-*.js` name, `shots/`, the dev port, `training/checkpoints`, `data/raw`, `data/processed` | `tools/build.mjs` · `tests/build-bundle.test.mjs` |
+| Secrets: none in the repo or the bundle; no LLM API credentials, ever | **MET** | `tests/build-bundle.test.mjs` fails on a secret-shaped string in any shipped file, on an absolute URL in a shipped `ai/**` script, and on a hosted-LLM hostname; `.env*` is git-ignored and there is no key to hold |
+| Analytics: never send chat/voice content; at most anonymous counters, disclosed | **MET by not existing** — the portfolio ships **no** analytics at all (every `analytics` string in it is a project title), so nothing can be sent and there is nothing to disclose | `docs/PRIVACY.md` · `index.html` |
+| Data hygiene: training data, checkpoints, optimiser states and the CV never ship to the browser or the repo | **MET** | `.gitignore` excludes `*.docx`, `data/raw/`, `data/extracted/`, `data/processed/`, `data/instruction/sft.jsonl`, `training/checkpoints/`, `training/datasets/`, `*.pt`/`*.pth`/`*.onnx`/`*.gguf` and `ai/model-export/`; the build's dev-reference scan refuses `training/checkpoints` and the raw corpora in code; `tests/knowledge.test.mjs` asserts no `.docx` exists in the tree and that the CV filename never reaches a visitor-facing fact (only `meta.built_from`) |
+
+---
+
 ## Phase 0 — Audit + baseline
 
 **Status:** ✅ **GATE PASSED** (both gate artefacts exist)
