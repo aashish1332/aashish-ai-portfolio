@@ -326,6 +326,46 @@ export function resolveAnchor(doc, req = {}) {
   };
 }
 
+/* ── §11.1 (c): the guided tour's resolver ─────────────────────── */
+
+/**
+ * The section that DECLARES a topic.
+ *
+ * The guided tour walks About → Projects → Skills → Contact without asking
+ * anything of the model or of a visitor's question, so it stands on
+ * `data-ai-topics` — the same declaration this module already treats as its
+ * strongest signal. Reading the declaration rather than an offset means the
+tour follows the markup when the page is reordered, exactly as the anchor
+ * lookup does: move the work section and the tour walks to it where it now is.
+ *
+ * The SHALLOWEST declaring element wins: the tour walks to the section, not to
+ * the deepest heading inside it that happens to repeat the word.
+ *
+ * @param {object} doc
+ * @param {string} topic  one of the markup's own `data-ai-topics` values
+ * @returns {{el:object, score:number, why:string, tag:string, id:string,
+ *            topics:string[], kind:'tour'} | null}
+ */
+export function resolveTopicAnchor(doc, topic) {
+  const want = normText(topic);
+  if (!want) return null;
+  let best = null;
+  for (const a of collectAnchors(doc)) {
+    if (!a.topics.some((t) => normText(t) === want)) continue;
+    if (!best || a.depth < best.depth) best = a;
+  }
+  if (!best) return null;
+  return {
+    el: best.el,
+    score: DECLARED_TOPIC_SCORE,
+    why: `declares data-ai-topics=${want}`,
+    tag: best.tag,
+    id: best.id,
+    topics: best.topics,
+    kind: 'tour',
+  };
+}
+
 /** A short human label for an anchor, for the "SHOW ME" control and logs. */
 export function anchorLabel(anchor) {
   if (!anchor) return '';

@@ -737,16 +737,16 @@ worst abs Δ logit **3.58e-07**.
 
 | Budget | §4 | Measured |
 |---|---|---|
-| AI chat **code** chunk, conservative reading (every shipped `ai/**` module + `knowledge.json`) | ≤ 150 KB gz | **71,465 B** (46.5 %) — was 138,896 B (90.4 %) before shipped `ai/**` stopped carrying comments; 69,079 B before the day's §11 work (+2,386 B gz total: the on-device probe, §11.5's visual, §11.1's idle bounds and §11.2's transcript — `ai/voice/index.mjs` to 5,342 B, `ai/ui/chat.mjs` to 9,742 B, `ai/ui/styles.mjs` to 2,970 B) |
-| — of that, §4's chat-UI chunk proper (UI + KB + retrieval + language + guard + intent + anchors + governor) | — | 48,357 B (31.5 %) |
-| — of that, voice add-ons (loaded only on the tap that picks voice, §2 N6) | §4 lists separately | 8,439 B |
-| — of that, LLM runtime + tokenizer (§4 "LLM runtime" row) | — | 14,669 B |
-| AI assets actually fetched by **the click** (static reach of `ai/ui/chat.mjs`) | §4's number to keep small | **42,600 B gz (41.6 KB), 14 files** · the worker-only arithmetic the click does **not** parse is still **13,296 B gz** across 9 files |
-| Rest of the page | regression guard 250 KB | 65,649 B |
-| Model payload (weights + tokenizer + manifest) | ≤ 25 MB preferred, ≤ 40 MB hard | **5,144,357 B** raw · 4,741,050 B gz (step 1100) |
-| First-use download, T1/T2 | ≤ ~40 MB | **4,812,515 B** gz (**11.5 %**) |
-| Any single AI asset | ≤ ~100 MB | 5,059,584 B raw / 4,732,964 B gz |
-| Files | — | 44 |
+| AI chat **code** chunk, conservative reading (every shipped `ai/**` module + `knowledge.json`) | ≤ 150 KB gz | **74,341 B** (48.4 %) — was 71,465 B (46.5 %) after §11's first pass, 138,896 B (90.4 %) before shipped `ai/**` stopped carrying comments; the 2026-09-28 additions are §11.1 (a)/(c) and the engine's Stop fix (**+1,564 B gz** over the 72,777 B of the §2 N4 build): `ai/ui/chat.mjs` to 11,418 B, `ai/voice/index.mjs` to 5,919 B, `ai/ui/anchors.mjs` to 2,709 B, `ai/ui/styles.mjs` to 3,376 B) |
+| — of that, §4's chat-UI chunk proper (UI + KB + retrieval + language + guard + intent + anchors + governor) | — | 50,570 B (32.9 %) |
+| — of that, voice add-ons (loaded only on the tap that picks voice, §2 N6) | §4 lists separately | 9,016 B |
+| — of that, LLM runtime + tokenizer (§4 "LLM runtime" row) | — | 14,755 B |
+| AI assets actually fetched by **the click** (static reach of `ai/ui/chat.mjs`) | §4's number to keep small | **44,804 B gz (43.8 KB), 14 files** · the worker-only arithmetic the click does **not** parse is **13,382 B gz** across 9 files (both recomputed 2026-09-28 from `dist/`) |
+| Rest of the page | regression guard 250 KB | 65,860 B |
+| Model payload (weights + tokenizer + manifest) | ≤ 25 MB preferred, ≤ 40 MB hard | **5,144,354 B** raw · 4,741,050 B gz (step 1100) |
+| First-use download, T1/T2 | ≤ ~40 MB | **4,815,382 B** gz (**11.5 %**) |
+| Any single AI asset | ≤ ~100 MB | 5,059,584 B raw / 4,728,543 B gz |
+| Files | — | 46 |
 
 ### With a model that actually answers (§15.3, 2026-09-26)
 
@@ -840,13 +840,13 @@ asserted byte-identical to source, because §2 N7 says the AI layer does not
 touch the film.
 
 The conservative §4 figure is the number that guards the budget, and after the
-comment strip it is at **46.5 % — 80 KB of headroom** — with the runtime
-(14.7 KB) and the voice add-ons (8.4 KB) inside it, both of which §4 lists on
-their own rows. The click's static reach fell with it, to **42,600 B gz** (every
-figure in this paragraph is the 2026-09-27 re-run, after §11's last four
-features added 2,386 B gz to the chunk — and the worker-only arithmetic the
-click still does not parse is unchanged at 13,296 B gz, which is the part that
-matters for a 50 ms main-thread budget).
+comment strip it is at **48.4 % — 77 KB of headroom** — with the runtime
+(14.8 KB) and the voice add-ons (9.0 KB) inside it, both of which §4 lists on
+their own rows. The click's static reach sits at **44,804 B gz** (every figure
+in this paragraph is the 2026-09-28 re-run, after §11.1 (a)/(c) and the
+engine's Stop fix added 2,867 B gz to the chunk — and the worker-only
+arithmetic the click still does not parse is 13,382 B gz, which is the part
+that matters for a 50 ms main-thread budget).
 **The budget is no longer the binding constraint on what `ai/` may grow into; it
 is a regression guard now.**
 

@@ -467,6 +467,43 @@ export function createSpeaker(env, opts = {}) {
  * @param {number} [opts.followUpMs] how long one turn stays open (see above)
  * @param {Function} [opts.clock]    ms clock, injectable so the window is testable
  */
+/* ── §11.1's initiative (a): the spoken greeting ─────────────────
+   "after the opt-in click, one short spoken greeting + 3 suggested topics".
+   Proactive only, and that is a reading of the section rather than a
+   convenience: Tap & Speak is a press, and a press is already a question, so
+   greeting somebody who just pressed a button to say one thing would be the
+   assistant talking over them. The click that enabled voice is the user
+   gesture the autoplay policy demands, and `suspended` still wins, so a
+   greeting can never fire into a hidden tab.
+
+   The three topics are the panel's own starter chips, named, so the sentence
+   and the buttons agree — and they are written per language because a spoken
+   greeting in the wrong language is worse than no greeting. */
+export const GREETINGS = Object.freeze({
+  en: {
+    hello: 'Hi \u2014 I am Aashish\u2019s portfolio assistant. Ask me about his work whenever you like, '
+      + 'or start with one of three things: his projects, his skills, or how to contact him.',
+    topics: ['projects', 'skills', 'contact'],
+  },
+  hi: {
+    hello: '\u0928\u092e\u0938\u094d\u0924\u0947 \u2014 \u092e\u0948\u0902 Aashish \u0915\u093e portfolio assistant \u0939\u0942\u0902\u0964 \u0907\u0928\u0915\u0947 \u0915\u093e\u092e \u0915\u0947 \u092c\u093e\u0930\u0947 \u092e\u0947\u0902 \u0915\u092d\u0940 \u092d\u0940 \u092a\u0942\u091b\u093f\u092f\u0947, '
+      + '\u092f\u093e \u0924\u0940\u0928 \u091a\u0940\u091c\u094b\u0902 \u0938\u0947 \u0936\u0941\u0930\u0942 \u0915\u0940\u091c\u093f\u092f\u0947: projects, skills, \u092f\u093e contact\u0964',
+    topics: ['projects', 'skills', 'contact'],
+  },
+  hinglish: {
+    hello: 'Hi \u2014 main Aashish ka portfolio assistant hoon. Kaam ke baare mein kabhi bhi poochhiye, '
+      + 'ya teen cheezon se shuru kijiye: projects, skills, ya contact.',
+    topics: ['projects', 'skills', 'contact'],
+  },
+});
+
+/** The greeting for a language tag, falling back the way every other string
+ *  in this project does — never to a silent nothing. */
+export function greetingFor(lang) {
+  const key = String(lang || 'en').split('-')[0].toLowerCase();
+  return GREETINGS[key] || GREETINGS.en;
+}
+
 export function createVoice(env = {}, opts = {}) {
   const chat = opts.chat || {};
   const wake = opts.wake || WAKE_PHRASES;
@@ -518,6 +555,9 @@ let vadReason = null;
    the visitor is not looking at is not a tab that should be recording, and
    `visibilitychange` is the only signal the browser gives for it. */
 let suspended = false;
+/* §11.1 (a): whether this session has already been greeted — reset with the
+   session, so a fresh enable is a fresh greeting and nothing else is. */
+let greeted = false;
 const tabHidden = () => (typeof env.document?.hidden === 'boolean'
   ? env.document.hidden
   : env.document?.visibilityState === 'hidden');
@@ -689,6 +729,7 @@ const tabHidden = () => (typeof env.document?.hidden === 'boolean'
     nick.setLang?.(voiceHint(lang));
 
     enabled = true;
+    greeted = false;
     closeSession();
     failure = null;
     cancelWindow();
@@ -803,9 +844,36 @@ const tabHidden = () => (typeof env.document?.hidden === 'boolean'
     opts.onStatus?.(status());
   }
 
+  /**
+   * §11.1's initiative (a): one short spoken greeting plus three suggested
+   * topics, offered by the shell on the click that turns Proactive on.
+   *
+   * A separate entry point rather than a side effect of `enable()`, because
+   * `enable()` is the microphone's state machine and this is a sentence: the
+   * tests for the window, the wake phrase and the idle clock are about the
+   * former, and none of them should have to know that a greeting exists.
+   * `greeted` makes it once-per-session in the caller's hands too — a second
+   * `greet()` in the same session says nothing rather than talking again.
+   *
+   * @returns {boolean} whether anything was spoken
+   */
+  function greet() {
+    if (!enabled || suspended || greeted) return false;
+    if (mode !== 'continuous' || !policy().speakAnswers) return false;
+    greeted = true;
+    const greeting = greetingFor(lang);
+    const started = speaker?.speak(greeting.hello, { lang }) || false;
+    if (started) opts.onGreeting?.(greeting);
+    /* Being greeted is not a question: the session window is untouched, so a
+       visitor who says nothing after it is nudged on the ordinary clock and
+       not left with a turn they never opened. */
+    return started;
+  }
+
   function disable() {
     if (!enabled) return status();
     enabled = false;
+    greeted = false;
     cancelWindow();
     cancelIdle();
     standby = false;
@@ -944,11 +1012,20 @@ const tabHidden = () => (typeof env.document?.hidden === 'boolean'
 
   return {
     enable, disable, status, setTier, onFinal, onPartial, onAnswer,
-    onVisibility,
+    onVisibility, greet,
     get suspended() { return suspended; },
     setLang(l) { if (l) lang = l; nick?.setLang?.(voiceHint(lang)); },
     /** The visitor's own words can never wake it — nothing else can either. */
     isEnabled: () => enabled,
+    /** Speak a fixed line through the answer path — the guided tour (§11.1 c)
+     *  uses this so there is exactly one place that can make a sound, and the
+     *  same guards (enabled, not suspended) apply to it. */
+    speak(text) {
+      if (!enabled || suspended || !text) return false;
+      const started = speaker?.speak(String(text), { lang }) || false;
+      if (started) opts.onStatus?.(status());
+      return started;
+    },
     isSessionOpen: () => enabled && sessionLive(now()),
     closeSession,
     get followUpMs() { return followUpMs; },

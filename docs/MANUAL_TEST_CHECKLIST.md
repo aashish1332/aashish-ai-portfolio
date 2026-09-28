@@ -126,6 +126,11 @@ path works on your machine, and it has never been seen by a person.
 | D13 | In **Proactive** mode, say nothing for ~25 s, then keep waiting | **one** line appears — *"Still here — ask about my projects…"* — and it never repeats (§11.1 d) |
 | D14 | Keep saying nothing until ~90 s | the dot goes **dim** and the microphone is released (the browser's recording indicator should go out) while voice mode stays **on**; **say something** and it comes back listening (§11.1 e). If the dot stays bright and the microphone never releases, that is a bug worth reporting |
 | D15 | Say a question with a word the recognizer will get wrong (a name, an acronym) | the question bubble is badged **HEARD** with an **EDIT** control; press it, fix the word, press Enter |
+| D16 | Turn voice on and **say nothing at all** — just wait for the session to open | one **spoken** greeting within a second or two, naming projects, skills and contact (§11.1 a), and it is said **once** — turning voice off and on again in the same visit must not greet you twice |
+| D17 | With Proactive on, tap the **Take the tour** chip, then keep quiet | the page walks about → projects → skills → contact, ~7 s apart, each stop says one line and is badged `TOUR · <TOPIC>`, and it ends with *"That is the tour."* (§11.1 c) |
+| D18 | Mid-tour, page still walking, **ask a question** | the walk stops immediately and the question is answered normally — the tour must never fight the visitor for the page |
+| D19 | Turn on **Reduce motion**, then take the tour again | the page **jumps** to each section instead of gliding (§3), and the tour still says the same four lines |
+| D20 | Start the tour, then press **Escape** | the panel closes and the tour stops with it — no line arrives after the panel is gone |
 
 **Record:** did D3–D5 work the first time, or did you have to say it twice?
 That number is the whole point of the exercise, and it is mine to fix, not

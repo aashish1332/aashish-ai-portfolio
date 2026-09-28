@@ -29,7 +29,11 @@
 const puppeteer = require('puppeteer-core');
 
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const URL = process.env.AI_BASE || 'http://localhost:5577/';
+/* `TARGET`, not `URL`: a module-level `const URL` shadows the global URL
+   constructor, which crashed the Firefox probe mid-run the day it was written.
+   Nothing here needs `new URL`, so this is only a landmine removed — the same
+   rename, for the same reason, that `dev-firefox-probe.js` carries. */
+const TARGET = process.env.AI_BASE || 'http://localhost:5577/';
 const MOBILE = !!process.env.MOBILE;
 
 /* anything that must not exist before the click */
@@ -62,9 +66,17 @@ const say = (label, ok, detail) => {
   const SW_GL = process.env.SW_GL === '1';
   const hardStop = setTimeout(() => { console.log('PROBE TIMEOUT'); process.exit(2); },
     Number(process.env.PROBE_TIMEOUT || 900000));
+  /* `protocolTimeout` must be LARGER than the longest in-page wait below, or
+     the probe's own watchdog never gets to speak: on 2026-09-28 a retry that
+     did not stream hit this ceiling at the same moment `watchStream`'s own
+     180 s limit did, and the run died with `PROBE CRASH Runtime.callFunctionOn
+     timed out` instead of reporting `streamed=false`. A probe whose honest
+     verdict is unreachable is a probe that lies by crashing. */
+  const protocolTimeout = Number(process.env.PROBE_PROTOCOL_TIMEOUT || 900000);
   const browser = await puppeteer.launch({
     executablePath: CHROME,
     headless: 'new',
+    protocolTimeout,
     args: [...(SW_GL
       ? ['--use-gl=swiftshader', '--enable-unsafe-swiftshader']
       : ['--enable-gpu']),
@@ -109,7 +121,7 @@ const say = (label, ok, detail) => {
   page.on('pageerror', (e) => pageErrors.push(e.message.split('\n')[0]));
   page.on('requestfailed', (r) => failed.push(`${r.failure() && r.failure().errorText} ${r.url()}`));
 
-  await page.goto(URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await page.goto(TARGET, { waitUntil: 'domcontentloaded', timeout: 60000 });
   try {
     await page.waitForFunction(() => window.Film3D && Film3D.isReady(), { timeout: 90000, polling: 500 });
   } catch { /* the film may not be ready in a headless GPU-less run; the AI checks still hold */ }
@@ -721,6 +733,45 @@ const say = (label, ok, detail) => {
     afterEsc.cardHidden === true && afterEsc.panelOpen === true,
     `cardHidden=${afterEsc.cardHidden} panelOpen=${afterEsc.panelOpen}`);
   say('§2 N4: focus returns to the control', afterEsc.focusOnAbout === true, '');
+
+  /* ── 6d. §11.1 (c) — the guided tour, driven for real ─────────────
+     The chip that OFFERS the tour only exists once Proactive is on, and
+     whether this machine's recognizer starts is not deterministic (see the
+     voice section), so the probe asks the API for the tour — the same call
+     the chip makes — and checks what a visitor would see: the page moves to
+     a section that DECLARES the topic, the stop is labelled, and a question
+     stops the walk. */
+  const tourBefore = await page.evaluate(() => ({
+    y: Math.round(window.scrollY || 0),
+    declared: !!document.querySelector('[data-ai-topics~="about"]'),
+    started: window.PortfolioAI.startTour(),
+    running: window.PortfolioAI.isTouring(),
+  }));
+  say('§11.1 c: the tour starts', tourBefore.started === true && tourBefore.running === true,
+    `a section declares "about": ${tourBefore.declared}`);
+  await new Promise((r) => setTimeout(r, 2600));      /* one 1.6 s move, then settle */
+  const tourMoved = await page.evaluate(() => {
+    const section = document.querySelector('[data-ai-topics~="about"]');
+    const rect = section?.getBoundingClientRect?.();
+    return {
+      y: Math.round(window.scrollY || 0),
+      top: rect ? Math.round(rect.top) : null,
+      running: window.PortfolioAI.isTouring(),
+      badges: [...document.querySelectorAll('.ai__msg.is-bot .ai__badge')]
+        .map((b) => b.textContent).filter((t) => /^TOUR/.test(t)).length,
+    };
+  });
+  say('§11.1 c: the page moves to the declaring section',
+    tourMoved.y !== tourBefore.y && tourMoved.top !== null && Math.abs(tourMoved.top) < 80,
+    `scrollY ${tourBefore.y} → ${tourMoved.y}, section top ${tourMoved.top}`);
+  say('§11.1 c: the stop is a tour stop, not a narration', tourMoved.badges > 0,
+    `${tourMoved.badges} TOUR bubble(s)`);
+  const tourStopped = await page.evaluate(async () => {
+    window.PortfolioAI.ask('who are you');   /* refuses before the model is reached */
+    await new Promise((r) => setTimeout(r, 300));
+    return { running: window.PortfolioAI.isTouring() };
+  });
+  say('§11.1 c: a question stops the walk', tourStopped.running === false, '');
 
   /* ── 7. Escape closes and returns focus ─────────────────────────── */
   await page.keyboard.press('Escape');

@@ -38,10 +38,16 @@ const Director = (() => {
     gsap.ticker.lagSmoothing(0);
   }
 
-  const scrollTo = (target) => {
-    if (S.lenis) S.lenis.scrollTo(target, { duration: 1.6 });
-    else if (typeof target === 'number') window.scrollTo({ top: target, behavior: 'smooth' });
-    else document.querySelector(target)?.scrollIntoView({ behavior: 'smooth' });
+  /* `opts.immediate` is for the one caller that must not animate: the AI
+     panel's guided tour walks four sections in a row, and under
+     `prefers-reduced-motion` four 1.6 s glides are precisely the motion that
+     request is about (§11.1 c). Every other caller passes nothing and keeps
+     the behaviour this always had. */
+  const scrollTo = (target, opts = {}) => {
+    const immediate = opts.immediate === true;
+    if (S.lenis) S.lenis.scrollTo(target, { duration: immediate ? 0 : 1.6 });
+    else if (typeof target === 'number') window.scrollTo({ top: target, behavior: immediate ? 'auto' : 'smooth' });
+    else document.querySelector(target)?.scrollIntoView({ behavior: immediate ? 'auto' : 'smooth' });
   };
 
   /* ---------- MASTER: whole page -> film timeline ---------- */

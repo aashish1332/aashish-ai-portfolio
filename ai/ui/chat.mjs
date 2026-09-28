@@ -20,7 +20,7 @@ import {
   MODEL_BADGES, createModelAnswerer, noAnswerLine, partialAnswer, routeQuestion,
 } from '../answers/model.mjs';
 import { createModelSession } from '../engine/session.mjs';
-import { resolveAnchor, anchorLabel } from './anchors.mjs';
+import { resolveAnchor, anchorLabel, resolveTopicAnchor } from './anchors.mjs';
 import { createLanguageTracker } from '../language/detect.mjs';
 import { recognizeSupported, voiceSummary } from '../voice/caps.mjs';
 import {
@@ -159,6 +159,41 @@ export const ABOUT_SECTIONS = Object.freeze([
       + 'knowledge base, the routing, the guard \u2014 is already in the page.' },
 ]);
 
+/* ── §11.1 (c): the guided tour ─────────────────────────────────
+   "optional guided tour — walks About → Projects → Skills → Contact, scrolling
+   via Lenis to allowlisted anchors (jump instead of smooth scroll under
+   reduced-motion), pausing for questions".
+
+   Four stops, in the order the brief names, each resolved from the markup's
+   own `data-ai-topics` declaration — the same allowlist "show me where that
+   is" stands on. So the tour needs no model call, no knowledge base and no
+   question, it survives the page being reordered, and a stop whose topic no
+   section declares is SKIPPED rather than walked to nowhere. The lines are
+   fixed strings: nothing here can invent a place or a claim. */
+export const TOUR_STOPS = Object.freeze([
+  /* Written in the ASSISTANT's voice: first person about itself, third person
+     about Aashish — the greeting's voice, the refusal strings' voice, and §5's
+     explicit rule ("it speaks about Aashish in the third person and never
+     pretends to be him"). They were first-person-about-Aashish when this list
+     was written, in line with the answer templates' first-person persona, and
+     the two fixed strings then disagreed with each other inside one session.
+     The answer templates are the documented deviation; the assistant's own
+     copy should not be. */
+  { topic: 'about',
+    line: 'Starting with the short version \u2014 who he is, his education, and what he has built.' },
+  { topic: 'projects',
+    line: 'These are his projects, each with what it does and what it was built with.' },
+  { topic: 'skills',
+    line: 'This is the stack he works in and the tools he uses day to day.' },
+  { topic: 'contact',
+    line: 'And this is how to reach him. Ask me anything as we go.' },
+]);
+
+/** How long each stop is held before the page moves on. Long enough to read a
+ *  section heading and hear one sentence, short enough that a visitor who is
+ *  not interested is not held hostage by it. */
+export const TOUR_STEP_MS = 7000;
+
 export function createChat(opts = {}) {
   const doc = opts.doc || document;
   const env = opts.env || window;
@@ -243,6 +278,11 @@ let working = 0;
   /* A disclosure waiting on the on-device question (§19) — see voiceChanged. */
   let disclosurePending = false;
   let voiceFailure = null;      /* the reason last spoken for a stop nobody asked for */
+  /* §11.1 (c)'s tour. `tourIndex` is -1 when nothing is running, so "is a tour
+     running" and "which stop" are one piece of state rather than two that can
+     disagree. */
+  let tourIndex = -1;
+  let tourTimer = null;
   let aboutBtn = null;          /* §2 N4's disclosure control, in the footer */
   let aboutCard = null;
   let aboutClose = null;
@@ -539,7 +579,7 @@ let working = 0;
 
   /** Move the page to where an answer came from. Never announces itself, and
    *  does nothing at all when the fact has no place on this page. */
-  function showAnchor(anchor) {
+  function showAnchor(anchor, { jump = false } = {}) {
     if (!anchor) return false;
     const scene = sceneFor(anchor.el) || anchor.el;
     /* §12 keeps the page still while the panel is open; the page is being
@@ -547,8 +587,87 @@ let working = 0;
        because a visitor watching the page follow the answer should not have
        to close the panel to scroll it afterwards. */
     hooks.releaseScroll?.();
-    hooks.scrollToAnchor?.(scene, anchor);
+    hooks.scrollToAnchor?.(scene, anchor, { jump });
     flash(anchor.el);
+    return true;
+  }
+
+  /* ── §11.1 (c): the tour's machinery ──────────────────────────── */
+
+  const reducedMotion = () => env.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
+
+  function cancelTourTimer() {
+    if (tourTimer === null) return;
+    env.clearTimeout?.(tourTimer);
+    tourTimer = null;
+  }
+
+  /** Stop the walk. `announce` is for a stop the visitor asked for; a silent
+   *  stop is for the ones they did not (a question, the panel closing). */
+  function stopTour({ announce = false } = {}) {
+    if (tourIndex < 0) return false;
+    cancelTourTimer();
+    tourIndex = -1;
+    if (announce) bubble('bot', 'Tour stopped \u2014 ask me anything, or take it again from the chip.',
+      { badge: 'TOUR', badgeClass: 'is-note' });
+    return true;
+  }
+
+  /**
+   * One stop, then the next. Returns whether the page moved.
+   *
+   * A stop the markup does not declare is skipped IN SILENCE rather than
+   * walked to the top of the page, which is what a move with no target would
+   * look like from the visitor's side.
+   */
+  function tourStep() {
+    cancelTourTimer();
+    if (tourIndex < 0) return false;
+    while (tourIndex >= 0 && tourIndex < TOUR_STOPS.length) {
+      const stop = TOUR_STOPS[tourIndex];
+      tourIndex += 1;
+      const anchor = resolveTopicAnchor(doc, stop.topic);
+      if (!anchor) continue;                    /* not on this page: skip it */
+      /* §11.1 (c): jump instead of smooth-scrolling when the visitor asked for
+         less motion — a 1.6 s glide across the page is exactly the animation
+         that request is about. */
+      showAnchor(anchor, { jump: reducedMotion() });
+      bubble('bot', stop.line, { badge: `TOUR \u00b7 ${stop.topic.toUpperCase()}`, badgeClass: 'is-note' });
+      /* The shell reads its own lines aloud through the voice layer's one
+         speaker, and only while a voice session is on — a typed visitor gets
+         the text, not a talking panel. */
+      voice?.speak?.(stop.line);
+      if (env.setTimeout) tourTimer = env.setTimeout(tourStep, TOUR_STEP_MS);
+      return true;
+    }
+    /* every remaining stop was missing a section: end it honestly, with no
+       claim that the visitor has seen anything they have not */
+    tourIndex = -1;
+    bubble('bot', 'That is the tour. Ask me anything about what you saw.',
+      { badge: 'TOUR', badgeClass: 'is-note' });
+    return false;
+  }
+
+  function startTour() {
+    if (tourIndex >= 0) return false;            /* already walking */
+    if (body?.hidden) return false;
+    tourIndex = 0;
+    return tourStep();
+  }
+
+  /** §11.1 (c)'s offer: one chip, added when Proactive turns on. It is a
+   *  chip rather than an automatic walk because the brief calls the tour
+   *  *optional*, and a page that starts scrolling itself is not an offer. */
+  function offerTour() {
+    const chips = body?.querySelector('.ai__chips');
+    if (!chips || chips.querySelector('.ai__chip--tour')) return false;
+    const btn = el('button', 'ai__chip ai__chip--tour', 'Take the tour');
+    btn.type = 'button';
+    btn.setAttribute('aria-label', 'Take a guided tour of the portfolio, section by section');
+    btn.addEventListener('click', () => {
+      if (tourIndex >= 0) stopTour({ announce: true }); else startTour();
+    });
+    chips.appendChild(btn);
     return true;
   }
 
@@ -612,6 +731,10 @@ let working = 0;
   }
 
   function ask(text, opts) {
+    /* §11.1 (c): "pausing for questions" — a question ends the walk instead of
+       racing it. The offer chip stays where it was, so taking it up again is
+       one tap and not a lost feature. */
+    stopTour();
     return whileWorking(() => answer(text, opts));
   }
 
@@ -1005,6 +1128,14 @@ let working = 0;
       return;
     }
     voiceFailure = null;
+    /* §11.1 (a)/(c): Proactive greets once and offers the tour. Both live here
+       rather than inside `enable()` because they are sentences, not the
+       microphone's state machine — and both are no-ops on Tap & Speak, where
+       the press is already the question. */
+    if (st.mode === 'continuous') {
+      ctl.greet();
+      offerTour();
+    }
     /* Said once, in the open, before anything is listened to: this engine
        sends audio off the device, and the panel's usual "what you type stays
        in your browser" does not stretch to cover speech.
@@ -1291,6 +1422,10 @@ let working = 0;
     body.classList.remove('is-open');
     body.hidden = true;
     state = 'closed';
+    /* §11.1 (c): a tour does not survive the panel — and it must not keep a
+       timer alive either, because a closure holding the page after close() is
+       the leak this project keeps testing for. */
+    stopTour();
     /* the explanation never outlives the panel, and it resets WITHOUT taking
        focus, because focus belongs to the launcher on the way out */
     if (aboutOpen) {
@@ -1346,6 +1481,10 @@ let working = 0;
        visitor uses, so the check cannot drift from the real interaction */
     about(on = true) { return setAbout(on); },
     isAboutOpen() { return aboutOpen; },
+    /* §11.1 (c)'s tour, exposed for the probes (which cannot click a chip that
+       only exists once voice is on) and for a host that wants to offer it */
+    startTour, stopTour,
+    isTouring: () => tourIndex >= 0,
     /* the voice layer flips this on; nothing else has to change */
     setHandsFree(on) { handsFree = !!on; return handsFree; },
     enableVoice: toggleVoice,
@@ -1435,10 +1574,13 @@ export function mount({ launcher, hooks, handsFree } = {}) {
          and the move itself goes through the same scrollTo the chapter dots
          use, so a pinned scene moves the way the site already knows how. */
       releaseScroll: () => window.Director?.getLenis?.()?.start?.(),
-      scrollToAnchor: (scene) => {
+      /* `jump` is §11.1 (c) under `prefers-reduced-motion`: the tour visits
+         four sections, and four 1.6 s glides are the animation that request is
+         about. Everything else keeps the site's own smooth move. */
+      scrollToAnchor: (scene, anchor, { jump } = {}) => {
         const id = scene?.id ? `#${scene.id}` : null;
-        if (id && window.Director?.scrollTo) window.Director.scrollTo(id);
-        else scene?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+        if (id && window.Director?.scrollTo) window.Director.scrollTo(id, { immediate: !!jump });
+        else scene?.scrollIntoView?.({ behavior: jump ? 'auto' : 'smooth', block: 'start' });
       },
       pauseScene: () => window.Film3D?.pause?.(),
       resumeScene: () => window.Film3D?.resume?.(),

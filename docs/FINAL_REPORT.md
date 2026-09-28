@@ -24,7 +24,7 @@ this report says so in the same breath as the good news.
 | Clause | State |
 |---|---|
 | "custom … trained from scratch" | **MEASURED** — our tokenizer, our model code, random init, our trainer, our export, our engine. No pretrained weights anywhere in the shipping path. |
-| "running locally in the visitor's browser" | **MEASURED** — `dev-ai-probe.js` **54/54 checks** (real GPU) on the 2026-09-28 run, against the **built bundle** (`dist/`, served the way production serves it, via the probe's `AI_BASE`) rather than the source tree; one real answer with `AI ANSWER · ON-DEVICE MODEL`, 12 facts read, 12 sources; zero requests to any third party. |
+| "running locally in the visitor's browser" | **MEASURED** — `dev-ai-probe.js` **58/58 checks** (real GPU) on the 2026-09-28 run, against the **built bundle** (`dist/`, served the way production serves it, via the probe's `AI_BASE`) rather than the source tree; one real answer with `AI ANSWER · ON-DEVICE MODEL`, 12 facts read, 12 sources; zero requests to any third party. |
 | "no LLM API, no backend" | **MEASURED** — `npm run build` ships a static bundle; the model is fetched from the site's own path and cached locally. Checked on the built bytes rather than asserted: `tests/build-bundle.test.mjs` fails if any shipped `ai/**` script contains an absolute URL, if the shipped AI code makes more than the **one** outbound call it makes (`fetch(KB_URL)`, this site's own knowledge file), if it opens an XHR/WebSocket/EventSource/sendBeacon, if any shipped file carries a secret-shaped string, or if any names a hosted LLM service. |
 | "training from scratch" (the full spec-sized model) | **NOT TESTED** — Stage A + Stage B at config A have never run; they need a GPU. What has run is the 4.98M CPU pipeline config, and both trainers now exist for it: Stage A for 1,100 steps and Stage B (new, assistant-only loss) for 60. |
 | "answering questions about my work" | **NOT TESTED in the sense that matters** — the shipped checkpoint answers, but it answers *badly*, because it has had 1,100 steps on a ~3 MB corpus. |
@@ -109,7 +109,7 @@ The constraint that outranks everything else: *the portfolio must not get slower
 | Metric | Value | Tag |
 |---|---|---|
 | Anything AI on initial load | The launcher only — **945 B gz**, and it is inert (no fetch, no worker, no network API, one dynamic import). `tests/launcher.test.mjs` gates it deterministically: the 2 KB budget, the single `import(CHUNK)` resolving to the chat shell, and that `index.html` names nothing under `ai/` (no script, link, import-map entry or preload). The browser half is `dev-ai-probe.js`'s network assertion | **MEASURED** (probe + gate) |
-| What the click fetches | **41,221 B gz** static reach of `ai/ui/chat.mjs` (86,096 B before the comment strip, 102,596 B before the voice split) | **MEASURED** |
+| What the click fetches | **44,804 B gz** static reach of `ai/ui/chat.mjs`, 14 files (86,096 B before the comment strip, 102,596 B before the voice split) | **MEASURED** |
 | First open | UI **221–405 ms**, knowledge + capability probe **285–722 ms** | **MEASURED** |
 | Worst main-thread long task, AI windows | **65 ms** — against the page's own worst of **88 ms** with the panel never opened | **MEASURED** |
 | Frame time, panel open vs closed | 25.2 ms vs 24.7 ms = **2 %** FPS drop (§4 allows 10 %); re-measured with the film's tier pinned: **18.3 vs 18.3 ms = 0 %** | **MEASURED** |
@@ -126,7 +126,7 @@ The constraint that outranks everything else: *the portfolio must not get slower
 | §4's reference profiles (never run before 2026-09-27) | R1 as it is **0 %**, R1 @4× CPU **−2.5 %**, R1 @6× CPU **+0.3 %** — all **1.00×** p95, all **43/43 checks**; panel ready 815 / 1,091 / 1,502 ms; first answer 25.1 / 45.4 / 42.8 s | **MEASURED** |
 | A weak device, for real | **NOT TESTED** — the CDP throttle hits the main thread (frame time 18.3 → 35.3 ms) but not the Worker proportionally (first answer 25.1 → 45.4 s is 1.8×, not 4×), so this profile must not be quoted as a phone's latency | **NOT TESTED** |
 | …and why it took this long | The A/B ran under software GL until 2026-09-27, where it was inconclusive; the first real-GPU run without a pin reported **−49 %** (the *open* arm faster) because the film's own governor walked tier 1 → tier 4 during the session — a confound the probe now detects and refuses to attribute | **MEASURED** |
-| §4 code chunk | **72,777 B gz = 47.4 %** of 150 KB (≈79 KB headroom) as of 2026-09-28 — §2 N4's disclosure card added 1,312 B gz. It was 70,544 B gz = 45.9 % before that and 138,896 B = 90.4 % before the comment strip. Conservative reading: every shipped `ai/**` + `knowledge.json`; was 138,896 B = 90.4 % until the build stopped shipping comments from `ai/**`. It moved 69,079 → 70,544 B on 2026-09-27 for the on-device voice path and §11.5's visual (+1,465 B gz, of which `ai/voice/index.mjs` is 4,878 B gz now). The click's static reach is 42,143 B gz across 14 files, and the arithmetic it does **not** parse is unchanged at 13,296 B gz. Asserted on every `npm test`, and reported by `npm run bundle` | **MEASURED** |
+| §4 code chunk | **74,341 B gz = 48.4 %** of 150 KB (≈77 KB headroom) as of 2026-09-28 — §2 N4's disclosure card added 1,312 B gz and §11.1 (a)/(c) plus the engine's Stop fix added 1,564 B gz. It was 72,777 B gz = 47.4 % before the §11.1 work, 70,544 B = 45.9 % the day before, and 138,896 B = 90.4 % before the comment strip. Conservative reading: every shipped `ai/**` + `knowledge.json`. The click's static reach is 44,804 B gz across 14 files, and the arithmetic it does **not** parse is 13,382 B gz across 9. Asserted on every `npm test`, and reported by `npm run bundle` | **MEASURED** |
 
 ## CHAT
 
@@ -159,7 +159,9 @@ The constraint that outranks everything else: *the portfolio must not get slower
 | Resource use per tier | Not measured for voice specifically | **NOT TESTED** |
 | Wake-phrase stability | Flips between runs on the stub engine (0/1 vs 1/2 wake events) | **INCONCLUSIVE** |
 | The one idle nudge, then auto-standby (§11.1 d/e) | After **25 s** of a hands-free session with nothing happening the panel shows one deterministic nudge (not spoken), and after **90 s** the **recognizer is released while voice stays on** — the VAD gate brings it back when the visitor speaks. Never entered without a gate: a released recognizer with nothing to wake it would be a dead microphone | **MEASURED as tests** (`tests/voice.test.mjs` VOICE-14: the nudge, the standby, the resume through the gate, the reset-on-interaction, and that a session with no gate is never released) · **NOT TESTED** with a live microphone |
-| The transcript, with tap-to-edit (§11.2) | A question that was **heard** is shown as the recognizer's own words, badged `HEARD`, with an `EDIT` control that puts it back in the box to correct and send again. Verified **in a real browser**: the probe asks through the same call the voice layer makes (`ask(text, { source: 'voice' })`), finds `badge="HEARD"`, presses EDIT and reads back `input="who are you"` | **MEASURED in a browser** (`dev-ai-probe.js`, 54/54) · typing a correction and resending it by hand is **NOT TESTED** |
+| The transcript, with tap-to-edit (§11.2) | A question that was **heard** is shown as the recognizer's own words, badged `HEARD`, with an `EDIT` control that puts it back in the box to correct and send again. Verified **in a real browser**: the probe asks through the same call the voice layer makes (`ask(text, { source: 'voice' })`), finds `badge="HEARD"`, presses EDIT and reads back `input="who are you"` | **MEASURED in a browser** (`dev-ai-probe.js`, 58/58) · typing a correction and resending it by hand is **NOT TESTED** |
+| The spoken greeting (§11.1 a) | On opening a hands-free session: one line, per language, that names the three topics the brief asks for (projects, skills, contact) and is spoken through the same guarded `speak()` the answers use. Once per session; never in Tap & Speak; never from a hidden tab; and it does **not** open a session window, so the visitor's next sentence is not treated as an answer | **MEASURED as tests** (`tests/voice.test.mjs` VOICE-16, 5 cases) · **NOT TESTED** aloud — no microphone has been on a real host |
+| The guided tour (§11.1 c) | "Take the tour" appears in Proactive mode; four stops (about → projects → skills → contact, 7 s apart) each scroll to the section that **declares** the topic (`data-ai-topics`, shallowest wins), say one line, and badge it `TOUR · <TOPIC>`; a question, a close, or the chip stops the walk, and an undeclared stop is skipped rather than scrolled to nothing. Reduced motion turns the 1.6 s glide into a jump | **MEASURED in a browser** (`dev-ai-probe.js`, 4 checks: it starts, the page lands on the declaring section with `|top| < 80`, the stop is badged, a question stops it) + `tests/tour.test.mjs` (9) · the spoken half is **NOT TESTED** |
 
 ## TERNARY
 
@@ -184,7 +186,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
 | Stage A + Stage B done | **Stage B now has a trainer** and it ran here at the `local` config (60 steps, loss 7.5571 → 6.3133, windowed PASS, val 6.2715 → 5.5403). The config-A pair is **NOT TESTED** — owner-side GPU |
 | Retrieval / guard / EN-HI-Hinglish / auto language detection | **MEASURED** |
 | No language selector | **MEASURED** — none exists |
-| §2 N4: **which parts are pretrained**, disclosed in README, docs and the UI | **MEASURED** — the answer is *none of them*: the model, tokenizer and training are ours from random init, and the voice stack ships **no model file** (STT and TTS are the browser's own, the VAD is ours). The UI half is now built: an **ABOUT** control in the panel footer opens a card that names the browser's speech pieces and states **both** voice outcomes, and it is checked **in a browser** (Chrome 54/54, `dev-firefox-probe.js` 11/11) and by `tests/disclosure.test.mjs` (7 tests) |
+| §2 N4: **which parts are pretrained**, disclosed in README, docs and the UI | **MEASURED** — the answer is *none of them*: the model, tokenizer and training are ours from random init, and the voice stack ships **no model file** (STT and TTS are the browser's own, the VAD is ours). The UI half is now built: an **ABOUT** control in the panel footer opens a card that names the browser's speech pieces and states **both** voice outcomes, and it is checked **in a browser** (Chrome 58/58, `dev-firefox-probe.js` 11/11) and by `tests/disclosure.test.mjs` (7 tests) |
 | No backend, no API key, local inference | **MEASURED** — the built bundle is scanned: no external URL in any shipped AI script, exactly one outbound call site (the site's own `knowledge.json`), no XHR/WebSocket/EventSource/sendBeacon, no secret-shaped string, no hosted-LLM hostname |
 | Lazy-loaded; nothing AI on initial load | **MEASURED** — a failing network assertion in the e2e probe, plus a deterministic gate (`tests/launcher.test.mjs`) on the launcher's size, its single dynamic import and every `ai/` reference in `index.html` |
 | Download + file sizes measured, caching + versioning | **MEASURED** — including 0 bytes on the second visit |
@@ -192,7 +194,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
 | WebGPU + WASM investigated | **MEASURED as investigation**; neither implemented, and the report says why |
 | Unsupported / mobile paths handled | **MEASURED** for unsupported (20/20) and the download-failure/retry path, both run against the **built bundle**; the responsive path under mobile emulation on the same bundle (43/43 at 390×844: the sheet pauses the film, closes cleanly, no horizontal overflow); a **real phone is NOT TESTED** |
 | Chat: streaming, Stop, Retry, Clear, bounded context, accessible, responsive | **MEASURED** except screen-reader and real-device behaviour |
-| Voice: both modes, local STT/TTS, lazy, permission paths, no selector, limits, visual state (§11.5), idle nudge/standby (§11.1 d/e), transcript with edit (§11.2) | **MEASURED as code/tests**, and the transcript half **in a browser** (54/54); live speech **NOT TESTED**. TTS is local (`speechSynthesis`); STT is the platform's — asked to stay on the device when the platform says it can (§19 row 6), disclosed either way |
+| Voice: both modes, local STT/TTS, lazy, permission paths, no selector, limits, visual state (§11.5), greeting (§11.1 a), guided tour (§11.1 c), idle nudge/standby (§11.1 d/e), transcript with edit (§11.2) | **MEASURED as code/tests**, and the tour + transcript halves **in a browser** (58/58, `dev-ai-probe.js`); live speech **NOT TESTED**. TTS is local (`speechSynthesis`); STT is the platform's — asked to stay on the device when the platform says it can (§19 row 6), disclosed either way |
 | Training resumable, checkpoints, evaluation, no fake results | **MEASURED** (resume verified); quality gates **NOT TESTED** |
 | Ternary separated from the baseline | **MEASURED** — separated by not existing; decision recorded |
 
@@ -215,11 +217,12 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
    been closed: the **real GPU** was reachable from `headless: 'new'` after all
    (Intel HD 520, D3D11 — it is weak, and there is no discrete card, but it is
    hardware), and **Firefox 156** now runs the built bundle end to end
-   (`npm run probe:firefox` 9/9, 2026-09-28).
+   (`npm run probe:firefox` 11/11, 2026-09-28).
 4. **WASM SIMD and WebGPU are unimplemented**, and the payoff cannot be measured
    here — this box runs scalar JS ~10× below its own specification.
-5. **The §4 code chunk is at 47.4 %** (72,777 B gz of 150 KB, ≈79 KB of headroom — it
-   moved 71,465 → 72,777 B gz on 2026-09-28 for §2 N4's disclosure), so the budget is a
+5. **The §4 code chunk is at 48.4 %** (74,341 B gz of 150 KB, ≈77 KB of headroom — it
+   moved 71,465 → 74,341 B gz on 2026-09-28 for §2 N4's disclosure, §11.1's greeting
+   and tour, and the engine's Stop fix), so the budget is a
    regression guard rather than a constraint on the next feature. It halved on
    2026-09-27 because half its gzip was comments in our own `ai/**` modules and
    the build stopped shipping them (−69,817 B gz, nothing a visitor runs
@@ -248,7 +251,22 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
     programmatic data cannot reproduce human code-mixing — `data/sources.json`
     records that loss explicitly rather than papering over it with data we may
     not use.
-12. **§2 N3 is the one non-negotiable this build deviates from, and it must be
+12b. **§5's persona line is the second deviation, and it is uncovered — the
+    spec says one thing and the build does another.** §5: *"it speaks about
+    Aashish in the third person and never pretends to be him."* The build ships
+    `DEFAULT_PERSONA = 'first'`: the panel answers as Aashish ("My CGPA is
+    8.28", "I built …"), which is deliberate — on a page he wrote, a recruiter
+    asking "what is his CGPA?" is better served by the site's own voice, and
+    both personas are implemented (`PERSONAS = ['first', 'third']`, the prompt
+    contract carries both RULES blocks, and the SFT corpus is generated in
+    both). But deliberate is not compliant: as shipped, the assistant **does**
+    pretend to be him, and that is what the clause forbids. The assistant's own
+    fixed copy (the identity disclosure, the refusals, the §11.1 greeting and
+    tour) is third-person about Aashish and first-person only about
+    *itself* — that split is enforced by tests (`QA-10`, `TOUR-1`). Flipping
+    the default is one constant plus test updates, and it needs a ruling on
+    which reading wins — see **WHAT I NEED FROM YOU** item 7.
+13. **§2 N3 is the one non-negotiable this build deviates from, and it must be
     read as a deviation.** N3 asks that "any remote speech-recognition mode is
     disabled"; the browser's `SpeechRecognition` has no switch that forbids its
     network path, so voice input is the platform's recogniser — asked to stay on
@@ -279,7 +297,16 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
 4. **A deployment host decision**, so caching and the offline-after-cache path
    are verified against the headers visitors will actually see.
 5. **Sign-off on the PII list** (C4/C5).
-6. **A ruling on §2 N3 and voice.** The strict reading ("any remote
+6. **A ruling on §5's persona.** The spec asks for the third person, 
+   "never pretends to be him"; the build ships the first person because that
+   is how the rest of the page speaks and it is the voice a recruiter gets an
+   answer in. Neither reading is wrong, but only one can ship — say which, and
+   if it is the spec's, `DEFAULT_PERSONA` in `ai/answers/quick.mjs` flips to
+   `'third'` with the `QA-10` expectations and the SFT persona mix updated to
+   match. What is already done either way: the assistant's *own* copy — the
+   identity disclosure, the refusals, the §11.1 greeting, the tour lines — is
+   in the spec's voice, so the two do not contradict each other on screen.
+7. **A ruling on §2 N3 and voice.** The strict reading ("any remote
    speech-recognition mode is disabled") can be met exactly, at the cost of voice
    input on every browser whose recogniser is a network service — which is most
    of them today. The current build asks for on-device, falls back with

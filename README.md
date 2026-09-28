@@ -151,7 +151,13 @@ weights. Until then the quality is visibly a small model's, and the panel never
 pretends otherwise.
 
 The answers are written **as Aashish** — "my CGPA", not "his CGPA" — because
-the visitor is being introduced to him, and in **Proactive mode** the page
+the visitor is being introduced to him. **This is a deviation from the brief,
+which asks for the third person ("never pretends to be him"), and it is
+recorded as one** — `docs/FINAL_REPORT.md` limitation 12b, with the one-line
+switch that changes it. The assistant's own fixed lines (its identity
+disclosure, its refusals, the spoken greeting and the tour) are in the brief's
+voice: first person about itself, third person about Aashish. In **Proactive
+mode** the page
 moves by itself to the part an answer came from. That part is found by looking
 at the page's own content every time, not at a stored position, so it still
 works after the sections are reordered or renamed; a question with no place on
@@ -169,7 +175,11 @@ answers to, and anything else it hears is ignored in silence; being woken is
 not being on forever, since one question buys a **12-second** window for the
 next one (so *"…and your projects?"* needs no name again) and after that it
 stops answering until it is addressed again. If the microphone is blocked it
-turns itself off and says why, rather than leaving a dead one switched on. The
+turns itself off and says why, rather than leaving a dead one switched on. A
+hands-free session opens with **one spoken greeting** that names the three
+things worth asking (projects, skills, contact) and offers a **guided tour** —
+four stops that walk the page and say one line at each, stopping the moment you
+ask anything. The
 voice available here is your browser's, chosen by the answer's language; a
 clone of Aashish's own voice is a future feature, not this one.
 

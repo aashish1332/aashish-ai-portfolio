@@ -28,7 +28,7 @@ import {
   recognizeSupported, createRecognizer, createSpeaker, createVoice,
   speechRecognitionCtor, WAKE_PHRASES, SPEECH_DISCLOSURE, NO_ENGINE, THRASH_LIMIT,
   SPEECH_DISCLOSURE_ON_DEVICE, ON_DEVICE_PROBE_MS, probeOnDevice,
-  VOICE_IDLE, IDLE_NUDGE,
+  VOICE_IDLE, IDLE_NUDGE, GREETINGS, greetingFor,
 } from '../ai/voice/index.mjs';
 /* §11.5's visual state lives with the shell, because it is a UI decision made
    from the voice layer's status object — so the test imports it from there. */
@@ -1225,4 +1225,82 @@ test('VOICE-15: the shell renders the heard question, and one tap puts it back',
   assert.match(css, /\.ai__edit \{/, 'the edit control has no styles');
   assert.match(css, /\.ai__edit:hover, \.ai__edit:focus-visible/,
     'the control has to show focus and hover like every other one in the panel');
+});
+
+/* ── VOICE-16 · §11.1's initiative (a): the spoken greeting ─────── */
+
+test('VOICE-16: the greeting exists per language, and offers the same three topics', () => {
+  for (const lang of ['en', 'hi', 'hinglish']) {
+    const g = greetingFor(lang);
+    assert.ok(g.hello.trim().length > 40, `${lang} greets with too little to be a greeting`);
+    assert.deepEqual(g.topics, ['projects', 'skills', 'contact'],
+      'the three offered topics must be the panel\u2019s own starter chips, not a different list');
+    for (const topic of g.topics) {
+      assert.match(g.hello, new RegExp(topic, 'i'),
+        `${lang} promises "${topic}" as one of the three and then does not name it`);
+    }
+  }
+  assert.equal(greetingFor('hi-IN'), GREETINGS.hi, 'a region tag must resolve to its language');
+  assert.equal(greetingFor('en-US'), GREETINGS.en);
+  assert.equal(greetingFor('zz'), GREETINGS.en,
+    'an unknown tag falls back to English rather than greeting with nothing');
+  assert.equal(greetingFor(undefined), GREETINGS.en);
+});
+
+test('VOICE-16: Proactive greets exactly once per session', () => {
+  const { voice, spk } = build(2);            /* T2: continuous + spoken answers */
+  voice.enable();
+  assert.equal(voice.greet(), true, 'the opt-in click should be greeted');
+  assert.equal(spk.spoken.length, 1);
+  assert.equal(voice.greet(), false, 'a second greet() in one session must say nothing');
+  assert.equal(spk.spoken.length, 1, 'the shell calling greet() twice must not talk twice');
+  voice.enable();                             /* already on: no second session */
+  assert.equal(spk.spoken.length, 1);
+  voice.disable();
+  voice.enable();
+  assert.equal(voice.greet(), true, 'a fresh session is greeted again — it is a fresh visitor turn');
+  assert.equal(spk.spoken.length, 2);
+  voice.disable();
+});
+
+test('VOICE-16: the greeting is spoken through the answer path, in the session\u2019s language', () => {
+  const { voice, spk } = build(2);
+  voice.setLang('hi-IN');
+  voice.enable();
+  voice.greet();
+  assert.equal(spk.lastOpts?.lang, 'hi-IN',
+    'the greeting must be spoken in the language the session is in');
+  assert.match(spk.spoken[0], /projects/i);
+  voice.disable();
+});
+
+test('VOICE-16: Tap & Speak is never greeted', () => {
+  /* A press is already a question. Greeting somebody who pressed a button to
+     ask one thing is the assistant talking over them. */
+  const { voice, spk } = build(1);            /* T1: push-to-talk only */
+  voice.enable();
+  assert.equal(voice.greet(), false, 'push-to-talk has nothing to greet with');
+  assert.equal(spk.spoken.length, 0, 'push-to-talk must not greet');
+  voice.disable();
+});
+
+test('VOICE-16: a hidden tab is not greeted', () => {
+  const { voice, spk, env } = build(2);
+  env.document = { hidden: true };
+  voice.enable();
+  assert.equal(voice.greet(), false, '§11.1: never speaks while the tab is hidden');
+  assert.equal(spk.spoken.length, 0);
+  voice.disable();
+});
+
+test('VOICE-16: an off session cannot be made to speak', () => {
+  /* The tour (§11.1 c) speaks through `voice.speak`, so the guard that matters
+     is here: no session, no sound — not even a fixed line. */
+  const { voice, spk } = build(2);
+  assert.equal(voice.speak('anything'), false, 'speaking with voice off must be refused');
+  voice.enable();
+  assert.equal(voice.speak('a line from the tour'), true);
+  assert.equal(spk.spoken.at(-1), 'a line from the tour');
+  voice.disable();
+  assert.equal(voice.speak('and now?'), false, 'disabling voice must silence the tour');
 });

@@ -1725,6 +1725,17 @@ processed until the worker returns to its event loop. Pressing Stop saves the
 genuinely interruptible prefill would need a macrotask yield per token — the
 exact cost the decode loop avoids with `step % 16 === Promise.resolve()`.
 
+> **SUPERSEDED 2026-09-28.** The paragraph above is the measurement, and it was
+> right: the worker really did grind on after a Stop. What it got wrong was the
+> conclusion — “a genuinely interruptible prefill would need a macrotask yield
+> per token”. Sixteen forwards is enough, and `Promise.resolve()` was never a
+> yield *at all*: a chain of microtasks does not return to the event loop, so
+> the `abort` **message** sat in the queue until the pass it was meant to stop
+> had finished, in the decode loop too. Fixed in `ai/engine/index.mjs`
+> (`COOP_EVERY` + `breathe()`), with `tests/engine.test.mjs` ENG-19/ENG-20 as
+> the regression — see **§11.1 (a) and (c), and the Stop that did not stop**
+> below.
+
 ### The bug that shipped green
 
 Adding the `PARTIAL` badge put a stray backtick in a CSS comment in
@@ -2954,3 +2965,124 @@ as a probe-invocation gap, not as a result.
 ### Evidence
 `ai/ui/chat.mjs` · `ai/ui/styles.mjs` · `tests/disclosure.test.mjs` ·
 `dev-ai-probe.js` · `dev-firefox-probe.js` · `docs/PRIVACY.md` §2 · `README.md`
+
+---
+
+## §11.1 (a) and (c), and the Stop that did not stop — 2026-09-28
+
+**Status:** ✅ **built, tested, and verified in a browser** — and the run that
+verified it found a real defect in the engine, two layers below the feature.
+
+### The audit that found them
+
+§11.1 lists five things proactive mode is supposed to do. Three existed — (b)
+follow-up offers, (d) the idle nudge, (e) the standby that releases the
+recognizer. Two had **no code anywhere in the tree**:
+
+| §11.1 | Clause | Before |
+|---|---|---|
+| (a) | *"a short spoken greeting, mentioning projects, skills and contact"* | nothing spoke unless the visitor asked something first |
+| (c) | *"a guided tour of the portfolio when asked"* | nothing. `ask('take me on a tour')` was a retrieval question like any other |
+
+Both were found by reading the spec clause by clause against the tree — the
+same method the §15/§16/§17 rollups and §2 N4's About popover were found by.
+The §0–§19 sweep has now produced one build item per pass; this was the §11 pass.
+
+### (a) The greeting
+
+* `GREETINGS` — one line per language, and each one *names the three topics*
+  §11.1 asks for rather than saying "hi": projects, skills, contact. Exported
+  as frozen data with `greetingFor(lang)`, so the claim is testable without a
+  browser.
+* `voice.greet()` — called when a hands-free session opens. Once per session
+  (`greeted`, reset in `enable()` **and** `disable()`), only when
+  `mode === 'continuous' && policy().speakAnswers && !suspended`, i.e. only in
+  the one mode the greeting is for, and **never by opening a session window**:
+  a greeting must not make the visitor's next sentence count as an answer.
+* `voice.speak(text)` — one guarded entry point for every fixed line (the
+  greeting and the tour), so a muted or suspended session cannot be spoken at
+  from three different call sites.
+
+### (c) The guided tour
+
+* `TOUR_STOPS` — about → projects → skills → contact, each with its own line;
+  `TOUR_STEP_MS = 7000` between stops.
+* Each stop resolves its own target through `resolveTopicAnchor()`, a new
+  export in `ai/ui/anchors.mjs` that matches **only** an element's own
+  `data-ai-topics` declaration, shallowest wins — so a stop can never scroll to
+  a section that merely *mentions* the topic.
+* A stop bubbles `TOUR · <TOPIC>` (a badge, distinct from the model's), speaks
+  its line through `voice.speak`, and moves the page with
+  `Director.scrollTo(anchor, { immediate: reducedMotion() })` — a new `opts`
+  argument, because §3's reduced-motion rule and a 1.6 s scroll cannot both be
+  respected by the same call.
+* **A question stops the walk** (`stopTour()` is called from `ask()`, from
+  `close()`, and by the chip itself) and it ends with an honest "That is the
+  tour." Undeclared stops are skipped silently instead of scrolling to nothing.
+* The **"Take the tour"** chip is offered only when Proactive is on, so it can
+  never be the first thing a visitor sees.
+
+### The Stop that did not stop
+
+The tour work cost the probe nothing; running it cost the probe a lot. The
+first Chrome run **crashed**:
+
+```
+✔ Retry appears after a non-answer hidden=false
+PROBE CRASH Runtime.callFunctionOn timed out.
+```
+
+The second run replaced the crash with a verdict — `56/58`, both failures the
+same check: `tokens stream in before the answer is finished` came back
+`streamed=false`, while the line right below it printed `kind=model 12 facts 12
+sources (finished=true)`. **The retry did answer.** It just took longer than
+180 s to start, and the probe's own 180 s in-page limit could never be reached
+because Puppeteer's `protocolTimeout` defaulted to the same 180 s and always
+fired first.
+
+That is a probe bug (fixed: `protocolTimeout` is now 900 s and env-overridable,
+so the probe's own limit is the binding one and a timeout is *reported* rather
+than crashed). It is not *only* a probe bug. The engine, `ai/engine/index.mjs`,
+awaited `Promise.resolve()` every 16 steps in its decode loop, and a
+prefill loop with no awaits at all. A Stop reaches that engine as a
+`postMessage`, and **a message is a task** — it cannot be delivered while a
+chain of microtasks owns the loop. MEASURED, in isolation:
+
+```
+microtask-only loop:  steps=50 timerRanDuringLoop=false
+with one setTimeout:  timerRanDuringLoop=true
+```
+
+So at governor step 0 — a healthy machine, the common case — the `abort` was
+never delivered at all: the client stopped waiting, the worker ran the whole
+generation it was told to abandon, and the visitor's **next** question queued
+behind it. Retry is exactly that next question, which is why the probe found it
+there and nowhere else.
+
+Fixed by making the yields real: `COOP_EVERY = 16` + `breathe()` (a
+`setTimeout`), applied to the decode loop and to the prefill, plus an
+`signal?.aborted` check **inside** the prefill — the prompt is 135–512 forwards,
+most of the wait, and a Stop noticed only at the first generated token still
+cost the visitor the whole prefill. A prefill that stops early calls
+`model.reset()` and does **not** `rememberPrefix()`: the K/V cache then holds
+half a prompt, and `reusePrefix` matches on token ids, so remembering it would
+let the next question skip a prefix the model never actually read.
+
+### MEASURED
+
+| | |
+|---|---|
+| `dev-ai-probe.js` (built bundle · Chrome · real GPU) | **58/58** — the 8 §2 N4 checks, the 4 new §11.1 (c) checks, and **both** retry checks green |
+| the two retry checks, before the engine fix | **`streamed=false`** on two runs (>180 s), one of which ended in `PROBE CRASH` |
+| ENG-19 / ENG-20 with the fix stashed | **both FAIL** (`the abort must be delivered during the generation, not after it`; `it ran 60 tokens and stopped with max-tokens`) |
+| ENG-19 / ENG-20 with the fix | **both pass** — the prefill stops after **16 of 229** forwards, the decode loop stops at **16 of 60** tokens (`ENG-19 promptTokens=229 forwards=16` · `ENG-20 tokens=16 stopReason=stopped`) |
+| tests | **516 JS + 353 Python, 0 failures** · `npm run build` clean |
+| §4 chat **code** chunk | **74,341 B gz = 48.4 %** of the 150 KB budget (74,246 / 48.3 % after the tour alone, +86 B for the engine fix's comments, +9 B for the tour-copy note; **+1,564 B gz** over the whole session from 72,777, ≈77 KB headroom) |
+
+### Evidence
+`ai/voice/index.mjs` (`GREETINGS`, `greetingFor`, `greet`, `speak`) ·
+`ai/ui/chat.mjs` (`TOUR_STOPS`, `tourStep`, `startTour`, `stopTour`,
+`offerTour`) · `ai/ui/anchors.mjs` (`resolveTopicAnchor`) · `js/director.js`
+(`scrollTo(target, { immediate })`) · `ai/engine/index.mjs` (`COOP_EVERY`,
+`breathe`) · `tests/tour.test.mjs` (9) · `tests/voice.test.mjs` VOICE-16 (5) ·
+`tests/engine.test.mjs` ENG-19/ENG-20 · `dev-ai-probe.js`
