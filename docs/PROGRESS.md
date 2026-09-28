@@ -3107,3 +3107,25 @@ would fail if it stopped being true.
 | **N6** | *nothing AI-related loads or initialises before the click; voice assets only when a voice mode is chosen* | Two halves, deliberately. Deterministic: `tests/launcher.test.mjs` — the launcher is **945 B gz** against a 2 KB budget, it is inert (no fetch/XHR/Worker/WebSocket/sendBeacon/wasm/KB), its single `import(CHUNK)` resolves to the chat shell, and `index.html` names nothing under `ai/` in source **and** in `dist/`. Browser: `dev-ai-probe.js` watches the wire — **0** AI requests and **0** workers before the click, 31 assets after it, of which `ai/voice/*` arrives only once the microphone button is pressed (`tests/build-bundle.test.mjs` → *"§2 N6: the voice engine is fetched on a TAP, not on the click"*) |
 | **N7** | *if AI cannot run, the portfolio still works and the visitor still gets a graceful path — never a crash, a freeze, a blank modal or an endless spinner* | `dev-degrade-probe.js` on the **built bundle**: **20/20** — the T0 path requests 0 model assets and refuses by name; with every model asset 404ing the panel states the reason, stays usable, leaves the film untouched, and a reload on a healthy network recovers to `ready` with real weights and a real answer. `tests/launcher.test.mjs` covers the pre-click half (a page with no AI at all), MODEL-2 the "no model" refusal, and the shell's `presentRefusal` path the rest |
 | **N8** | *no second WebGL/Three.js renderer, no heavy canvas scene, no permanent extra rAF loop* | `tests/build-bundle.test.mjs` → *"§2 N8: the AI layer draws nothing and starts no loop of its own"*: no `getContext`, no canvas, no `THREE`, no `setInterval` anywhere in `ai/`, and `requestAnimationFrame` **exactly once** (a one-shot reveal); the frame monitor must add **and remove** its GSAP ticker callback, because a callback that cannot be removed turns `close()` into a leak. `tests/voice.test.mjs` VOICE-13 holds §11.5's visual to the same rule (CSS only, still under reduced motion), and `npm run probe:resources` counts **0** shader programs compiled while answering |
+
+### A §6.5 pass came with it, and found one nuance (not a gap)
+
+§2 N2's evidence is a bundle that cannot call out, so the network/storage
+etiquette around that one call got swept too. Four of §6.5's five bullets are
+implemented and reachable: the auto-start gate (`probeCapabilities` reports
+`saveData` and `effectiveType`, `chooseTier` drops a `saveData` visitor to T0 and
+a 2g/3g visitor to T1 — the tier that asks first), the size stated before
+anything is fetched, shards SHA-256 verified with the arithmetic in the worker
+and low priority, and `persist()` deliberately never called ("don't request
+persistent storage unless it clearly helps" — nothing here needs it).
+
+The nuance: `navigator.storage.estimate()` is read for **`quota`**, not for
+`quota − usage`, so "is there room?" is really "does this origin's quota exceed
+`minStorageBytes`". A device with a full quota can therefore still be offered the
+download. Nothing breaks when that happens — the cache put is best-effort, a
+`QuotaExceededError` there is swallowed, and the load completes from the network
+(§2 N7) — but the panel's "one-time, cached" promise is optimistic on that
+device, and a later eviction replays the same path. Recorded, not rewritten: the
+catastrophic case is already gated at T0, and the fix (carry `quota − usage`
+alongside `quota`) is a behaviour change worth making with a device to test it
+on, not at the end of a day.
