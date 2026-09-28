@@ -3215,6 +3215,7 @@ Aashish and nothing else.
 | what the answers say now | `"His full name is Aashish Kumar."` · `"Aashish's skills (38): …"` · `"Aashish has 3 shipped projects: …"` · `"Here's how to reach Aashish:"` — and, in the other voice, `"My name is …"` · `"My skills (38): …"` · `"I've shipped 3 projects: …"` |
 | the identity disclosure | `"I'm Aashish's AI Portfolio Assistant — not Aashish himself."` (the first-person build said "That's me — Aashish Kumar") |
 | what did NOT change | the weights, the manifest, the SFT corpus, the prompt contract (both RULES blocks still ship), and every §11.1 fixed string — the greeting and the tour were already in this voice, which is why they no longer disagreed with the answers |
+| what is now out of step, and left that way | `docs/EVAL_PROMPTS.json` + `EVAL_ANSWERS.json` — 41 of the 60 prompts pin `rules: "first"`, and the answers were decoded from exactly those prompts. They stay a **matched pair** describing the previous voice rather than being half-refreshed: re-emitting the prompts alone would leave two files disagreeing with nothing to catch it, and re-decoding means an export plus 60 generations to re-measure a FAIL. `docs/FINAL_REPORT.md` limitation 14 states it, including what was **not** re-measured |
 
 ### Evidence
 `ai/answers/quick.mjs` · `ai/answers/model.mjs` · `ai/intent/rules.mjs` ·
@@ -3222,3 +3223,24 @@ Aashish and nothing else.
 `tools/model-eval.mjs` · `tools/eval-decode.mjs` · `tests/quick-answers.test.mjs`
 (QA-10 ×6) · `tests/engine.test.mjs` (ENG-12, ENG-15) · `README.md` ·
 `docs/AI_ARCHITECTURE.md` · `docs/FINAL_REPORT.md` 12b + item 6
+
+### …and §6 and §7 were swept in the same pass: no unbuilt clause
+
+Once the §2 table existed, the sections it points at were cheap to check the
+same way — clause, code, gate. Recorded because "we looked and found nothing"
+is a result, and because two of the entries are *nearly* gaps:
+
+| Clause | Verdict |
+|---|---|
+| §6.1 capability probing, §6.2 tiers, §6.3 the degrade ladder | **gated** — `tests/governor.test.mjs` (15) runs every rung against a fake answerer and a fake scene, `chooseTier`'s blockers are asserted (no worker, no wasm, no SIMD, `saveData`, thin quota), and the tier the probe lands on is printed by every browser probe |
+| §6.4 one dispose path | **implemented and reachable, unit-tested at the module boundary** — `session.dispose()` posts `dispose` and **terminates the worker** (§6.4: "the only reliable way to free wasm memory"); the VAD's `stop()` stops every `MediaStream` track and closes its `AudioContext`; no object URL is ever created anywhere in `ai/`, so there is nothing to revoke; the panel's listeners and timers come off in `close()`. What is **NOT TESTED** is the memory actually coming back on a real device — `dev-resource-probe.js` measures the panel's own churn, not the tab's RSS |
+| §6.4 unload the LLM after close + idle (~2 min) | **implemented** — `unloadLater()` on `close()`, `120_000` ms, then `session.dispose()`. Model files stay in Cache Storage, which is what makes the reload cheap (§9.3, `dev-offline-probe.js`) |
+| §6.4 "at most two wasm runtimes" | **compliant by construction and worth saying plainly**: this build has **zero** wasm runtimes. The engine is scalar JS, the recogniser and speaker are the browser's, and the VAD is our own energy code. The clause is a ceiling we are nowhere near, not a constraint we engineered against |
+| §6.4 iOS caution (treat iOS as T1–T2) | **true by construction, not by name** — and that distinction is the finding. Nothing clamps on user-agent: an iPhone/iPad reports a **coarse pointer**, which `chooseTier` treats as a thin device → T1, and T3 additionally requires a *reported* ≥ 8 GB (iOS Safari reports no `deviceMemory`), so T3 is unreachable there. So the outcome the clause asks for is where the heuristics land anyway. A real iPhone has still never run this — see `docs/FINAL_REPORT.md` limitations |
+| §7.1 architecture (RoPE, GQA, RMSNorm, tied embeddings), §7.2 the tokenizer, §7.3 Stage A, §7.4 Stage B, §7.5 training engineering | **built and run** — the trained-shape pipeline works end to end at the `local` config (Stage A 1,100 steps, Stage B 60 with assistant-only loss), the forward pass is cross-checked torch ↔ numpy ↔ JS (argmax 100 %), the tokenizer has its own spec tests, and resume/checkpointing/eval are exercised by `tests/py/test_train_scripts.py`. What §7 has **not** delivered is quality, and that is the GPU item, not a missing clause |
+
+The honest summary of the sweep so far: §2 (eight rules, one deviation), §5 (one
+deviation, now closed), §6 and §7 (nothing unbuilt), §11.1 (two clauses built),
+§14 (measured, failing, at a scale that cannot pass), §15/§16/§17/§18/§19
+(rolled up). Every one of them is now a table with the thing that would fail
+next to it, which is the only form of "done" that survives a second reader.

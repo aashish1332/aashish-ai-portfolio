@@ -268,7 +268,22 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
     fails if the first-person option stops working. The SFT corpus needed no
     change precisely because it samples both personas per example — the voice
     the model answers in is chosen by the RULES block, not baked into the data.
-13. **§2 N3 is the one non-negotiable this build deviates from, and it must be
+14. **The §14 evaluation is one default-generation behind the shipped voice,
+    and it is deliberately left that way.** `docs/EVAL_PROMPTS.json` carries
+    `rules: "first"` on its 41 model-routed rows and
+    `docs/EVAL_ANSWERS.json` holds the 60 answers decoded from exactly those
+    prompts — a *matched pair*, measured under the persona that shipped until
+    2026-09-28. §5's flip made the default `'third'`, so `npm run eval:prompts`
+    today emits a different file. It has not been re-emitted on purpose:
+    re-emitting the prompts alone would leave the prompts and the answers
+    describing two different voices with nothing to notice it, and refreshing
+    the answers means exporting a checkpoint and decoding 60 prompts through
+    the shipping engine — minutes of generation to re-measure a checkpoint
+    whose verdict is already a **FAIL** (factual accuracy 0.0 % against a 95 %
+    gate). The difference between the two runs is the prompt's RULES block, so
+    the guarded metrics (abstention, unsupported claims, language) *should* be
+    unchanged — **NOT re-measured**, and it must not be quoted as if it were.
+15. **§2 N3 is the one non-negotiable this build deviates from, and it must be
     read as a deviation.** N3 asks that "any remote speech-recognition mode is
     disabled"; the browser's `SpeechRecognition` has no switch that forbids its
     network path, so voice input is the platform's recogniser — asked to stay on
