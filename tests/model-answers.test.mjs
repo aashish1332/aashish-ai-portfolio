@@ -294,6 +294,31 @@ test('MODEL-9 every refusal exists in three languages and states no fact', () =>
   }
 });
 
+test('MODEL-9b the fixed refusals speak ABOUT Aashish, not as him (§5)', () => {
+  /* §5: "it speaks about Aashish in the third person and never pretends to be
+     him." These sentences are the one place the assistant talks at length with
+     no model in the loop, so they are also the last place a stale voice can
+     hide — and it did: the flip to the third person left "ask me for my
+     email", "from my portfolio data" and their Hindi/Hinglish twins behind.
+     Nothing asserted the VOICE of a fixed string, which is why the persona
+     tests (QA-10) did not catch them: those run the planner, and these lines
+     are chosen by the answer layer.
+
+     Possessives only. The `strained` refusal says "I've stopped generating
+     answers for now" (मैंने … / maine …), which is the assistant talking about
+     ITSELF and is correct in all three languages. */
+  const AASHISH_POSSESSIVE = /\bmy\b|\b(?:mera|mere|meri)\b|मेरा|मेरे|मेरी/i;
+  const offenders = [];
+  for (const kind of NO_ANSWER_KINDS) {
+    for (const lang of ['en', 'hi', 'hinglish']) {
+      const line = noAnswerLine(kind, lang);
+      if (AASHISH_POSSESSIVE.test(line)) offenders.push(`${kind}/${lang}: ${line}`);
+    }
+  }
+  assert.deepEqual(offenders, [],
+    `a fixed refusal claims Aashish's things as its own:\n  ${offenders.join('\n  ')}`);
+});
+
 test('MODEL-10 a question retrieval cannot see still reaches the model with its facts',
   async () => {
     const probe = answererWith(stubSession({ text: '' }));

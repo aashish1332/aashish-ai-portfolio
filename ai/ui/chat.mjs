@@ -1286,7 +1286,7 @@ let working = 0;
         const kbLoaded = ready?.loaded?.bytes ?? session.loaded?.bytes ?? 0;
         if (label) {
           label.textContent = `Aashish AI is ready — ${fmtMB(kbLoaded)} of model in your `
-            + 'browser, answering from my portfolio data only.';
+            + 'browser, answering from his portfolio data only.';
         }
         line?.remove?.();
         renderChips(starterChips());
@@ -1386,8 +1386,8 @@ let working = 0;
          promising answers it may not be able to give. */
       const opening = modelState === 'ready'
         ? { badge: 'ON-DEVICE MODEL READY',
-          text: 'Ask me about my projects, skills, education, certifications or how to '
-            + 'reach me. Answers are generated on your device by a model trained for '
+          text: 'Ask me about his projects, skills, education, certifications or how to '
+            + 'reach him. Answers are generated on your device by a model trained for '
             + 'this portfolio, reading only its verified data.' }
         : modelState === 'unsupported'
           ? { badge: MODEL_BADGES.noModel, text: noAnswerLine('unsupported', 'en') }

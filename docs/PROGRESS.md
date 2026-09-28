@@ -3085,7 +3085,7 @@ let the next question skip a prefix the model never actually read.
 | ENG-19 / ENG-20 with the fix stashed | **both FAIL** (`the abort must be delivered during the generation, not after it`; `it ran 60 tokens and stopped with max-tokens`) |
 | ENG-19 / ENG-20 with the fix | **both pass** — the prefill stops after **16 of 229** forwards, the decode loop stops at **16 of 60** tokens (`ENG-19 promptTokens=229 forwards=16` · `ENG-20 tokens=16 stopReason=stopped`) |
 | tests | **516 JS + 353 Python, 0 failures** · `npm run build` clean |
-| §4 chat **code** chunk | **74,373 B gz = 48.4 %** of the 150 KB budget (74,246 / 48.3 % after the tour alone; **+1,596 B gz** over the day from 72,777, ≈77 KB headroom — §5's persona flip below is the last +32 B of it) |
+| §4 chat **code** chunk | **74,366 B gz = 48.4 %** of the 150 KB budget (74,246 / 48.3 % after the tour alone; **+1,589 B gz** over the day from 72,777, ≈77 KB headroom) |
 
 ### Evidence
 `ai/voice/index.mjs` (`GREETINGS`, `greetingFor`, `greet`, `speak`) ·
@@ -3209,12 +3209,13 @@ Aashish and nothing else.
 
 | | |
 |---|---|
-| `npm test` | **517 JS, 0 failures** (was 516; the twin test is the new one) |
+| `npm test` | **519 JS, 0 failures** (516 before the flip, 517 with its twin test, 519 with the two copy tests) |
 | `npm run test:py` | **353 Python, 0 failures** |
-| §4 chat **code** chunk | **74,373 B gz = 48.4 %** of 150 KB — **+32 B gz** for the flip (one comment explaining it, one import, and the normalisation branch; the constants themselves are the same size) |
+| §4 chat **code** chunk | **74,366 B gz = 48.4 %** of 150 KB — **+25 B gz** net against the 74,341 B build the flip landed on: the persona switch itself cost 32 B gz (one comment, one import, one normalisation branch) and repairing the refusal and fallback copy it had missed gave 7 B back (six shorter strings) |
 | what the answers say now | `"His full name is Aashish Kumar."` · `"Aashish's skills (38): …"` · `"Aashish has 3 shipped projects: …"` · `"Here's how to reach Aashish:"` — and, in the other voice, `"My name is …"` · `"My skills (38): …"` · `"I've shipped 3 projects: …"` |
 | the identity disclosure | `"I'm Aashish's AI Portfolio Assistant — not Aashish himself."` (the first-person build said "That's me — Aashish Kumar") |
 | what did NOT change | the weights, the manifest, the SFT corpus, the prompt contract (both RULES blocks still ship), and every §11.1 fixed string — the greeting and the tour were already in this voice, which is why they no longer disagreed with the answers |
+| the copy the flip left behind | **six strings, found after the tests were green.** The persona tests run the *planner*; the fixed sentences are chosen by the answer layer and the shell, so nothing asserted their voice — and they still spoke as Aashish: `"ask me for my email instead"` (and its Hindi/Hinglish twins), `"I couldn't answer that from my portfolio data"` (×3), the opening line `"Ask me about my projects … how to reach me"`, the ready label `"answering from my portfolio data only"`, and §11.1 (d)'s idle nudge `"Still here — ask about my projects…"`. All six now say his/him/उनका, held by two new tests that were verified by putting the stale copy back (both fail). `IDLE_NUDGE` means `docs/MANUAL_TEST_CHECKLIST.md` D13 changed with it |
 | what is now out of step, and left that way | `docs/EVAL_PROMPTS.json` + `EVAL_ANSWERS.json` — 41 of the 60 prompts pin `rules: "first"`, and the answers were decoded from exactly those prompts. They stay a **matched pair** describing the previous voice rather than being half-refreshed: re-emitting the prompts alone would leave two files disagreeing with nothing to catch it, and re-decoding means an export plus 60 generations to re-measure a FAIL. `docs/FINAL_REPORT.md` limitation 14 states it, including what was **not** re-measured |
 
 ### Evidence

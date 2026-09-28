@@ -85,14 +85,14 @@ export const MODEL_BADGES = Object.freeze({
    in Hindi must not be told, in English, that there is no answer. */
 const NO_ANSWER_TEXT = {
   withheld: {
-    en: "That detail isn't published, so I won't answer with it — ask me for my email instead.",
-    hi: 'वह विवरण सार्वजनिक नहीं है, इसलिए मैं उससे जवाब नहीं दूँगा — मेरा ईमेल पूछ सकते हैं।',
-    hinglish: 'Wo detail publish nahi hai, isliye main usse jawab nahi dunga — mera email pooch sakte hain.',
+    en: "That detail isn't published, so I won't answer with it — ask me for his email instead.",
+    hi: 'वह विवरण सार्वजनिक नहीं है, इसलिए मैं उससे जवाब नहीं दूँगा — उनका ईमेल पूछ सकते हैं।',
+    hinglish: 'Wo detail publish nahi hai, isliye main usse jawab nahi dunga — unka email pooch sakte hain.',
   },
   unverified: {
-    en: "I couldn't answer that from my portfolio data without guessing, so I'm not answering it.",
-    hi: 'यह सवाल मैं अपने पोर्टफोलियो डेटा से अंदाज़ा लगाए बिना जवाब नहीं दे सका, इसलिए जवाब नहीं दे रहा हूँ।',
-    hinglish: 'Ye sawaal main apne portfolio data se andaaza lagaye bina jawab nahi de saka, isliye jawab nahi de raha hoon.',
+    en: "I couldn't answer that from his portfolio data without guessing, so I'm not answering it.",
+    hi: 'यह सवाल मैं उनके पोर्टफोलियो डेटा से अंदाज़ा लगाए बिना जवाब नहीं दे सका, इसलिए जवाब नहीं दे रहा हूँ।',
+    hinglish: 'Ye sawaal main unke portfolio data se andaaza lagaye bina jawab nahi de saka, isliye jawab nahi de raha hoon.',
   },
   unsupported: {
     en: 'This device cannot run the on-device AI model, so I cannot answer questions here. '

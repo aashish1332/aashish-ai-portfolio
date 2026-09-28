@@ -474,6 +474,33 @@ const NAV_NARRATION = new RegExp('\\b(' + [
   'find that section', 'no such section', 'that section',
 ].join('|') + ')\\b', 'i');
 
+test('QA-10: nothing the shipped shell or voice layer says speaks as Aashish (§5)', () => {
+  /* The same source-scan trick as §12's narration check below, for the same
+     reason: this copy has no result object to assert on. `ai/answers/quick.mjs`
+     is deliberately NOT scanned — it is the one file that legitimately holds
+     both voices, side by side, inside `pick(persona, third, first)`, and the
+     persona tests above are what hold it to its default. These four modules
+     are pure shell and voice copy: every "my" in them was written when the
+     panel spoke as Aashish. Six were still there after the flip, including
+     the idle nudge a visitor hears and the opening line they read first. */
+  const SHIPPED_COPY = ['ai/ui/chat.mjs', 'ai/voice/index.mjs', 'ai/voice/vad.mjs',
+    'ai/voice/caps.mjs'];
+  /* Possessives only — see the note in tests/model-answers.test.mjs: the
+     assistant saying "I've stopped…" about itself is not the wrong voice. */
+  const AASHISH_POSSESSIVE = /\bmy\b|\b(?:mera|mere|meri)\b|मेरा|मेरे|मेरी/i;
+  const offenders = [];
+  for (const rel of SHIPPED_COPY) {
+    const src = readFileSync(join(HERE, '..', ...rel.split('/')), 'utf8');
+    /* every single-quoted, double-quoted or template string literal */
+    const literals = src.match(/'[^'\n]*'|"[^"\n]*"|`[^`]*`/gs) || [];
+    for (const s of literals) {
+      if (AASHISH_POSSESSIVE.test(s)) offenders.push(`${rel}: ${s.trim().slice(0, 96)}`);
+    }
+  }
+  assert.deepEqual(offenders, [],
+    `the shipped copy speaks as Aashish instead of about him:\n  ${offenders.join('\n  ')}`);
+});
+
 test('§12: no answer ever narrates the navigation', () => {
   const offenders = [];
   for (const q of VOICE_BATTERY) {

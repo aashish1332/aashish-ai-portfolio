@@ -109,7 +109,7 @@ The constraint that outranks everything else: *the portfolio must not get slower
 | Metric | Value | Tag |
 |---|---|---|
 | Anything AI on initial load | The launcher only — **945 B gz**, and it is inert (no fetch, no worker, no network API, one dynamic import). `tests/launcher.test.mjs` gates it deterministically: the 2 KB budget, the single `import(CHUNK)` resolving to the chat shell, and that `index.html` names nothing under `ai/` (no script, link, import-map entry or preload). The browser half is `dev-ai-probe.js`'s network assertion | **MEASURED** (probe + gate) |
-| What the click fetches | **44,845 B gz** static reach of `ai/ui/chat.mjs`, 14 files (86,096 B before the comment strip, 102,596 B before the voice split) | **MEASURED** |
+| What the click fetches | **44,842 B gz** static reach of `ai/ui/chat.mjs`, 14 files (86,096 B before the comment strip, 102,596 B before the voice split) | **MEASURED** |
 | First open | UI **221–405 ms**, knowledge + capability probe **285–722 ms** | **MEASURED** |
 | Worst main-thread long task, AI windows | **65 ms** — against the page's own worst of **88 ms** with the panel never opened | **MEASURED** |
 | Frame time, panel open vs closed | 25.2 ms vs 24.7 ms = **2 %** FPS drop (§4 allows 10 %); re-measured with the film's tier pinned: **18.3 vs 18.3 ms = 0 %** | **MEASURED** |
@@ -126,7 +126,7 @@ The constraint that outranks everything else: *the portfolio must not get slower
 | §4's reference profiles (never run before 2026-09-27) | R1 as it is **0 %**, R1 @4× CPU **−2.5 %**, R1 @6× CPU **+0.3 %** — all **1.00×** p95, all **43/43 checks**; panel ready 815 / 1,091 / 1,502 ms; first answer 25.1 / 45.4 / 42.8 s | **MEASURED** |
 | A weak device, for real | **NOT TESTED** — the CDP throttle hits the main thread (frame time 18.3 → 35.3 ms) but not the Worker proportionally (first answer 25.1 → 45.4 s is 1.8×, not 4×), so this profile must not be quoted as a phone's latency | **NOT TESTED** |
 | …and why it took this long | The A/B ran under software GL until 2026-09-27, where it was inconclusive; the first real-GPU run without a pin reported **−49 %** (the *open* arm faster) because the film's own governor walked tier 1 → tier 4 during the session — a confound the probe now detects and refuses to attribute | **MEASURED** |
-| §4 code chunk | **74,373 B gz = 48.4 %** of 150 KB (≈77 KB headroom) as of 2026-09-28 — §2 N4's disclosure card added 1,312 B gz and §11.1 (a)/(c) plus the engine's Stop fix and §5's persona flip added 1,596 B gz. It was 72,777 B gz = 47.4 % before the §11.1 work, 70,544 B = 45.9 % the day before, and 138,896 B = 90.4 % before the comment strip. Conservative reading: every shipped `ai/**` + `knowledge.json`. The click's static reach is 44,845 B gz across 14 files, and the arithmetic it does **not** parse is 13,382 B gz across 9. Asserted on every `npm test`, and reported by `npm run bundle` | **MEASURED** |
+| §4 code chunk | **74,366 B gz = 48.4 %** of 150 KB (≈77 KB headroom) as of 2026-09-28 — §2 N4's disclosure card added 1,312 B gz and §11.1 (a)/(c), the engine's Stop fix and §5's persona flip with its copy sweep added 1,589 B gz. It was 72,777 B gz = 47.4 % before the §11.1 work, 70,544 B = 45.9 % the day before, and 138,896 B = 90.4 % before the comment strip. Conservative reading: every shipped `ai/**` + `knowledge.json`. The click's static reach is 44,842 B gz across 14 files, and the arithmetic it does **not** parse is 13,382 B gz across 9. Asserted on every `npm test`, and reported by `npm run bundle` | **MEASURED** |
 
 ## CHAT
 
@@ -220,8 +220,8 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
    (`npm run probe:firefox` 11/11, 2026-09-28).
 4. **WASM SIMD and WebGPU are unimplemented**, and the payoff cannot be measured
    here — this box runs scalar JS ~10× below its own specification.
-5. **The §4 code chunk is at 48.4 %** (74,373 B gz of 150 KB, ≈77 KB of headroom — it
-   moved 71,465 → 74,373 B gz on 2026-09-28 for §2 N4's disclosure, §11.1's greeting
+5. **The §4 code chunk is at 48.4 %** (74,366 B gz of 150 KB, ≈77 KB of headroom — it
+   moved 71,465 → 74,366 B gz on 2026-09-28 for §2 N4's disclosure, §11.1's greeting
    and tour, the engine's Stop fix and §5's persona flip), so the budget is a
    regression guard rather than a constraint on the next feature. It halved on
    2026-09-27 because half its gzip was comments in our own `ai/**` modules and

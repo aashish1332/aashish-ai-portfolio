@@ -93,7 +93,7 @@ export const VOICE_IDLE = {
 /** The nudge itself: deterministic, no model call (§11.1 "all deterministic,
  *  no extra LLM cost"), and it says how to make it stop. */
 export const IDLE_NUDGE =
-  'Still here — ask about my projects, skills or experience. Stop turns the '
+  'Still here — ask about his projects, skills or experience. Stop turns the '
   + 'microphone off.';
 
 export const VOICE_TIMING = {
