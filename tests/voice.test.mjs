@@ -982,10 +982,20 @@ test('VOICE-13: the visual state follows the microphone, and says the worst one'
   assert.equal(voiceVisualState({ enabled: true, listening: true, speaking: true }), 'speaking');
   assert.equal(voiceVisualState({ enabled: true, listening: true, speaking: true, suspended: true }),
     'suspended', 'a hidden tab outranks everything: that is the state that must never be mistaken');
+  /* §11.1 (e)'s standby is the sixth state, and it was missing from this
+     test's enumeration for a phase: `voiceVisualState` could return it while
+     the "every state is announceable" check below never asked. `standby` and
+     `speaking` cannot actually co-occur — an answer calls `touch()`, which
+     resumes — so this pins the ladder's definition rather than a reachable
+     state, which is why it is asserted here and not claimed as a scenario. */
+  assert.equal(voiceVisualState({ enabled: true, standby: true }), 'standby',
+    'standby is a state of its own, not "armed"');
+  assert.equal(voiceVisualState({ enabled: true, standby: true, suspended: true }), 'suspended',
+    'a hidden tab still outranks it');
 });
 
 test('VOICE-13: every state has words, and no two states say the same thing', () => {
-  const states = ['off', 'armed', 'listening', 'speaking', 'suspended'];
+  const states = ['off', 'armed', 'listening', 'speaking', 'suspended', 'standby'];
   const said = states.map((s) => VOICE_STATE_WORDS[s]);
   for (const s of states) {
     assert.equal(typeof VOICE_STATE_WORDS[s], 'string');
@@ -993,10 +1003,28 @@ test('VOICE-13: every state has words, and no two states say the same thing', ()
   }
   assert.equal(new Set(said).size, said.length, 'two states share a sentence — one of them is a lie');
   /* Every state voiceVisualState can return has to be announceable, or the
-     button would fall back to "off" while it is listening. */
-  for (const s of ['off', 'armed', 'listening', 'speaking', 'suspended']) {
+     button would fall back to "off" while it is listening. The list is
+     checked against the function rather than kept in step by hand: every
+     value it returns for any subset of the status flags must be in `states`,
+     which is how `standby` was found missing from both. */
+  const reachable = new Set();
+  for (const enabled of [false, true]) {
+    for (const suspended of [false, true]) {
+      for (const standby of [false, true]) {
+        for (const speaking of [false, true]) {
+          for (const listening of [false, true]) {
+            reachable.add(voiceVisualState({ enabled, suspended, standby, speaking, listening }));
+          }
+        }
+      }
+    }
+  }
+  for (const s of reachable) {
+    assert.ok(states.includes(s), `voiceVisualState can return "${s}" and this test does not list it`);
     assert.ok(VOICE_STATE_WORDS[s], `${s} is a state the shell can paint with no words for it`);
   }
+  assert.equal(reachable.size, states.length,
+    'the enumerated states and the states voiceVisualState actually returns disagree');
 });
 
 test('VOICE-13: the visual is CSS, and reduced motion leaves it still', () => {
