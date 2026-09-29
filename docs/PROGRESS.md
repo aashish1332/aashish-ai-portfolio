@@ -3359,3 +3359,43 @@ now enforces with a test.
 `ai__about-note`) · `ai/ui/styles.mjs` (`.ai__about-note`) ·
 `tests/disclosure.test.mjs` (N4-1 ×7, §0 rule 4 ×4) · `dev-ai-probe.js` (6c′) ·
 `docs/EVALUATION.json` (the gate result the coupling reads)
+
+---
+
+## §5's persona clause, audited: honoured, and therefore not a deviation
+
+The §3/§12/§13 sweep left §5 open on the suspicion that a *shipped first-person
+mode* contradicted §5's clause — *"it speaks about Aashish in the third person
+and never pretends to be him."* It does not, and the reason is worth writing
+down, because the suspicion was reasonable: the code **does** carry both voices.
+
+| claim | verdict |
+|---|---|
+| the shipped default is third person | **MEASURED** — `DEFAULT_PERSONA = 'third'` (`ai/answers/quick.mjs`), and `tests/quick-answers.test.mjs` QA-10 asserts the constant *and* that a default call returns `persona: 'third'` |
+| the runtime prompt asks for third person | **MEASURED** — `ai/engine/prompt_contract.json` carries both `rules` blocks and `framePrefix({ rules = 'third' })` defaults to the third-person one; the shell passes `persona: DEFAULT_PERSONA` (`ai/ui/chat.mjs`), rather than a literal |
+| a visitor can select the first person | **no** — `ask(text, opts)` reads no persona from `opts`, so the only callers that pass `'first'` are the tests and the §14 evaluation pair |
+| the training data can teach third person | **MEASURED** — `ai/data/instruction.py` has `PERSONAS = ("first", "third")` and every answer template branches on it in all three languages, so a third-person SFT example exists for each fact |
+| nothing the shipped shell or voice layer says speaks *as* Aashish | **MEASURED** — QA-10's last case scans every string literal in `ai/ui/chat.mjs`, `ai/voice/index.mjs`, `ai/voice/vad.mjs` and `ai/voice/caps.mjs` for a possessive (§5's own example is "my CGPA") |
+
+So §5 is the one section where the clause and *this build's own product
+preference* disagreed and the clause won: the default was flipped on 2026-09-28
+(`4304ceb`), the fixed copy that still spoke as Aashish was swept (`3cc5a01`),
+and both voices remain implemented because the evaluation set, the SFT corpus
+and the prompt contract are written against both. `'first'` is therefore a live
+code path with no visitor-facing door — kept deliberately, not left behind.
+
+**Not a deviation.** Unlike §2 N3 (the platform recogniser) and §3/§10 (the
+retired Quick Answers control), nothing here departs from the brief in the
+shipped configuration. The one place §5's voice does not reach is
+`docs/EVAL_ANSWERS.json`, and that is a deliberate choice recorded in `d66b202`:
+the §14 pair is kept on the old first-person prompts so the evaluation numbers
+stay comparable across exports.
+
+### Evidence
+
+`ai/answers/quick.mjs` (`DEFAULT_PERSONA`, `PERSONAS`, `pick`) ·
+`ai/engine/prompt_contract.json` (`rules.first` / `rules.third`) ·
+`ai/engine/prompt.mjs` (`framePrefix({ rules = 'third' })`) ·
+`ai/ui/chat.mjs` (`persona: DEFAULT_PERSONA`) ·
+`ai/data/instruction.py` (`PERSONAS`) ·
+`tests/quick-answers.test.mjs` (QA-10 ×7)
