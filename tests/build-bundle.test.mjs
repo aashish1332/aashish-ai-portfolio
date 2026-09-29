@@ -394,7 +394,7 @@ test('§4: the model\'s arithmetic is not in the click\'s static reach', () => {
       .reduce((n, rel) => n + gzipSync(readFileSync(join(out, rel))).length, 0);
     assert.ok(deferred > 10_000,
       `only ${deferred} B gz is deferred to the worker — this test is not measuring `
-      + 'what it thinks it is (MEASURED: 13,296 B gz across the nine worker-only files)');
+      + 'what it thinks it is (MEASURED: 13,382 B gz across the nine worker-only files)');
   });
 });
 

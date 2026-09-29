@@ -22,8 +22,8 @@ points at a lane in this file (or names why it does not exist).
 
 | Item | Status | Value / where |
 |---|---|---|
-| AI bundle size | MEASURED | §4 lanes: chat **code** chunk **72,777 B gz = 47.4 %** of budget (`npm run bundle` → `chatChunkGz`, 2026-09-28; 71,465 B gz before §2 N4's disclosure); worker-only module **13,296 B gz** |
-| Model download size | MEASURED | **5,059,584 B** raw · **4,812,515 B gz** on the first visit (`npm run bundle` → `firstUseGz`, **11.5 %** of §4's 40 MB) · **0 B on the second visit** (§9.3 cache) |
+| AI bundle size | MEASURED | §4 lanes: chat **code** chunk **74,688 B gz = 48.6 %** of budget (`npm run bundle` → `chatChunkGz`, 2026-09-29 re-run; 72,777 B gz before §0 rule 4's status disclosure); worker-only module **13,382 B gz** |
+| Model download size | MEASURED | **5,144,354 B** raw (weights + tokenizer + manifest) · **4,815,738 B gz** on the first visit (`npm run bundle` → `firstUseGz`, **11.5 %** of §4's 40 MB) · **0 B on the second visit** (§9.3 cache) |
 | WebGPU vs WASM behaviour | **NOT TESTED as speed**; investigated on paper (§19) | this box runs scalar JS ~10× below its own spec, so the comparison cannot be made here; no WGSL or wasm-SIMD kernel was written. `probeWebGPU()` reports the capability and **accelerates nothing** |
 | Mobile behaviour | **MEASURED under emulation only** (390×844, 43/43) | a **real phone is NOT TESTED** |
 | Voice model sizes | **N/A — nothing is shipped.** TTS is the browser's `speechSynthesis`, STT is the platform recogniser, VAD is hand-written energy code (`ai/voice/vad.mjs`). There is no model file under `ai/voice/` | — |
@@ -456,8 +456,8 @@ session (module graph + knowledge base are held).
 
 > **Superseded 2026-09-28.** The numbers in this dated P2 snapshot describe the 9-file,
 > 44,878 B gz build of 2026-09-20; the voice split, §2 N4's card and §11's features have
-> since moved the same measurement to **14 files / 44,842 B gz** on the click and
-> **74,366 B gz (48.4 %)** for the whole code chunk. The rows are kept as the record of
+> since moved the same measurement to **14 files / 45,164 B gz** on the click and
+> **74,688 B gz (48.6 %)** for the whole code chunk. The rows are kept as the record of
 > what was measured that day; the live figures are the §4 tables above.
 
 ### The pre-click assertion, in full
@@ -694,7 +694,7 @@ not config A and it is not a quality result.
 **3,612 tokens/s (256×8)** — against the 1,335 tok/s recorded from the loaded
 box, which is the load spread this file keeps warning about. The manifest is now
 written (23 KB, 68 shard hashes). Re-exported at step 1100: shard 5,059,584 B,
-gzip **4,731,918 B**, brotli 4,712,394 B, q8 row error 0.001356, torch↔numpy PASS
+gzip **4,728,543 B**, brotli 4,691,901 B, q8 row error 0.001356, torch↔numpy PASS
 (max |Δ| 9.54e-6); `verify:engine` **PASS** (argmax 100 %, worst |Δlogit| 1.65e-5,
 decode 79 tok/s).
 
@@ -743,14 +743,14 @@ worst abs Δ logit **3.58e-07**.
 
 | Budget | §4 | Measured |
 |---|---|---|
-| AI chat **code** chunk, conservative reading (every shipped `ai/**` module + `knowledge.json`) | ≤ 150 KB gz | **74,366 B** (48.4 %) — was 71,465 B (46.5 %) after §11's first pass, 138,896 B (90.4 %) before shipped `ai/**` stopped carrying comments; the 2026-09-28 additions are §11.1 (a)/(c), the engine's Stop fix and §5's persona flip with its copy sweep (**+1,589 B gz** over the 72,777 B of the §2 N4 build): `ai/ui/chat.mjs` to 11,388 B, `ai/voice/index.mjs` to 5,910 B, `ai/ui/anchors.mjs` to 2,711 B, `ai/ui/styles.mjs` to 3,408 B) |
-| — of that, §4's chat-UI chunk proper (UI + KB + retrieval + language + guard + intent + anchors + governor) | — | 50,599 B (32.9 %) |
+| AI chat **code** chunk, conservative reading (every shipped `ai/**` module + `knowledge.json`) | ≤ 150 KB gz | **74,688 B** (48.6 %) — was 71,465 B (46.5 %) after §11's first pass, 138,896 B (90.4 %) before shipped `ai/**` stopped carrying comments; the 2026-09-28 additions are §11.1 (a)/(c), the engine's Stop fix, §5's persona flip with its copy sweep, and §0 rule 4's status disclosure (**+1,911 B gz** over the 72,777 B of the §2 N4 build): `ai/ui/chat.mjs` to 11,638 B, `ai/voice/index.mjs` to 5,915 B, `ai/ui/anchors.mjs` to 2,709 B, `ai/ui/styles.mjs` to 3,491 B) |
+| — of that, §4's chat-UI chunk proper (UI + KB + retrieval + language + guard + intent + anchors + governor) | — | 50,921 B (33.2 %) |
 | — of that, voice add-ons (loaded only on the tap that picks voice, §2 N6) | §4 lists separately | 9,012 B |
 | — of that, LLM runtime + tokenizer (§4 "LLM runtime" row) | — | 14,755 B |
-| AI assets actually fetched by **the click** (static reach of `ai/ui/chat.mjs`) | §4's number to keep small | **44,842 B gz (43.8 KB), 14 files** · the worker-only arithmetic the click does **not** parse is **13,382 B gz** across 9 files (both recomputed 2026-09-28 from `dist/`) |
+| AI assets actually fetched by **the click** (static reach of `ai/ui/chat.mjs`) | §4's number to keep small | **45,164 B gz (44.1 KB), 14 files** · the worker-only arithmetic the click does **not** parse is **13,382 B gz** across 9 files (both recomputed 2026-09-28 from `dist/`) |
 | Rest of the page | regression guard 250 KB | 65,860 B |
 | Model payload (weights + tokenizer + manifest) | ≤ 25 MB preferred, ≤ 40 MB hard | **5,144,354 B** raw · 4,741,050 B gz (step 1100) |
-| First-use download, T1/T2 | ≤ ~40 MB | **4,815,416 B** gz (**11.5 %**) |
+| First-use download, T1/T2 | ≤ ~40 MB | **4,815,738 B** gz (**11.5 %**) |
 | Any single AI asset | ≤ ~100 MB | 5,059,584 B raw / 4,728,543 B gz |
 | Files | — | 46 |
 
@@ -846,11 +846,12 @@ asserted byte-identical to source, because §2 N7 says the AI layer does not
 touch the film.
 
 The conservative §4 figure is the number that guards the budget, and after the
-comment strip it is at **48.4 % — 77 KB of headroom** — with the runtime
+comment strip it is at **48.6 % — 77 KB of headroom** — with the runtime
 (14.8 KB) and the voice add-ons (9.0 KB) inside it, both of which §4 lists on
-their own rows. The click's static reach sits at **44,842 B gz** (every figure
+their own rows. The click's static reach sits at **45,164 B gz** (every figure
 in this paragraph is the 2026-09-28 re-run, after §11.1 (a)/(c), the
-engine's Stop fix and §5's persona flip added 1,589 B gz to the chunk — and the worker-only
+engine's Stop fix, §5's persona flip and §0 rule 4's status disclosure added
+1,911 B gz to the chunk — and the worker-only
 arithmetic the click still does not parse is 13,382 B gz, which is the part
 that matters for a 50 ms main-thread budget).
 **The budget is no longer the binding constraint on what `ai/` may grow into; it

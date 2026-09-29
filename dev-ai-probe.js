@@ -720,6 +720,28 @@ const say = (label, ok, detail) => {
     'naming only the on-device outcome would be the misleading version');
   say('§2 N4: rendered as text, not markup', about.hasMarkup === false, '');
 
+  /* ── 6c′. §0 rule 4 — the checkpoint's status, on the screen ───────
+     The rule is "never present smoke-test output as a trained model". The
+     About card now carries it, and this is the half a source scan cannot
+     prove: that it is really rendered, in the card a visitor opens, and that
+     it still denies the quality claim. The coupling that keeps the sentence
+     honest (it may not say "trained" while docs/EVALUATION.json reports the
+     gates as failed) is asserted in tests/disclosure.test.mjs. */
+  const statusNote = await page.evaluate(() => {
+    const note = document.querySelector('#aiAbout .ai__about-note');
+    return {
+      exists: !!note,
+      text: (note?.textContent || '').replace(/\s+/g, ' ').trim(),
+      visible: note ? note.getBoundingClientRect().height > 0 : false,
+    };
+  });
+  say('§0 rule 4: the panel states the checkpoint\u2019s status',
+    statusNote.exists && statusNote.visible && /pipeline test/i.test(statusNote.text),
+    `"${statusNote.text.slice(0, 74)}…"`);
+  say('§0 rule 4: it denies the quality claim in words',
+    /not a model trained for quality/i.test(statusNote.text),
+    'omitting the claim is not the same as stating that it is not true');
+
   /* Escape must close the CARD first; the panel underneath stays open, which
      is why section 7's press below is a second, separate Escape. */
   await page.keyboard.press('Escape');

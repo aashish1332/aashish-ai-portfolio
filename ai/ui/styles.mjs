@@ -233,6 +233,13 @@ export const STYLES = `
 .ai__about-list dd {
   margin: 3px 0 0; font-size: 12.5px; line-height: 1.55; color: var(--paper-dim);
 }
+/* §0 rule 4: the checkpoint's status, set apart from the explanation so it
+   reads as a statement of fact about this build rather than a footnote to it */
+.ai__about-note {
+  margin: 14px 0 0; padding: 10px 0 0;
+  border-top: 1px solid var(--line, rgba(255, 255, 255, .14));
+  font-size: 12px; line-height: 1.5; color: var(--paper-dim);
+}
 .ai__about-card .ai__link { margin: 16px 0 0; align-self: flex-start; }
 /* §10's message controls (Stop / Retry / Clear) sit together at the right of
    the footer. They are revealed by the hidden attribute, so the stylesheet

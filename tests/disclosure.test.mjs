@@ -26,11 +26,15 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { ABOUT_TITLE, ABOUT_SECTIONS } from '../ai/ui/chat.mjs';
+import {
+  ABOUT_TITLE, ABOUT_SECTIONS, MODEL_STATUS, MODEL_STATUS_TEXT, modelStatusText,
+} from '../ai/ui/chat.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CHAT = readFileSync(join(HERE, '..', 'ai', 'ui', 'chat.mjs'), 'utf8');
 const STYLES = readFileSync(join(HERE, '..', 'ai', 'ui', 'styles.mjs'), 'utf8');
+const EVALUATION = JSON.parse(
+  readFileSync(join(HERE, '..', 'docs', 'EVALUATION.json'), 'utf8'));
 
 const detailFor = (term) => {
   const section = ABOUT_SECTIONS.find((s) => s.term.toLowerCase().includes(term));
@@ -102,6 +106,70 @@ test('N4-1: the stylesheet lets `hidden` win, and stays inside the panel', () =>
      absent, and a naive substring check would fail on that comment */
   assert.doesNotMatch(STYLES, /backdrop-filter\s*:/,
     '§12 forbids a blurred layer over a live WebGL canvas');
+});
+
+test('§0 rule 4: the checkpoint shipping today is disclosed as a pipeline test', () => {
+  /* The rule is "never present smoke-test output as a trained model". The
+     shipped export is step 1100 of a CPU run whose answers are poor, so a
+     panel that says only "trained from scratch for this portfolio" is the
+     presentation the rule forbids — true about provenance, silent about
+     quality. This is the assertion that keeps the two apart. */
+  assert.ok(Object.hasOwn(MODEL_STATUS_TEXT, MODEL_STATUS),
+    `MODEL_STATUS is "${MODEL_STATUS}" and MODEL_STATUS_TEXT has no sentence for it`);
+  const text = modelStatusText();
+  assert.ok(text.trim().length > 0, 'the status has nothing to say');
+  assert.match(text, /pipeline test/i,
+    'the disclosure does not say what the shipped checkpoint actually is');
+  assert.match(text, /not a model trained for quality/i,
+    'the disclosure must deny the quality claim explicitly, not merely omit it');
+});
+
+test('§0 rule 4: the status cannot claim quality while the §14 gates fail', () => {
+  /* The coupling, and the reason this is a test rather than a promise: the
+     constant lives in shipped code, so "remember to flip it back" is not a
+     safeguard. While `docs/EVALUATION.json` says the gates did not pass, the
+     status may not say the model was trained for quality. Exporting a better
+     checkpoint regenerates that file, and a status left behind then fails here
+     rather than shipping a claim nobody measured. */
+  if (EVALUATION.passed === false) {
+    assert.notEqual(MODEL_STATUS, 'trained',
+      `docs/EVALUATION.json reports the gates as FAILED and MODEL_STATUS says `
+      + `"trained" — the panel would be presenting smoke-test output as a `
+      + `trained model (§0 rule 4). Evaluation is from checkpoint `
+      + `"${EVALUATION.checkpoint}" at step ${EVALUATION.step}`);
+    assert.match(modelStatusText(), /not a model trained for quality/i,
+      'with the gates failing, the text shown must be the cautious one');
+  }
+  /* and the claim itself has to exist, or the branch above proves nothing */
+  assert.match(MODEL_STATUS_TEXT.trained, /cleared.*gates/i,
+    'the "trained" sentence does not name what would have to be true');
+});
+
+test('§0 rule 4: an unknown status cannot remove the disclosure', () => {
+  /* `modelStatusText` is a fallback, not a lookup: a typo in the constant must
+     degrade to the cautious sentence, never to silence.
+
+     `undefined` is deliberately NOT in this list, and the reason is a bug this
+     test had: passing it takes the DEFAULT parameter, so it returns whatever
+     the current status is. It only looked like a fallback case while the
+     status was 'untrained', and would have started failing the day a real
+     checkpoint landed and the constant legitimately became 'trained' — a test
+     that breaks on the change it is meant to allow. Unknown means a value that
+     is not a key; an omitted argument means "the current one". */
+  for (const bogus of ['', 'TRAINED', 'nonsense', null]) {
+    assert.match(modelStatusText(bogus), /pipeline test/i,
+      `modelStatusText(${JSON.stringify(bogus)}) does not fall back to the `
+      + 'cautious sentence');
+  }
+});
+
+test('§0 rule 4: the card renders the status, and the stylesheet gives it a place', () => {
+  assert.match(CHAT, /el\('p', 'ai__about-note', modelStatusText\(\)\)/,
+    'the About card does not render the model status');
+  assert.match(CHAT, /card\.append\(title, list, status, aboutClose\)/,
+    'the status is built but never attached to the card');
+  assert.match(STYLES, /\.ai__about-note \{/,
+    'the note has no style, so it lands as an unstyled paragraph');
 });
 
 test('N4-1: the disclosure and the answers are rendered as text, never as markup', () => {

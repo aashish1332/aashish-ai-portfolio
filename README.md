@@ -129,7 +129,7 @@ API key anywhere in the repository.
 The model runs **in your browser**, in a web worker, from a quantized copy
 downloaded once and cached: **5.14 MB** raw / **4.74 MB** gzip for the model
 that ships today (5,059,584 B of int8 weights, a 66 KB tokenizer, a 18 KB
-manifest) — 12 % of the 40 MB §4 allows for a first visit. The weights are
+manifest) — 11.5 % of the 40 MB §4 allows for a first visit. The weights are
 int8 (~4× smaller than fp32), the quantization's cost is measured rather than
 assumed (worst per-row error 0.001146), and the JavaScript engine that runs
 them is checked against an independent numpy implementation of the same
@@ -148,7 +148,10 @@ runs at **65–74 tok/s decode** on a 2016 ultrabook with no GPU, 8–9× the �
 floor §4 asks for. The §7.1 shipping target is still config A (37.9M) trained
 on a GPU in P4/P5; nothing about the runtime changes when it lands, only the
 weights. Until then the quality is visibly a small model's, and the panel never
-pretends otherwise.
+pretends otherwise — it says so itself: the **ABOUT** card carries the
+checkpoint's status in words ("a pipeline test, not a model trained for
+quality"), and the constant behind it cannot claim otherwise while the project's
+own evaluation reports the quality gates as failed.
 
 The answers are written **about Aashish, in the third person** — "his CGPA",
 not "my CGPA" — which is what the brief asks for ("never pretends to be him").
@@ -216,9 +219,9 @@ idle page cost a measured 1.2 s of blocked main thread (`docs/BENCHMARKS.md` §1
 | [experiments/ternary/README.md](experiments/ternary/README.md) | §13's written go/no-go on the ternary experiment (no-go, and why) |
 
 ```bash
-npm run test:all     # 492 JS + 353 Python tests
-node dev-ai-probe.js     # the click → answer gate in a real browser (46 checks, real GPU; SW_GL=1 software GL, THROTTLE=4 weak-device profile)
-npm run probe:firefox # the same gate as a Firefox smoke test (9 checks; WebDriver BiDi, FF_BIN overrides the binary)
+npm run test:all     # 523 JS + 353 Python tests
+node dev-ai-probe.js     # the click → answer gate in a real browser (60 checks, real GPU; SW_GL=1 software GL, THROTTLE=4 weak-device profile)
+npm run probe:firefox # the same gate as a Firefox smoke test (11 checks; WebDriver BiDi, FF_BIN overrides the binary)
 node dev-offline-probe.js # §9.3 cache: a second visit with model-export blocked
 node dev-degrade-probe.js # §14: the T0 path and the download-failure path, end to end
 npm run probe:resources  # §15.3: heap, nodes, listeners, long tasks → docs/RESOURCES.json

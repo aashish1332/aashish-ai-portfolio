@@ -159,6 +159,41 @@ export const ABOUT_SECTIONS = Object.freeze([
       + 'knowledge base, the routing, the guard \u2014 is already in the page.' },
 ]);
 
+/* ── §0 rule 4: MODEL_STATUS ────────────────────────────────────
+   "Until real checkpoints exist, ship in MODEL_STATUS=untrained mode …
+   Never present smoke-test output as a trained model."
+
+   The literal half of that rule — an env var that leaves the deterministic
+   answers answering — is NOT what this build does, because the owner retired
+   those as answers (§3), so an "off" mode would ship a panel that answers
+   nothing at all. What the rule exists to prevent is the other half, and that
+   half this build must not fudge: the checkpoint shipping today trained for
+   1,100 steps on ~3 MB of corpus and answers *badly* (docs/FINAL_REPORT.md,
+   limitation 1). It is a pipeline artifact, and a panel that calls it "a
+   model trained from scratch for this portfolio" — true about provenance,
+   silent about quality — is exactly the presentation the rule forbids.
+
+   So the status is a named constant the UI has to disclose, and the coupling
+   is a TEST rather than a promise: `tests/disclosure.test.mjs` reads
+   `docs/EVALUATION.json`, and while the §14 gates say `passed: false` this
+   constant cannot be flipped to 'trained' without that test failing. A better
+   checkpoint therefore cannot make this disclosure lie by being forgotten. */
+
+export const MODEL_STATUS = 'untrained';
+
+export const MODEL_STATUS_TEXT = Object.freeze({
+  untrained: 'What runs here is a pipeline test, not a model trained for '
+    + 'quality. It proves the training, export and on-device runtime work end '
+    + 'to end \u2014 and its answers are poor, which is what a GPU run is for.',
+  trained: 'This checkpoint cleared the project\u2019s own evaluation gates.',
+});
+
+/** The sentence the About card shows for a status. Unknown values fall back
+ *  to the cautious one: a typo must not be able to remove the disclosure. */
+export function modelStatusText(status = MODEL_STATUS) {
+  return MODEL_STATUS_TEXT[status] || MODEL_STATUS_TEXT.untrained;
+}
+
 /* ── §11.1 (c): the guided tour ─────────────────────────────────
    "optional guided tour — walks About → Projects → Skills → Contact, scrolling
    via Lenis to allowlisted anchors (jump instead of smooth scroll under
@@ -451,11 +486,15 @@ let working = 0;
       list.appendChild(el('dt', null, section.term));
       list.appendChild(el('dd', null, section.detail));
     }
+    /* §0 rule 4: the honest status of the checkpoint shipping today, stated
+       where the rest of the disclosure is, and derived from MODEL_STATUS so
+       there is one place to change when a real checkpoint lands. */
+    const status = el('p', 'ai__about-note', modelStatusText());
     aboutClose = el('button', 'ai__link', 'CLOSE');
     aboutClose.type = 'button';
     aboutClose.setAttribute('aria-label', 'Close this explanation');
     aboutClose.addEventListener('click', () => setAbout(false));
-    card.append(title, list, aboutClose);
+    card.append(title, list, status, aboutClose);
     return card;
   }
 

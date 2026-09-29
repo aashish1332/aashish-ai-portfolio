@@ -49,6 +49,7 @@ Do this **first** — most of what follows is a comparison against it.
 | B8b | Press **Stop** mid-answer | the panel stops waiting immediately; the partial text stays and the badge reads `PARTIAL ANSWER · STOPPED BY YOU` — never the verified one. **Stop during the prefill (the common case) shows the “stopped before I had written anything” line instead, and the worker still finishes that pass in the background** — that is by design, not a hang |
 | B8c | Press **Stop**, then **Retry** | Retry appears only when the last turn did not answer; pressing it asks the same question again as a fresh generation |
 | B8d | Press **ABOUT** in the panel footer | a card says which parts are ours (the model, from scratch) and which are the browser's (speech recognition, speech output). It must name **both** voice outcomes, and pressing Esc must close the card and leave the **panel** open |
+| B8e | In the same **ABOUT** card, read the line under *The model* | it must **not** claim a trained-for-quality model. While the export shipping today is the 1,100-step pipeline artifact it says so in plain words (*"What runs here is a pipeline test, not a model trained for quality… and its answers are poor…"*); that sentence may only change to the trained wording once the export has actually passed the §14 gates, and `tests/disclosure.test.mjs` is what stops it changing early (§0 rule 4) |
 | B9 | Press Esc | panel closes, focus returns to the button |
 | B9b | Close the panel and leave it for **~2 minutes**, then reopen | the model is unloaded (no worker in DevTools) and reloads from cache on the next question |
 | B10 | Reload the page while the panel is open | page still works; nothing AI loads before a click |
@@ -61,7 +62,7 @@ panel in headless Chrome and asserts the flow mechanically — 0 AI requests
 before the click, the panel becoming ready, an answer badged
 *AI ANSWER · ON-DEVICE MODEL* with its sources, the withheld phone number
 declined, "what are your skills?" answered from the capped intent fallback (12
-facts), Escape closing, focus returning — **43/43**, and the same probe covers
+facts), Escape closing, focus returning — **60/60**, and the same probe covers
 B3, B4, B8 and the pre-click promise of B10. The latest run was pointed at the
 **built bundle** (`AI_BASE`, with `dist/` served the way production serves it),
 so the numbers above describe what a visitor downloads rather than the source
@@ -158,7 +159,7 @@ yours to work around.
 | F3 | If you have the dev machine: `npm run probe:resources` | paste the tail into the chat — it prints its own tally |
 | F4 | Optional: `npm run probe:degrade` | §14's T0 and download-failure paths are already **20/20 automated** (`docs/BENCHMARKS.md`); run it if you want to see them. Two of those checks can only be cheated by the probe itself, so if it ever prints fewer than 20/20, that is a real finding |
 | F5 | Optional, for a slow-network simulation: `PORT=5581 FAIL_MODEL=1 node dev-server.mjs` | 404s every model asset, which is how the failure path is driven without touching shipped code |
-| F6 | Optional: `npm run probe:firefox` | Firefox 156 already passes **9/9** on this machine (`docs/BENCHMARKS.md`); if it prints fewer, that is a real finding. On a fresh machine set `FF_BIN` to the Firefox binary — the Windows Store alias is unreadable to Node |
+| F6 | Optional: `npm run probe:firefox` | Firefox 156 already passes **11/11** on this machine (`docs/BENCHMARKS.md`); if it prints fewer, that is a real finding. On a fresh machine set `FF_BIN` to the Firefox binary — the Windows Store alias is unreadable to Node |
 
 ---
 

@@ -3312,3 +3312,50 @@ With §3 recorded, the build now deviates from the brief in exactly **two**
 places, both written down with what was traded: §2 N3's recogniser, and §3's
 retired Quick Answers. Everything else that is missing is missing for a reason
 the report states — a GPU, a phone, a Safari host.
+
+## §0 rule 4 and §10: the same retirement, one clause further on, plus a disclosure that was missing
+
+Reading §0's working rules as clauses rather than as advice turns up one more
+piece of the Quick Answers retirement and one genuinely absent behaviour.
+
+### §10's failure path names a control that no longer exists — one deviation, two sections
+
+§10 says: *"Failure → clear message + Retry + **'Use quick answers'**."* Retry
+exists and is probed; **"Use quick answers" does not**, because there are no
+quick answers to use. It is the same owner decision recorded under §3 above, and
+it is worth naming §10 explicitly because a reader auditing §10 alone would find
+a missing control and no explanation for it. The failure path is therefore
+*clear message + Retry*, and the panel says what happened instead of offering a
+fallback it cannot honour.
+
+### §0 rule 4 — "never present smoke-test output as a trained model" — was not honoured
+
+Rule 4 asks for `MODEL_STATUS=untrained` mode *and* says why: *"Never present
+smoke-test output as a trained model."* Neither half existed. The About card's
+"The model" entry said the model was *"Written and trained from scratch for this
+portfolio"* — true about provenance, **silent about quality** — while the export
+actually shipping is step 1100 of a CPU run whose answers are, in the project's
+own words, poor. That is precisely the presentation the rule forbids, so it was
+built rather than documented away.
+
+| | |
+|---|---|
+| the mechanism | `MODEL_STATUS` (`ai/ui/chat.mjs`), one constant, with `MODEL_STATUS_TEXT` beside it and `modelStatusText()` as the reader. Named the way the brief names it, so a search for the rule finds the thing that implements it |
+| where it shows | a `.ai__about-note` in the existing **ABOUT** card — the disclosure home §2 N4 already established — stating *"What runs here is a pipeline test, not a model trained for quality…"* |
+| the coupling, which is the point | `tests/disclosure.test.mjs` reads `docs/EVALUATION.json`. While the §14 gates report `passed: false`, `MODEL_STATUS` may not be `'trained'`. Flipping the constant was verified to fail the test, so a future export cannot make this disclosure lie by being forgotten |
+| the fallback | `modelStatusText()` falls back to the **cautious** sentence for any value that is not a key, so a typo cannot remove the disclosure. The test originally included `undefined` in that list and this was **wrong**: `undefined` takes the default parameter and returns the *current* status, so the case would have started failing the day a real checkpoint legitimately flipped the constant. Removed, with the reason written down |
+| verified where | `tests/disclosure.test.mjs` **11** (4 new) and `dev-ai-probe.js` **60/60** — the probe asserts the sentence is *rendered and visible* in the card a visitor opens, which a source scan cannot prove |
+
+**What was deliberately NOT built** is the literal half of rule 4 — a mode that
+switches the model off and leaves the deterministic engine answering — because
+that engine was retired as an answer source by the same owner decision, so "off"
+would now mean "answers nothing at all". Recorded as the reason, not as an
+oversight: the rule's *purpose* (no unearned quality claim) is what this build
+now enforces with a test.
+
+### Evidence
+
+`ai/ui/chat.mjs` (`MODEL_STATUS`, `MODEL_STATUS_TEXT`, `modelStatusText`, the
+`ai__about-note`) · `ai/ui/styles.mjs` (`.ai__about-note`) ·
+`tests/disclosure.test.mjs` (N4-1 ×7, §0 rule 4 ×4) · `dev-ai-probe.js` (6c′) ·
+`docs/EVALUATION.json` (the gate result the coupling reads)
