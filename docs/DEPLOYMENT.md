@@ -47,9 +47,10 @@ npm run preview        # build, then serve dist/ on :5580 — exactly what ships
    reports anything else it found in there. Copying the directory instead is
    how a 257 KB parity fixture reached `dist/` and every visitor.
 
-Today's measured bundle: **44 files / 5,727,871 B** with the model export,
-**41 files / 558,954 B** without one (the export is git-ignored build output,
-so a clean checkout builds the second). Leak scan clean in both cases. A build
+Today's measured bundle (2026-09-29): **46 files / 5,600,036 B** with the model
+export, **43 files / 455,682 B** without one (the export is git-ignored build
+output, so a clean checkout builds the second; measured by moving
+`ai/model-export/` aside for one build). Leak scan clean in both cases. A build
 with no model is legitimate and ships fine, but it is not a working assistant:
 the answer path *is* the model (§6.2's T0 path says so plainly rather than
 substituting a template), and the summary says which of the two it produced.

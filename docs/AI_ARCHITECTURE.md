@@ -524,10 +524,11 @@ rather than letting a deploy discover it at runtime.
 
 ## 7. Dev vs prod — the build (§9.3/§17)
 
-`npm run build` → `dist/` (**44 files, 5,727,871 B** with the exported model;
-**41 files, 558,954 B** without one — the model is git-ignored build output, so
-a clean checkout measures the second number). Earlier: 28 files / 429,808 B
-before the engine, voice, guard and model answer path landed.
+`npm run build` → `dist/` (**46 files, 5,600,036 B** with the exported model;
+**43 files, 455,682 B** without one — the model is git-ignored build output, so
+a clean checkout measures the second number; both re-measured 2026-09-29, the
+second by moving `ai/model-export/` aside for one build). Earlier: 28 files /
+429,808 B before the engine, voice, guard and model answer path landed.
 `npm run preview` serves it on `:5580` through the same dev server with
 `ROOT=dist`.
 
