@@ -286,7 +286,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
     gate). The difference between the two runs is the prompt's RULES block, so
     the guarded metrics (abstention, unsupported claims, language) *should* be
     unchanged — **NOT re-measured**, and it must not be quoted as if it were.
-15. **§2 N3 is the first of the two clauses this build deviates from, and it
+15. **§2 N3 is the first of the three clauses this build departs from, and it
     must be read as a deviation.** N3 asks that "any remote speech-recognition
     mode is disabled"; the browser's `SpeechRecognition` has no switch that
     forbids its network path, so voice input is the platform's recogniser —
@@ -312,6 +312,26 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
     failure path, so §10 is a second affected section: the path is *clear
     message + Retry* and nothing more. Named separately because someone auditing
     §10 on its own would find a missing control with no explanation next to it.
+    **§6.5 is a third surface of it.** Its download etiquette asks for a
+    "Download ≈NN MB / Use quick answers" choice on a device that is not
+    desktop-class or is on 2g/3g, and for a low-priority download — and both
+    assume the deterministic answerer covers the wait. With it retired the model
+    download **is** the foreground task, so the panel announces the size and
+    starts at normal priority, and the only alternative a choice could honestly
+    offer is nothing.
+17. **§11.3's capture path is on the main thread rather than in an AudioWorklet**
+    — the third place this build departs from a clause's letter, and the
+    smallest. §11.3 says "capture with an **AudioWorklet** (16 kHz mono, ~30 ms
+    frames); no DSP on the main thread"; `ai/voice/vad.mjs` reads one RMS per
+    frame from an AnalyserNode on a timer instead, because that keeps the
+    detector a pure function of (RMS, clock) — which is what lets
+    `tests/vad.test.mjs` drive it with a mock clock and no browser — where a
+    worklet puts the frames in another realm behind an async `addModule()` and
+    adds a shipped asset. The cost is stated in the file and is **not measured
+    in isolation**: the RMS is on the main thread, one pass over 512 floats per
+    frame, and the probe's long-task watch has never attributed a task to it.
+    The 16 kHz resample is not done either, because the only number this module
+    reads is the RMS and the recognizer captures for itself.
 
 ## WHAT I NEED FROM YOU
 

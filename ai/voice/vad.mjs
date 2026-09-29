@@ -18,6 +18,24 @@
      what `tests/vad.test.mjs` pins. Swapping in Silero later means
      replacing `createMicVad`'s `readSamples` and keeping the tracker.
 
+   Why not an AudioWorklet (§11.3's other half)? Because what this module needs
+   from the audio graph is one number per frame — the RMS of 512 samples, 33
+   times a second — and reading it from an AnalyserNode on a timer is what keeps
+   the whole decision *testable*: the detector is a pure function of (RMS,
+   clock), so `tests/vad.test.mjs` drives it with a mock clock and an injected
+   `readSamples`, with no browser and no microphone involved. A worklet moves
+   the frame source into another realm behind an async `addModule()`, which
+   needs an extra shipped asset and puts the frames out of a test's reach.
+
+   The cost of that trade, stated rather than hidden: **the RMS runs on the main
+   thread**, which is the one place this module departs from §11.3's letter
+   ("no DSP on the main thread"). It is not measured in isolation, and this
+   project will not claim a number it has not taken — what can be said is that
+   the probe's long-task watch has never attributed a task to it, and that it is
+   one pass over 512 floats per frame. The frame is also the device's own sample
+   rate rather than a resampled 16 kHz, because the only thing this module reads
+   is the RMS and the recognizer does its own capture for everything else.
+
    The noise floor is an exponential moving average that only updates while
    *not* in speech, so a noisy room raises the floor instead of being
    permanently "speech"; `startFactor`/`stopFactor` hysteresis stops a

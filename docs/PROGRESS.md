@@ -3441,3 +3441,30 @@ none.
 
 `ai/voice/index.mjs` · `ai/ui/chat.mjs` · `tests/voice.test.mjs` (VOICE-17 ×5) ·
 `docs/BENCHMARKS.md` · `docs/FINAL_REPORT.md` · `docs/AI_ARCHITECTURE.md`
+
+---
+
+## §11's remaining clauses: three deliberate substitutions, and one that needed writing down
+
+With §11.1's last two rules built (above), the rest of §11 splits into what is
+built and what is *substituted* — and the substitutions are the interesting
+half, because each one is a choice with a reason a reader can check rather than
+an omission.
+
+| clause | verdict |
+|---|---|
+| §11.2 STT — S0/STT stack | **S0 is what ships; S1 is not built** — no ASR model file exists under `ai/`. The network path the platform recogniser owns is §2 N3's documented deviation; the S1 alternative was a second wasm runtime plus a model download against §6.4's two-runtime cap, and this build ships **no** pretrained artifact at all (§17/§18). What ships instead is the tier table and the disclosure (`ai/voice/caps.mjs`), so a device that cannot recognise says so rather than failing silently |
+| §11.2's Hindi honesty rule | **harness built; the decision waits on the owner** — `evaluation/voice/` holds `phrases.json`, `record.html` and `score.py`, and the scorer's bands are §11.2's own (`<20 % ship · 20–35 % ship with the number disclosed · >35 % English-only honesty rule`). It scores **0 %** over the one clip that exists — `en-1`, "hello world", heard correctly — so no honest Hindi/Hinglish WER exists yet. **NOT TESTED**, waiting on the ~30 EN/HI/Hinglish clips |
+| §11.3 VAD | **energy VAD, not Silero** — documented in `ai/voice/vad.mjs` and `docs/RESEARCH_VERIFICATION.md` row 8, where the research correction makes the trade worse for Silero, not better (≈2.3 MB ONNX, not the ≈1 MB the note claimed) |
+| §11.3 capture | **an AnalyserNode polled on a timer, not an AudioWorklet** — the one clause that needed writing down, now in `ai/voice/vad.mjs`. The reason is testability: the detector is a pure function of (RMS, clock), so `tests/vad.test.mjs` drives it with a mock clock and an injected `readSamples` and no browser; a worklet moves the frame source into another realm behind an async `addModule()` and needs another shipped asset. The honest cost is stated in the file rather than left implicit: the RMS **is** on the main thread, which is the one place this module departs from §11.3's letter, and it is **not measured in isolation** — what can be said is that the probe's long-task watch has never attributed a task to it, and that the frame is the device's own sample rate because the only number read from it is the RMS |
+| §11.4 TTS | **V0 (the OS voices); V1 is not built** — no Kokoro/Piper artifact ships, for the size reason §11.4 itself gives (q8 ≈ 86 MB against §4's 40 MB first-use cap), and `speakAnswers` is gated by the tier table |
+| §11.5 visuals | **built and asserted** — CSS only (no 2D canvas, no WebGL), pinned by `tests/voice.test.mjs` VOICE-13, and reduced motion leaves it still |
+| §11.6 resource policy | **the policy is implemented, the numbers are NOT TESTED** — the tier table is `VOICE_POLICY` (T1 sequential + OS TTS, T2 LLM + STT resident, T3 unload what is idle). The per-component download/RAM/STT/TTS numbers §11.6 asks to report do not exist, because nothing STT/TTS-shaped ships to measure; `docs/BENCHMARKS.md` reports that as **N/A with the reason**, not as a pass |
+| §11.1's "session length cap" | **read as the two existing caps** — a Tap & Speak press closes itself after `tapWindowMs` (20 s) and a hands-free stretch is released by the 90 s standby. There is no separate "session over, come back later" counter, because nothing accumulates to spend |
+
+### Evidence
+
+`ai/voice/vad.mjs` (the capture note) · `ai/voice/caps.mjs` (`VOICE_POLICY`) ·
+`evaluation/voice/` (`phrases.json`, `record.html`, `score.py`) ·
+`tests/vad.test.mjs` · `tests/voice.test.mjs` ·
+`docs/RESEARCH_VERIFICATION.md` row 8 · `docs/BENCHMARKS.md` §15.5
