@@ -476,8 +476,11 @@ and not a wikitext parser; `MARKUP_LIMITATIONS` names what it misses.
    ```
 
    The last line is §14's pipeline, and it writes `docs/EVALUATION.json` with the
-   gate verdict. **Expect it to fail today** — at the `local` config the gates
-   are factual **18.9 %** against a 95 % bar. A quality gate that passes on a
+   gate verdict. **Expect it to fail today** — at the `local` config factual
+   accuracy is **0.0 %** against a 95 % bar, abstention recall 92.3 % and
+   HI/Hinglish 78.6 % against their own gates. (An earlier **18.9 %** printed
+   here was a scorer artefact, withdrawn in `docs/BENCHMARKS.md` §"A revoked
+   number, and the test that caught it".) A quality gate that passes on a
    pipeline artifact would be the alarming result, not the reassuring one.
 
 ### 7.3 Persistence, because sessions die

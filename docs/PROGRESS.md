@@ -19,7 +19,7 @@ whether the gate passed. Every ✅/⚠️ points at the phase entry or a
 | **P2** Chat shell + Governor | Budgets met with UI alone; network assertion; a11y checks; no jank vs baseline | ⚠️ **PASSED, one item qualified** — budgets, the pre-click network assertion and no-jank are measured; accessibility is **mechanical only** (focus, Esc, roles, overflow), **no screen-reader pass** | Phase 2 below · §15.3 lane |
 | **P3** Tokenizer + model code | Loss decreases; resume verified; param count printed | ✅ **PASSED** | Phase 3 below |
 | **P4** Stage A training | Val curve, samples, checkpoints, resume verified | ⚠️ **GAP — the config-A run has never executed** (needs a GPU this box does not have); the `local` config passes every item | Phase 4 below · `docs/TRAINING.md` |
-| **P5** Stage B + eval | Ship gates measured and reported | ✅ **MEASURED AND REPORTED — and they FAIL.**  factual accuracy **18.9 %** against the 95 % gate, abstention recall **0 %**, HI+Hinglish **80 %**. The *phase* gate is "measured and reported"; the quality gates themselves do not pass | §14 lane · `docs/EVALUATION.json` |
+| **P5** Stage B + eval | Ship gates measured and reported | ✅ **MEASURED AND REPORTED — and they FAIL.** factual accuracy **0.0 %** against the 95 % gate, abstention recall **92.3 %** (95 % gate), HI/Hinglish **78.6 %** (90 % gate); unsupported post-guard **0 %**, false abstention **2.4 %**, EN **100 %**, 0 fabrications on the adversarial set. The *phase* gate is "measured and reported"; the quality gates themselves do not pass. **(This row used to read 18.9 % factual and 0 % abstention recall.** The 18.9 % was a scorer artefact — see `docs/BENCHMARKS.md` §"A revoked number, and the test that caught it" — and the 0 % is not a reading this project ever took; both are corrected here so the rollup cannot outlive the lane it summarises) | §14 lane · `docs/EVALUATION.json` |
 | **P6** CPU inference + export | Parity OK; sizes measured | ✅ **PASSED** | `npm run verify:engine` · §9 lane |
 | **P7** Browser runtime | Chrome + Firefox (+ Safari); budgets met; frame-health A/B with Three.js | ⚠️ **PASSED on Chrome AND Firefox** (2026-09-28: `dev-ai-probe.js` **54/54** and `dev-firefox-probe.js` **11/11**, both on the built bundle; budgets met; A/B on the real GPU); **Safari NOT TESTED** — no macOS/iOS host here | §4 reference profiles · "Firefox, on the shipped bundle" |
 | **P8** Voice | State-machine tests; mic-denied/unsupported; lazy-load assertion; per-tier memory | ⚠️ **PASSED except per-tier voice memory (NOT TESTED)** and any live microphone | §11 lanes (voice input + soak) |
@@ -3111,7 +3111,7 @@ would fail if it stopped being true.
 | **N2** | *no backend, no hosted LLM API, no API key; deployable as a static site* | `tests/build-bundle.test.mjs` → *"§2 N2/N3 + §17: the bundle cannot call out, and carries no secret"*: no absolute URL in any shipped `ai/**` script, exactly **one** outbound call site (`fetch(KB_URL)`, this site's own knowledge file), no XHR / WebSocket / EventSource / sendBeacon, no secret-shaped string, no hosted-LLM hostname. `npm run build` writes the 46-file static bundle; `npm run probe:offline` proves the second visit is ready with the weights blocked at the CDP level |
 | **N3** | *visitor text and voice never leave the device; no analytics with chat content; remote speech recognition disabled* | **The documented deviation.** The text half is gated (the one-call bundle scan above, plus MODEL-12: "the answer path stays on the device — no network, no dynamic import"), and there is no analytics of any kind to carry chat content — `TRACKING` in the same test fails the build on any tracking service name in any shipped file (§17). The voice half cannot be met literally: `SpeechRecognition` has **no switch** that forbids its network path. It is opt-in, asks the platform to stay on-device when the platform says it can, and states which of the two it is — `docs/PRIVACY.md` §"§2 N3, and the one place this build deviates from it", `docs/FINAL_REPORT.md` limitation 12, **WHAT I NEED FROM YOU** 7 |
 | **N4** | *final LLM scratch-trained from random init; pretrained STT/TTS/VAD allowed only if disclosed in README, docs and the UI About popover* | The weights half: our tokenizer, our architecture, our trainer, our export — `npm run params` (4,984,064) and `npm run verify:engine` (torch ↔ numpy ↔ JS, argmax 100 % on the export). Nothing pretrained ships: the voice stack has **no model file**. The disclosure half is now four gates — `tests/disclosure.test.mjs` (7), the probe's 8 checks, `dev-firefox-probe.js` (2 of its 11), and the README paragraph — with the ABOUT card naming the browser's speech pieces and **both** voice outcomes |
-| **N5** | *zero-hallucination policy (§8.4); accuracy beats impressiveness* | `tests/guard.test.mjs` (GUARD-1…): invented numbers, years, months and URLs are caught against the context the model actually read; `tests/model-answers.test.mjs` MODEL-3 (nothing without grounding reaches the model), MODEL-4 (a rejected answer is refused, never repaired by a template), MODEL-9 (every refusal states no fact, in three languages); the engine's own `<|abstain|>` stop; `tests/quick-answers.test.mjs`'s three-language abstain. **What this does NOT gate is quality** — §14's factual gates fail on the local checkpoint (18.9 % vs 95 %) and that is reported, not hidden |
+| **N5** | *zero-hallucination policy (§8.4); accuracy beats impressiveness* | `tests/guard.test.mjs` (GUARD-1…): invented numbers, years, months and URLs are caught against the context the model actually read; `tests/model-answers.test.mjs` MODEL-3 (nothing without grounding reaches the model), MODEL-4 (a rejected answer is refused, never repaired by a template), MODEL-9 (every refusal states no fact, in three languages); the engine's own `<|abstain|>` stop; `tests/quick-answers.test.mjs`'s three-language abstain. **What this does NOT gate is quality** — §14's factual gate fails on the local checkpoint (**0.0 %** against a 95 % bar; the 18.9 % quoted here once was a scorer artefact, withdrawn in `docs/BENCHMARKS.md`) and that is reported, not hidden |
 | **N6** | *nothing AI-related loads or initialises before the click; voice assets only when a voice mode is chosen* | Two halves, deliberately. Deterministic: `tests/launcher.test.mjs` — the launcher is **945 B gz** against a 2 KB budget, it is inert (no fetch/XHR/Worker/WebSocket/sendBeacon/wasm/KB), its single `import(CHUNK)` resolves to the chat shell, and `index.html` names nothing under `ai/` in source **and** in `dist/`. Browser: `dev-ai-probe.js` watches the wire — **0** AI requests and **0** workers before the click, 31 assets after it, of which `ai/voice/*` arrives only once the microphone button is pressed (`tests/build-bundle.test.mjs` → *"§2 N6: the voice engine is fetched on a TAP, not on the click"*) |
 | **N7** | *if AI cannot run, the portfolio still works and the visitor still gets a graceful path — never a crash, a freeze, a blank modal or an endless spinner* | `dev-degrade-probe.js` on the **built bundle**: **20/20** — the T0 path requests 0 model assets and refuses by name; with every model asset 404ing the panel states the reason, stays usable, leaves the film untouched, and a reload on a healthy network recovers to `ready` with real weights and a real answer. `tests/launcher.test.mjs` covers the pre-click half (a page with no AI at all), MODEL-2 the "no model" refusal, and the shell's `presentRefusal` path the rest |
 | **N8** | *no second WebGL/Three.js renderer, no heavy canvas scene, no permanent extra rAF loop* | `tests/build-bundle.test.mjs` → *"§2 N8: the AI layer draws nothing and starts no loop of its own"*: no `getContext`, no canvas, no `THREE`, no `setInterval` anywhere in `ai/`, and `requestAnimationFrame` **exactly once** (a one-shot reveal); the frame monitor must add **and remove** its GSAP ticker callback, because a callback that cannot be removed turns `close()` into a leak. `tests/voice.test.mjs` VOICE-13 holds §11.5's visual to the same rule (CSS only, still under reduced motion), and `npm run probe:resources` counts **0** shader programs compiled while answering |
@@ -3504,3 +3504,41 @@ anchor code failing, which is the same cause as the failing §14 gates.
 `dev-anchor-probe.js` (the timeout and the header note) · `ai/ui/anchors.mjs`
 (`resolveAnchor`, `resolveTopicAnchor`) · `tests/anchors.test.mjs` ·
 `docs/BENCHMARKS.md`
+
+---
+
+## §14's numbers, re-derived: the committed grade reproduces, and three docs were stale
+
+§14's numbers are the ones everything else leans on — the §0 rule 4 disclosure
+reads `docs/EVALUATION.json`'s `passed: false`, the P5 phase row summarises it,
+and `docs/TRAINING.md` tells a reader what to expect. So it is worth asking
+whether that file is *reproducible* or merely *committed*.
+
+**It is reproducible.** Re-grading the committed answers with
+`node tools/model-eval.mjs --grade docs/EVAL_ANSWERS.json` reproduces it exactly:
+metrics, gates, rows and `passed: false` all come back identical to
+`docs/EVALUATION.json` once `createdAt` is ignored. No decode is involved (that
+is the 60-case, ~5.9 tok/s half), so this exercises the whole scoring layer —
+guard, placeholders, language rules, coverage, gates — in seconds, and it says
+the committed grade is the scorer's own output rather than a number typed into a
+file.
+
+**And the audit found three docs quoting figures the lane had already corrected.**
+`docs/BENCHMARKS.md` withdrew a factual accuracy of **18.9 %** as a grader
+artefact (27 of the 60 cases carry no expected fact on purpose; with the bug
+fixed it is **0.0 %**), and `docs/FINAL_REPORT.md` carries both the correction
+and a "metric revoked" row. But the §16 rollup in this file still read "factual
+accuracy **18.9 %**, abstention recall **0 %**, HI/Hinglish **80 %**" — the
+withdrawn figure, plus an abstention recall that was never a reading (it is
+**92.3 %**) and a language number rounded the wrong way (**78.6 %**). The one
+place a reader met the P5 gate was the one place the correction had not reached.
+
+Fixed deliberately rather than silently: the numbers now match the re-grade
+above, the 18.9 % is named as **withdrawn** rather than deleted, and the same
+18.9 % is corrected in the §2 N5 sweep row and in `docs/TRAINING.md`.
+
+### Evidence
+
+`tools/model-eval.mjs` (`--grade`) · `docs/EVALUATION.json` ·
+`docs/EVAL_ANSWERS.json` · `docs/BENCHMARKS.md` §"A revoked number, and the test
+that caught it" · `docs/FINAL_REPORT.md` row 85
