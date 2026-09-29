@@ -333,6 +333,26 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
     The 16 kHz resample is not done either, because the only number this module
     reads is the RMS and the recognizer captures for itself.
 
+18. **An open intermittent defect: the stop-then-`Retry` streaming check is red
+    about one run in five.** Across five browser runs on 2026-09-29 the probe
+    came back **58/60** once, with `tokens stream in before the answer is
+    finished` and `Retry starts a fresh generation` both red — a fresh generation
+    that offered **Stop** and then showed no `AI ANSWER` for the full 180 s
+    window. A healthy run streams in **20,954 ms**, so 180 s is ~9× the healthy
+    time and this box's 2–3× run-to-run variation does not account for it. Two
+    candidates remain and they need different fixes: **(a)** a stall on the
+    stop-then-`Retry` path (the abort plumbing is real — `ai/engine/worker.mjs`
+    aborts the previous generation and `ai/engine/index.mjs` checks
+    `signal.aborted` in both loops — so a trivial queued-behind-the-abort cause is
+    not it); or **(b)** a legitimate refusal the check cannot see, because it
+    accepts only an `AI ANSWER` badge while `retry()` re-asks with the stopped
+    **PARTIAL** turn still in history. The check previously reported an **empty
+    detail**, which is why this could not be told apart; it now reports elapsed
+    milliseconds, the last badge and the character count, so the next occurrence
+    settles it. **Not diagnosed, not tuned away** — the 180 s budget is unchanged,
+    because it is generous by every good measurement and raising it would hide a
+    stall instead of reporting it.
+
 ## WHAT I NEED FROM YOU
 
 1. **A GPU run** — the Kaggle notebook and scripts are in `training/notebooks/`

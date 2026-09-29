@@ -3635,3 +3635,90 @@ possessive pattern flags exactly **3** literals, and all three are
 `ai/intent/rules.mjs` `abstainFor`/`ABSTAIN`/`ABSTAIN_FIRST` ·
 `ai/answers/model.mjs:149` (the one-argument call) · mutation:
 `abstainFor(lang, persona = 'first')` → `MODEL-9b` fails, 528/529
+
+---
+
+## The probes: an audit that found no tautologies, and a tally that could not tell a skipped check from a passing one
+
+**Date:** 2026-09-29 · **Result: one real defect fixed in `dev-ai-probe.js`, one
+open intermittent finding recorded, one negative result.**
+
+### 1. Are any probe assertions incapable of failing? No.
+
+Every `say()` / `record()` / `check()` call across all five tally-based probes was
+extracted by balanced-paren matching — **118 checks** — and each verdict was
+inspected for tautologies (`.length >= 0`, `indexOf(…) >= -1`, `typeof x ===
+'object'`, a literal `true`). **None.** The two candidates that looked wrong were
+both correct on reading:
+
+- `dev-offline-probe.js:95` passes a literal **`false`** — it is the hard fail for
+  "the model did not load at all", taken deliberately so the probe stops instead
+  of measuring a cache it cannot reach.
+- The three verdicts that are bare identifiers are all measured booleans, and one
+  is used **both ways** (`moved` for the answer case and `!moved` for the refusal
+  case in `dev-anchor-probe.js`) — the strongest form a check can take.
+
+The audit script itself was wrong twice before it was trusted: its `.length >=? 0`
+pattern flagged the meaningful `.length > 0`, and its literal-`true` pattern
+matched the legitimate `=== true` comparison. Both were caught because the output
+looked wrong. An audit that over-reports is as misleading as one that under-reports.
+
+### 2. The tally counted only what ran, which is how two stale numbers survived
+
+The probe ended on `${checks - failures}/${checks}` with `checks` a live counter.
+A phase that silently stopped executing shrank the **denominator** and the probe
+still printed a green `n/n`. That is exactly how a stale **54/54** and **43/43**
+sat in the docs across two probe revisions while every run called itself healthy.
+
+`dev-ai-probe.js` now pins `EXPECTED_CHECKS = 60` and fails the run when the
+actual count differs — *"a run that verified less than it claims is a FAILED run,
+not a green one with a smaller number in it"*. Desktop and MOBILE both run 60
+because two **pairs** swap: the phone set contributes `scene paused (phone)` and
+`scene resumed (phone)`, the desktop set contributes `median frame drift` and
+`p95 frame time`. That was established by **diffing the two runs' check labels**,
+not by reading the guards.
+
+Verified by mutation, not assertion: guarding one check with `if (false)` produced
+`CHECK COUNT 59 ≠ expected 60` and `PROBE FAILED — 59/59 checks`. Without the
+guard that run reports **"probe passed — 59/59 checks"** — a green verdict for a
+run that verified one less thing than it says. Reverted, a full run is green with
+no `CHECK COUNT` line, so the guard does not false-positive.
+
+### 3. OPEN: the stop-then-Retry streaming check is red about 1 run in 5
+
+The check reported `streamed=false` with an **empty detail string**, so a failure
+said nothing about why — the same ambiguity that once left the anchor sweep
+recorded as "6/7, maybe a resolver bug". It now reports elapsed time, the last
+badge, and the character count.
+
+Those numbers narrow the cause without settling it. A healthy run streams in
+**20,954 ms** against the 180 s `WAIT_ANSWER` budget — **8.6× of headroom** — so a
+run that waits the full 180 s with `stopSeen=true` is ~9× the healthy time, which
+this box's 2–3× run-to-run variation does not explain. Two candidates, needing
+different fixes:
+
+- **(a) a stall** on the stop-then-Retry path — the panel still offers Stop but
+  emits nothing. Real abort plumbing exists (`ai/engine/worker.mjs` aborts the
+  previous generation, `ai/engine/index.mjs` checks `signal.aborted` in both the
+  prefill and decode loops), so a queued-behind-the-abort explanation is not
+  obviously it.
+- **(b) a legitimate refusal the check cannot see** — it accepts only an
+  `AI ANSWER` badge, and `retry()` re-asks with the stopped **PARTIAL** turn still
+  in history, so the context is not the one that answered. Decoding is greedy
+  (`ai/engine/index.mjs`: *"determinism is a feature"*), which argues that an
+  unchanged context should reproduce the first answer — but the context is not
+  unchanged, which is what keeps (b) alive.
+
+The next occurrence will separate them: `streamed=false` with `last badge "NO
+ANSWER · …"` is (b); a stall is (a). **The budget stays at 180 s.** It is generous
+by every good measurement, so raising it would hide a stall rather than report it.
+Recorded as an open intermittent defect, not diagnosed and not tuned away.
+
+### Evidence
+
+`dev-ai-probe.js` `EXPECTED_CHECKS` (60) and the `CHECK COUNT` guard · run set on
+2026-09-29: desktop **60/60**, `MOBILE=1` **60/60**, mutation **59/59 → FAILED**,
+revert **60/60**, clean re-run **60/60**, and **one** run at **58/60** with the two
+streaming checks red · `dev-anchor-probe.js:271,315,322` (the paired `moved` /
+`!moved` checks) · `dev-offline-probe.js:95` · `ai/engine/index.mjs:16,46,191,212` ·
+`ai/engine/worker.mjs:26,61,80` · `ai/engine/session.mjs:89–102`

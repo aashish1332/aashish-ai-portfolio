@@ -43,6 +43,19 @@ const LAUNCHER = /js\/ai\/launcher\.js/;
 
 let checks = 0;
 let failures = 0;
+/* The tally at the end counts only the checks that RAN. A phase that silently
+   stops executing shrinks the denominator and still prints a green n/n — which
+   is how a stale "54/54" and "43/43" sat in the docs for two revisions while
+   every run reported itself healthy. Pinning the total makes a green run mean
+   "all 60 expected checks ran and passed", not merely "everything that
+   happened to run, passed".
+
+   Desktop and MOBILE both run 60 because two PAIRS swap: the phone set has
+   `scene paused (phone)` and `scene resumed (phone)`, the desktop set has
+   `median frame drift` and `p95 frame time` (§15's frame-health A/B, which
+   needs the film's GL context that mobile emulation does not give). Verified by
+   diffing the two runs' check labels, not by reading the guards. */
+const EXPECTED_CHECKS = 60;
 const say = (label, ok, detail) => {
   checks += 1;
   if (!ok) failures += 1;
@@ -378,11 +391,18 @@ const say = (label, ok, detail) => {
     let streamed = false;
     let streamedAt = 0;
     let stopSeen = false;
+    /* what the last bot bubble actually said, so a `streamed=false` failure can
+       report WHY instead of an empty detail. The check waited 180 s and told
+       the reader nothing — see the note on the assertion below. */
+    let lastBadge = '';
+    let lastLen = 0;
     for (;;) {
       const bots = [...document.querySelectorAll('.ai__msg.is-bot')];
       const last = bots[bots.length - 1];
       const badge = last?.querySelector('.ai__badge')?.textContent || '';
       const text = (last?.querySelector('span:not(.ai__badge)')?.textContent || '');
+      lastBadge = badge;
+      lastLen = text.length;
       const stop = [...document.querySelectorAll('.ai__controls .ai__link')]
         .find((b) => b.textContent.trim() === 'STOP');
       if (!streamed && /AI ANSWER/.test(badge) && text.length > 20) {
@@ -397,7 +417,7 @@ const say = (label, ok, detail) => {
       if (Date.now() - t0 > limit) break;
       await new Promise((r) => setTimeout(r, 100));
     }
-    return { streamed, stopSeen };
+    return { streamed, stopSeen, ms: Date.now() - t0, badge: lastBadge, len: lastLen };
   }, ms);
 
   if (modelPhase === 'ready') {
@@ -457,10 +477,37 @@ const say = (label, ok, detail) => {
        that streams, not by a log line */
     const retried = await page.evaluate(() => window.PortfolioAI.retry());
     const again = await watchStream(Number(process.env.WAIT_ANSWER || 180000));
-    say('tokens stream in before the answer is finished', again.streamed === true, '');
+    /* The detail is not decoration. This check ran 1-in-5 RED on the R1 laptop on
+       2026-09-29 while the runs either side of it were green, and all a failure
+       said was `streamed=false` with an EMPTY detail — the same ambiguity that
+       once left the anchor sweep recorded as "6/7, maybe a resolver bug". So it
+       now reports its elapsed time and the last badge it saw.
+
+       The numbers narrow it without settling it, and the honest record says so.
+       A healthy run streams in ~21 s (20,954 ms on 2026-09-29) against the 180 s
+       WAIT_ANSWER budget — 8.6x of headroom — so the failing run's full 180 s with
+       `stopSeen=true` is ~9x the healthy time, which this box's 2-3x run-to-run
+       variation does not explain.
+
+       Two candidates remain, and they need different fixes:
+         (a) the stop-then-Retry path stalls — the panel still offers Stop but
+             emits nothing; or
+         (b) the retry legitimately produced a REFUSAL, and this check cannot see
+             it, because it accepts only an `AI ANSWER` badge. That is not
+             far-fetched: `retry()` re-asks with the stopped PARTIAL turn still
+             in history, so the context is not the one that answered.
+       `lastBadge`/`lastLen` exist to tell those apart on the next occurrence —
+       `streamed=false` with `last badge "NO ANSWER · …"` is (b), a stall is (a).
+       Recorded OPEN in docs/PROGRESS.md rather than tuned away: the budget stays
+       at 180 s, which is generous by every good measurement, so raising it would
+       hide a stall instead of reporting it. */
+    say('tokens stream in before the answer is finished', again.streamed === true,
+      again.streamed
+        ? `streamed in ${again.ms} ms`
+        : `waited ${again.ms} ms — last badge "${again.badge || 'none'}", ${again.len} chars`);
     say('Retry starts a fresh generation',
       retried === true && again.streamed === true && again.stopSeen === true,
-      `retry()=${retried} streamed=${again.streamed} stopOffered=${again.stopSeen}`);
+      `retry()=${retried} streamed=${again.streamed} in ${again.ms} ms stopOffered=${again.stopSeen}`);
 
     /* let this one FINISH: the completed-answer checks below run on it. The
        signal is the shell's own — a final `model.last` that is not the partial
@@ -826,5 +873,13 @@ const say = (label, ok, detail) => {
      machine's engine starts (it is not stable here: the same host refuses on
      one run and listens on the next). Both branches carry the SAME number of
      checks so the tally means something either way. */
+  /* A run that verified less than it claims is a FAILED run, not a green one
+     with a smaller number in it. Set before the verdict line so the line below
+     reports the verdict this actually earns. */
+  if (checks !== EXPECTED_CHECKS) {
+    console.log(`\n  CHECK COUNT ${checks} \u2260 expected ${EXPECTED_CHECKS} — a phase was skipped, ` +
+      'so this run verified less than its tally reports');
+    process.exitCode = 1;
+  }
   console.log(`\n  ${process.exitCode ? 'PROBE FAILED' : 'probe passed'} — ${checks - failures}/${checks} checks`);
 })().catch((e) => { console.log('PROBE CRASH', e.message); process.exit(2); });
