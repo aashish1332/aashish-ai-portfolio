@@ -3245,7 +3245,7 @@ is a result, and because two of the entries are *nearly* gaps:
 The honest summary of the sweep so far: §2 (eight rules, one deviation), §5 (clause
 audited and **honoured**, not a deviation — see the §5 section at the end of this
 file), §6.1–§6.4 and §7 (nothing unbuilt), §6.5 (gated, two sub-clauses not built
-and named above), §11.1 (two clauses built),
+and named above), §11.1 (all five initiative clauses built),
 §14 (measured, failing, at a scale that cannot pass), §15/§16/§17/§18/§19
 (rolled up). Every one of them is now a table with the thing that would fail
 next to it, which is the only form of "done" that survives a second reader.
@@ -3402,3 +3402,42 @@ stay comparable across exports.
 `ai/ui/chat.mjs` (`persona: DEFAULT_PERSONA`) ·
 `ai/data/instruction.py` (`PERSONAS`) ·
 `tests/quick-answers.test.mjs` (QA-10 ×7)
+
+---
+
+## §11.1's last two hard rules: the auto-downgrade, and the headphones tip
+
+The §5 audit closed by naming §11.1's remaining clauses, and two of them were
+genuinely absent rather than merely unprobed. Both are now built.
+
+**“auto-downgrade to Tap & Speak when the governor reaches degrade step 3–4.”**
+Nothing connected §6.3's ladder to voice mode. The shell already owns that
+ladder — it is what turns the answer budget down — so the rung is **pushed** to
+the voice layer (`setPressure`) rather than measured a second time; two
+governors would be two answers to one question. At `DOWNGRADE_STEP` (3) a live
+hands-free session becomes Tap & Speak, and the recognizer is **released and the
+detector stopped**: a “downgrade” that keeps the microphone open has given up
+nothing, because the always-open microphone is the cost being protected against.
+`enable()` refuses `continuous` while the rung is high, so toggling voice off and
+on again cannot restore the shape the device refused, and a rung below the
+threshold gives hands-free back automatically. The visitor is **told**
+(`DOWNGRADE_NOTICE`) instead of watching the button change behaviour for no
+stated reason.
+
+**“suggest headphones on first use.”** Interrupting itself through the speakers
+is the one barge-in failure the visitor can prevent, so the tip is said once per
+page and only in the mode that has barge-in — Tap & Speak is a press and has
+none.
+
+| | |
+|---|---|
+| where | `ai/voice/index.mjs` (`DOWNGRADE_STEP`, `degradedVoice`, `setPressure`, `toPush`, `HEADPHONES_NOTICE`, and the status's `degradeStep`/`downgraded`) · `ai/ui/chat.mjs` (the ladder's `onStep`/`onRestore` now push the rung, and `onNotice` renders it) |
+| the pure half | `degradedVoice(step, tier)` is asserted directly, so the shell, the button and the controller cannot disagree about what “step 3” means — including that **T1 is exempt**, because `voicePolicy` already pins T1 to push-to-talk |
+| tested where | `tests/voice.test.mjs` **VOICE-17 ×5** — the rung releases the recognizer (`rec.stopped > 0`), the gate can no longer start it, a downgraded device cannot re-enter hands-free, a recovered rung restores it, and the tip is once-per-page and absent from push-to-talk |
+| measured | no budget surprise: the click's static reach moves 45,164 → **45,194 B gz** (chat.mjs's +30 B) while `ai/voice/index.mjs` — lazy, §2 N6, so not in the click — grows 5,915 → **6,378 B gz**; the code chunk is **75,181 B gz = 48.9 %** of §4's 150 KB; `npm test` **528 JS + 353 Python**, 0 failures; `npm run build` clean; `dev-ai-probe.js` **60/60** |
+| **NOT TESTED** | the downgrade has never fired on a real struggling device — it needs the ladder to reach step 3, which this box has not managed — and the tip has never been seen on a screen |
+
+### Evidence
+
+`ai/voice/index.mjs` · `ai/ui/chat.mjs` · `tests/voice.test.mjs` (VOICE-17 ×5) ·
+`docs/BENCHMARKS.md` · `docs/FINAL_REPORT.md` · `docs/AI_ARCHITECTURE.md`

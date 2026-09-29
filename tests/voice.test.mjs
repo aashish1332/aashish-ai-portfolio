@@ -29,6 +29,7 @@ import {
   speechRecognitionCtor, WAKE_PHRASES, SPEECH_DISCLOSURE, NO_ENGINE, THRASH_LIMIT,
   SPEECH_DISCLOSURE_ON_DEVICE, ON_DEVICE_PROBE_MS, probeOnDevice,
   VOICE_IDLE, IDLE_NUDGE, GREETINGS, greetingFor,
+  DOWNGRADE_STEP, DOWNGRADE_NOTICE, HEADPHONES_NOTICE, degradedVoice,
 } from '../ai/voice/index.mjs';
 /* §11.5's visual state lives with the shell, because it is a UI decision made
    from the voice layer's status object — so the test imports it from there. */
@@ -1080,15 +1081,21 @@ function makeGatedEnv() {
     };
   };
   const spk = fakeSpeaker();
+  const rec = fakeRecognizer();
+  made.notices = [];
   let t = 0;                     /* a clock the test moves, so a turn can expire */
   const voice = createVoice(made.env, {
-    tier: 2, chat: fakeChat(), recognizer: fakeRecognizer(), speaker: spk,
+    tier: 2, chat: fakeChat(), recognizer: rec, speaker: spk,
     clock: () => t, createVad,
     onNudge: (t) => made.nudges.push(t),
+    /* §11.1's downgrade and headphones notices are bubbles in the real shell,
+       so the test needs the same seam the shell uses. */
+    onNotice: (text) => made.notices.push(text),
   });
   made.nudges = [];
   made.gate = gate;
   made.spk = spk;
+  made.rec = rec;
   made.at = (ms) => { t = ms; };
   made.voice = voice;
   return made;
@@ -1189,6 +1196,101 @@ test('VOICE-14: a session with no gate is never released', async () => {
   assert.equal(voice.status().standby, false);
   assert.equal(voice.status().nudged, false);
   voice.disable();
+});
+
+/* ── VOICE-17 · §11.1's auto-downgrade, and the headphones suggestion ──
+   Two hard rules that were missing: "auto-downgrade to Tap & Speak when the
+   governor reaches degrade step 3–4", and "suggest headphones on first use".
+   The first is a *behaviour* — the microphone has to actually be released, or
+   a downgrade that keeps listening has given up nothing — so it is driven
+   through the same injected recognizer and VAD the idle tests use. */
+
+test('VOICE-17: the rung decides whether hands-free is still on offer', () => {
+  /* `degradedVoice` is the pure half, so the shell, the button and the
+     controller cannot disagree about what "step 3" means for this tier. */
+  assert.equal(degradedVoice(0, 2).forced, false);
+  assert.equal(degradedVoice(DOWNGRADE_STEP - 1, 2).forced, false,
+    'a rung below the threshold must not take hands-free away');
+  assert.equal(degradedVoice(DOWNGRADE_STEP, 2).forced, true);
+  assert.equal(degradedVoice(99, 2).forced, true, 'step 99 is still step 3 or worse');
+  assert.equal(degradedVoice(DOWNGRADE_STEP, 1).forced, false,
+    'T1 has no continuous mode to lose — voicePolicy already pins it to push');
+  assert.equal(degradedVoice(undefined, 2).forced, false, 'a missing rung is rung 0');
+});
+
+test('VOICE-17: reaching the rung releases the microphone and says why', async () => {
+  const g = makeGatedEnv();
+  g.voice.enable({ continuous: true });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(g.voice.status().mode, 'continuous', 'the test needs a hands-free session');
+
+  g.voice.setPressure(DOWNGRADE_STEP);
+  const st = g.voice.status();
+  assert.equal(st.enabled, true, 'a downgrade is not "voice off"');
+  assert.equal(st.mode, 'push', 'the mode must actually have changed');
+  assert.equal(st.downgraded, true, 'the status must say the device forced this');
+  assert.equal(st.degradeStep, DOWNGRADE_STEP);
+  assert.ok(g.rec.stopped > 0, 'the recognizer was left listening — that is not a downgrade');
+  assert.equal(st.vad.gated, false, 'the gate must be inert in push mode');
+  assert.ok(g.notices.includes(DOWNGRADE_NOTICE),
+    'the visitor is told, not silently moved');
+  assert.deepEqual(g.notices.filter((n) => n === DOWNGRADE_NOTICE).length, 1,
+    'the downgrade is said once, not on every rung');
+  /* and the gate can no longer start the recognizer */
+  const startedBefore = g.rec.started;
+  g.gate.onGateOpen?.();
+  assert.equal(g.rec.started, startedBefore, 'the gate still drives the recognizer');
+  g.voice.disable();
+});
+
+test('VOICE-17: a downgraded device cannot be put back into hands-free', async () => {
+  const g = makeGatedEnv();
+  g.voice.setPressure(DOWNGRADE_STEP);
+  g.voice.enable({ continuous: true });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(g.voice.status().mode, 'push',
+    'toggling voice off and on must not restore the shape the device refused');
+  g.voice.disable();
+});
+
+test('VOICE-17: a recovered rung gives hands-free back, and the notice is withdrawn', async () => {
+  const g = makeGatedEnv();
+  g.voice.setPressure(DOWNGRADE_STEP);
+  g.voice.enable({ continuous: true });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(g.voice.status().downgraded, true);
+
+  g.voice.setPressure(0);
+  assert.equal(g.voice.status().downgraded, false, 'leaving the rung has to clear the state');
+  g.voice.disable();
+  g.voice.enable({ continuous: true });
+  assert.equal(g.voice.status().mode, 'continuous',
+    'hands-free must come back once the device is not under pressure');
+  g.voice.disable();
+});
+
+test('VOICE-17: headphones are suggested once, and only where barge-in exists', async () => {
+  const g = makeGatedEnv();
+  g.voice.enable({ continuous: true });
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(g.notices, [HEADPHONES_NOTICE], 'the tip is §11.1, once');
+  g.voice.disable();
+  g.voice.enable({ continuous: true });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(g.notices.filter((n) => n === HEADPHONES_NOTICE).length, 1,
+    'a tip that repeats is a nag');
+  g.voice.disable();
+
+  /* Tap & Speak has no barge-in, so it gets no headphones advice. */
+  const p = makeTimerEnv();
+  const notices = [];
+  const pushVoice = createVoice(p.env, {
+    tier: 2, chat: fakeChat(), recognizer: fakeRecognizer(), speaker: fakeSpeaker(),
+    clock: () => 0, onNotice: (t) => notices.push(t),
+  });
+  pushVoice.enable({ continuous: false });
+  assert.deepEqual(notices, [], 'push-to-talk was told about headphones');
+  pushVoice.disable();
 });
 
 /* ── VOICE-15 · §11.2's transcript, with a way to fix a misheard word ──

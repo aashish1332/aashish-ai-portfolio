@@ -1131,6 +1131,13 @@ let working = 0;
              spoken — a sentence out of a quiet room is a worse interruption
              than a line on screen, and the line says how to make it stop. */
           onNudge: (text) => bubble('bot', text, { badge: 'STILL HERE', badgeClass: 'is-note' }),
+          /* §11.1's two one-line notices, both said once: the headphones
+             suggestion on the first hands-free session, and the downgrade
+             when the §6.3 ladder reaches step 3. They are bubbles for the
+             same reason `onNudge` is — a sentence out of a quiet room is a
+             worse interruption than a line on the screen the visitor is
+             already looking at. */
+          onNotice: (text) => bubble('bot', text, { badge: 'VOICE', badgeClass: 'is-note' }),
         });
         return voice;
       })
@@ -1219,8 +1226,12 @@ let working = 0;
     ladder = createDegradeLadder({
       /* armed by whileWorking() around real work, not by the panel opening */
       active: false,
-      onStep: (step) => budget.applyStep(step),
-      onRestore: (step) => budget.restore(step),
+      /* §11.1's auto-downgrade rides the same rung as the answer budget: the
+         shell owns the ladder, so the voice layer is told the step rather
+         than measuring the device a second time. `voice` is null until the
+         first tap, which is why this is optional-chained. */
+      onStep: (step) => { budget.applyStep(step); voice?.setPressure?.(step); },
+      onRestore: (step) => { budget.restore(step); voice?.setPressure?.(step); },
     });
     tickerFn = (_time, deltaMs) => ladder.tick(deltaMs);
     gsapRef.ticker.add(tickerFn);

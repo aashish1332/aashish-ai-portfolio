@@ -90,6 +90,44 @@ export const VOICE_IDLE = {
   standbyMs: 90000,
 };
 
+/* ── §11.1's auto-downgrade ──────────────────────────────────────
+   "auto-downgrade to Tap & Speak when the governor reaches degrade step 3–4 or
+   the battery/thermal situation looks bad." The panel already owns the §6.3
+   ladder (it drives the answer budget), so the rung is PUSHED here rather than
+   measured twice — two governors would be two answers to one question.
+
+   Why step 3 and not 4: rungs 1–2 shorten the answer, rung 3 drops scene
+   quality, rung 4 stops generating. A hands-free microphone is the most
+   expensive way to ask a question and the only one that runs while nobody is
+   asking, so it is the first thing to give up, not the last. The visitor keeps
+   voice — what changes is that a press is needed again. */
+export const DOWNGRADE_STEP = 3;
+
+/** Said, not silent: a microphone that quietly stops being hands-free is
+ *  indistinguishable from one that broke. */
+export const DOWNGRADE_NOTICE =
+  'This device is under pressure, so hands-free listening is off — tap the '
+  + 'microphone to talk instead.';
+
+/** §11.1: "suggest headphones on first use". Barge-in works without them,
+ *  but the visitor should know why it can misfire — the assistant hearing its
+ *  own voice through the speakers is the one failure mode they can prevent. */
+export const HEADPHONES_NOTICE =
+  'Tip: headphones stop the microphone hearing the answer read aloud and '
+  + 'interrupting itself. Everything works without them.';
+
+/** Did the device force the push-to-talk shape, and why. A pure reader so the
+ *  button, the tests and the panel can all agree without re-deriving it. */
+export function degradedVoice(step, tier = 3) {
+  const s = Number.isFinite(step) ? Math.max(0, Math.floor(step)) : 0;
+  return {
+    step: s,
+    /* T0/T1 have no continuous mode to lose — `voicePolicy` already pins them
+       to push — so for them this is a no-op rather than a downgrade. */
+    forced: s >= DOWNGRADE_STEP && tier >= 2,
+  };
+}
+
 /** The nudge itself: deterministic, no model call (§11.1 "all deterministic,
  *  no extra LLM cost"), and it says how to make it stop. */
 export const IDLE_NUDGE =
@@ -551,6 +589,14 @@ let windowTimer = null;
 let vad = null;
 let vadGated = false;
 let vadReason = null;
+/* §11.1's downgrade: the §6.3 rung the panel last reported, and the reason to
+   show while it is high. Reset by a rung below the threshold, so recovering
+   hands-free is automatic and nothing has to remember to restore it. */
+let pressure = 0;
+let downgraded = false;
+/* §11.1's headphones suggestion, once per page rather than per session — the
+   tip is about the room, and the room did not change. */
+let headphoneTip = false;
 /* §11.1's hard rule: "never speaks/listens while the tab is hidden". A tab
    the visitor is not looking at is not a tab that should be recording, and
    `visibilitychange` is the only signal the browser gives for it. */
@@ -662,6 +708,11 @@ const tabHidden = () => (typeof env.document?.hidden === 'boolean'
          session nobody has spoken to. */
       nudged,
       standby,
+      /* §11.1's downgrade, as state: the rung in force and whether it is
+         holding the hands-free shape down. Reported so the button can say
+         *why* it is no longer hands-free instead of looking broken. */
+      degradeStep: pressure,
+      downgraded,
       /* §11.3's VAD: `gated` means the recognizer is switched by detected
          speech rather than left running, `speaking` is the segment state,
          and `level` is the 0–1 number §11.5's orb is drawn from. */
@@ -699,6 +750,51 @@ const tabHidden = () => (typeof env.document?.hidden === 'boolean'
    * @param {boolean} [o.continuous] force the mode (policy still wins)
    * @returns {object} the status after the attempt, right or wrong
    */
+  /**
+   * §11.1's auto-downgrade, taken without leaving voice mode.
+   *
+   * The recognizer is released and the detector stopped, because a downgrade
+   * that keeps the microphone open has given up nothing: the cost §11.1 is
+   * protecting against is the always-open microphone, not the mode flag. The
+   * gate is left inert — it only switches the recognizer while `mode` is
+   * continuous — so the next press is a press, and the visitor can turn voice
+   * off with the same button as before.
+   */
+  function toPush() {
+    cancelIdle();
+    cancelWindow();
+    closeSession();
+    try { nick?.stop?.(); } catch { /* already down */ }
+    try { vad?.stop?.(); } catch { /* already down */ }
+    vadGated = false;
+    mode = 'push';
+  }
+
+  /**
+   * The §6.3 rung, as the panel knows it. Pushing the same number twice is a
+   * no-op, so the caller does not have to compare before calling.
+   * @param {number} step  0..4, from the degrade ladder
+   * @returns {number} the rung now in force
+   */
+  function setPressure(step) {
+    const next = Number.isFinite(step) ? Math.max(0, Math.floor(step)) : 0;
+    const was = pressure;
+    const wasDown = degradedVoice(was, tier).forced;
+    pressure = next;
+    const isDown = degradedVoice(next, tier).forced;
+    if (isDown && enabled && mode === 'continuous') {
+      toPush();
+      downgraded = true;
+      opts.onNotice?.(DOWNGRADE_NOTICE);
+    }
+    /* A rung below the threshold gives hands-free back — the visitor is not
+       asked to notice, so the state is cleared rather than left to say a
+       device is struggling once it is not. */
+    if (!isDown && wasDown) downgraded = false;
+    if (next !== was || isDown !== wasDown) opts.onStatus?.(status());
+    return pressure;
+  }
+
   function enable({ continuous = null } = {}) {
     const p = policy();
     if (!p.pushToTalk) return status();
@@ -725,7 +821,12 @@ const tabHidden = () => (typeof env.document?.hidden === 'boolean'
     if (!nick.supported) return status();
 
     const wantContinuous = continuous == null ? p.continuous : !!continuous;
-    mode = (p.continuous && wantContinuous) ? 'continuous' : 'push';
+    /* §11.1: while the device is under pressure, "continuous" is not on
+       offer. Refusing here as well as in `setPressure` is what makes the
+       downgrade survive a visitor who toggles voice off and on again. */
+    const forced = degradedVoice(pressure, tier).forced;
+    mode = (p.continuous && wantContinuous && !forced) ? 'continuous' : 'push';
+    if (forced && wantContinuous) downgraded = true;
     nick.setLang?.(voiceHint(lang));
 
     enabled = true;
@@ -799,6 +900,12 @@ const tabHidden = () => (typeof env.document?.hidden === 'boolean'
        it here as well would run it from the moment voice is switched on,
        which is the cost the gate exists to avoid. */
     if (!vadGated) nick.start();
+    /* §11.1: barge-in is a hands-free concern, so the tip belongs to the mode
+       that has it — and it is said once, because a tip that repeats is a nag. */
+    if (mode === 'continuous' && !headphoneTip && !suspended) {
+      headphoneTip = true;
+      opts.onNotice?.(HEADPHONES_NOTICE);
+    }
     /* A press opens a window that CLOSES BY ITSELF. Without this the engine
        restarts itself for as long as the panel is open and every word in the
        room is a question — a hotter microphone than continuous mode, which at
@@ -1011,7 +1118,7 @@ const tabHidden = () => (typeof env.document?.hidden === 'boolean'
   }
 
   return {
-    enable, disable, status, setTier, onFinal, onPartial, onAnswer,
+    enable, disable, status, setTier, setPressure, onFinal, onPartial, onAnswer,
     onVisibility, greet,
     get suspended() { return suspended; },
     setLang(l) { if (l) lang = l; nick?.setLang?.(voiceHint(lang)); },

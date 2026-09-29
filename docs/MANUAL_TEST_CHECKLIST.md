@@ -132,6 +132,8 @@ path works on your machine, and it has never been seen by a person.
 | D18 | Mid-tour, page still walking, **ask a question** | the walk stops immediately and the question is answered normally — the tour must never fight the visitor for the page |
 | D19 | Turn on **Reduce motion**, then take the tour again | the page **jumps** to each section instead of gliding (§3), and the tour still says the same four lines |
 | D20 | Start the tour, then press **Escape** | the panel closes and the tour stops with it — no line arrives after the panel is gone |
+| D21 | Turn Proactive on for the **first time** in a visit | one tip appears — *"Tip: headphones stop the microphone hearing the answer read aloud and interrupting itself…"* — and it does **not** come back when you turn voice off and on again (§11.1). Tap & Speak should never show it |
+| D22 | If the film ever struggles while voice is on (the frame ladder reaching step 3 — a weak phone is the likely place) | hands-free listening **ends by itself** with *"This device is under pressure, so hands-free listening is off — tap the microphone to talk instead."*, the recording indicator goes out, and a press still talks. If the button silently stops behaving hands-free with **no** line, that is a bug worth reporting (§11.1) |
 
 **Record:** did D3–D5 work the first time, or did you have to say it twice?
 That number is the whole point of the exercise, and it is mine to fix, not
