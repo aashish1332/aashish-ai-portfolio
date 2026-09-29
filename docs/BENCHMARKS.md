@@ -1419,6 +1419,11 @@ errors, 0 page errors, 0 failed requests, `T1 · MODEL READY`. One earlier run o
 lost a single check; the re-run did not reproduce it, and the failing line is not recorded because
 the first run's output was piped through `tail`. That is an instrument gap in how the probe was
 invoked, not a result.
+
+**Updated again 2026-09-29:** the check set is at **60** and a full run against the built bundle
+served as production serves it (`ROOT=dist PORT=5582`, `AI_BASE` pointed at it) passes **60/60** —
+0 console errors, 0 page errors, 0 failed requests, `T1 · MODEL READY`. The additions since 54 were
+§0 rule 4's status line and §11.1's downgrade and headphones checks. `MOBILE=1` passes 60/60 too.
 | a topic question | `kind=model`, **12 facts**, 12 sources — one real answer |
 | frames, panel closed → open | 33.2 → 33.3 ms = **0.3 %** (p95 **1×**), ladder `step=0` |
 | control (open, sampled twice) | 33.3 → 33.2 ms = −0.3 % — this box's bimodal baseline |
