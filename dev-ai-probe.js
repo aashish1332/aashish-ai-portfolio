@@ -46,16 +46,26 @@ let failures = 0;
 /* The tally at the end counts only the checks that RAN. A phase that silently
    stops executing shrinks the denominator and still prints a green n/n — which
    is how a stale "54/54" and "43/43" sat in the docs for two revisions while
-   every run reported itself healthy. Pinning the total makes a green run mean
-   "all 60 expected checks ran and passed", not merely "everything that
-   happened to run, passed".
+   every run reported itself healthy. Deriving the expected total makes a green
+   run mean "all the expected checks ran and passed", not merely "everything
+   that happened to run, passed".
 
-   Desktop and MOBILE both run 60 because two PAIRS swap: the phone set has
-   `scene paused (phone)` and `scene resumed (phone)`, the desktop set has
-   `median frame drift` and `p95 frame time` (§15's frame-health A/B, which
-   needs the film's GL context that mobile emulation does not give). Verified by
-   diffing the two runs' check labels, not by reading the guards. */
-const EXPECTED_CHECKS = 60;
+   Two groups are CONDITIONAL, so a single hardcoded number is wrong and was
+   wrong for one revision of this guard: it asserted 60 flat, which fails a run
+   of `SW_GL=1` — where the frame A/B is INCONCLUSIVE, its pair never calls
+   `say()`, and the true total is 58. Derived instead:
+
+     58 always  + 2 when §15's frame-health pair is judged  + 2 for MOBILE
+
+   Observed, and established by DIFFING the runs' check labels rather than by
+   reading the guards: desktop 58+2=**60**, `MOBILE=1` 58+2=**60** (its two
+   `scene paused/resumed (phone)` guards fire and the frame pair is skipped
+   under emulation, so the two swap), `SW_GL=1` on desktop **58**. */
+const BASE_CHECKS = 58;
+const FRAME_AB_CHECKS = 2;
+const MOBILE_CHECKS = 2;
+/* set when §15's two frame checks actually reach their `say()` calls */
+let frameAbJudged = false;
 const say = (label, ok, detail) => {
   checks += 1;
   if (!ok) failures += 1;
@@ -397,7 +407,19 @@ const say = (label, ok, detail) => {
     let lastBadge = '';
     let lastLen = 0;
     for (;;) {
-      const bots = [...document.querySelectorAll('.ai__msg.is-bot')];
+      /* NOTICEs are skipped, exactly as every other answer check in this probe
+         skips them (`readAnswer` above: "The answer is the last bubble that is
+         not a notice"). This loop did NOT, and that was a real bug, not a
+         detail: when §6.3's ladder fires it appends a NOTICE *after* the
+         answer, so the last bot bubble is the notice, `badge` reads 'NOTICE',
+         `/AI ANSWER/` never matches, and the check reports `streamed=false` for
+         an answer that streamed perfectly well. Diagnosed 2026-09-29 by running
+         `SW_GL=1`, which forces the ladder to fire: the failure detail read
+         `last badge "NOTICE", 82 chars`, and 82 is the exact length of "The
+         frames were struggling, so I have stopped generating answers for this
+         session." — the rung-3 stop notice. */
+      const bots = [...document.querySelectorAll('.ai__msg.is-bot')]
+        .filter((el) => el.querySelector('.ai__badge')?.textContent !== 'NOTICE');
       const last = bots[bots.length - 1];
       const badge = last?.querySelector('.ai__badge')?.textContent || '';
       const text = (last?.querySelector('span:not(.ai__badge)')?.textContent || '');
@@ -585,7 +607,31 @@ const say = (label, ok, detail) => {
       + `(${closed.scene.tier}/@${closed.scene.scale} → ${openSample.scene.tier}/@${openSample.scene.scale}), `
       + `so the ${drift}% drift is the film's own governor, not the panel.`);
   } else {
-    say('median frame drift', Math.abs(drift) <= 10, `${drift}%  (closed ${closed.median} ms → open ${openSample.median} ms)`);
+    /* Both of §15's frame checks below actually run on this path. The two
+       branches above skip them on purpose — an INCONCLUSIVE baseline or a film
+       that moved under its own governor is not a verdict, and must not be
+       dressed as one — so the expected tally has to know which path was taken. */
+    frameAbJudged = true;
+    /* ONE-SIDED, and deliberately so. This check asks one question: did opening
+       the panel COST frames? A negative drift is the panel-open arm being
+       FASTER, which is not jank — and the note on `sameFilm` above already says
+       why failing on it is worse than useless: a check that goes red on an
+       improvement teaches its readers to ignore it, and the real regression that
+       follows gets waved through. The sibling `p95 frame time` below is
+       one-sided for the same reason.
+
+       The two-sided form fired on 2026-09-29 with **−49.5 %** — closed 33.3 ms
+       against open 16.8 ms — which is not the panel at all but this box's
+       bimodal vsync (30 fps vs 60 fps, the same shape as the +92.9 % note
+       above): the closed arm landed in one mode and BOTH open samples agreed in
+       the other, which is why the control read a clean 0 %. The measured
+       direction is still printed, because a large negative drift does mean the
+       two arms are not comparable and a reader should see it — it just does not
+       fail a check whose subject is jank. */
+    const faster = drift < -10;
+    say('median frame drift', drift <= 10,
+      `${drift}%  (closed ${closed.median} ms → open ${openSample.median} ms)`
+      + (faster ? '  — the OPEN arm was faster; not jank, arms not comparable' : ''));
     say('p95 frame time', ratio <= 1.5, `${ratio}× (closed ${closed.p95} ms → open ${openSample.p95} ms)`);
     /* Only meaningful if the control agrees with itself; say so either way. */
     if (Math.abs(controlSpread) > 10) {
@@ -876,9 +922,12 @@ const say = (label, ok, detail) => {
   /* A run that verified less than it claims is a FAILED run, not a green one
      with a smaller number in it. Set before the verdict line so the line below
      reports the verdict this actually earns. */
-  if (checks !== EXPECTED_CHECKS) {
-    console.log(`\n  CHECK COUNT ${checks} \u2260 expected ${EXPECTED_CHECKS} — a phase was skipped, ` +
-      'so this run verified less than its tally reports');
+  const expected = BASE_CHECKS + (frameAbJudged ? FRAME_AB_CHECKS : 0)
+    + (MOBILE ? MOBILE_CHECKS : 0);
+  if (checks !== expected) {
+    console.log(`\n  CHECK COUNT ${checks} \u2260 expected ${expected} ` +
+      `(${BASE_CHECKS} base${frameAbJudged ? ' + frame A/B' : ''}${MOBILE ? ' + mobile' : ''}) — ` +
+      'a phase was skipped, so this run verified less than its tally reports');
     process.exitCode = 1;
   }
   console.log(`\n  ${process.exitCode ? 'PROBE FAILED' : 'probe passed'} — ${checks - failures}/${checks} checks`);

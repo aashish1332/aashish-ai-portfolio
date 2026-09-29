@@ -333,25 +333,33 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
     The 16 kHz resample is not done either, because the only number this module
     reads is the RMS and the recognizer captures for itself.
 
-18. **An open intermittent defect: the stop-then-`Retry` streaming check is red
-    about one run in five.** Across five browser runs on 2026-09-29 the probe
-    came back **58/60** once, with `tokens stream in before the answer is
-    finished` and `Retry starts a fresh generation` both red — a fresh generation
-    that offered **Stop** and then showed no `AI ANSWER` for the full 180 s
-    window. A healthy run streams in **20,954 ms**, so 180 s is ~9× the healthy
-    time and this box's 2–3× run-to-run variation does not account for it. Two
-    candidates remain and they need different fixes: **(a)** a stall on the
-    stop-then-`Retry` path (the abort plumbing is real — `ai/engine/worker.mjs`
-    aborts the previous generation and `ai/engine/index.mjs` checks
-    `signal.aborted` in both loops — so a trivial queued-behind-the-abort cause is
-    not it); or **(b)** a legitimate refusal the check cannot see, because it
-    accepts only an `AI ANSWER` badge while `retry()` re-asks with the stopped
-    **PARTIAL** turn still in history. The check previously reported an **empty
-    detail**, which is why this could not be told apart; it now reports elapsed
-    milliseconds, the last badge and the character count, so the next occurrence
-    settles it. **Not diagnosed, not tuned away** — the 180 s budget is unchanged,
-    because it is generous by every good measurement and raising it would hide a
-    stall instead of reporting it.
+18. **A defect in the probe, found by the probe, and fixed: it read a NOTICE as
+    if it were the answer.** The two stop-then-`Retry` streaming checks went red
+    about one run in five, reporting only `streamed=false`. Given a diagnostic
+    (elapsed ms, last badge, char count) the cause was immediate: `last badge
+    "NOTICE", 82 chars`, and 82 is exactly the length of §6.3's rung-3 stop
+    notice, *"The frames were struggling, so I have stopped generating answers
+    for this session."* `watchStream` took the last bot bubble with no badge
+    filter, while every other answer check in the probe skips notices; when the
+    ladder fires it appends a NOTICE **after** the answer, so the check read the
+    notice, `/AI ANSWER/` could never match, and a perfectly good streamed answer
+    was called unstreamed. Fixed by filtering `NOTICE`, and verified against the
+    deterministic reproduction — `SW_GL=1` before: `waited 180123 ms — last badge
+    "NOTICE", 82 chars` (red); after: `streamed in 86514 ms` (green), probe
+    **55/58 → 57/58**. The 180 s budget was never the cause and is **unchanged**.
+    The earlier desktop failures predate the diagnostic and so recorded no badge:
+    the same mechanism fits (the box was loaded from repeated runs, which is when
+    the ladder fires) but was not directly observed. **This was an instrument
+    defect, not a product one** — worth stating plainly, because the honest
+    reading of a red check is not automatically a broken product.
+
+    Two smaller instrument defects were found in the same pass and fixed: the
+    frame A/B's jank check used `Math.abs(drift) <= 10`, so it **failed on an
+    improvement** (−49.5 %, the panel arm *faster*) in direct contradiction of its
+    own written note, and now fails only on degradation while still catching the
+    wild positive drift (+92.9 % still fails); and the check-count guard this work
+    introduced asserted a flat 60, which would have failed every `SW_GL=1` run
+    (true total 58) — it is now **derived** from what actually runs.
 
 ## WHAT I NEED FROM YOU
 

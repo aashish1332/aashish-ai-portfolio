@@ -3684,41 +3684,95 @@ guard that run reports **"probe passed — 59/59 checks"** — a green verdict f
 run that verified one less thing than it says. Reverted, a full run is green with
 no `CHECK COUNT` line, so the guard does not false-positive.
 
-### 3. OPEN: the stop-then-Retry streaming check is red about 1 run in 5
+### 3. `watchStream` read a NOTICE instead of the answer — diagnosed and fixed
 
-The check reported `streamed=false` with an **empty detail string**, so a failure
-said nothing about why — the same ambiguity that once left the anchor sweep
-recorded as "6/7, maybe a resolver bug". It now reports elapsed time, the last
-badge, and the character count.
+The two stop-then-`Retry` streaming checks went red on roughly **1 run in 5**, and
+a failure said only `streamed=false` with an **empty detail string** — the same
+ambiguity that once left the anchor sweep recorded as "6/7, maybe a resolver bug".
+So the check was first given a diagnostic: elapsed milliseconds, the last badge it
+saw, and the character count.
 
-Those numbers narrow the cause without settling it. A healthy run streams in
-**20,954 ms** against the 180 s `WAIT_ANSWER` budget — **8.6× of headroom** — so a
-run that waits the full 180 s with `stopSeen=true` is ~9× the healthy time, which
-this box's 2–3× run-to-run variation does not explain. Two candidates, needing
-different fixes:
+**The diagnostic paid for itself on its first use.** `SW_GL=1` reproduces it
+deterministically (software GL starves the film until §6.3's ladder fires), and the
+failure detail read:
 
-- **(a) a stall** on the stop-then-Retry path — the panel still offers Stop but
-  emits nothing. Real abort plumbing exists (`ai/engine/worker.mjs` aborts the
-  previous generation, `ai/engine/index.mjs` checks `signal.aborted` in both the
-  prefill and decode loops), so a queued-behind-the-abort explanation is not
-  obviously it.
-- **(b) a legitimate refusal the check cannot see** — it accepts only an
-  `AI ANSWER` badge, and `retry()` re-asks with the stopped **PARTIAL** turn still
-  in history, so the context is not the one that answered. Decoding is greedy
-  (`ai/engine/index.mjs`: *"determinism is a feature"*), which argues that an
-  unchanged context should reproduce the first answer — but the context is not
-  unchanged, which is what keeps (b) alive.
+```
+✖ tokens stream in before the answer is finished  waited 180123 ms — last badge "NOTICE", 82 chars
+```
 
-The next occurrence will separate them: `streamed=false` with `last badge "NO
-ANSWER · …"` is (b); a stall is (a). **The budget stays at 180 s.** It is generous
-by every good measurement, so raising it would hide a stall rather than report it.
-Recorded as an open intermittent defect, not diagnosed and not tuned away.
+`NOTICE`, not silence and not a refusal — and **82 is exactly** the length of
+`"The frames were struggling, so I have stopped generating answers for this
+session."`, the ladder's rung-3 stop notice.
+
+**Root cause**, and it was a real bug: `watchStream` took the last bot bubble with
+no badge filter, while *every other* answer check in the probe skips notices
+(`readAnswer`: *"The answer is the last bubble that is not a notice"*). When the
+ladder fires it appends a NOTICE **after** the answer, so the loop read the
+notice, `/AI ANSWER/` could never match, and the check declared a perfectly good
+answer unstreamed. The comment on the assertion even blamed the 180 s budget; the
+budget was never the problem.
+
+**Fix**: filter `NOTICE` out of `watchStream`'s bubble list, matching the pattern
+already used one function above. **Verified on the deterministic reproduction:**
+before, `waited 180123 ms — last badge "NOTICE", 82 chars` (red); after,
+`streamed in 86514 ms` (green) — the probe went **55/58 → 57/58**. The 180 s budget
+is **unchanged**, because it was never the cause.
+
+**Stated precisely, because the difference matters:** the `SW_GL=1` case is
+definitively diagnosed and its fix verified. The earlier desktop failures predate
+the diagnostic, so no badge was recorded for them; the same mechanism fits — this
+box was under load from repeated runs, which is exactly when the ladder fires —
+but it was **not directly observed**. Any recurrence will now name its own cause.
+
+### 4. A second real defect: the jank check failed on an IMPROVEMENT
+
+On a clean re-run the frame A/B went red with **−49.5 %** — closed 33.3 ms against
+open 16.8 ms, i.e. the panel-open arm *faster* — while `p95 frame time` read `1×`
+(no change) and the control read a clean `0 %`. The assertion was
+`Math.abs(drift) <= 10`, so a large **improvement** failed a check about jank.
+
+That directly contradicts the code's own note twenty lines above it: *"Reporting a
+−49 % drift as a jank failure (it was the panel-open arm that was FASTER) is the
+kind of number that gets a real regression waved through later."* The sibling `p95`
+check was already one-sided. Made one-sided: `drift <= 10`. A large negative drift
+is still **printed** — it means the two arms are not comparable — it just does not
+fail a check whose subject is jank.
+
+Verified deterministically, not by a lucky run: the predicate passes −49.5, −20,
+−10, −0.3 and 10, and still **fails +10.1, +25 and +92.9**. So the wild *positive*
+drift the two-sided form existed to catch is still caught. The live runs that
+followed read `0.6 %` — green.
+
+### 5. My own guard was wrong for one revision, and running it found that
+
+The `EXPECTED_CHECKS = 60` guard from §2 above asserted a flat 60 — and §15's
+frame-health pair sits inside a conditional that **skips both `say()` calls** when
+the A/B is INCONCLUSIVE (software GL) or NOT ATTRIBUTABLE (the film moved). A
+`SW_GL=1` run therefore carries **58** checks and the guard would have failed a
+correct run.
+
+The total is now **derived**: 58 always, **+2** when the frame pair is judged,
+**+2** for MOBILE's scene guards. Observed and confirmed by running all three:
+desktop **60**, `MOBILE=1` **60**, `SW_GL=1` **58** — the last with **no
+`CHECK COUNT` line**, so the derived form accepts it. A guard that reports a false
+failure is the same class of defect as one that cannot fail.
+
+### 6. And the one failure left in the `SW_GL=1` run is the instrument
+
+`voice: the disclosure matches where recognition runs` fails there with
+`onDevice=null`. That check's own contract says `null` after 2.5 s means the
+platform's answer never came — on a **1.3 fps** software-GL box the 2.5 s on-device
+probe cannot complete, so the reading is a property of the simulated device. Not a
+product defect, and not silently ignored either.
 
 ### Evidence
 
-`dev-ai-probe.js` `EXPECTED_CHECKS` (60) and the `CHECK COUNT` guard · run set on
-2026-09-29: desktop **60/60**, `MOBILE=1` **60/60**, mutation **59/59 → FAILED**,
-revert **60/60**, clean re-run **60/60**, and **one** run at **58/60** with the two
-streaming checks red · `dev-anchor-probe.js:271,315,322` (the paired `moved` /
-`!moved` checks) · `dev-offline-probe.js:95` · `ai/engine/index.mjs:16,46,191,212` ·
-`ai/engine/worker.mjs:26,61,80` · `ai/engine/session.mjs:89–102`
+`dev-ai-probe.js` `BASE_CHECKS` (58) / `FRAME_AB_CHECKS` / `MOBILE_CHECKS` and the
+derived `CHECK COUNT` guard · the `NOTICE` filter in `watchStream` · the one-sided
+`median frame drift` · run set on 2026-09-29: desktop **60/60** ×3, `MOBILE=1`
+**60/60**, mutation **59/59 → FAILED**, revert **60/60**, one run at **58/60** (the
+drift defect, now fixed), `SW_GL=1` **55/58 before → 57/58 after** the NOTICE fix ·
+`dev-anchor-probe.js:271,315,322` (the paired `moved` / `!moved` checks) ·
+`dev-offline-probe.js:95` · `ai/engine/index.mjs:16,46,191,212` ·
+`ai/engine/worker.mjs:26,61,80` · `ai/engine/session.mjs:89–102` ·
+`ai/ui/chat.mjs:302,1034` (`noticeOnce`, the rung-3 stop text)

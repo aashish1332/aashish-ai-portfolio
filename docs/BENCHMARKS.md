@@ -1056,8 +1056,11 @@ the renderer ends up with, so the flip is invisible in it.
 
 **Consequence, stated plainly: a single-run frame A/B on R1 is worth ±90 %,** and neither the
 0 % nor the 92.9 % figure above should be quoted on its own. The probe prints the control's own
-disagreement next to the verdict and refuses to call a drift attributable when the control
-contradicts it. What the pinned run *does* establish is narrower and still real: the AI causes no
+disagreement next to the verdict, and refuses to call a drift **attributable at all** when the film
+itself changed between the arms (different tier, scale, scroll position or quality) — that is the
+film's own governor moving, not the panel. The control's disagreement is reported as a warning; it
+is the film-changed gate, not the control, that suppresses the verdict. What the pinned run *does*
+establish is narrower and still real: the AI causes no
 **long task**, no **GL program**, and no **quality change**, and the film's cost is dominated by a
 mode switch that happens without it.
 
@@ -1428,12 +1431,16 @@ The probe now **pins** that count (`EXPECTED_CHECKS = 60`): a skipped phase fail
 printing a green `59/59`, which is how the stale tallies above survived. Verified by mutation
 (one check guarded off → `CHECK COUNT 59 ≠ expected 60 → PROBE FAILED`).
 
-**One open caveat, stated because it is real:** across five runs on 2026-09-29, **one** came back
-**58/60**, with the two stop-then-`Retry` streaming checks red. A healthy run streams in ~21 s
-against the 180 s budget, so that run's full 180 s is ~9× the healthy time. It is recorded as an
-**open intermittent defect** in `docs/PROGRESS.md` (candidate causes: a stall on the stop-then-Retry
-path, or a legitimate refusal the check cannot see because it accepts only an `AI ANSWER` badge).
-The check now reports elapsed milliseconds and the last badge so the next occurrence settles it.
+**A probe defect found and fixed 2026-09-29, recorded because the number above came from the same
+probe:** the two stop-then-`Retry` streaming checks went red about one run in five. A diagnostic
+added to the check reported `last badge "NOTICE", 82 chars` — and 82 is exactly the length of
+§6.3's rung-3 stop notice. `watchStream` took the last bot bubble with no badge filter, unlike every
+other answer check in the probe; when the ladder fires it appends a NOTICE **after** the answer, so
+the check read the notice and declared a streamed answer unstreamed. Fixed by filtering `NOTICE`,
+verified against the deterministic reproduction: `SW_GL=1` was `waited 180123 ms — last badge
+"NOTICE", 82 chars` (red) and is now `streamed in 86514 ms` (green), **55/58 → 57/58**. The 180 s
+budget was never the cause and is unchanged. It was an **instrument** defect, not a product one —
+see `docs/PROGRESS.md` §"watchStream read a NOTICE instead of the answer".
 | a topic question | `kind=model`, **12 facts**, 12 sources — one real answer |
 | frames, panel closed → open | 33.2 → 33.3 ms = **0.3 %** (p95 **1×**), ladder `step=0` |
 | control (open, sampled twice) | 33.3 → 33.2 ms = −0.3 % — this box's bimodal baseline |
