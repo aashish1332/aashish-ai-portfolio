@@ -609,6 +609,12 @@ const CHAT_CHUNK_GZ_BUDGET = 150 * 1024;      // §4: UI + knowledge + retrieval
 const SITE_GZ_BUDGET = 250 * 1024;            // the rest of the page; regression guard, NOT the §4 target
 const FIRST_USE_GZ_BUDGET = 40 * 1024 * 1024; // §4: first-use download, T1/T2 (runtime + weights + tokenizer)
 const SINGLE_ASSET_GZ_BUDGET = 100 * 1024 * 1024; // §4: any single AI asset, hard cap
+/* §6.5: "Shards ≤ ~8 MB, parallel download, resumable, SHA-256 verified".
+   That is a cap on the *shard file*, not on its gzip — gzip can hide a 20 MB
+   shard behind a 6 MB download, and the reason the cap exists (a shard is the
+   unit of streaming, verification and retry) is about the file. The gz budgets
+   above cannot see the difference, so this is asserted on raw bytes. */
+const SHARD_BYTES_BUDGET = 8 * 1024 * 1024;
 
 const MODEL_EXPORT_PREFIX = 'ai/model-export/';
 
@@ -692,6 +698,16 @@ test('§14: the exported model fits §4\'s weight and first-use budgets', (t) =>
     for (const asset of weights) {
       assert.ok(gz(asset) <= SINGLE_ASSET_GZ_BUDGET,
         `${asset.rel} is ${gz(asset)} B gz, over §4's ${SINGLE_ASSET_GZ_BUDGET} B per-asset cap`);
+    }
+    /* §6.5's shard cap, on the file rather than its compressed size — the
+       gzip budgets above would pass a 20 MB shard that compresses well. */
+    const shards = weights.filter((f) => f.rel.endsWith('.bin'));
+    assert.ok(shards.length > 0, 'the export ships no .bin shard');
+    for (const shard of shards) {
+      const bytes = statSync(shard.abs).size;
+      assert.ok(bytes <= SHARD_BYTES_BUDGET,
+        `${shard.rel} is ${bytes} B raw, over §6.5's ${SHARD_BYTES_BUDGET} B shard cap — ` +
+        'split it, do not "just ship it"');
     }
     /* §4 line 74's real target is the whole first visit, not the weights
        alone; measuring only the shard would let the runtime grow unbounded. */
