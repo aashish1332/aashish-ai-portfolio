@@ -2152,6 +2152,17 @@ vs_5_0 ps_5_0, D3D11)` — and `docs/BASELINE.json` was already measured that wa
 So `dev-ai-probe.js` now takes `SW_GL=1` to opt *into* software GL (the same
 knob `dev-resource-probe.js` uses) and uses the real GPU by default.
 
+**What an `SW_GL=1` run actually yields, measured 2026-09-29 so a reader is not
+left guessing:** **58 checks** (not 60 — the frame A/B is INCONCLUSIVE on a
+1.3 fps baseline and both its assertions are correctly skipped) and **57/58**
+passing. The one red is `voice: the disclosure matches where recognition runs`,
+which fails with `onDevice=null` because its contract allows the platform 2.5 s
+to answer and a 1.3 fps box cannot get there. That is a property of the simulated
+device, not the panel, and it is stated rather than tuned away. `SW_GL=1` exists
+to exercise §6.3's ladder, and on this mode the ladder firing is expected — which
+is exactly the case that used to make the streaming checks red until the NOTICE
+bug above was fixed.
+
 **The first real-GPU run produced a confound, and catching it was the point.**
 It reported **−49.2 %** drift — the panel-open arm *twice as fast* — because the film's
 **own governor** had walked `tier 1 · HIGH @85 %` →
