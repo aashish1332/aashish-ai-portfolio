@@ -15,7 +15,7 @@ whether the gate passed. Every ✅/⚠️ points at the phase entry or a
 | Phase | Gate (§16) | Verdict | Evidence |
 |---|---|---|---|
 | **P0** Audit + baseline | `AUDIT.md` + baseline JSON exist | ✅ **PASSED** | `docs/AUDIT.md`, `docs/BASELINE.json` · Phase 0 below |
-| **P1** Knowledge | Tests pass; Quick Answers usable standalone; PII list approved | ✅ **PASSED in code and tests** — Quick Answers answers with **no model**; the **PII list sign-off is owner-side and still open** (C4/C5) | Phase 1 below · `docs/PRIVACY.md` |
+| **P1** Knowledge | Tests pass; Quick Answers usable standalone; PII list approved | ⚠️ **PASSED in code and tests, carrying §3's documented deviation** — the deterministic engine still runs on every question, but its templates are **computed and discarded** ("`quickAnswer()` still runs, but it is **not an answer source**" — `ai/ui/chat.mjs`), so **nobody is answered without the model** and the "usable standalone" half of this gate is the clause §3 records as not met. What it still supplies is the intent, the §8.2 focus entity, the retrieved fact ids §12 anchors resolve, the §9 injection verdict and the follow-up chips. **The PII list sign-off is owner-side and still open** (C4/C5) | Phase 1 below · §3's deviation · `docs/PRIVACY.md` |
 | **P2** Chat shell + Governor | Budgets met with UI alone; network assertion; a11y checks; no jank vs baseline | ⚠️ **PASSED, one item qualified** — budgets, the pre-click network assertion and no-jank are measured; accessibility is **mechanical only** (focus, Esc, roles, overflow), **no screen-reader pass** | Phase 2 below · §15.3 lane |
 | **P3** Tokenizer + model code | Loss decreases; resume verified; param count printed | ✅ **PASSED** | Phase 3 below |
 | **P4** Stage A training | Val curve, samples, checkpoints, resume verified | ⚠️ **GAP — the config-A run has never executed** (needs a GPU this box does not have); the `local` config passes every item | Phase 4 below · `docs/TRAINING.md` |
@@ -32,6 +32,12 @@ machine does not have; P7/P8/P9 have never seen Safari, a real phone or a live
 microphone (Firefox was closed on 2026-09-28); and P5's quality gates fail on a
 checkpoint trained to prove the pipeline, not to answer well. None of the three
 is a code gap.
+
+**And one qualification that is not a gap:** P1's "Quick Answers usable
+standalone" is the clause §3 records as deliberately not met, so its row reads ⚠️
+rather than ✅ — the engine is built, tested and still runs on every question, but
+it no longer answers anyone. That is an owner decision recorded in
+`docs/FINAL_REPORT.md` limitation 16, not something left unfinished.
 
 ---
 
