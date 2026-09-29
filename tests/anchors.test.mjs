@@ -353,12 +353,22 @@ test('salient terms come from the knowledge base, so a rename tracks the data', 
 });
 
 test('every fact family in the base yields something to search for', () => {
-  const sample = [
-    ...(KB.education || []), ...(KB.certifications || []),
-    ...(KB.skills || []), ...(KB.achievements || []),
-    ...(KB.experience || []), ...(KB.links || []),
-  ].filter((f) => f.public !== false).map((f) => f.id).filter(Boolean);
-  assert.ok(sample.length > 10, 'fixture problem: too few facts to check');
+  /* Derived from the base rather than listed by hand. The list this replaces
+     named six families — education, certifications, skills, achievements,
+     experience, links — and skipped `projects`, `contact` and `workflow`
+     without saying so, which made this test's name wider than what it looked
+     at. All three produce terms today, so nothing was failing; the point is
+     that a family added tomorrow would have been invisible to a claim that
+     says "every". 57 ids, against the 51 the hand-written list reached. */
+  const families = Object.entries(KB).flatMap(([, v]) => {
+    if (Array.isArray(v)) return v;
+    if (v && typeof v === 'object') {
+      return Object.values(v).filter((f) => f && typeof f === 'object');
+    }
+    return [];
+  });
+  const sample = families.filter((f) => f.id && f.public !== false).map((f) => f.id);
+  assert.ok(sample.length > 40, `fixture problem: only ${sample.length} facts to check`);
   const empty = sample.filter((id) => {
     const s = salientTerms(KB, [id]);
     return !s.terms.length && !s.topics.length;
