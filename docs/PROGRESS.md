@@ -3468,3 +3468,39 @@ an omission.
 `evaluation/voice/` (`phrases.json`, `record.html`, `score.py`) ·
 `tests/vad.test.mjs` · `tests/voice.test.mjs` ·
 `docs/RESEARCH_VERIFICATION.md` row 8 · `docs/BENCHMARKS.md` §15.5
+
+---
+
+## The anchor sweep: the ambiguity was the probe's own clock, not the resolver
+
+`node dev-anchor-probe.js` is the only check that edits the live page mid-run —
+it reorders the scenes and moves a project into a new section, then asks the same
+seven questions again, which is what makes a resolver that cached an offset or an
+index fail where a real one passes. A full run is **fourteen generations**, and
+this box had it recorded as "7/7 as shipped, **6/7** after the page edit" — an
+ambiguous pair that reads like a defect.
+
+**Re-run 2026-09-29, and the missing check was the probe's timeout.** Its 900 s
+hard stop is shorter than its own workload here: the run reached the end of the
+`after the edit` half with every check green and then timed out waiting for the
+reloaded page to settle. What the completed half showed:
+
+| | |
+|---|---|
+| anchors, as shipped | **7/7** — every question resolved, and each landed on a section rather than the page |
+| anchors, after the page edit | **7/7** — including the project that MOVED, found in its new section and confirmed to be the only place it is still named |
+| visibility, after the page edit | **5 visible + 2 refusals**, and the refusals are right: `no-answer` and `no-model` moved the page **0 px**, because a refusal claims nothing to point at |
+| the caveat the probe printed itself | 1 of the 7 points at content inside a scene the film gives no layout to (zero area) — a consequence of a fixture moving markup the film was never laid out for, **not** of resolution, which still finds it |
+| visibility, as shipped | **NOT TESTED** — this is the half the clock cut off |
+
+The fix is the probe's default: 1,800 s now, with `PROBE TIMEOUT` still printed
+so a truncated run cannot be read as a failed check, and the 20–30 minute runtime
+written into the header so nobody has to rediscover it. The two refusals are
+worth keeping in view — they are the §14 checkpoint answering badly, not the
+anchor code failing, which is the same cause as the failing §14 gates.
+
+### Evidence
+
+`dev-anchor-probe.js` (the timeout and the header note) · `ai/ui/anchors.mjs`
+(`resolveAnchor`, `resolveTopicAnchor`) · `tests/anchors.test.mjs` ·
+`docs/BENCHMARKS.md`

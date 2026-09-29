@@ -11,6 +11,13 @@
 
    Run:  node dev-anchor-probe.js     (needs: npm run dev)
          AI_BASE=http://localhost:5582/ node dev-anchor-probe.js   (against dist/)
+
+   Runtime: a full run is **fourteen generations** (seven questions, twice —
+   once as shipped, once after the page is edited) plus two page settles, so on
+   the CPU box this was written on it takes 20–30 minutes. The default hard stop
+   below is sized for that; PROBE_TIMEOUT overrides it for a faster machine or
+   for a deliberately short run, and a timeout prints `PROBE TIMEOUT` so a
+   truncated run is never mistaken for a failed check.
    ═══════════════════════════════════════════════════════════════ */
 'use strict';
 const puppeteer = require('puppeteer-core');
@@ -49,9 +56,14 @@ const VIS_QUESTIONS = QUESTIONS.slice(0, MAX_VIS);
 
 (async () => {
   /* Generous, because the visibility phase WAITS for the page to settle rather
-     than for a fixed duration, and this software-GL renderer moves slowly. */
+     than for a fixed duration, this software-GL renderer moves slowly, and the
+     sweep is fourteen generations. 900 s was too short for it on the CPU box
+     this was written on — the run that set this value reached the end of the
+     `after the edit` half and then timed out waiting for the reloaded page — so
+     it is 1,800 s now, and `PROBE TIMEOUT` is printed rather than a tally that
+     could be read as a failed check. */
   const hardStop = setTimeout(() => { console.log('PROBE TIMEOUT'); process.exit(2); },
-    Number(process.env.PROBE_TIMEOUT || 900000));
+    Number(process.env.PROBE_TIMEOUT || 1800000));
   const browser = await puppeteer.launch({
     executablePath: CHROME,
     headless: 'new',
