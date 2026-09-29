@@ -3400,14 +3400,28 @@ shipped configuration. The one place §5's voice does not reach is
 the §14 pair is kept on the old first-person prompts so the evaluation numbers
 stay comparable across exports.
 
+**One more thing the audit turned up about the §5 check itself.** QA-10's title
+claims the third-person rule holds "for every intent", and the `VOICE_BATTERY` it
+runs over was described as "every intent bucket" — but it reached **11 of 14**,
+and nothing could tell: the assertion iterated the *questions*, so an intent no
+question produced was simply absent from the measurement. The gap was
+`hallucination_bait` — a bait question like "did you intern at google?" is one §5
+does apply to, because a refusal about an employer that does not exist must still
+not speak as Aashish. The battery now carries a bait question, the two
+self-intents (`meta`, `injection_suspect`) are named in `SELF_INTENTS` instead of
+being silently absent, and a new assertion measures the battery **against
+`INTENTS`** — mutation-tested by removing the bait question, which fails naming
+it.
+
 ### Evidence
 
 `ai/answers/quick.mjs` (`DEFAULT_PERSONA`, `PERSONAS`, `pick`) ·
+`ai/intent/rules.mjs` (`INTENTS`) ·
 `ai/engine/prompt_contract.json` (`rules.first` / `rules.third`) ·
 `ai/engine/prompt.mjs` (`framePrefix({ rules = 'third' })`) ·
 `ai/ui/chat.mjs` (`persona: DEFAULT_PERSONA`) ·
 `ai/data/instruction.py` (`PERSONAS`) ·
-`tests/quick-answers.test.mjs` (QA-10 ×7)
+`tests/quick-answers.test.mjs` (QA-10 ×8)
 
 ---
 

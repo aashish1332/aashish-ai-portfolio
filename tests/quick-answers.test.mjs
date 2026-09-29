@@ -31,6 +31,7 @@ import {
   quickAnswer, renderFact, resolveFacts, factIds, followupsFor, tri,
   fmtDate, MAX_ANSWER_CHARS, PERSONAS, DEFAULT_PERSONA,
 } from '../evaluation/answer-text.mjs';
+import { INTENTS } from '../ai/intent/rules.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = readFileSync(join(HERE, '..', 'ai', 'answers', 'quick.mjs'), 'utf8');
@@ -307,16 +308,32 @@ test('extractive answers are marked as such so a model may rephrase them', () =>
            answering "yes, I'm Aashish" would be a lie about a person.
    ═══════════════════════════════════════════════════════════════ */
 
-/** Every intent bucket, reached with a real question. */
+/**
+ * Every intent §5 applies to, reached with a real question.
+ *
+ * The two self-intents (`meta`, `injection_suspect`) are deliberately absent:
+ * their replies are about the assistant ITSELF, not about Aashish, so §5's voice
+ * rule does not reach them and QA-11 is what covers them. They are named in
+ * `SELF_INTENTS` below rather than left out silently.
+ *
+ * This list used to be described as "every intent bucket" while reaching 11 of
+ * 14 — `hallucination_bait` was the one §5-relevant gap, and nothing noticed
+ * because the assertion was written over these questions rather than over
+ * `INTENTS`. The "reaches every intent §5 applies to" test below is the half
+ * that makes the claim checkable. */
 const VOICE_BATTERY = [
   'what is your name', 'hi', 'thanks', 'what is your cgpa',
   'what projects have you built', 'tell me about the grocery app',
   'what are your skills', 'what certifications do you have',
   'what are your achievements', 'is he available', 'how do you use ai',
-  'how can i contact you', 'what is your email', 'your phone number',
+  'how can I contact him', 'what is your email', 'your phone number',
   'what are your profiles', 'where do you live', 'do you know mysql',
-  'what is your favourite pizza',
+  'what is your favourite pizza', 'did you intern at google',
 ];
+
+/** The intents whose replies are about the assistant itself. §5 governs how it
+ *  speaks about AASHISH, so it does not apply to these two. */
+const SELF_INTENTS = ['injection_suspect', 'meta'];
 
 /** Third-person English markers. No VALUE in knowledge.json contains one
  *  (checked), so any hit here is the assistant talking about Aashish. */
@@ -337,6 +354,26 @@ const THIRD_PERSON = /\b(his|he|him)\b|\bAashish's\b/i;
  *  set was checked against the knowledge base: **zero** collisions, so a hit is
  *  the assistant speaking as Aashish and nothing else. */
 const FIRST_PERSON = /\bmy\b|\bI[\u2019'](?:ve|m)\s+(?:shipped|built|worked|studied|been)\b|\bI\s+(?:have|built|work|studied|study|hold|graduated)\b|\breach me\b|\b(?:mera|mere|meri|maine|mujhse)\b|मेरा|मेरे|मेरी|मैंने|मुझे|मुझसे/i;
+
+test('QA-10: the battery reaches every intent §5 applies to', () => {
+  /* The test below says "for every intent", which is a claim about this
+     BATTERY rather than about the code, and for a phase it was false:
+     `hallucination_bait` appeared in no question and nobody could tell, because
+     the assertion iterated the questions. This measures the battery against
+     `INTENTS` instead, so an intent added to the rules and never asked about
+     fails here rather than going quietly uncovered. */
+  const reached = new Set();
+  for (const q of VOICE_BATTERY) {
+    for (const lang of ['en', 'hi', 'hinglish']) reached.add(quickAnswer(KB, q, { lang }).intent);
+  }
+  const missing = INTENTS.filter((i) => !SELF_INTENTS.includes(i) && !reached.has(i));
+  assert.deepEqual(missing, [],
+    `the battery never reaches ${missing.join(', ')}, so "for every intent" is not `
+    + 'what the test below checks. Add a question for it, or add it to SELF_INTENTS '
+    + 'with the reason §5 does not apply');
+  const stray = [...reached].filter((i) => !INTENTS.includes(i));
+  assert.deepEqual(stray, [], 'the battery produced an intent the rules do not list');
+});
 
 test('QA-10: the answers are written in the third person, for every intent (§5)', () => {
   const offenders = [];
