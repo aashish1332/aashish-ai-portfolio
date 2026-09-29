@@ -25,7 +25,7 @@ points at a lane in this file (or names why it does not exist).
 | AI bundle size | MEASURED | §4 lanes: chat **code** chunk **75,181 B gz = 48.9 %** of budget (`npm run bundle` → `chatChunkGz`, 2026-09-29 re-run; 72,777 B gz before §0 rule 4's status disclosure); worker-only module **13,382 B gz** |
 | Model download size | MEASURED | **5,144,354 B** raw (weights + tokenizer + manifest) · **4,816,231 B gz** on the first visit (`npm run bundle` → `firstUseGz`, **11.5 %** of §4's 40 MB) · **0 B on the second visit** (§9.3 cache) |
 | WebGPU vs WASM behaviour | **NOT TESTED as speed**; investigated on paper (§19) | this box runs scalar JS ~10× below its own spec, so the comparison cannot be made here; no WGSL or wasm-SIMD kernel was written. `probeWebGPU()` reports the capability and **accelerates nothing** |
-| Mobile behaviour | **MEASURED under emulation only** (390×844, 43/43) | a **real phone is NOT TESTED** |
+| Mobile behaviour | **MEASURED under emulation only** (390×844, **60/60** on the 2026-09-29 re-run of `MOBILE=1 node dev-ai-probe.js`) | a **real phone is NOT TESTED** |
 | Voice model sizes | **N/A — nothing is shipped.** TTS is the browser's `speechSynthesis`, STT is the platform recogniser, VAD is hand-written energy code (`ai/voice/vad.mjs`). There is no model file under `ai/voice/` | — |
 | STT/TTS latency | **NOT TESTED** | no microphone and no audio output here; headless Chrome only ever reaches the refusal path |
 
@@ -696,7 +696,7 @@ box, which is the load spread this file keeps warning about. The manifest is now
 written (23 KB, 68 shard hashes). Re-exported at step 1100: shard 5,059,584 B,
 gzip **4,728,543 B**, brotli 4,691,901 B, q8 row error 0.001356, torch↔numpy PASS
 (max |Δ| 9.54e-6); `verify:engine` **PASS** (argmax 100 %, worst |Δlogit| 1.65e-5,
-decode 79 tok/s).
+decode 66–79 tok/s across runs).
 
 **And the honest result of those 300 extra steps:** the answers changed and did
 not improve — `"work reviewed cor byandeeer why"` (step 800) →
@@ -874,7 +874,7 @@ same MIME table as `npm run preview`).
 | the answer | `kind=model`, badge `AI ANSWER · ON-DEVICE MODEL`, 12 facts read / 12 sources |
 | frame health, closed → open | 33.2 ms (115 frames) → 33.3 ms (105 frames), **0.3 %** drift, **1×** p95, both arms `tier 2 · BALANCED @72% y=0`; the double-sampled control read −0.3 % |
 | assets fetched on first open | **31** — the 14 of the click's static reach plus the worker's own `ai/engine/**` |
-| the phone viewport (`MOBILE=1`, 390×844) | **43/43** as well — sheet open pauses the film, closing resumes it, **no horizontal overflow (390 vs 390)**, withheld phone declined in the UI |
+| the phone viewport (`MOBILE=1`, 390×844) | **60/60** as well on the 2026-09-29 re-run — sheet open pauses the film, closing resumes it, **no horizontal overflow (390 vs 390)**, withheld phone declined in the UI (the run this table was written from was 43/43, against the then-43-check probe) |
 | §9.3's cache, on the same bundle (`dev-offline-probe.js`, now also `AI_BASE`) | **7/7** — visit 1 ready **26.3 s**, 3 puts, `hits: 0`; visit 2 with `*model-export*` blocked ready **22.0 s**, `hits: 3`, `misses: 0`, **0 network responses** for the weights, cache `aashish-ai-model:aashish-ai-1` holding 3 files / 5,144,354 B |
 | §14's degrade gates on the same bundle (`dev-degrade-probe.js`, `ROOT=dist`) | **20/20** — T0: 0 model assets requested, 0 engine workers, `engine=null`, badge `T0 · NO AI MODEL HERE`, question refused `no-model`; failure: every model asset 404s, `state=error` with the reason spoken, panel usable, film untouched, **and a reload on a healthy network recovers to `ready` with real weights (5,059,584 B) and a real answer** |
 
