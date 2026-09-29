@@ -3562,3 +3562,76 @@ above, the 18.9 % is named as **withdrawn** rather than deleted, and the same
 `tools/model-eval.mjs` (`--grade`) · `docs/EVALUATION.json` ·
 `docs/EVAL_ANSWERS.json` · `docs/BENCHMARKS.md` §"A revoked number, and the test
 that caught it" · `docs/FINAL_REPORT.md` row 85
+
+---
+
+## What nothing observes: an export-coverage sweep, and a hypothesis the mutation killed
+
+**Date:** 2026-09-29 · **Result: no code change was needed. One comment was
+inaccurate, and is corrected.** Written up because a negative result that was
+*tested* is worth more than a positive one that was assumed.
+
+### The sweep
+
+Every exported symbol in `ai/**/*.mjs` was checked against the union of
+`tests/*.mjs` and `dev-*.js` — 25 modules, looking for shipped behaviour that no
+check names. The result is **no visitor-reachable function is unobserved**. The
+symbols that appear nowhere fall into three honest groups:
+
+- **Tuning constants** — `MIN_TERM_LENGTH`, `FUZZY_MIN`, `REPEAT_LIMIT`,
+  `MIN_PHANTOM_CHARS`, `ENGINE_FORMAT`, `PROMPT_CONTRACT`, `PLACEHOLDER_PATTERN`.
+  Nothing should assert a threshold's value rather than its effect.
+- **Internal helpers reached through a tested wrapper** —
+  `withheldContactFields` is called only by `withheldFacts`, which
+  `tests/build-bundle.test.mjs` exercises in both the derived and the
+  stripped-metadata case; `scoreAll` is reached through `search`.
+- **Entry points exercised end-to-end rather than by name** — `createChat` and
+  `mount` are invoked by `js/ai/launcher.js`, and the panel that results is what
+  `dev-ai-probe.js` drives in a browser for 60 checks.
+
+A "every export must be referenced" test was considered and **rejected**: it
+would fail on every legitimate constant above, which is a check that reports
+noise rather than truth.
+
+### The hypothesis it produced, and the mutation that refuted it
+
+The sweep flagged `abstainFor` and `ABSTAIN_FIRST` in `ai/intent/rules.mjs` as
+unmentioned. That looked like a real hole, because `abstainFor` is
+**visitor-facing**: `ai/answers/model.mjs` calls `abstainFor(lang)` — one
+argument, so the `'third'` default governs **every** `notFound` answer, the same
+refusal the §14 grade records at 92.3 % recall. The §5 source scan reads four
+files and `ai/intent/rules.mjs` is not among them. So the fear was concrete:
+flip the default to `'first'` and the product's most-seen refusal starts
+speaking as Aashish, with `intent.test.mjs` (which tests the `ABSTAIN` const
+directly) and QA-10 (which runs the planner) both still green.
+
+**The mutation was run instead of argued.** Changing the default to `'first'`
+fails **`MODEL-9b`** — *"the fixed refusals speak ABOUT Aashish, not as him"* —
+which drives every `NO_ANSWER_KINDS` × three languages through `noAnswerLine`.
+The guard already existed and already covered the path; only the *symbol name*
+was absent, and a name scan cannot tell those apart. No code change was made,
+because one was not needed.
+
+### The one thing that was wrong
+
+`tests/quick-answers.test.mjs` justified skipping `ai/answers/quick.mjs` by
+calling it "the one file that legitimately holds both voices". There are
+**two**: `ai/intent/rules.mjs` holds the `ABSTAIN` / `ABSTAIN_FIRST` pair, where
+only the refusal follows the voice while the §8.4 safety strings stay neutral.
+An auditor reading that comment would conclude `rules.mjs` was either covered
+or a violation. The comment now names both files, states which guard holds each
+one to its default, and records why the other two candidate files
+(`ai/language/detect.mjs`, `ai/ui/anchors.mjs`) are excluded — their
+`"my"`/`"mera"` strings are lexicon entries and match phrases, not copy, so
+scanning them would report **data as dialogue**.
+
+The claim was verified rather than asserted: scanning `rules.mjs` with the
+possessive pattern flags exactly **3** literals, and all three are
+`ABSTAIN_FIRST` — the intended first-person variant, not a leak.
+
+### Evidence
+
+`tests/model-answers.test.mjs` MODEL-9b · `tests/quick-answers.test.mjs` QA-10 ·
+`ai/intent/rules.mjs` `abstainFor`/`ABSTAIN`/`ABSTAIN_FIRST` ·
+`ai/answers/model.mjs:149` (the one-argument call) · mutation:
+`abstainFor(lang, persona = 'first')` → `MODEL-9b` fails, 528/529

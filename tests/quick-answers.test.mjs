@@ -513,13 +513,30 @@ const NAV_NARRATION = new RegExp('\\b(' + [
 
 test('QA-10: nothing the shipped shell or voice layer says speaks as Aashish (§5)', () => {
   /* The same source-scan trick as §12's narration check below, for the same
-     reason: this copy has no result object to assert on. `ai/answers/quick.mjs`
-     is deliberately NOT scanned — it is the one file that legitimately holds
-     both voices, side by side, inside `pick(persona, third, first)`, and the
-     persona tests above are what hold it to its default. These four modules
+     reason: this copy has no result object to assert on. These four modules
      are pure shell and voice copy: every "my" in them was written when the
      panel spoke as Aashish. Six were still there after the flip, including
-     the idle nudge a visitor hears and the opening line they read first. */
+     the idle nudge a visitor hears and the opening line they read first.
+
+     TWO shipped files legitimately hold both voices side by side and are
+     therefore not scanned here — each is held to its default by a guard that
+     exercises it rather than by a source scan:
+       · `ai/answers/quick.mjs` — `pick(persona, third, first)` for every line
+         the planner speaks; held by the QA-* persona tests above, which assert
+         `DEFAULT_PERSONA`.
+       · `ai/intent/rules.mjs` — the `ABSTAIN` / `ABSTAIN_FIRST` pair, where
+         only the refusal follows the voice (the §8.4 safety strings stay
+         neutral). Scanned here it would false-positive on `ABSTAIN_FIRST`,
+         which is correct where it is used; held instead by MODEL-9b, which
+         drives every `NO_ANSWER_KINDS` × language through `noAnswerLine` and
+         asserts the refusal speaks ABOUT Aashish. Flipping `abstainFor`'s
+         default to `'first'` (the one-argument call in
+         `ai/answers/model.mjs`) fails MODEL-9b and nothing else — verified by
+         mutation, not assumed.
+
+     `ai/language/detect.mjs` and `ai/ui/anchors.mjs` are also excluded, and
+     for a different reason: their "my"/"mera" strings are lexicon entries and
+     match phrases, not copy. Scanning them would report data as dialogue. */
   const SHIPPED_COPY = ['ai/ui/chat.mjs', 'ai/voice/index.mjs', 'ai/voice/vad.mjs',
     'ai/voice/caps.mjs'];
   /* Possessives only — see the note in tests/model-answers.test.mjs: the
