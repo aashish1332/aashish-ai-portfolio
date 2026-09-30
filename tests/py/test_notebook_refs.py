@@ -32,9 +32,11 @@ copy-pastes, so a stale one is worse than an absent one.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -279,6 +281,62 @@ class Workspace(unittest.TestCase):
                               f"{name} assumes the repository is writable instead of "
                               f"checking — the failure it is guarding is OSError 30 "
                               f"on the first write, mid-session")
+
+    def test_the_cell_copies_out_of_a_read_only_mount(self):
+        """Run the cell's own code, in both start states, in a temp tree.
+
+        Preferring `/kaggle/working` is not enough on its own: a Dataset mounts
+        under `/kaggle/input` and nothing puts it anywhere else, so before this
+        the session had to remember `cp -r` by hand and the probe above would
+        fail with the comment rather than the copy. The cell now does it.
+
+        This executes the author's real cell rather than a copy of its logic —
+        the two absolute prefixes are rewritten to a temp directory and nothing
+        else changes. That found a genuine bug the first time it ran:
+        `str(pathlib.Path.cwd()).startswith('/kaggle/input')` is false on Windows,
+        because `str()` of a `WindowsPath` uses backslashes, so the copy silently
+        did not happen and the cell carried on into the read-only mount. The
+        check is `Path.is_relative_to` now, and this test is what would have
+        caught it on the day it was written.
+        """
+        worked = 0
+        for name, path in each_notebook():
+            cell = next((source for _index, source in code_cells(path)
+                         if "CANDIDATES" in source), None)
+            for label, attach_as_dataset in (("attached as a Dataset", True),
+                                             ("already in working", False)):
+                original = Path.cwd()
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    mount = root / "kaggle" / "input"
+                    work = root / "kaggle" / "working"
+                    work.mkdir(parents=True)
+                    home = (mount if attach_as_dataset else work) / "aashish-ai-portfolio"
+                    (home / "training").mkdir(parents=True)
+
+                    # as_posix: a Windows temp path inside a single-quoted literal
+                    # is a unicode-escape error, and the branch under test is the
+                    # same either way. One replace covers both the CANDIDATES entry
+                    # and the `is_relative_to` literal.
+                    source = (cell.replace("'/kaggle/input", f"'{mount.as_posix()}")
+                                  .replace("'/kaggle/working", f"'{work.as_posix()}"))
+                    body = "\n".join(line for line in source.splitlines()
+                                     if not line.lstrip().startswith("!"))
+                    try:
+                        exec(compile(body, f"<{name}:{label}>", "exec"), {})
+                        landed = Path.cwd()
+                    finally:
+                        os.chdir(original)  # or Windows refuses to delete the tree
+
+                    with self.subTest(notebook=name, start=label):
+                        self.assertTrue(
+                            landed.is_relative_to(work),
+                            f"{name} ({label}) ended up at {landed}, which is not a "
+                            f"writable copy — the run writes before it trains")
+                        self.assertFalse((landed / ".tmp-writable").exists(),
+                                         f"{name} ({label}) left its probe behind")
+                    worked += 1
+        self.assertEqual(worked, 4, "both notebooks, both start states")
 
 
 if __name__ == "__main__":

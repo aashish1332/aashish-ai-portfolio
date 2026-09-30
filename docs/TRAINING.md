@@ -388,12 +388,22 @@ upstream, so the setup cell has nothing to clone yet. Pick one:
    `OSError: [Errno 30] Read-only file system`. `/kaggle/working` is the writable
    one, and it is the path the setup cell already looks in.
 
-   The copy is necessary but it was not sufficient: both notebooks used to list
-   the Dataset mount **first**, so a session that had copied the tree correctly
-   still `chdir`-ed into the read-only mount. That is fixed — the working paths
-   now come first, the mount is last, and the cell writes and deletes a probe
-   file so the choice is verified instead of assumed
-   (`tests/py/test_notebook_refs.py::Workspace`).
+   **This is now automatic — the cell does it for you.** It prefers a
+   `/kaggle/working` copy, falls back to the mount, and if it ends up inside
+   `/kaggle/input` it copies the tree to `/kaggle/working/aashish-ai-portfolio`
+   before anything else runs. Then it writes and deletes a probe file, so the
+   result is verified rather than assumed. Attaching the Dataset and running the
+   notebook is the whole setup.
+
+   The history is worth knowing, because the same assumption was wrong three times
+   in one day: the prose said the copy was optional, then the copy turned out to be
+   mandatory (a read-only mount), and then the notebooks turned out to prefer the
+   mount anyway. It is now checked by running the cell's own code in a temp tree
+   from both start states (`tests/py/test_notebook_refs.py::Workspace`) — which is
+   how a fourth bug was found before a GPU ever saw it, in
+   `str(pathlib.Path.cwd()).startswith('/kaggle/input')`: on Windows `str()` of a
+   `WindowsPath` uses backslashes, so the copy silently did not happen and the run
+   carried on into the read-only mount. `Path.is_relative_to` now.
 
 Either way the run needs `training/`, `ai/`, `inference/` and `data/sources.json`,
 and it does **not** need `ai/model-export/` (git-ignored: 5 MB of shipped weights)
@@ -667,7 +677,7 @@ changed with them", and `npm test` is what proves it rather than a memory of it.
 Run everything (no torch required; ~35 s for the JS suite, ~70 s for Python):
 
 ```bash
-npm run test:all          # 533 JS tests + 356 Python tests (0 skip: torch is installed)
+npm run test:all          # 533 JS tests + 357 Python tests (0 skip: torch is installed)
 npm run params            # analytic parameter counts + each config's own band gate
 npm run smoke             # tokenizer contract, shards, cursor, checkpoints
 npm run export:model      # checkpoint → browser artifact + parity fixture

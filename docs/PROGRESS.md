@@ -4211,6 +4211,35 @@ existed for several phases. Stale self-description inside a machine record is
 worse than in prose, because `--check` prints it as a reason. Enabled for this run,
 and the note now records why.
 
+### The notebook now copies itself out of the read-only mount, and running it found a bug
+
+Preferring `/kaggle/working` was not enough. Nothing puts a Dataset anywhere but
+`/kaggle/input`, so the session still had to remember `cp -r` by hand and the
+writability probe would have failed with a *comment* rather than a copy. Both
+notebooks now copy the tree to `/kaggle/working/aashish-ai-portfolio` when they
+land in the mount, then probe. Attaching the Dataset and running the notebook is
+the whole setup, which is what "paste and run" was supposed to mean.
+
+**Verifying it by running it found a fourth bug in the same day.**
+`tests/py/test_notebook_refs.py::Workspace.test_the_cell_copies_out_of_a_read_only_mount`
+executes the notebook's own cell — not a copy of its logic — in a temp tree, from
+both start states. Its first run showed the cell ending up **in the read-only
+mount with the probe passing**, because the guard was
+`str(pathlib.Path.cwd()).startswith('/kaggle/input')` and `str()` of a
+`WindowsPath` uses backslashes. On Kaggle the string compare would have worked by
+luck of POSIX separators; here it was simply false, the copy never happened, and
+the cell walked on. It is `pathlib.Path.cwd().is_relative_to('/kaggle/input')` now,
+which is the same question asked of paths instead of strings. Mutation-tested: put
+the `startswith` version back and the test names the defect —
+*"train_stage_a.ipynb (attached as a Dataset) ended up at
+…\kaggle\input\aashish-ai-portfolio, which is not a writable copy — the run writes
+before it trains"*. Restored: 9 tests OK.
+
+This is the third time in one day that an assumption about the Kaggle filesystem
+was wrong in prose, then in code, then in the check on the code. The pattern is
+the interesting part: each fix was a sentence, and only running the thing produced
+the evidence.
+
 ### The test that said *nothing is enabled yet* had to become an implication
 
 `test_not_one_third_party_source_is_enabled_today` asserted that every third-party
