@@ -198,7 +198,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
 | Voice: both modes, local STT/TTS, lazy, permission paths, no selector, limits, visual state (§11.5), greeting (§11.1 a), guided tour (§11.1 c), idle nudge/standby (§11.1 d/e), auto-downgrade at rung 3 and the headphones tip (§11.1), transcript with edit (§11.2) | **MEASURED as code/tests**, and the tour + transcript halves **in a browser** (60/60, `dev-ai-probe.js`); live speech **NOT TESTED**. TTS is local (`speechSynthesis`); STT is the platform's — asked to stay on the device when the platform says it can (§19 row 6), disclosed either way |
 | Training resumable, checkpoints, evaluation, no fake results | **MEASURED** (resume verified); quality gates **NOT TESTED** |
 | Ternary separated from the baseline | **MEASURED** — separated by not existing; decision recorded |
-| §0 rule 4: the shipped checkpoint is not presented as a trained model | **MEASURED** — the **ABOUT** card states, in words, that what runs here is a *"pipeline test, not a model trained for quality"*, and the constant behind it (`MODEL_STATUS`) is **coupled to the evaluation**: `tests/disclosure.test.mjs` refuses `'trained'` while `docs/EVALUATION.json` reports the §14 gates as failed, which was verified by flipping it. Rendered-and-visible is asserted in a browser (`dev-ai-probe.js` 60/60). The rule's other half (a mode that turns the model off) is **not built**, because the deterministic engine it would fall back to was retired as an answer source — see limitation 16 |
+| §0 rule 4: the shipped checkpoint is not presented as a trained model | **MEASURED** — the **ABOUT** card states, in words, that what runs here is a *"pipeline test, not a model trained for quality"*, and the constant behind it (`MODEL_STATUS`) is **coupled to the evaluation**: `tests/disclosure.test.mjs` refuses `'trained'` while `docs/EVALUATION.json` reports the §14 gates as failed, which was verified by flipping it. Rendered-and-visible is asserted in a browser (`dev-ai-probe.js` 60/60). The rule's other half (a mode that turns the model off) is **not built**, because the deterministic engine it would fall back to was retired as an answer source — see limitation 15 |
 
 ---
 
@@ -230,7 +230,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
    2026-09-27 because half its gzip was comments in our own `ai/**` modules and
    the build stopped shipping them (−69,817 B gz, nothing a visitor runs
    changed). The retired Quick Answers wording had already moved out
-   (−2,864 B gz, no feature lost — see limitation 16).
+   (−2,864 B gz, no feature lost — see limitation 15).
 6. **Three open observations, recorded not explained:** the panel's own ready
    time has been measured at 390 ms, 815 ms and 19.3–27.9 s on this box within
    the same day; two of four resource runs showed +21 GL programs during an AI
@@ -254,7 +254,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
     programmatic data cannot reproduce human code-mixing — `data/sources.json`
     records that loss explicitly rather than papering over it with data we may
     not use.
-12b. **§5's persona line — CLOSED 2026-09-28, the build was arguing with the
+12. **§5's persona line — CLOSED 2026-09-28, the build was arguing with the
     brief and lost.** §5: *"it speaks about Aashish in the third person and
     never pretends to be him."* This build shipped `DEFAULT_PERSONA = 'first'`
     ("My CGPA is 8.28", "I built …") on the product reasoning that a recruiter
@@ -271,7 +271,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
     fails if the first-person option stops working. The SFT corpus needed no
     change precisely because it samples both personas per example — the voice
     the model answers in is chosen by the RULES block, not baked into the data.
-14. **The §14 evaluation is one default-generation behind the shipped voice,
+13. **The §14 evaluation is one default-generation behind the shipped voice,
     and it is deliberately left that way.** `docs/EVAL_PROMPTS.json` carries
     `rules: "first"` on its 41 model-routed rows and
     `docs/EVAL_ANSWERS.json` holds the 60 answers decoded from exactly those
@@ -286,7 +286,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
     gate). The difference between the two runs is the prompt's RULES block, so
     the guarded metrics (abstention, unsupported claims, language) *should* be
     unchanged — **NOT re-measured**, and it must not be quoted as if it were.
-15. **§2 N3 is the first of the three clauses this build departs from, and it
+14. **§2 N3 is the first of the three clauses this build departs from, and it
     must be read as a deviation.** N3 asks that "any remote speech-recognition
     mode is disabled"; the browser's `SpeechRecognition` has no switch that
     forbids its network path, so voice input is the platform's recogniser —
@@ -294,7 +294,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
     either way, and opt-in. Typed text is unaffected. The full reasoning, and
     the one-line policy switch that would satisfy the strict reading, are in
     `docs/PRIVACY.md` §"§2 N3, and the one place this build deviates from it".
-16. **§3's promise to the worst device is the second deviation: a T0 visitor is
+15. **§3's promise to the worst device is the second deviation: a T0 visitor is
     answered by nothing.** §3 says every visitor "gets something useful: the
     Quick Answers engine … works even on T0 devices and while the model is
     still downloading", labelled *"Quick answer — no AI model on this device"*.
@@ -305,7 +305,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
     the truth instead: `T0 · NO AI MODEL HERE`, one per-reason line, and no
     answer. The clause's *purpose* (nobody is left with a panel that looks
     broken) is met; its *letter* is not. This was the owner's decision rather
-    than an unbuilt requirement, so unlike item 15 there is nothing here to
+    than an unbuilt requirement, so unlike item 14 there is nothing here to
     approve — it is recorded because the brief asks for the Quick Answers engine
     and this build does not give it to anyone.
     The same retirement removes **§10's "Use quick answers" control** from the
@@ -319,7 +319,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
     download **is** the foreground task, so the panel announces the size and
     starts at normal priority, and the only alternative a choice could honestly
     offer is nothing.
-17. **§11.3's capture path is on the main thread rather than in an AudioWorklet**
+16. **§11.3's capture path is on the main thread rather than in an AudioWorklet**
     — the third place this build departs from a clause's letter, and the
     smallest. §11.3 says "capture with an **AudioWorklet** (16 kHz mono, ~30 ms
     frames); no DSP on the main thread"; `ai/voice/vad.mjs` reads one RMS per
@@ -333,7 +333,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
     The 16 kHz resample is not done either, because the only number this module
     reads is the RMS and the recognizer captures for itself.
 
-18. **A defect in the probe, found by the probe, and fixed: it read a NOTICE as
+17. **A defect in the probe, found by the probe, and fixed: it read a NOTICE as
     if it were the answer.** The two stop-then-`Retry` streaming checks went red
     about one run in five, reporting only `streamed=false`. Given a diagnostic
     (elapsed ms, last badge, char count) the cause was immediate: `last badge
@@ -361,6 +361,20 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
     introduced asserted a flat 60, which would have failed every `SW_GL=1` run
     (true total 58) — it is now **derived** from what actually runs.
 
+18. **§6.5's download reports per shard, not per byte, so three of its five
+    sub-clauses are not built.** The clause asks for "Shards ≤ ~8 MB, parallel
+    download, resumable, SHA-256 verified (SubtleCrypto), progress via streaming
+    `fetch`." The cap and the hash are gated. *Parallel* is moot — the shipped
+    manifest has **one** shard of 5,059,584 B; *resumable* is not implemented (a
+    partial shard restarts, and the cache-repair path is the recovery); and the
+    loader reads that shard with `response.arrayBuffer()`, reporting only after
+    it lands. Measured against the real export, the weights stage emits exactly
+    **two** updates — `loaded=0`, then `loaded=5059584` — so the progress line
+    sits at "0.0 MB of 4.8 MB" for the whole download and then completes. On
+    broadband that is about a second, and the clause would earn its keep on the
+    slow connection where it is longest — which is **NOT TESTED** here (no
+    throttling run).
+
 ## WHAT I NEED FROM YOU
 
 1. **A GPU run** — the Kaggle notebook and scripts are in `training/notebooks/`
@@ -384,7 +398,7 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
    are verified against the headers visitors will actually see.
 5. **Sign-off on the PII list** (C4/C5).
 6. **§5's persona — ruled, and shipped.** You asked for the spec's reading; the
-   default is now the third person (limitation 12b above records what moved).
+   default is now the third person (limitation 12 above records what moved).
    One thing worth your eye, because it is the only part of the change that a
    reader would notice rather than a test: the **identity disclosure** now says
    "I'm Aashish's AI Portfolio Assistant — not Aashish himself", where the

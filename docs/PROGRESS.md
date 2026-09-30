@@ -37,7 +37,7 @@ is a code gap.
 standalone" is the clause §3 records as deliberately not met, so its row reads ⚠️
 rather than ✅ — the engine is built, tested and still runs on every question, but
 it no longer answers anyone. That is an owner decision recorded in
-`docs/FINAL_REPORT.md` limitation 16, not something left unfinished.
+`docs/FINAL_REPORT.md` limitation 15, not something left unfinished.
 
 ---
 
@@ -3126,7 +3126,7 @@ would fail if it stopped being true.
 |---|---|---|
 | **N1** | *the portfolio stays functionally and visually intact; no regression beyond §4* | `tests/build-bundle.test.mjs` → *"shipped ai/\*\* scripts lose their comments and nothing else"*, step 3: **every** `js/**`, `css/**` and `index.html` file in `dist/` is byte-identical to source (strengthened today — it read four hand-picked files while the comment above it claimed `js/**` and `css/**`; a claim that outruns its check is exactly what this project keeps finding). Frame health is the other half and it is a **probe**, not a test: `dev-ai-probe.js`'s panel-open/closed A/B, which pins the film's tier first because the governor otherwise walks tiers mid-run. **NOT TESTED**: a real phone, Safari, a screen reader |
 | **N2** | *no backend, no hosted LLM API, no API key; deployable as a static site* | `tests/build-bundle.test.mjs` → *"§2 N2/N3 + §17: the bundle cannot call out, and carries no secret"*: no absolute URL in any shipped `ai/**` script, exactly **one** outbound call site (`fetch(KB_URL)`, this site's own knowledge file), no XHR / WebSocket / EventSource / sendBeacon, no secret-shaped string, no hosted-LLM hostname. `npm run build` writes the 46-file static bundle; `npm run probe:offline` proves the second visit is ready with the weights blocked at the CDP level |
-| **N3** | *visitor text and voice never leave the device; no analytics with chat content; remote speech recognition disabled* | **The documented deviation.** The text half is gated (the one-call bundle scan above, plus MODEL-12: "the answer path stays on the device — no network, no dynamic import"), and there is no analytics of any kind to carry chat content — `TRACKING` in the same test fails the build on any tracking service name in any shipped file (§17). The voice half cannot be met literally: `SpeechRecognition` has **no switch** that forbids its network path. It is opt-in, asks the platform to stay on-device when the platform says it can, and states which of the two it is — `docs/PRIVACY.md` §"§2 N3, and the one place this build deviates from it", `docs/FINAL_REPORT.md` limitation 12, **WHAT I NEED FROM YOU** 7 |
+| **N3** | *visitor text and voice never leave the device; no analytics with chat content; remote speech recognition disabled* | **The documented deviation.** The text half is gated (the one-call bundle scan above, plus MODEL-12: "the answer path stays on the device — no network, no dynamic import"), and there is no analytics of any kind to carry chat content — `TRACKING` in the same test fails the build on any tracking service name in any shipped file (§17). The voice half cannot be met literally: `SpeechRecognition` has **no switch** that forbids its network path. It is opt-in, asks the platform to stay on-device when the platform says it can, and states which of the two it is — `docs/PRIVACY.md` §"§2 N3, and the one place this build deviates from it", `docs/FINAL_REPORT.md` limitation 14, **WHAT I NEED FROM YOU** 7 |
 | **N4** | *final LLM scratch-trained from random init; pretrained STT/TTS/VAD allowed only if disclosed in README, docs and the UI About popover* | The weights half: our tokenizer, our architecture, our trainer, our export — `npm run params` (4,984,064) and `npm run verify:engine` (torch ↔ numpy ↔ JS, argmax 100 % on the export). Nothing pretrained ships: the voice stack has **no model file**. The disclosure half is now four gates — `tests/disclosure.test.mjs` (7), the probe's 8 checks, `dev-firefox-probe.js` (2 of its 11), and the README paragraph — with the ABOUT card naming the browser's speech pieces and **both** voice outcomes |
 | **N5** | *zero-hallucination policy (§8.4); accuracy beats impressiveness* | `tests/guard.test.mjs` (GUARD-1…): invented numbers, years, months and URLs are caught against the context the model actually read; `tests/model-answers.test.mjs` MODEL-3 (nothing without grounding reaches the model), MODEL-4 (a rejected answer is refused, never repaired by a template), MODEL-9 (every refusal states no fact, in three languages); the engine's own `<|abstain|>` stop; `tests/quick-answers.test.mjs`'s three-language abstain. **What this does NOT gate is quality** — §14's factual gate fails on the local checkpoint (**0.0 %** against a 95 % bar; the 18.9 % quoted here once was a scorer artefact, withdrawn in `docs/BENCHMARKS.md`) and that is reported, not hidden |
 | **N6** | *nothing AI-related loads or initialises before the click; voice assets only when a voice mode is chosen* | Two halves, deliberately. Deterministic: `tests/launcher.test.mjs` — the launcher is **945 B gz** against a 2 KB budget, it is inert (no fetch/XHR/Worker/WebSocket/sendBeacon/wasm/KB), its single `import(CHUNK)` resolves to the chat shell, and `index.html` names nothing under `ai/` in source **and** in `dist/`. Browser: `dev-ai-probe.js` watches the wire — **0** AI requests and **0** workers before the click, 31 assets after it, of which `ai/voice/*` arrives only once the microphone button is pressed (`tests/build-bundle.test.mjs` → *"§2 N6: the voice engine is fetched on a TAP, not on the click"*) |
@@ -3234,14 +3234,14 @@ Aashish and nothing else.
 | what did NOT change | the weights, the manifest, the SFT corpus, the prompt contract (both RULES blocks still ship), and every §11.1 fixed string — the greeting and the tour were already in this voice, which is why they no longer disagreed with the answers |
 | `dev-ai-probe.js`, built bundle, Chrome, real GPU | **58/58** — re-run *after* the copy sweep, so the numbers above and the page agree: 8 §2 N4 disclosure checks, 4 §11.1 (c) tour checks (including `scrollY 0 → 2659, section top 0`), and the voice-off-on-close check |
 | the copy the flip left behind | **six strings, found after the tests were green.** The persona tests run the *planner*; the fixed sentences are chosen by the answer layer and the shell, so nothing asserted their voice — and they still spoke as Aashish: `"ask me for my email instead"` (and its Hindi/Hinglish twins), `"I couldn't answer that from my portfolio data"` (×3), the opening line `"Ask me about my projects … how to reach me"`, the ready label `"answering from my portfolio data only"`, and §11.1 (d)'s idle nudge `"Still here — ask about my projects…"`. All six now say his/him/उनका, held by two new tests that were verified by putting the stale copy back (both fail). `IDLE_NUDGE` means `docs/MANUAL_TEST_CHECKLIST.md` D13 changed with it |
-| what is now out of step, and left that way | `docs/EVAL_PROMPTS.json` + `EVAL_ANSWERS.json` — 41 of the 60 prompts pin `rules: "first"`, and the answers were decoded from exactly those prompts. They stay a **matched pair** describing the previous voice rather than being half-refreshed: re-emitting the prompts alone would leave two files disagreeing with nothing to catch it, and re-decoding means an export plus 60 generations to re-measure a FAIL. `docs/FINAL_REPORT.md` limitation 14 states it, including what was **not** re-measured |
+| what is now out of step, and left that way | `docs/EVAL_PROMPTS.json` + `EVAL_ANSWERS.json` — 41 of the 60 prompts pin `rules: "first"`, and the answers were decoded from exactly those prompts. They stay a **matched pair** describing the previous voice rather than being half-refreshed: re-emitting the prompts alone would leave two files disagreeing with nothing to catch it, and re-decoding means an export plus 60 generations to re-measure a FAIL. `docs/FINAL_REPORT.md` limitation 13 states it, including what was **not** re-measured |
 
 ### Evidence
 `ai/answers/quick.mjs` · `ai/answers/model.mjs` · `ai/intent/rules.mjs` ·
 `ai/ui/chat.mjs` · `ai/engine/prompt.mjs` · `ai/engine/index.mjs` ·
 `tools/model-eval.mjs` · `tools/eval-decode.mjs` · `tests/quick-answers.test.mjs`
 (QA-10 ×6) · `tests/engine.test.mjs` (ENG-12, ENG-15) · `README.md` ·
-`docs/AI_ARCHITECTURE.md` · `docs/FINAL_REPORT.md` 12b + item 6
+`docs/AI_ARCHITECTURE.md` · `docs/FINAL_REPORT.md` 12 + item 6
 
 ### …and §6 and §7 were swept in the same pass: no unbuilt clause
 
@@ -4051,3 +4051,69 @@ micro-benchmark) · `ai/voice/caps.mjs:39`, `ai/voice/index.mjs:258,480` ·
 `ai/model-export/aashish-ai-1/manifest.json` (1 shard, 5,059,584 B) · the loader run
 → `weights-stage events: 2 (0, 5059584)`, `5` events end to end ·
 `ai/ui/chat.mjs:1307–1311` (the label text)
+
+---
+
+## The limitations list had no item 12, and a doc pointed a reader straight at it — 2026-09-30
+
+`docs/FINAL_REPORT.md`'s **KNOWN LIMITATIONS** section is the deliverable's honest
+list, and it is cited **by number**: from this file in three places, from inside
+`FINAL_REPORT.md` itself, and from a comment in `ai/ui/chat.mjs` ("limitation 1").
+That makes the numbering load-bearing, which is why the audit pass read it.
+
+It read `… 10. 11. **12b.** 14. 15. …`. **Item 12 did not exist**, 13 never had, and
+`docs/PROGRESS.md` told a reader that the §2 N3 voice deviation was *"`docs/FINAL_REPORT.md`
+limitation 12"* — a number with nothing behind it. The history is legible in the
+file: §5's persona item was inserted **as `12b`** when it was closed on 2026-09-28, and
+§2 N3 moved to 15 in the same edit, so the list kept its old numbers and lost two.
+
+The docs validator could not see any of it — `tests/py/test_docs_commands.py` checks
+commands, and says outright that it deliberately does not read prose. Nothing in the
+suite looked at prose *structure*.
+
+### The fix
+
+Renumbered contiguously **1..18**: 12 is §5's persona (the `12b` is gone), 13 is the
+§14 evaluation one generation behind, 14 is §2 N3, 15 is §3's T0 promise with its §10
+and §6.5 surfaces, 16 is §11.3's capture path, 17 is the probe defect. Item **18 is
+new** — the §6.5 download granularity measured earlier today, which the list should
+carry because it is visible to a visitor and the list is where the owner reads.
+All seven references were repaired: `PROGRESS.md` 40/3129/3237/3244, `FINAL_REPORT.md`
+201/233/308/401.
+
+### The guard, and the mutation that proves it fires
+
+`tests/limitations.test.mjs` (4 checks) is deliberately split so each check names the
+thing it catches:
+
+* the **plain** numbers run 1..N with no gap — lettered items are excluded *here on
+  purpose*, because the patch is what eats the number it avoided (`11, 12b, 14` leaves
+  a reader with 1..11, 13..17);
+* no item carries a letter suffix;
+* every `limitation N` names a plain-numbered item — by **membership**, not
+  `N <= count`, which is the difference that matters when the list has a hole rather
+  than a short tail;
+* and the section was actually found and parsed (≥ 10 items), because a validator that
+  silently stops finding things proves nothing.
+
+Putting the defect back (`12.` → `12b.`) fails **3 of the 4** — the first attempt at
+this test failed only 1, because both the gap check and the reference check were
+counting `12b` as 12, which is exactly the kind of check that cannot fail for the
+reason it claims. The messages name the file and line:
+`docs\FINAL_REPORT.md:401 cites limitation 12; the list has 1, 2, … 11, 13, …`.
+The list is back to 4/4 with the line restored.
+
+Because four tests were added, the JS total moved **529 → 533**, and the two files
+that quote it as a live number (`README.md:222`, `docs/TRAINING.md:537`) were updated
+with it. The older counts in this file are dated measurements and were left alone.
+
+### Evidence
+
+`docs/FINAL_REPORT.md` KNOWN LIMITATIONS (1..18, contiguous) ·
+the marker scan `1 2 3 … 18` before and after · `tests/limitations.test.mjs` →
+**4/4 clean**, **1/4 with the original defect restored** (the suffix check), then
+**3/4 after tightening the other two**, then **4/4 restored** · the failure text
+`the list reads 1, 2, …, 11, 13, 14, … — a gap means a number someone can cite and
+not find` and `docs\FINAL_REPORT.md:401 cites limitation 12` ·
+`npm test` **533 pass / 0 fail** · `npm run test:py` **353 OK** ·
+`tests/py/test_docs_commands.py` (why the validator could not see it)
