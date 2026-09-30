@@ -4240,6 +4240,36 @@ was wrong in prose, then in code, then in the check on the code. The pattern is
 the interesting part: each fix was a sentence, and only running the thing produced
 the evidence.
 
+### Kaggle does not unpack the archive, and my own test passed for the wrong reason
+
+With the mount path fixed, the session hit the next wall: a working copy of the
+repository could not be made, because there was no repository to copy. A
+diagnostic cell that listed the mount showed exactly one thing —
+`/kaggle/input/datasets/aashishkumarrajput/aashish-ai-portfolio/aashish-ai-portfolio.tgz`,
+1,217,137 bytes, which is the archive to the byte. **Kaggle does not extract an
+uploaded `.tgz`; it mounts the file.** So the `package.json` search that had just
+been added could not find anything, because there was no `package.json` on the
+filesystem, and the cell died on `StopIteration`.
+
+The cell now handles it: after the direct paths and the search, it extracts any
+`.tgz`/`.tar.gz` it finds into `/kaggle/working/aashish-ai-portfolio`. `git archive
+... HEAD` records members from the repository root, so the members *are* the
+repository and there is no wrapping directory to strip.
+
+**And the test for it passed for the wrong reason on the first attempt.** The new
+fourth start state planted a fake archive — but staged the fake repository *inside
+the mount*, next to the archive. That left a `package.json` with a
+`training/notebooks/` beside it in the mount, so the **previous** branch found it
+and the archive branch never ran. Disabling the archive branch left the test
+**green**, which is how the mistake surfaced. The staging tree is now built in a
+separate temp directory, and the same mutation fails with the production error
+(`SystemExit: No repository found … for a package.json or an archive under …`).
+Restored: 9 tests OK.
+
+That is the whole lesson of this file in one incident: a state that cannot fail
+for the reason it names is worse than no state at all, and the only way to know
+which one you have is to break the thing on purpose and watch it not pass.
+
 ### The mount is not where we said it was, and the first real session proved it
 
 The first genuine Kaggle session ran the repository cell and it **failed**:

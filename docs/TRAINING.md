@@ -391,21 +391,30 @@ upstream, so the setup cell has nothing to clone yet. Pick one:
    it copies it to `/kaggle/working/aashish-ai-portfolio` first. Then it writes and
    deletes a probe file, so the result is verified rather than assumed.
 
-   **Where a Dataset actually mounts.** Not at `/kaggle/input/<name>`: Kaggle puts
-   "Your Datasets" under **`/kaggle/input/datasets/<username>/<slug>/`**, which the
-   first real session discovered the hard way — the cell raised `SystemExit: No
-   repository found` before anything had run. It no longer guesses: two direct
-   paths (a clone, a manual copy), then a search of the mount for
-   `package.json` inside a directory that also has `training/notebooks/`.
+   **Where a Dataset actually mounts, and that it is not unpacked.** Two facts,
+   each of which stopped the first real session:
 
-   Four wrong assumptions about this one filesystem were found in a single day —
+   * Not at `/kaggle/input/<name>` — Kaggle puts "Your Datasets" under
+     **`/kaggle/input/datasets/<username>/<slug>/`**. The cell raised
+     `SystemExit: No repository found` before anything had run.
+   * **Kaggle does not extract an uploaded `.tgz`.** It mounts the file. So the
+     session found the repository as a single 1,217,137-byte object with no
+     `package.json` on the filesystem at all, and the search died on
+     `StopIteration:`. The cell now extracts the archive itself, into
+     `/kaggle/working`.
+
+   It no longer guesses: two direct paths (a clone, a manual copy), then a search
+   of the mount for `package.json` beside `training/notebooks/`, then the archive.
+
+   Five wrong assumptions about this one filesystem were found in a single day —
    the prose said the copy was optional; the copy turned out to be mandatory; the
-   notebooks preferred the read-only mount; and the mount path was wrong. The
-   fifth was in the fix for the fourth (`str(Path.cwd()).startswith('/kaggle/input')`
-   is false on Windows, because `str()` of a `WindowsPath` uses backslashes, so the
-   copy silently did not happen). All of it is now checked by running the cell's
-   real code in a temp tree from **three** start states — including the nested
-   Dataset path — in `tests/py/test_notebook_refs.py::Workspace`.
+   notebooks preferred the read-only mount; the mount path was wrong; and the
+   archive was assumed unpacked. One more was in the fix for the third
+   (`str(Path.cwd()).startswith('/kaggle/input')` is false on Windows, because
+   `str()` of a `WindowsPath` uses backslashes, so the copy silently did not
+   happen). All of it is checked by running the cell's real code in a temp tree
+   from **four** start states — clone, short Dataset path, nested Dataset path, and
+   archive-only — in `tests/py/test_notebook_refs.py::Workspace`.
 
 Either way the run needs `training/`, `ai/`, `inference/` and `data/sources.json`,
 and it does **not** need `ai/model-export/` (git-ignored: 5 MB of shipped weights)

@@ -36,6 +36,7 @@ import os
 import re
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -138,7 +139,7 @@ def repository_cell(path: Path) -> str | None:
     would turn these tests into silent no-ops rather than failures.
     """
     return next((source for _index, source in code_cells(path)
-                 if "def find_repo(" in source), None)
+                 if "def ensure_repo(" in source), None)
 
 
 class Structure(unittest.TestCase):
@@ -293,15 +294,20 @@ class Workspace(unittest.TestCase):
                               f"checking — the failure it is guarding is OSError 30 "
                               f"on the first write, mid-session")
 
-    def test_the_cell_finds_the_repository_whoever_put_it(self):
+    def test_the_cell_finds_the_repository_however_it_arrived(self):
         """Run the cell's own code, in every start state, in a temp tree.
 
-        Three states, because two were not enough. A clone or a manual copy lands
-        in `/kaggle/working`. A Dataset was assumed at `/kaggle/input/<name>` —
-        and the first real Kaggle session proved otherwise: "Your Datasets" mount
-        under `/kaggle/input/datasets/<username>/<slug>/`, so the guess missed,
-        the cell raised `SystemExit`, and the run stopped before it began. That
-        third state is what this now encodes.
+        **Four** states, because each one is a way the first real Kaggle session
+taught us the previous cell was wrong:
+
+        * a clone or a manual copy, which lands in `/kaggle/working`;
+        * a Dataset at `/kaggle/input/<name>` — the original assumption;
+        * a Dataset under `/kaggle/input/datasets/<username>/<slug>/`, which is
+          where "Your Datasets" actually mount, and where the cell died with
+          `SystemExit: No repository found`;
+        * a Dataset holding **only the `.tgz`**, because Kaggle does not unpack an
+          uploaded archive — that one died with `StopIteration`, and no amount of
+          path-guessing could have found a `package.json` that was never there.
 
         It executes the author's real cell rather than a copy of its logic: the
         two absolute prefixes are rewritten to a temp directory and nothing else
@@ -314,25 +320,53 @@ class Workspace(unittest.TestCase):
         cell's fallback discovers the repository by exactly those, so a tree
         without them is not a repository and would be testing nothing.
         """
+
+        def plant_repo(base: Path) -> None:
+            (base / "training" / "notebooks").mkdir(parents=True)
+            (base / "package.json").write_text("{}", encoding="utf-8")
+
+        def plant_archive(base: Path) -> None:
+            """Only the archive, as Kaggle actually mounted it.
+
+            The staging tree is built in a **separate temp directory**, not beside
+            the archive. Building it inside the mount made this state pass for the
+            wrong reason: the fake mount then contained a `package.json` with a
+            `training/notebooks/` beside it, so the *previous* branch found it and
+            the archive branch was never exercised. Disabling that branch left the
+            test green, which is how the mistake surfaced — a state that cannot
+            fail for the reason it names is worse than no state at all.
+            """
+            base.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory() as staging_tmp:
+                staging = Path(staging_tmp) / "repo"
+                plant_repo(staging)
+                with tarfile.open(base / "aashish-ai-portfolio.tgz", "w:gz") as tar:
+                    tar.add(staging / "package.json", arcname="package.json")
+                    tar.add(staging / "training", arcname="training")
+
         started = 0
         for name, path in each_notebook():
             cell = repository_cell(path)
             self.assertIsNotNone(cell, f"{name} has no repository-location cell")
-            for label, where in (
-                    ("already in working", ("working",)),
-                    ("Dataset at /kaggle/input/<name>", ("input",)),
+            nested = ("datasets", "someone", "aashish-ai-portfolio")
+            for label, where, planter in (
+                    ("already in working", ("working", "aashish-ai-portfolio"),
+                     plant_repo),
+                    ("Dataset at /kaggle/input/<name>",
+                     ("input", "aashish-ai-portfolio"), plant_repo),
                     ("Dataset under /kaggle/input/datasets/<user>/<slug>",
-                     ("input", "datasets", "someone"))):
+                     ("input", *nested), plant_repo),
+                    ("Dataset holding only the archive", ("input", *nested),
+                     plant_archive)):
                 original = Path.cwd()
                 with tempfile.TemporaryDirectory() as tmp:
                     root = Path(tmp)
                     mount = root / "kaggle" / "input"
                     work = root / "kaggle" / "working"
                     work.mkdir(parents=True)
-                    home = (work if where[0] == "working"
-                            else mount.joinpath(*where[1:])) / "aashish-ai-portfolio"
-                    (home / "training" / "notebooks").mkdir(parents=True)
-                    (home / "package.json").write_text("{}", encoding="utf-8")
+                    target = (work if where[0] == "working" else mount).joinpath(
+                        *where[1:])
+                    planter(target)
 
                     # as_posix: a Windows temp path inside a single-quoted literal
                     # is a unicode-escape error, and the branch under test is the
@@ -356,7 +390,7 @@ class Workspace(unittest.TestCase):
                         self.assertFalse((landed / ".tmp-writable").exists(),
                                          f"{name} ({label}) left its probe behind")
                     started += 1
-        self.assertEqual(started, 6, "two notebooks, three start states")
+        self.assertEqual(started, 8, "two notebooks, four start states")
 
 
 if __name__ == "__main__":
