@@ -53,7 +53,7 @@ true about **answer quality**. See "What I need from you".
 | Property | Value | Tag |
 |---|---|---|
 | Corpus | 3.2 MB seed: EN / HI / Hinglish conversation, synthetic QA, portfolio references, copy-from-context, tech/code | **MEASURED** (`data/raw/seed/`) |
-| Corpus provenance | **100 % own work**, generated deterministically by `training/scripts/make_seed_corpus.py` (seed 20260920). Every external source in `data/sources.json` is **disabled** pending licence verification, and the file's policy says there is no `--force` flag | **MEASURED** |
+| Corpus provenance | The **shipped** model's corpus is **100 % own work**, generated deterministically by `training/scripts/make_seed_corpus.py` (seed 20260920). For the P4 run, four sources in `data/sources.json` are licence-verified and enabled (Hindi Wikipedia, Simple English Wikipedia, TinyStories with its synthetic provenance disclosed, and the portfolio-derived Stage B instructions); the other five stay disabled. The file's policy says there is no `--force` flag | **MEASURED** |
 | Licence exposure | **None for what has been trained on** — we wrote every line. The §7.3 public datasets (Sangraha, Hindi Wikipedia, L3Cube-HingCorpus, simple English) have never been fetched | **MEASURED** |
 | Tokenized shards | `data/processed/seed/shards/train-0000{0,1}.bin` + manifest | **MEASURED** |
 | Local run that exists | `training/checkpoints/local`, **step 1100 of 1100**, resumed from step 800 and **finished**, `RUN_MANIFEST.json` written, export sha `f1eaf3a74e14…`, `tieGap 0.0` | **MEASURED** |

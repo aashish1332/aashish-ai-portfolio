@@ -415,8 +415,11 @@ command. The one artifact that *is* tracked is `ai/tokenizer/artifacts/seed-1k/`
 to.
 
 **(b) The licence gate has to be signed first, and that is §7.1.** It is not a
-formality: **9 of 9 sources blocked** today, and the run stops at the first fetch
-until a named person records the terms they actually read.
+formality: **5 of 9 sources blocked** today, and the run stops at the first fetch
+until a named person records the terms they actually read. Four sources — Hindi
+Wikipedia, Simple English Wikipedia, TinyStories and the portfolio-derived Stage B
+instructions — were signed off on 2026-09-30, which is the corpus this run uses.
+The five that remain blocked are not needed for it.
 
 ### 7.1 The licence gate comes first
 
@@ -584,17 +587,22 @@ so an interrupted run is a resume rather than a loss.
 Everything above is code that exists and is tested without torch. What remains
 is not mine to decide.
 
-**The licence gate is the first wall, and it is a signature: 9 of 9 sources
+**The licence gate is the first wall, and it is a signature: 5 of 9 sources
 blocked** (live output of `python -m training.scripts.fetch_corpus --check`,
 2026-09-30). Every candidate's terms, the page each was observed on and the verdict
 on each are in [DATA_LICENSES.md](DATA_LICENSES.md) — one table, in one file, so
 that is the place to read and the place to update. The short version:
 
-* **Usable if you confirm them** — Hindi Wikipedia and Simple English Wikipedia
-  (`CC-BY-SA-4.0`; ShareAlike is not NonCommercial, and the attribution attaches to
-  the corpus we build), AI4Bharat Sangraha (`CC-BY-4.0`, and a revision still has to
-  be pinned), TinyStories (`CDLA-Sharing-1.0`, with a **provenance duty** — it is
-  entirely GPT-3.5/4 output, so the licence is not the live question).
+* **Signed off 2026-09-30 and enabled** — Hindi Wikipedia and Simple English
+  Wikipedia (`CC-BY-SA-4.0`; ShareAlike is not NonCommercial, and the attribution
+  attaches to the corpus we build), TinyStories (`CDLA-Sharing-1.0`, with a
+  **provenance duty** — it is entirely GPT-3.5/4 output, so the licence is not the
+  live question), and the portfolio-derived Stage B instructions (`own-work`).
+  These four are the corpus this run uses.
+* **Usable if you confirm them, but not needed here** — AI4Bharat Sangraha
+  (`CC-BY-4.0`, and a revision still has to be pinned before it can be fetched) and
+  Topical-Chat (human dialogue; the `CDLA-Sharing-1.0` id came from the *enriched*
+  variant and needs a read).
 * **Dropped by class** — L3Cube-HingCorpus and DailyDialog are `CC-BY-NC-SA-4.0`.
   `allow_noncommercial` is false, and the default is to refuse.
 * **Unresolved on purpose** — PersonaChat: a mirror claims a licence the original

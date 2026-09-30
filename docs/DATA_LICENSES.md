@@ -59,9 +59,26 @@ The gap was real — `docs/TRAINING.md` announced *five of five* sources blocked
 while the registry held nine, and every test passed, because they all read the
 registry and none read the prose.
 
-Today: **9 of 9 sources blocked** (the portfolio-derived Stage B generator is
-verified but not yet enabled, because it does not exist yet; the other eight
-are third-party and none has been signed off).
+Today: **5 of 9 sources blocked.** Four were signed off on 2026-09-30 by
+Aashish Kumar and are enabled:
+
+| Enabled | Licence | Read at |
+|---|---|---|
+| `hindi_wikipedia` | `CC-BY-SA-4.0` | [dumps.wikimedia.org/legal.html](https://dumps.wikimedia.org/legal.html) |
+| `simple_english_wikipedia` | `CC-BY-SA-4.0` | same page — it covers all Wikimedia text |
+| `tinystories` | `CDLA-Sharing-1.0` | [dataset card](https://huggingface.co/datasets/roneneldan/TinyStories); the metadata file states the id verbatim |
+| `portfolio_instruction` | `own-work` | nothing to read — generated from `knowledge.json` |
+
+Three of those feed Stage A. `portfolio_instruction` is the Stage B instruction
+set, which is what teaches the runtime chat frame, and it was enabled for this
+run after being recorded as verified-but-disabled since P3.
+
+Still blocked, each for a different reason: `sangraha_verified` and
+`topical_chat` (terms not read yet), `l3cube_hingcorpus` and `dailydialog`
+(NonCommercial, refused by class — see below), and `personachat` (the terms are
+still unresolved). **None of the five is needed for the first Kaggle run**, and
+the two NonCommercial losses are the recorded limitations further down this file
+rather than a task outstanding.
 
 ### A verified licence can still be one we may not use
 
@@ -118,15 +135,15 @@ give. `python -m training.scripts.fetch_corpus --check` prints both columns.
 | Candidate | Intended use | Observed licence | Verdict |
 |---|---|---|---|
 | AI4Bharat **Sangraha** (verified subset) | Hindi (Devanagari) | `CC-BY-4.0` — [dataset card](https://huggingface.co/datasets/ai4bharat/sangraha) | **Usable** (attribution, and a revision still has to be pinned before fetching) |
-| **Hindi Wikipedia** | Hindi prose | `CC-BY-SA-4.0` — [dump terms](https://dumps.wikimedia.org/legal.html) | **Usable**; open question is attribution, plus dump-date/revision pinning |
+| **Hindi Wikipedia** | Hindi prose | `CC-BY-SA-4.0` — [dump terms](https://dumps.wikimedia.org/legal.html) | **Verified 2026-09-30 — in use.** Attested by Aashish Kumar; attribution falls on the corpus, and the dump date/revision is pinned at fetch time |
 | **L3Cube-HingCorpus** | real Roman code-mixed Hinglish | `CC-BY-NC-SA-4.0` — [repo](https://github.com/l3cube-pune/code-mixed-nlp) · [proceedings](https://aclanthology.org/2022.wildre-1.2/) | **Dropped: NonCommercial.** Two sources agree it is NC but disagree on the variant (README says NC-SA-4.0, the paper says NC-4.0), so the exact id needs the owner's check if it is ever revived |
-| **TinyStories** | Stage A English — simple narratives | `CDLA-Sharing-1.0` — [dataset card](https://huggingface.co/datasets/roneneldan/TinyStories) | **Usable, with a provenance duty.** Not NC and not ND, so the licence passes — but it is *entirely* GPT-3.5/GPT-4 output, so the licence is not the point and rule 1 is |
-| **Simple English Wikipedia** | Stage A English — simple prose | `CC-BY-SA-4.0` — [dumps](https://dumps.wikimedia.org/simplewiki/) · [terms](https://simple.wikipedia.org/wiki/Main_Page) | **Usable**; same attribution terms as the Hindi dump. Preferred over enwiki: small vocabulary, short sentences |
+| **TinyStories** | Stage A English — simple narratives | `CDLA-Sharing-1.0` — [dataset card](https://huggingface.co/datasets/roneneldan/TinyStories) | **Verified 2026-09-30 — in use, with a provenance duty.** Not NC and not ND, so the licence passes — but it is *entirely* GPT-3.5/GPT-4 output, so the licence is not the point and rule 1 is. The disclosure is recorded in the registry and in the model card |
+| **Simple English Wikipedia** | Stage A English — simple prose | `CC-BY-SA-4.0` — [dumps](https://dumps.wikimedia.org/simplewiki/) · [terms](https://dumps.wikimedia.org/legal.html) | **Verified 2026-09-30 — in use.** Same terms as the Hindi dump, read at the same page. Preferred over enwiki: small vocabulary, short sentences |
 | **Topical-Chat** | Stage A English — human dialogue | `CDLA-Sharing-1.0` per the [AWS registry entry](https://registry.opendata.aws/topical-chat-enriched/) | **Promising, medium confidence.** The id came from the *enriched* variant and it is unconfirmed whether the enrichment carries the same terms — needs the owner's read. Human-human, so no provenance duty |
 | **DailyDialog** | Stage A English — human dialogue | `CC-BY-NC-SA-4.0` — [mirrors](https://huggingface.co/datasets/roskoN/dailydialog) · [ConvLab](https://huggingface.co/datasets/ConvLab/dailydialog) | **Dropped: NonCommercial.** The first thing anyone reaches for when asked for "simple English dialogue", and the one we may not use |
 | **PersonaChat** | fallback dialogue | **inconclusive** | **Left unresolved.** A Kaggle mirror claims `CC-BY-NC-SA-4.0`; the ParlAI project page states no data licence. A mirror's claim is not the rights-holder's grant, and the convenient answer is not the answer |
 | Programmatic Hinglish | volume, controlled vocabulary | generated | must be labelled synthetic in the dataset card; not a substitute for human-written code-mixing |
-| Portfolio-derived instruction data | Stage B (§7.4), P5 | `own-work` | ours, generated from `knowledge.json`; no external licence |
+| Portfolio-derived instruction data | Stage B (§7.4), P4 | `own-work` | **Enabled 2026-09-30.** Ours, generated from `knowledge.json`; no external licence, and the registry's note that "the generator does not exist yet" was stale while naming that generator two fields above it |
 **Consequence of the two licence losses.** The two slots that were easiest to
 fill from memory — real Roman Hinglish, and everyday English dialogue — are the
 two that came back NonCommercial. So:

@@ -4184,6 +4184,72 @@ reading, aliasing the entries, and failed on `offers no /kaggle/working
 repository` — a message about the wrong defect); the aliasing is fixed and the
 messages above are from the corrected run. Restored: 8 tests OK.
 
+### 2026-09-30 — the licence gate is signed: 5 of 9 sources blocked
+
+The owner approved a first corpus, so P4's first real gate is open. **Four sources
+verified and enabled**, each `--verify` recording the SPDX id, the page read, the
+reviewer (`Aashish Kumar`) and the date:
+
+| Source | Licence | How the licence was established |
+|---|---|---|
+| `hindi_wikipedia` | `CC-BY-SA-4.0` | Wikimedia's legal page: all original textual content is CC BY-SA 4.0, and Wikimedia content "may be freely shared, copied, remixed, and used for any purpose (including commercial purposes!)" |
+| `simple_english_wikipedia` | `CC-BY-SA-4.0` | the same page — it covers all Wikimedia text, and the entry's own `observed` block already pointed at it |
+| `tinystories` | `CDLA-Sharing-1.0` | the dataset's own metadata file states `license: cdla-sharing-1.0` verbatim; the HTML card is JS-rendered and returns no licence text to a fetcher, which is worth knowing before trusting a scrape of it |
+| `portfolio_instruction` | `own-work` | nothing external — enabled, see below |
+
+The three third-party verifications each carry the licence quote in their notes,
+so the record says *what was read*, not just that someone said yes. The pages were
+fetched by the agent and the decision was the owner's; the notes say exactly that,
+because `verified_by` naming a person who did not open the page would be the one
+inaccuracy that makes the whole field worthless.
+
+**`portfolio_instruction` said it did not exist while naming itself.** It was
+`enabled: false` with the note *"Enabled for P5, not P4. The generator does not
+exist yet"* — in an entry whose `generator` field named
+`training/scripts/make_instruction_data.py` two lines above, and whose script has
+existed for several phases. Stale self-description inside a machine record is
+worse than in prose, because `--check` prints it as a reason. Enabled for this run,
+and the note now records why.
+
+### The test that said *nothing is enabled yet* had to become an implication
+
+`test_not_one_third_party_source_is_enabled_today` asserted that every third-party
+source was disabled — true while P4 had not run, and false the moment it did. It
+failed on the first verification, which is the correct outcome and the wrong
+repair: flipping it to *"some are enabled"* would pass for the wrong reason on any
+later edit. It is now the implication that has to hold for every source anyone
+ever verifies — `enabled` requires a verified licence, no refused licence class, a
+declared `provenance.origin`, and no missing synthetic disclosure — plus a vacuity
+guard so it cannot silently stop having anything to check.
+
+Mutation-tested both ways: enabling `topical_chat`, whose licence was never read,
+fails with `topical_chat is enabled with no verified licence`; disabling everything
+fails the vacuity guard by name. Restored: 47 tests OK.
+
+### The reconciliation guard earned its keep on the same day
+
+`DATA_LICENSES.md` still said **9 of 9 sources blocked** after the verifications, and
+the headline check failed with `docs\DATA_LICENSES.md:62 says "9 of 9 sources
+blocked" but the registry has 5 of 9 blocked`. That is the second time this guard
+has caught a stale count in prose — the first was the "5 of 5" in `TRAINING.md` that
+prompted writing it. Updated: `DATA_LICENSES.md` (headline, the enabled table, four
+candidate verdicts), `TRAINING.md` (§7.0(b) and §7.4, which split the five remaining
+sources by *why* each is blocked), and `FINAL_REPORT.md`, whose corpus-provenance
+row claimed every external source was disabled.
+
+### A cosmetic finding: verifying a source reformats the whole registry
+
+`verify_source` writes the registry with `json.dumps(..., indent=2)`, which expands
+every inline array and object — `["hi"]` becomes four lines, a one-line
+`provenance` block becomes five. So a four-source sign-off produces a
+**128-line diff** for about a dozen meaningful changed lines. It is not fixed,
+on purpose: this is the file's only writer, so hand-pretty-printing it would be
+undone by the next `--verify`. Worth recording because it is in tension with the
+file's own reasoning — the policy text argues that permission and silence "must not
+be able to look the same in a diff" — and a diff that is 85 % whitespace is harder
+to review than the change deserves. Fixing it means a custom writer that preserves
+inline arrays, which is not worth a test today.
+
 **The licence gate is 9 of 9 blocked, and `TRAINING.md` said "5 of 5".** The live
 `fetch_corpus --check` prints *9 sources, 9 blocked*, and `docs/DATA_LICENSES.md`
 already said 9 of 9, so TRAINING.md was the stale copy. §7.4 now states the live

@@ -72,12 +72,42 @@ class Registry(unittest.TestCase):
                 self.assertTrue(source.license.get("verified_by"))
                 self.assertTrue(source.license.get("verified_at"))
 
-    def test_not_one_third_party_source_is_enabled_today(self):
-        """P4 has not run: the gate must still be closed for outside data."""
+    def test_every_enabled_third_party_source_was_actually_cleared(self):
+        """The invariant behind `enabled`, now that P4 has signed sources.
+
+        This began as "not one third-party source is enabled today", which was a
+        true statement while P4 had not run and which the first three
+        verifications made false. Flipping it to "some are enabled" would have
+        been no better: it would pass for the wrong reason on any later edit.
+
+        What actually has to hold is the implication, and it holds for every
+        source anyone ever verifies: `enabled: true` beside an unread licence, a
+        refused licence class, an undeclared origin, or a synthetic corpus with
+        no disclosure, is precisely the failure the gate exists to prevent.
+        """
+        policy = fc.load_registry().get("policy")
+        cleared = 0
         for source in fc.sources(fc.load_registry()):
-            if source.raw.get("kind") in ("hf_dataset", "http_file", "unspecified"):
-                self.assertFalse(source.enabled,
-                                 f"{source.id} is enabled without a verified licence")
+            if source.raw.get("kind") not in ("hf_dataset", "http_file", "unspecified"):
+                continue
+            if not source.enabled:
+                continue
+            cleared += 1
+            with self.subTest(source=source.id):
+                self.assertTrue(source.verified,
+                                f"{source.id} is enabled with no verified licence")
+                self.assertEqual(
+                    fc.blocked_licence_classes(source.license.get("spdx"), policy), [],
+                    f"{source.id} is enabled under a licence class this project refuses")
+                self.assertIn(source.origin, fc.KNOWN_ORIGINS,
+                              f"{source.id} is enabled with no declared origin")
+                self.assertFalse(source.needs_disclosure,
+                                 f"{source.id} is enabled with no synthetic disclosure")
+        self.assertTrue(
+            cleared,
+            "no third-party source is enabled. If the verifications were rolled "
+            "back on purpose this guard needs rewriting rather than deleting: it "
+            "is the only check that reads `enabled`")
 
     def test_the_registry_does_not_loosen_the_safety_defaults(self):
         """NC/ND are refused by default; a data file must not quietly change that.
