@@ -2,6 +2,12 @@
    dev-error-probe.js — does the page load clean?
    Loads the film headlessly and reports every console error/warning,
    uncaught page error, and failed network request.
+
+   Reporting is not gating. The exit code is 1 for the four things that
+   mean the question was not answered or the answer was "no": the film
+   never became ready, an uncaught page error, a failed request, or an
+   interaction step that threw. `console err/warn` and `http >= 400` are
+   printed for a human and deliberately do not fail the run.
    ═══════════════════════════════════════════════════════════════ */
 'use strict';
 const puppeteer = require('puppeteer-core');
@@ -115,7 +121,19 @@ const MOBILE = !!process.env.MOBILE;   // MOBILE=1 → emulate a phone (touch + 
   console.log('failed requests :', failed.length ? failed : 'none');
   console.log('http >= 400     :', responses.length ? responses : 'none');
 
+  /* The verdict answers this probe's own question — "does the page load
+     clean?" — so an unready film and a step that THREW both count. A probe
+     that asks that question and then exits 0 while printing
+     `film ready: false` is the "green means less than it looks" defect: the
+     run looked clean because the instrument never checked its own premise. */
+  const fatal = [];
+  if (!ready) fatal.push('the film never became ready');
+  if (pageErrors.length) fatal.push(`${pageErrors.length} page error(s)`);
+  if (failed.length) fatal.push(`${failed.length} failed request(s)`);
+  if (steps.length) fatal.push(`${steps.length} interaction problem(s)`);
+  console.log('verdict         :', fatal.length ? 'FAIL — ' + fatal.join(', ') : 'clean');
+
   clearTimeout(hardStop);
   await browser.close();
-  process.exit(pageErrors.length || failed.length ? 1 : 0);
+  process.exit(fatal.length ? 1 : 0);
 })().catch((e) => { console.log('PROBE FAIL:', e.message); process.exit(1); });

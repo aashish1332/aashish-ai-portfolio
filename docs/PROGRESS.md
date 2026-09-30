@@ -3889,3 +3889,80 @@ four rows of the table · the scratch `setUpClass` case → `Ran 0 tests … OK
 (skipped=1)` · `python -m unittest tests.py.test_docs_commands -v` → 10 OK ·
 `test_model_torch.py:57,144–146,166` · `test_fetch_corpus.py:454–476` ·
 `ai/tokenizer/train.py:156–163` · `training/scripts/fetch_corpus.py:246–292`
+
+---
+
+## The probes with no tally: sixteen instruments, and one that said "clean" while saying "not ready" — 2026-09-30
+
+The probe audit covered the **five** that print a tally (`dev-ai-probe.js`,
+`dev-anchor-probe.js`, `dev-degrade-probe.js`, `dev-offline-probe.js`,
+`dev-firefox-probe.js` — 118 verdicts between them). The other **sixteen**
+`dev-*.js` have no tally at all, so that audit could not see them: a `say()`
+count is what made the first five auditable. They are the last unexamined
+surface, so this time the question is narrower — *does any of them print a
+conclusion that nothing supports?*
+
+### 1. The classification, by measurement
+
+Counted per file for `say(`/`record(`/`check(` (verdict calls) and for the exit
+code's shape. Five tally; sixteen do not. Of the sixteen, fourteen run to the end of the script
+(some with an explicit `process.exit(0)`) and can only go red on an exception or
+the hard-stop timeout (`process.exit(1)` / `(2)`) — they are **instruments**:
+`dev-geo-probe.js`
+("Prints GSAP's scroller cache vs the browser's own numbers"),
+`dev-refresh-probe.js`, `dev-pacing-probe.js` (21 rows, streamed as measured),
+`dev-diag.js`, `dev-probe.js`, `dev-fps-probe.js`, `dev-mobile-probe.js`,
+`dev-shot-preview.js`, `dev-cache-rescue{,2}.js`, `dev-baseline-probe.js`,
+`dev-answer-latency-probe.js`, `dev-token-budget-probe.js`,
+`dev-prefill-batch-probe.js`. Each was read for the tell-tale of this defect
+class — claim language ("should", "within budget", a `✓`) about a number nothing
+checks. None has one: `dev-answer-latency-probe.js` quotes §4's
+`>= 8 tok/s` floor in a **comment** and prints the `tok/s` column beside it for a
+reader to compare, which is the honest form. `dev-visual-probe.js` prints six
+image statistics and gates on nothing about them, which its header says outright
+("so before/after visual work can be compared objectively").
+
+### 2. The one real hole, in the probe that asks the strongest question
+
+`dev-error-probe.js` (`npm run probe`) opens with *"does the page load clean?"* —
+and its exit code was
+`process.exit(pageErrors.length || failed.length ? 1 : 0)`. Four things it
+collected were printed and then ignored by that line:
+
+* `film ready: false` — the page **never became interactive**, the one outcome
+  that makes the rest of the run meaningless, and the probe's own premise;
+* `interaction: [ 'THREW …' ]` — a UI path the sweep exercised threw;
+* `console err/warn` and `http >= 400` — reported lists.
+
+So `film ready: false` printed, and the probe exited **0**. That is this
+project's defect class exactly: the run looked clean because the instrument
+never checked its own premise, and `npm run probe` is the cheapest probe to
+reach for.
+
+The fix keeps the two noisiest lists non-fatal **on purpose** — a favicon's 404
+and an unrelated library warning would train a reader to ignore a red probe,
+which is worse than a reader who can see the list — and makes the other two
+count. There is now an explicit line, `verdict : clean | FAIL —  …`, naming why,
+and the header states the split: *reporting is not gating.*
+
+### 3. Verified by running it three ways, not by reading it
+
+* **Healthy** (dev server on `:5577`, software GL): `film ready : true` ·
+  `interaction : clean` · every list `none` · `verdict : clean` · **EXIT=0**.
+* **M1 — the film never readies**: `verdict : FAIL — the film never became
+  ready` · **EXIT=1**. This is precisely the case that used to exit 0.
+* **M2 — a step reports a problem**: `interaction : [ 'THREW synthetic step' ]` ·
+  `verdict : FAIL — 1 interaction problem(s)` · **EXIT=1**.
+
+Both mutations were built from the real file by a scratch script (deleted), so
+they exercise the shipped branch rather than a paraphrase of it.
+
+### Evidence
+
+`dev-error-probe.js` (header, the `verdict` block, `process.exit(fatal.length ? 1 : 0)`) ·
+run 1 `node dev-error-probe.js` → `verdict : clean`, `EXIT=0` · run 2 `.tmp-m1.js`
+(`let ready = false`) → `EXIT=1` · run 3 `.tmp-m2.js` (a `steps.push`) → `EXIT=1` ·
+per-file counts of `say(`/`record(`/`check(` across `dev-*.js` (5 files non-zero: 67,
+20, 13, 8, 12) · `docs/BENCHMARKS.md:917,1096,1145,1215` (which probes the docs
+actually cite as evidence — `dev-error-probe.js` is cited by none, only wired to
+`npm run probe` in `package.json`)
