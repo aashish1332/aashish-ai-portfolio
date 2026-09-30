@@ -4137,6 +4137,29 @@ with what a clone does *not* contain: `.gitignore` keeps out `data/raw/`,
 **seed fixture is not in the repository either** (`data/raw/seed/*.txt` comes from
 `make_seed_corpus.py`), while `ai/tokenizer/artifacts/seed-1k/` *is* tracked.
 
+**And `/kaggle/input` is read-only, so "attach it as a Dataset" is not enough.** A
+dataset is an input, not a workspace: it has to be copied into `/kaggle/working`
+first. The run writes in four places *before* it trains anything —
+`data/sources.json` (the verification itself), `data/raw/`, `data/extracted/`,
+`data/processed/` — and then the tokenizer artifact and the checkpoints, so running
+from the mount dies on the first `--verify` with
+`OSError: [Errno 30] Read-only file system`. The setup cell already looks in
+`/kaggle/working/aashish-ai-portfolio`, which is exactly where the copy lands, so the
+copy is the whole fix. This is stated from Kaggle's own answers channel and two
+independent write-ups rather than assumed — and the first version of §7.0 said
+attaching a Dataset "needs no edit", which was true of the notebook and false of the
+filesystem. The notebook also needs **Internet** enabled, for the clone and for every
+corpus download, and Kaggle gates that behind phone verification.
+
+**One sharp edge in the gate, recorded rather than fixed:** `status()` reports a
+verified source as `ready` even when it is an `hf_dataset` with no pinned `revision`,
+while `fetch()` refuses that same source (`no revision pinned. A dataset fetched from
+'main' is not reproducible`). Both behaviours are pinned by tests
+(`test_hf_dataset_without_a_pinned_revision_is_refused`), so the gap is only in the
+word *ready* — but someone reading `--check` could reasonably conclude that Sangraha
+was fetchable the moment it was verified. Pinning the revision is part of enabling it,
+and §7.4 says so next to the source.
+
 **The licence gate is 9 of 9 blocked, and `TRAINING.md` said "5 of 5".** The live
 `fetch_corpus --check` prints *9 sources, 9 blocked*, and `docs/DATA_LICENSES.md`
 already said 9 of 9, so TRAINING.md was the stale copy. §7.4 now states the live

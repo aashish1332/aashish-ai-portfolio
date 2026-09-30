@@ -369,16 +369,34 @@ asked it for `--help`.
 remote** (`git remote -v` prints nothing) and the branch is local with no
 upstream, so the setup cell has nothing to clone yet. Pick one:
 
-1. **Push the branch**, then clone it in the setup cell at a recorded commit.
-   `RUN_MANIFEST.json` records `git_commit`, so the commit you choose is what
-   makes a run reproducible rather than merely repeatable.
-2. **Attach the tree as a Kaggle Dataset.** The notebook's setup cell already
-   looks in `/kaggle/input/aashish-ai-portfolio` first — a Dataset's mount point
-   — so uploading and attaching it needs no edit to the notebook.
+1. **Push the branch**, then clone it into `/kaggle/working` at a recorded commit
+   (the setup cell looks in `/kaggle/working/aashish-ai-portfolio`, so clone to
+   exactly that path). `RUN_MANIFEST.json` records `git_commit`, so the commit you
+   choose is what makes a run reproducible rather than merely repeatable.
+2. **Attach the tree as a Kaggle Dataset, then copy it out** before doing anything
+   else:
+
+   ```bash
+   cp -r /kaggle/input/aashish-ai-portfolio /kaggle/working/aashish-ai-portfolio
+   ```
+
+   **The copy is not optional.** `/kaggle/input` is a **read-only mount** — a dataset
+   is an input, not a workspace — and this run writes in four places before it
+   trains anything: `data/sources.json` (§7.1's verification), `data/raw/`,
+   `data/extracted/` and `data/processed/`, and then the tokenizer artifact and the
+   checkpoints. Run it from the mount and the first `--verify` dies with
+   `OSError: [Errno 30] Read-only file system`. `/kaggle/working` is the writable
+   one, and it is the path the setup cell already looks in — so the copy is the
+   whole fix, and no notebook edit is needed.
 
 Either way the run needs `training/`, `ai/`, `inference/` and `data/sources.json`,
 and it does **not** need `ai/model-export/` (git-ignored: 5 MB of shipped weights)
 or any of the data directories.
+
+**The notebook needs Internet enabled** in its settings, for two different reasons:
+the clone or the initial `pip` work needs it, and so does every corpus download.
+Kaggle gates Internet access behind phone verification on the account, so that is
+worth doing before a session rather than during one.
 
 **What a clone does not have.** `.gitignore` excludes `data/raw/`,
 `data/extracted/`, `data/processed/`, `data/instruction/` and
