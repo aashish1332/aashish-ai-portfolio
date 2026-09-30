@@ -4025,6 +4025,21 @@ whole payoff is a few seconds of a second-long download. If the model ever ships
 more than one shard, the clause starts mattering and this line is where it will be
 found.
 
+### One grep that looked like a gap and was not: §9.1
+
+A mechanical pass — every section number in the brief, searched for in this file —
+returns exactly one hit: **§9.1 is never named here.** It is named everywhere it
+matters. `docs/AI_ARCHITECTURE.md:480` states the runtime decision and its reason
+(our own JavaScript in a module worker; at this size a wasm runtime is a second
+binary to download and a second thing to trust), `docs/DEPLOYMENT.md:16` records the
+COOP/COEP half, and `docs/RESEARCH_VERIFICATION.md:22` records what wllama would
+have been. The parts of §9.1 that were **not** done are labelled as such in the doc
+they belong to — the candidate benchmark matrix is "NOT TESTED as speed; investigated
+on paper" (`docs/BENCHMARKS.md:27`), and `probeWebGPU()` "reports the capability and
+accelerates nothing". So the finding is a missing cross-reference in a working note,
+not an unaudited clause; recording it here so the same grep does not read as a
+second discovery.
+
 ### Evidence
 
 `tests/language.test.mjs:1–2,138` and the generated per-case `test()` at 141 · the
