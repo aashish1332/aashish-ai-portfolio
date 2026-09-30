@@ -4240,6 +4240,73 @@ was wrong in prose, then in code, then in the check on the code. The pattern is
 the interesting part: each fix was a sentence, and only running the thing produced
 the evidence.
 
+### The first real corpus was refused, and the refusal was correct
+
+The cleanup pass on 883,880 documents from two Wikipedia dumps ended with:
+`leakage: CONTAMINATED (train 855,071 / val 17,737, exact 0, near 1)` —
+`train/val leakage detected, refusing to continue`. The pipeline stopped instead of
+training on a corpus whose validation split had a near-duplicate of a training
+document in it, which is the behaviour §7.3 asks for.
+
+**Cause, and it is a deduction rather than a hypothesis.** `prepare_data` called
+`pipeline.build_corpus` once per source, and `build_corpus` built its own
+`Deduper`, so deduplication was **per source**. `leakage_report` is
+**whole-corpus** and always has been. Now the argument: within one source, the
+dedupe compares every document against every earlier accepted document in its
+bucket, so no two surviving documents *of the same source* can share a bucket and
+be ≥ 0.8 Jaccard. The leakage check found exactly such a pair. Therefore the pair
+straddles two sources — and no per-source deduper can ever collapse it, so the
+pipeline was refusing a corpus its own dedupe was structurally unable to clean.
+Note also that this could not be a `hi`-vs-`en` pair: the two dumps label 2,402
+and 450,716 English documents respectively, so shared English boilerplate is
+plenty of room for it.
+
+**Fix:** one `Deduper`, created by `prepare_data` and passed into every
+`build_corpus` call, so the dedupe scope equals the leakage scope. Per-source
+statistics are unaffected — each call still counts its own drops — which is
+asserted, because losing `by_source` would have been an easy way to make this
+change look smaller than it is.
+
+**The test asserts its own premise.** A cross-source near-duplicate only causes
+this failure if the two documents land in the *same* min-hash bucket, and only then
+could either the dedupe or the leakage check see them at all. So the fixture first
+asserts Jaccard ≥ threshold *and* an equal bucket key. Without that it would be a
+test that passes by constructing nothing. With it, reverting the fix fails on the
+first assertion: `2 != 1 : one of the pair must be dropped, whichever file it is in
+— a per-source deduper keeps both`. Restored: 32 tests OK.
+
+### Delivering a fix to a session that has no git, without lying about it
+
+The Kaggle session's copy came from the archive, so it had no repository to pull
+from. The fix was applied there by a paste-in cell that rewrites the two files
+textually — and a textual patch is exactly the kind of thing that can silently do
+nothing. Two things guarded that:
+
+1. the cell ends by running the two-file situation **in miniature, in that
+   session** and asserting `kept == 1` and leakage clean. It printed
+   `kept 1 of 2 | leakage clean: True` / `PATCH VERIFIED`. A skipped patch would
+   have printed `kept 2 of 2` and failed the assertion, so "nothing happened"
+   could not pass as success;
+2. the session printed `sha256` for both patched files, and those hashes were then
+   **reproduced locally** from the uploaded revision plus the same replacements:
+
+```
+ai/data/pipeline.py               reconstructed e7be3e5257af5b09 | session e7be3e5257af5b09
+training/scripts/prepare_data.py  reconstructed e3cff53d82f62b5a | session e3cff53d82f62b5a
+```
+
+So the session is running byte-for-byte `4e1efd0` + the patch. The committed files
+differ from that in one way only: they carry the explanatory comments and the
+`build_corpus` docstring addition, which the paste-in patch does not insert. The
+*code* is identical and was proven to work there; the comments are why the next
+archive upload is the traceable path and the paste was a delivery mechanism.
+
+Worth recording as a method note: reproducing the hash also caught a typo in my own
+reconstruction script — an anchor written as `NEAR_DUP_THRESHOLD -> tuple` with the
+closing paren dropped, which reported a mismatch that did not exist. A hand-written
+anchor is fragile enough that the functional check is the one to trust, and the
+hash is the one to check the functional check with.
+
 ### Kaggle does not unpack the archive, and my own test passed for the wrong reason
 
 With the mount path fixed, the session hit the next wall: a working copy of the
