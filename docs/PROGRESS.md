@@ -4240,6 +4240,41 @@ was wrong in prose, then in code, then in the check on the code. The pattern is
 the interesting part: each fix was a sentence, and only running the thing produced
 the evidence.
 
+### The mount is not where we said it was, and the first real session proved it
+
+The first genuine Kaggle session ran the repository cell and it **failed**:
+`SystemExit: Set CANDIDATES to the repository location; looked in
+['/kaggle/working/aashish-ai-portfolio', '/kaggle/working/newportfolio',
+'/kaggle/input/aashish-ai-portfolio']`. The diagnostic cell showed why —
+`/kaggle/input` contains exactly one entry, `datasets`, and inside it the account
+name. **Kaggle mounts "Your Datasets" under
+`/kaggle/input/datasets/<username>/<slug>/`**, not at `/kaggle/input/<name>` as the
+notebook assumed. So the third guess could not match, whatever the user did.
+
+This is the good kind of failure — the cell was written to fail loudly rather than
+walk on — but it is still the fourth wrong assumption about one filesystem in one
+day, so the fix is structural rather than a fifth guess appended to the list. The
+cell now **discovers** the tree: two direct paths (clone, manual copy) and then a
+search of the mount for a `package.json` beside a `training/notebooks/` directory.
+That survives the next layout change without an edit.
+
+**The test grew a third start state, and it reproduces the failure exactly.**
+`Workspace.test_the_cell_finds_the_repository_whoever_put_it` now runs the real
+cell against `already in working`, `Dataset at /kaggle/input/<name>` and
+`Dataset under /kaggle/input/datasets/<user>/<slug>`. Mutation-tested by making the
+discovery non-recursive (`rglob` → `glob`), which fails with the *same*
+`SystemExit` the user saw in production — the closest thing to a reproduction of a
+remote failure this harness can produce. Restored: 9 tests OK.
+
+The cell is found by `def find_repo(`, not by a variable name. It has been rewritten
+twice now, and a marker like `CANDIDATES` disappears the moment the approach
+changes — the tests would have gone quietly vacuous instead of failing, which is
+the exact defect this file exists to prevent. That change immediately paid for
+itself: rewriting the cell wholesale **dropped stage B's `TOKENIZER`, `DATA`,
+`STAGE_A` and `RUN`**, and `Ordering` caught it by name —
+`train_stage_b.ipynb cell 9 uses $TOKENIZER before it is assigned`. Nothing else in
+the suite would have noticed until a paid session died on a shell variable.
+
 ### The test that said *nothing is enabled yet* had to become an implication
 
 `test_not_one_third_party_source_is_enabled_today` asserted that every third-party

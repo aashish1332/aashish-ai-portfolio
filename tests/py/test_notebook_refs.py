@@ -129,6 +129,18 @@ def assigned_in(line: str) -> set[str]:
     return set(ASSIGN_RE.findall(line))
 
 
+def repository_cell(path: Path) -> str | None:
+    """The cell that decides where the repository is and makes it writable.
+
+    Found by the function it defines rather than by a variable name: the cell's
+    body has been rewritten twice now (the guesses, then the discovery), and a
+    marker like `CANDIDATES` disappears the moment the approach changes — which
+    would turn these tests into silent no-ops rather than failures.
+    """
+    return next((source for _index, source in code_cells(path)
+                 if "def find_repo(" in source), None)
+
+
 class Structure(unittest.TestCase):
     def test_every_notebook_parses_and_has_cells(self):
         self.assertTrue(NOTEBOOKS, "no notebooks to check")
@@ -260,8 +272,7 @@ class Workspace(unittest.TestCase):
         is exactly the half of §7.0's advice that was missing.
         """
         for name, path in each_notebook():
-            chosen = next((source for _index, source in code_cells(path)
-                           if "CANDIDATES" in source), None)
+            chosen = repository_cell(path)
             with self.subTest(notebook=name):
                 self.assertIsNotNone(chosen, f"{name} no longer chooses a repository")
                 mounts = MOUNT_RE.findall(chosen)
@@ -282,42 +293,50 @@ class Workspace(unittest.TestCase):
                               f"checking — the failure it is guarding is OSError 30 "
                               f"on the first write, mid-session")
 
-    def test_the_cell_copies_out_of_a_read_only_mount(self):
-        """Run the cell's own code, in both start states, in a temp tree.
+    def test_the_cell_finds_the_repository_whoever_put_it(self):
+        """Run the cell's own code, in every start state, in a temp tree.
 
-        Preferring `/kaggle/working` is not enough on its own: a Dataset mounts
-        under `/kaggle/input` and nothing puts it anywhere else, so before this
-        the session had to remember `cp -r` by hand and the probe above would
-        fail with the comment rather than the copy. The cell now does it.
+        Three states, because two were not enough. A clone or a manual copy lands
+        in `/kaggle/working`. A Dataset was assumed at `/kaggle/input/<name>` —
+        and the first real Kaggle session proved otherwise: "Your Datasets" mount
+        under `/kaggle/input/datasets/<username>/<slug>/`, so the guess missed,
+        the cell raised `SystemExit`, and the run stopped before it began. That
+        third state is what this now encodes.
 
-        This executes the author's real cell rather than a copy of its logic —
-        the two absolute prefixes are rewritten to a temp directory and nothing
-        else changes. That found a genuine bug the first time it ran:
+        It executes the author's real cell rather than a copy of its logic: the
+        two absolute prefixes are rewritten to a temp directory and nothing else
+        changes. The first version of this found a genuine bug immediately —
         `str(pathlib.Path.cwd()).startswith('/kaggle/input')` is false on Windows,
         because `str()` of a `WindowsPath` uses backslashes, so the copy silently
-        did not happen and the cell carried on into the read-only mount. The
-        check is `Path.is_relative_to` now, and this test is what would have
-        caught it on the day it was written.
+        did not happen and the cell walked on into the read-only mount.
+
+        The fake tree carries `package.json` and `training/notebooks/` because the
+        cell's fallback discovers the repository by exactly those, so a tree
+        without them is not a repository and would be testing nothing.
         """
-        worked = 0
+        started = 0
         for name, path in each_notebook():
-            cell = next((source for _index, source in code_cells(path)
-                         if "CANDIDATES" in source), None)
-            for label, attach_as_dataset in (("attached as a Dataset", True),
-                                             ("already in working", False)):
+            cell = repository_cell(path)
+            self.assertIsNotNone(cell, f"{name} has no repository-location cell")
+            for label, where in (
+                    ("already in working", ("working",)),
+                    ("Dataset at /kaggle/input/<name>", ("input",)),
+                    ("Dataset under /kaggle/input/datasets/<user>/<slug>",
+                     ("input", "datasets", "someone"))):
                 original = Path.cwd()
                 with tempfile.TemporaryDirectory() as tmp:
                     root = Path(tmp)
                     mount = root / "kaggle" / "input"
                     work = root / "kaggle" / "working"
                     work.mkdir(parents=True)
-                    home = (mount if attach_as_dataset else work) / "aashish-ai-portfolio"
-                    (home / "training").mkdir(parents=True)
+                    home = (work if where[0] == "working"
+                            else mount.joinpath(*where[1:])) / "aashish-ai-portfolio"
+                    (home / "training" / "notebooks").mkdir(parents=True)
+                    (home / "package.json").write_text("{}", encoding="utf-8")
 
                     # as_posix: a Windows temp path inside a single-quoted literal
                     # is a unicode-escape error, and the branch under test is the
-                    # same either way. One replace covers both the CANDIDATES entry
-                    # and the `is_relative_to` literal.
+                    # same either way.
                     source = (cell.replace("'/kaggle/input", f"'{mount.as_posix()}")
                                   .replace("'/kaggle/working", f"'{work.as_posix()}"))
                     body = "\n".join(line for line in source.splitlines()
@@ -329,14 +348,15 @@ class Workspace(unittest.TestCase):
                         os.chdir(original)  # or Windows refuses to delete the tree
 
                     with self.subTest(notebook=name, start=label):
-                        self.assertTrue(
-                            landed.is_relative_to(work),
-                            f"{name} ({label}) ended up at {landed}, which is not a "
-                            f"writable copy — the run writes before it trains")
+                        self.assertEqual(
+                            landed, work / "aashish-ai-portfolio",
+                            f"{name} ({label}) landed at {landed}. A Dataset mount "
+                            f"is read-only and the run writes before it trains, so "
+                            f"the cell has to end on a writable copy of its own")
                         self.assertFalse((landed / ".tmp-writable").exists(),
                                          f"{name} ({label}) left its probe behind")
-                    worked += 1
-        self.assertEqual(worked, 4, "both notebooks, both start states")
+                    started += 1
+        self.assertEqual(started, 6, "two notebooks, three start states")
 
 
 if __name__ == "__main__":

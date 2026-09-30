@@ -373,12 +373,13 @@ upstream, so the setup cell has nothing to clone yet. Pick one:
    (the setup cell looks in `/kaggle/working/aashish-ai-portfolio`, so clone to
    exactly that path). `RUN_MANIFEST.json` records `git_commit`, so the commit you
    choose is what makes a run reproducible rather than merely repeatable.
-2. **Attach the tree as a Kaggle Dataset, then copy it out** before doing anything
-   else:
-
-   ```bash
-   cp -r /kaggle/input/aashish-ai-portfolio /kaggle/working/aashish-ai-portfolio
-   ```
+2. **Attach the tree as a Kaggle Dataset.** No copying by hand — the setup cell
+   does it, because the mount is read-only. Since `git` is absent from an
+   archive, record the commit yourself: `git archive --format=tar.gz -o
+   aashish-ai-portfolio.tgz HEAD` then `git log -1 --format=%h` and
+   `sha256sum aashish-ai-portfolio.tgz`. `RUN_MANIFEST.json` will say
+   `git_commit: null` on this route, so those two lines are the only provenance
+   the run has.
 
    **The copy is not optional.** `/kaggle/input` is a **read-only mount** — a dataset
    is an input, not a workspace — and this run writes in four places before it
@@ -386,24 +387,25 @@ upstream, so the setup cell has nothing to clone yet. Pick one:
    `data/extracted/` and `data/processed/`, and then the tokenizer artifact and the
    checkpoints. Run it from the mount and the first `--verify` dies with
    `OSError: [Errno 30] Read-only file system`. `/kaggle/working` is the writable
-   one, and it is the path the setup cell already looks in.
+   one. So the cell prefers a working copy, and if it finds the tree in the mount
+   it copies it to `/kaggle/working/aashish-ai-portfolio` first. Then it writes and
+   deletes a probe file, so the result is verified rather than assumed.
 
-   **This is now automatic — the cell does it for you.** It prefers a
-   `/kaggle/working` copy, falls back to the mount, and if it ends up inside
-   `/kaggle/input` it copies the tree to `/kaggle/working/aashish-ai-portfolio`
-   before anything else runs. Then it writes and deletes a probe file, so the
-   result is verified rather than assumed. Attaching the Dataset and running the
-   notebook is the whole setup.
+   **Where a Dataset actually mounts.** Not at `/kaggle/input/<name>`: Kaggle puts
+   "Your Datasets" under **`/kaggle/input/datasets/<username>/<slug>/`**, which the
+   first real session discovered the hard way — the cell raised `SystemExit: No
+   repository found` before anything had run. It no longer guesses: two direct
+   paths (a clone, a manual copy), then a search of the mount for
+   `package.json` inside a directory that also has `training/notebooks/`.
 
-   The history is worth knowing, because the same assumption was wrong three times
-   in one day: the prose said the copy was optional, then the copy turned out to be
-   mandatory (a read-only mount), and then the notebooks turned out to prefer the
-   mount anyway. It is now checked by running the cell's own code in a temp tree
-   from both start states (`tests/py/test_notebook_refs.py::Workspace`) — which is
-   how a fourth bug was found before a GPU ever saw it, in
-   `str(pathlib.Path.cwd()).startswith('/kaggle/input')`: on Windows `str()` of a
-   `WindowsPath` uses backslashes, so the copy silently did not happen and the run
-   carried on into the read-only mount. `Path.is_relative_to` now.
+   Four wrong assumptions about this one filesystem were found in a single day —
+   the prose said the copy was optional; the copy turned out to be mandatory; the
+   notebooks preferred the read-only mount; and the mount path was wrong. The
+   fifth was in the fix for the fourth (`str(Path.cwd()).startswith('/kaggle/input')`
+   is false on Windows, because `str()` of a `WindowsPath` uses backslashes, so the
+   copy silently did not happen). All of it is now checked by running the cell's
+   real code in a temp tree from **three** start states — including the nested
+   Dataset path — in `tests/py/test_notebook_refs.py::Workspace`.
 
 Either way the run needs `training/`, `ai/`, `inference/` and `data/sources.json`,
 and it does **not** need `ai/model-export/` (git-ignored: 5 MB of shipped weights)
