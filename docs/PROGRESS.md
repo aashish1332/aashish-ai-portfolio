@@ -4117,3 +4117,110 @@ the marker scan `1 2 3 … 18` before and after · `tests/limitations.test.mjs` 
 not find` and `docs\FINAL_REPORT.md:401 cites limitation 12` ·
 `npm test` **533 pass / 0 fail** · `npm run test:py` **353 OK** ·
 `tests/py/test_docs_commands.py` (why the validator could not see it)
+
+---
+
+## P4 preflight: what the Kaggle session needs — and the two gates it no longer has to prove — 2026-09-30
+
+Preparing the P4/Kaggle run so it can be pasted and run meant reading the runbook
+against the machine, and the machine had changed under it.
+
+### Two things a paste-and-run needs that the runbook did not say
+
+**There is no git remote.** `git remote -v` prints nothing and the branch has no
+upstream, so the notebook's setup cell has nothing to clone — while the notebook
+already looks in `/kaggle/input/aashish-ai-portfolio` first, which is a Dataset's
+mount point. Both routes are now written down as §7.0 of `docs/TRAINING.md`, along
+with what a clone does *not* contain: `.gitignore` keeps out `data/raw/`,
+`data/extracted/`, `data/processed/`, `data/instruction/` and
+`training/checkpoints/`, so a fresh clone has no corpus and no run outputs — and the
+**seed fixture is not in the repository either** (`data/raw/seed/*.txt` comes from
+`make_seed_corpus.py`), while `ai/tokenizer/artifacts/seed-1k/` *is* tracked.
+
+**The licence gate is 9 of 9 blocked, and `TRAINING.md` said "5 of 5".** The live
+`fetch_corpus --check` prints *9 sources, 9 blocked*, and `docs/DATA_LICENSES.md`
+already said 9 of 9, so TRAINING.md was the stale copy. §7.4 now states the live
+count and points at DATA_LICENSES.md's table rather than restating it — one table,
+one place — plus the detail that decides the workflow: `--verify` **also enables**
+the source when its licence class permits (`verify_source` sets
+`enabled = not blocked_licence_classes(...)`), so one command per usable source is
+the whole unblock, and a NonCommercial licence is recorded and left disabled.
+
+### The finding that shrinks the Kaggle session: the two "deferred" gates run here
+
+TRAINING.md's P3 paragraph said *"PyTorch … is not installed on this machine, so they
+are recorded as UNVERIFIED here and are executed in P4 on Kaggle"*. PyTorch
+**2.14.0+cpu is installed** (`npm run params` materialises the module and compares it
+with the analytic count), and `docs/AI_ARCHITECTURE.md` states *"P3 complete (all
+three gates verified on CPU at smoke scale)"*. So the paragraph contradicted a
+sibling document **and** the machine.
+
+Run, rather than reasoned about, on 2026-09-30:
+
+```
+loss: 6.9452 → 4.5294 over 50 steps (11.8s, 0.24s/step)
+throughput: 2,161 tokens/s (128x4 per step)
+gate 'loss decreases': PASS (6.6847 → 4.3151)
+resumed from latest.pt at step 50 (loss history 50 entries, 27,648 tokens consumed)
+```
+
+Both previously deferred gates — *loss decreases* and *resume verified* — pass
+**locally**, at the 1.82M smoke config. That is a pipeline result, not a quality one,
+but it means the Kaggle session exists for exactly one reason: a real corpus and a
+GPU. It does not have to prove the loop learns, or that a resume continues the stream.
+§4, §5 and the P3 paragraph were corrected, and a new §7.5 says what to bring back —
+throughput → budget print → Stage A curve → Stage B mask numbers → §14 — because the
+session is only useful if those numbers return to this repository.
+
+### Two tools that invented the same missing dependency
+
+`train_smoke.py` printed, unconditionally, `PIPELINE-ONLY MODE (no torch on this
+machine)` and `UNVERIFIED (needs torch)`, and `train_stage_b.py` printed the same
+footer. `--pipeline-only` is a *request*: a machine with torch asks for it too, which
+is exactly what `npm run smoke` and `npm run sft:check` do here. So the output named a
+dependency the machine had — one line above the line where `npm run params`
+materialised the module and matched the analytic count.
+
+Both now say what the *pass* skipped and name the real reason, conditional on
+`have_torch()`: `NOT VERIFIED BY THIS PASS: 'loss decreases' and 'training loop
+resumes'.` followed by `torch is installed here — drop --pipeline-only to run them.`
+Two tests that had pinned the old wording now assert the banner **matches the
+machine**, which is the difference between an honest banner and a souvenir of one
+machine's configuration.
+
+### The licence headline is now machine-checked
+
+`docs/DATA_LICENSES.md` claimed that `tests/py/test_fetch_corpus.py` kept "this table"
+and the registry from drifting. It could not: every test in that file reads
+`data/sources.json`, and none of them read a markdown file. The headline count is now
+read from the docs and compared with the registry — `<N> of <M> sources blocked`,
+wherever it is written — with a second check that the headline still exists somewhere,
+so the guard cannot go quiet. Verified by putting the stale number back: it fails
+naming the file and line, `docs\TRAINING.md:390 says "5 of 5 sources blocked" but the
+registry has 9 of 9 blocked`.
+
+Writing that guard produced its own small lesson: the paragraph explaining the
+historical mistake cannot *quote* the stale number, because quoting it is itself a
+headline. `docs/DATA_LICENSES.md` says "five of five" in words.
+
+Then the same guard fired on **this file**. The entry you are reading quotes the old
+headline as evidence — `docs\TRAINING.md:390 says "5 of 5 sources blocked"` — and a
+regex cannot tell evidence from a claim. The repair is *not* to write it in words
+here too: **`docs/PROGRESS.md` is exempt, on purpose, and the exemption is named in
+the test with its reason beside it.** A dated log records what was true on the day it
+was written; forcing it to rewrite its own past to keep a guard green is the wrong
+repair, and it is how a check starts failing for a reason nobody believes. The living
+documents — README plus the other ten — are the ones that must not be able to
+disagree with the registry, and the mutation was re-run against `TRAINING.md` after
+the exemption to prove it still catches one.
+
+### Evidence
+
+`python -m training.scripts.fetch_corpus --check` → `9 sources, 9 blocked` ·
+`git remote -v` → empty · the smoke gate run and its `--resume auto --gate` rerun
+(§4 now quotes the same output) · `npm run smoke`, `npm run sft:check`,
+`npm run params` all green locally · `ai/governor` untouched ·
+`tests/py/test_fetch_corpus.TheDocsAgreeWithTheRegistry` (2 tests) ·
+`tests/py/test_train_scripts.PipelineOnly` and `tests/py/test_sft.StageBEntryPoint`
+(the banner-matches-the-machine assertions) · the docs-command validator still passes
+on the rewritten §7 · `npm test` **533**, `npm run test:py` **355**, 0 failures

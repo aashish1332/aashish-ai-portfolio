@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -607,6 +608,68 @@ class FetchLocal(unittest.TestCase):
             with self.assertRaises(fc.LicenceError) as ctx:
                 fc.fetch(source, Path(tmp) / "out", log=lambda *a: None)
             self.assertIn("revision", str(ctx.exception))
+
+
+class TheDocsAgreeWithTheRegistry(unittest.TestCase):
+    """The headline count written in the docs is checked; the rest is prose.
+
+    `docs/DATA_LICENSES.md` says the table and the machine record "cannot drift
+    apart silently". For the number that changes with every verification, that is
+    now true: this reads every `<N> of <M> sources blocked` written anywhere in
+    the docs and fails when it stops matching `data/sources.json`. It exists
+    because the sentence was already false once — `docs/TRAINING.md` carried
+    "5 of 5 sources are blocked" while the registry held nine, and every test in
+    this file passed, because they all look at the registry and none looked at
+    the prose.
+
+    The whole text is searched rather than line by line: a headline that reflows
+    across a line break would otherwise stop matching, which is the same silent
+    failure this is here to prevent.
+
+    `docs/PROGRESS.md` is **excluded on purpose**. It is a dated log, so a count
+    it records was true on the day it was written and stays true as history; this
+    check first fired on that file — on a new entry that quoted the old "5 of 5"
+    as evidence — and forcing a log to rewrite its own past to keep a guard green
+    is the wrong repair. The living documents are the ones that must not be able
+    to claim a count the registry disagrees with.
+    """
+
+    HEADLINE = re.compile(r"(\d+) of (\d+) sources (?:are )?blocked")
+
+    #: A dated log, where a past headline is a record rather than a claim.
+    EXEMPT = {"PROGRESS.md"}
+
+    def registry_counts(self) -> tuple[int, int]:
+        registry = fc.load_registry()
+        entries = fc.sources(registry)
+        blocked = sum(1 for source in entries if source.status() != "ready")
+        return blocked, len(entries)
+
+    def docs(self) -> list[Path]:
+        return [ROOT / "README.md",
+                *(p for p in sorted((ROOT / "docs").glob("*.md"))
+                  if p.name not in self.EXEMPT)]
+
+    def test_every_headline_matches_the_registry(self):
+        blocked, total = self.registry_counts()
+        for path in self.docs():
+            text = path.read_text(encoding="utf-8")
+            for match in self.HEADLINE.finditer(text):
+                said, of = (int(group) for group in match.groups())
+                line = text[:match.start()].count("\n") + 1
+                self.assertEqual(
+                    (said, of), (blocked, total),
+                    f"{path.relative_to(ROOT)}:{line} says \"{match.group(0)}\" but the "
+                    f"registry has {blocked} of {total} blocked")
+
+    def test_the_headline_is_still_written_somewhere(self):
+        """A validator that silently stops finding anything proves nothing."""
+        found = sum(len(self.HEADLINE.findall(p.read_text(encoding="utf-8")))
+                    for p in self.docs())
+        self.assertGreaterEqual(
+            found, 2,
+            "the licence headline has vanished from the docs — write it in words or "
+            "delete this test on purpose, but do not let it go quiet")
 
 
 if __name__ == "__main__":

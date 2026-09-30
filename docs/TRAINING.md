@@ -4,12 +4,15 @@ How to build the data, train the tokenizer, run the smoke test, and what
 exactly has and has not been verified. Every command below is runnable from
 the repository root.
 
-**P3 status.** The tokenizer, model code, parameter counter, data pipeline
-and checkpoint/resume machinery are built and tested. Two of P3's three
-gates — *loss decreases* and *resume verified* — require PyTorch, which is
-not installed on this machine, so they are recorded as **UNVERIFIED** here
-and are executed in P4 on Kaggle. What *is* verified locally is listed at
-the end of this file, with the commands that produce it.
+**P3 status.** The tokenizer, model code, parameter counter, data pipeline and
+checkpoint/resume machinery are built and tested, and **all three of P3's gates
+run on this machine** — PyTorch is installed here (`2.14.0+cpu`), so the two that
+were previously deferred, *loss decreases* and *resume verified*, were run locally
+on 2026-09-30 (§4 shows the output). That is a **pipeline** result at the 1.82M
+smoke config: it says the loop learns and that a resume continues the recorded
+stream, not that the model is any good. Quality still needs the P4 run, because it
+needs a real corpus and a GPU (§7). What is verified locally is listed at the end
+of this file, with the commands that produce it.
 
 ---
 
@@ -139,7 +142,7 @@ licensed corpus, within §7.2's 12–16k window (hard ceiling 32k in code).
 ## 4. The smoke train (§7.5)
 
 ```bash
-# what a machine without torch can run (this one):
+# needs no torch at all — this is the path CI runs:
 python -m training.scripts.train_smoke --pipeline-only
 
 # the real thing: 1.82M params, ~50 CPU steps, checkpoint every 10
@@ -154,11 +157,12 @@ python -m training.scripts.train_smoke --steps 50 --resume auto --gate
 
 It prints the analytic parameter count, builds the module and asserts the
 count matches, trains, evaluates on a fixed validation sample, and ends
-with:
+with (run on this machine, 2026-09-30, CPU):
 
 ```
-loss: 6.93 → 5.41 over 50 steps (…s, …s/step)
-gate 'loss decreases': PASS (window 5: 6.9 → 5.5)
+loss: 6.9452 → 4.5294 over 50 steps (11.8s, 0.24s/step)
+throughput: 2,161 tokens/s (128x4 per step)
+gate 'loss decreases': PASS (6.6847 → 4.3151)
 ```
 
 `--max-minutes` stops cleanly and checkpoints, for Kaggle session limits.
@@ -206,7 +210,7 @@ where the confusion happens, and `tests/py/test_model_schema.py` pins it.
 ## 5. Stage B — instruction tuning (§7.4)
 
 ```bash
-# what a machine with no torch can check (this one): the mask, shown, not claimed
+# the mask, shown rather than claimed — no torch involved:
 npm run sft:check
 
 # generate the data (40k examples, ~11 s)
@@ -358,6 +362,37 @@ missing extraction step, and (when the Stage B notebook was added) that
 `≥`, cp1252 cannot encode it, and the module never reconfigured stdout. The
 CLI was unrunnable on the platform it is developed on, and nothing had ever
 asked it for `--help`.
+
+### 7.0 Before the first session — two things that are not code
+
+**(a) Kaggle has to be able to read the repository.** This tree has **no git
+remote** (`git remote -v` prints nothing) and the branch is local with no
+upstream, so the setup cell has nothing to clone yet. Pick one:
+
+1. **Push the branch**, then clone it in the setup cell at a recorded commit.
+   `RUN_MANIFEST.json` records `git_commit`, so the commit you choose is what
+   makes a run reproducible rather than merely repeatable.
+2. **Attach the tree as a Kaggle Dataset.** The notebook's setup cell already
+   looks in `/kaggle/input/aashish-ai-portfolio` first — a Dataset's mount point
+   — so uploading and attaching it needs no edit to the notebook.
+
+Either way the run needs `training/`, `ai/`, `inference/` and `data/sources.json`,
+and it does **not** need `ai/model-export/` (git-ignored: 5 MB of shipped weights)
+or any of the data directories.
+
+**What a clone does not have.** `.gitignore` excludes `data/raw/`,
+`data/extracted/`, `data/processed/`, `data/instruction/` and
+`training/checkpoints/`, so a fresh clone starts with no corpus and no run outputs —
+which is what §7.1 and §7.1a are for. It also means the **seed fixture is not in
+the repository**: `data/raw/seed/*.txt` is produced by
+`training/scripts/make_seed_corpus.py`, so the offline fixture path begins with that
+command. The one artifact that *is* tracked is `ai/tokenizer/artifacts/seed-1k/`
+(`tokenizer.json` + `meta.json`), which is what the smoke and export scripts default
+to.
+
+**(b) The licence gate has to be signed first, and that is §7.1.** It is not a
+formality: **9 of 9 sources blocked** today, and the run stops at the first fetch
+until a named person records the terms they actually read.
 
 ### 7.1 The licence gate comes first
 
@@ -523,18 +558,84 @@ so an interrupted run is a resume rather than a loss.
 ### 7.4 What is still blocked on a decision
 
 Everything above is code that exists and is tested without torch. What remains
-is genuinely not mine to decide: putting a name on the licence verifications
-(5 of 5 sources are blocked today — the terms were *looked up* and recorded as
-`observed`, which is research, not a signature; one candidate, L3Cube-HingCorpus,
-turned out to be NonCommercial and is dropped), and the Kaggle account/quota to
-run on.
+is not mine to decide.
+
+**The licence gate is the first wall, and it is a signature: 9 of 9 sources
+blocked** (live output of `python -m training.scripts.fetch_corpus --check`,
+2026-09-30). Every candidate's terms, the page each was observed on and the verdict
+on each are in [DATA_LICENSES.md](DATA_LICENSES.md) — one table, in one file, so
+that is the place to read and the place to update. The short version:
+
+* **Usable if you confirm them** — Hindi Wikipedia and Simple English Wikipedia
+  (`CC-BY-SA-4.0`; ShareAlike is not NonCommercial, and the attribution attaches to
+  the corpus we build), AI4Bharat Sangraha (`CC-BY-4.0`, and a revision still has to
+  be pinned), TinyStories (`CDLA-Sharing-1.0`, with a **provenance duty** — it is
+  entirely GPT-3.5/4 output, so the licence is not the live question).
+* **Dropped by class** — L3Cube-HingCorpus and DailyDialog are `CC-BY-NC-SA-4.0`.
+  `allow_noncommercial` is false, and the default is to refuse.
+* **Unresolved on purpose** — PersonaChat: a mirror claims a licence the original
+  release does not state.
+
+`--check` prints the exact `--verify` command for each source, including the SPDX id
+and the page that was observed, so there is nothing to compose by hand. Verifying a
+source **also enables it** when its licence class permits (`verify_source` sets
+`enabled = not blocked_licence_classes(...)`), so one command per usable source is
+the whole unblock. A NonCommercial licence is recorded and left disabled — no amount
+of reading fixes that one.
+
+**The consequence, stated before the GPU hours are spent: there is no usable human
+Roman-Hinglish source.** L3Cube-HingCorpus was the only human code-mixed candidate
+and it is NonCommercial, so Stage A's Hinglish comes from programmatic text alone.
+§14's HI/Hinglish gate will be the weakest of the three however many hours the run
+gets — that is limitation 11 in [FINAL_REPORT.md](FINAL_REPORT.md), and hardware does
+not change it. The other thing worth knowing before listening to samples: a model
+trained on simplewiki and TinyStories reads as **fluent and slightly encyclopedic**,
+which is a property of the corpus rather than evidence that the architecture failed.
+
+The remaining decisions are the Kaggle account and quota to run on, and — after the
+run — the P4 gate itself.
+
+### 7.5 What to bring back
+
+A run is only useful if its numbers come back here, because §14's grades and the
+ABOUT card's status text are coupled to `docs/EVALUATION.json`. Four things, in
+order, and none of them needs the checkpoint to travel:
+
+1. **Throughput, from the smoke run** — the `tokens_per_second` line, or the whole
+   `/kaggle/working/smoke.json` (`--json` writes it). That one measurement is what
+   makes §9 a decision instead of a guess.
+2. **The budget print** — `estimate_budget` turns that measurement into hours, and
+   the number it prints is the one to size the session to, not an intuition from a
+   local card.
+3. **The Stage A loss curve, step count and tokens consumed** — from the training
+   JSON and `RUN_MANIFEST.json`. "Loss decreases" is P3's gate, and the 1.82M smoke
+   config already passes it here (§4); what the P4 curve adds is whether the *same*
+   loop still learns at 37.9M params on the real corpus, at what throughput, and for
+   how many steps the quota buys.
+4. **The Stage B mask numbers** — total tokens and supervised share from
+   `RUN_MANIFEST.json`. At the `local` config that measured 10.9 % supervised
+   against a manifest estimate **31 % low**, so it is worth reading rather than
+   assuming.
+
+Then §14, on the machine that holds the checkpoint:
+
+```bash
+npm run sample:answers
+npm run eval:prompts && npm run eval:export && npm run eval:decode && npm run eval:report
+```
+
+`eval:report` writes `docs/EVALUATION.json` with the gate verdict, and that file is
+exactly what the panel's status line is coupled to: `tests/disclosure.test.mjs`
+refuses the word "trained" while those gates fail. So the honest end state of a
+successful P4 is not "the gates pass" — it is "the gates pass **and** the disclosure
+changed with them", and `npm test` is what proves it rather than a memory of it.
 
 ## Verification
 
 Run everything (no torch required; ~35 s for the JS suite, ~70 s for Python):
 
 ```bash
-npm run test:all          # 533 JS tests + 353 Python tests (0 skip: torch is installed)
+npm run test:all          # 533 JS tests + 355 Python tests (0 skip: torch is installed)
 npm run params            # analytic parameter counts + each config's own band gate
 npm run smoke             # tokenizer contract, shards, cursor, checkpoints
 npm run export:model      # checkpoint → browser artifact + parity fixture

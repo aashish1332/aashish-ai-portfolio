@@ -46,9 +46,18 @@ python -m training.scripts.fetch_corpus --verify hindi_wikipedia \
 
 `--verify` requires a concrete SPDX id (writing `UNKNOWN` or `NONE` into the
 flag is refused), the URL that was actually read, and who read it. Verifying
-a source also enables it, and `tests/py/test_fetch_corpus.py` asserts that no
-third-party source is enabled without a verified licence — so this table and
-that file cannot drift apart silently.
+a source also enables it, and `tests/py/test_fetch_corpus.py` asserts two things
+about the result: that no third-party source is enabled without a verified
+licence, and that the headline below — *"N of M sources blocked"* — still matches
+`data/sources.json`.
+
+So the one number on this page that changes with every verification cannot go
+stale in silence. The per-source verdicts are prose read by a person, and this
+paragraph previously implied otherwise by crediting the test with keeping "this
+table" in step: it keeps the registry honest, and it never read a markdown file.
+The gap was real — `docs/TRAINING.md` announced *five of five* sources blocked
+while the registry held nine, and every test passed, because they all read the
+registry and none read the prose.
 
 Today: **9 of 9 sources blocked** (the portfolio-derived Stage B generator is
 verified but not yet enabled, because it does not exist yet; the other eight
