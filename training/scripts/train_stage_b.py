@@ -166,8 +166,11 @@ def pipeline_checks(args) -> int:
           f"{val_supervised:,} supervised tokens")
 
     print("  " + "─" * 66)
-    print("  UNVERIFIED (needs torch): 'the masked loss decreases' and 'the loop resumes'.")
-    print("  Run the same command with torch installed, or on Kaggle (P4).")
+    print("  NOT VERIFIED BY THIS PASS: 'the masked loss decreases' and 'the loop resumes'.")
+    if have_torch():
+        print("  torch is installed here — drop --pipeline-only to run them.")
+    else:
+        print("  torch is not installed on this machine; they run on Kaggle (P5/P4).")
     return 0
 
 

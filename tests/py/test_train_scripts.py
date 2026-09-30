@@ -95,8 +95,10 @@ class StageADefaults(unittest.TestCase):
 
 
 class PipelineOnly(unittest.TestCase):
-    """The torch-free path must stay runnable: it is what CI and this machine
-    can execute, and what the docs claim."""
+    """The torch-free path must stay runnable: it is what CI executes, and what
+    the docs claim. `--pipeline-only` is a *request*, not a statement about the
+    machine — a box with torch asks for it too, so the banner has to say what
+    this pass skipped without inventing a missing dependency."""
 
     def test_runs_end_to_end_on_the_committed_fixture(self):
         buffer = io.StringIO()
@@ -105,8 +107,16 @@ class PipelineOnly(unittest.TestCase):
         text = buffer.getvalue()
         self.assertEqual(code, 0)
         self.assertIn("PIPELINE-ONLY MODE", text)
-        self.assertIn("UNVERIFIED (needs torch)", text,
+        self.assertIn("NOT VERIFIED BY THIS PASS", text,
                       "the honest banner is part of the contract, not decoration")
+        # ...and the *reason* has to match the machine. Asserting "needs torch"
+        # here is how this suite passed for a revision while the box had torch
+        # installed and the tool said it did not.
+        if train_smoke.have_torch():
+            self.assertIn("torch is installed here", text)
+            self.assertNotIn("torch is not installed", text)
+        else:
+            self.assertIn("torch is not installed on this machine", text)
         self.assertIn("data cursor", text)
 
     def test_a_missing_tokenizer_says_what_to_run(self):

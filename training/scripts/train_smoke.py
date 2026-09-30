@@ -57,7 +57,7 @@ def have_torch() -> bool:
 # ── torch-free path ──────────────────────────────────────────────────
 def pipeline_checks(tokenizer, meta, shards: dataset.ShardSet, cfg, run_dir: Path) -> dict:
     """Everything about the run that is verifiable with no framework installed."""
-    print("\n  PIPELINE-ONLY MODE (no torch on this machine)")
+    print("\n  PIPELINE-ONLY MODE (this pass does not run the training loop)")
     print("  " + "─" * 62)
 
     checks = spec.assert_tokenizer_contract(tokenizer, spec.load_kb())
@@ -66,8 +66,8 @@ def pipeline_checks(tokenizer, meta, shards: dataset.ShardSet, cfg, run_dir: Pat
 
     counts = plan.counts(cfg)
     print(f"  ✓ parameter count (analytic): {counts['total']:,} "
-          f"({counts['total'] / 1e6:.2f}M) — printed, not measured; no torch to "
-          f"materialise the module")
+          f"({counts['total'] / 1e6:.2f}M) — printed, not measured: this pass does "
+          f"not materialise the module")
     print(f"    embeddings {counts['embeddings']:,} · attention {counts['attention']:,} "
           f"· mlp {counts['mlp']:,} · norms {counts['norms']:,}")
 
@@ -109,8 +109,11 @@ def pipeline_checks(tokenizer, meta, shards: dataset.ShardSet, cfg, run_dir: Pat
 
     verify_resume_semantics(manager)
     print("  " + "─" * 62)
-    print("  UNVERIFIED (needs torch): 'loss decreases' and 'training loop resumes'.")
-    print("  Run the same command with torch installed, or on Kaggle (P4).")
+    print("  NOT VERIFIED BY THIS PASS: 'loss decreases' and 'training loop resumes'.")
+    if have_torch():
+        print("  torch is installed here — drop --pipeline-only to run them.")
+    else:
+        print("  torch is not installed on this machine; they run on Kaggle (P4).")
     return {"mode": "pipeline-only", "checks": "passed",
             "unverified": ["loss decreases", "checkpoint resume under a real optimizer"]}
 

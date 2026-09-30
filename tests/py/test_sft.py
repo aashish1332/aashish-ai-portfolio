@@ -264,7 +264,12 @@ class StageBEntryPoint(unittest.TestCase):
             self.assertIn("vocab_size", str(ctx.exception))
 
     def test_pipeline_only_runs_without_torch(self):
-        """The torch-free path is the only one a machine like this can run."""
+        """Needs no torch, and says what it therefore did not verify.
+
+        The message is checked against this machine rather than pinned: the
+        banner used to read "UNVERIFIED (needs torch)" on a box that had torch,
+        which is a claim the tool could not support.
+        """
         import contextlib
         import io
 
@@ -277,7 +282,11 @@ class StageBEntryPoint(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("loss is on:", output)
         self.assertIn("cursor: resuming yields", output)
-        self.assertIn("UNVERIFIED (needs torch)", output)
+        self.assertIn("NOT VERIFIED BY THIS PASS", output)
+        if train_stage_b.have_torch():
+            self.assertIn("torch is installed here", output)
+        else:
+            self.assertIn("torch is not installed on this machine", output)
 
 
 if __name__ == "__main__":
