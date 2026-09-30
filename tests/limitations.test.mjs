@@ -21,10 +21,13 @@
 
    Each of the three fires on the original defect; checked by putting it back.
 
-   `item N` is deliberately NOT checked: the phrase is ambiguous ("§18
-   checklist, item by item"), so a regex for it would eventually fail on
-   prose that is not a reference. The two `item N` references that exist
-   both point at this list and are correct as written.
+   `item N` is deliberately NOT checked: the phrase is ambiguous — there are
+   two of them and they point at *different* lists (`unlike item 14` here,
+   and `+ item 6` at FINAL_REPORT's WHAT I NEED FROM YOU) — and "§18
+   checklist, item by item" is prose, not a reference. A regex for `item N`
+   would eventually fail on one of those. That second list (7 items, cited
+   twice from docs/PROGRESS.md) is left to the eye; it is short, it lives in
+   the same file, and it has never drifted.
    ═══════════════════════════════════════════════════════════════ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
