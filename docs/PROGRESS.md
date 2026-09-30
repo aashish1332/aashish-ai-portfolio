@@ -3787,3 +3787,105 @@ drift defect, now fixed), `SW_GL=1` **55/58 before → 57/58 after** the NOTICE 
 `dev-offline-probe.js:95` · `ai/engine/index.mjs:16,46,191,212` ·
 `ai/engine/worker.mjs:26,61,80` · `ai/engine/session.mjs:89–102` ·
 `ai/ui/chat.mjs:302,1034` (`noticeOnce`, the rung-3 stop text)
+
+---
+
+## The Python suite, swept the same way: no dead fixtures, and a green run really did run all 353 — 2026-09-30
+
+The JS suite and the five tally probes have been swept for *claims wider than
+their checks*. `tests/py` — **353 tests**, the other half of `npm run test:all` —
+had not been. Two throwaway AST scanners did the structural half (both deleted
+afterwards; neither is a test), and hiding each third-party package did the rest.
+
+### 1. Nothing is built that nothing asserts on
+
+Scanned for: module-level non-`test` helpers, non-`test` methods, and `self.X`
+assigned but never read. **Zero findings** — but only after fixing the scanner's
+own bug first. Its initial `mentioned <= 1` threshold flagged anything named once,
+which printed five false positives (`script_target`, `target_file`, `assigned_in`,
+`Measurement._rate_bounds`, `GqaFallbackIsReachable._forward_with_strict_sdpa`);
+at `== 0` all five are referenced exactly once and disappear. A scanner that
+reports a defect it invented is the same failure mode as a check that cannot fail.
+
+The remaining names in that report are not test state: `self.CFG`, `self.base`,
+`self.REGISTRY` are **class attributes** (a plain `Assign`, not an attribute
+store), and `self.write`, `self.run_export` are methods. The only genuine
+write-only attributes in the suite are `FakeResponse.status` / `.closed`
+(`test_fetch_corpus.py:454`) — and `status` *is* read, by the code under test
+(`fetch_corpus.download` does `getattr(response, "status", 200)`); `.closed` is
+set by `__exit__` and read by nobody, on either side. Dead, but harmless: no
+assertion depends on it.
+
+**353 test methods; exactly one has no assertion call at all**:
+`ModelModuleImports.test_module_imports` (`test_model_torch.py:57`). Its subject is
+*"importing the module must not need an introspectable SDPA"* — the import
+raising is the failure, which is a real check, not a vacuous one. Left alone.
+
+The tolerance axis is clean too: the suite's only `delta=` is
+`assertAlmostEqual(fp32Bytes, fp16Bytes * 2, delta=8)` — eight bytes on a
+half-aligned tensor, i.e. tight and meaningful. And the only two `mock.patch`
+sites (`test_model_torch.py:144–146,166`) both force the **`repeat_kv` fallback**
+that this torch would otherwise never reach, which is the one thing a mock should
+be doing here.
+
+### 2. The ablation matrix — the part that could actually have hidden something
+
+The question that matters for a suite: *can a missing dependency make it green?*
+Measured by putting an `ImportError`-raising stub of each package on `PYTHONPATH`:
+
+| package hidden | result |
+| --- | --- |
+| `torch` | `Ran 353 … OK (skipped=30)` |
+| `pyarrow` | `Ran 353 … FAILED (errors=6)` |
+| `tokenizers` | `Ran 339 … FAILED (errors=17, skipped=13)` |
+| `numpy` | `Ran 225 … FAILED (failures=17, errors=11, skipped=23)` |
+
+Nothing goes green. `torch` is the only genuinely optional one — the suite's own
+policy (`@unittest.skipUnless(HAS_TORCH, …)`) is right — and even then it keeps
+`Ran 353`, so the skips are visible in the tally rather than silent. The invariant
+worth stating: **`Ran` equals 353 exactly when the run is green.** In every red
+case the count has already shrunk, so there is no window where a green `OK`
+conceals tests that never ran.
+
+### 3. Why 14 tests vanish, and why that is benign
+
+`numpy` hiding 128 tests and `tokenizers` hiding 14 looks alarming. It is
+unittest's class-level behaviour, verified on a scratch case rather than assumed:
+`raise unittest.SkipTest` inside `setUpClass` prints **`Ran 0 tests`** and counts
+as **one** skip for the whole class. So the drop is not a swallowed failure — it
+is the price of a fixture that could not be built, and it only ever happens
+alongside an error count that already makes the run red (the 6 in `pyarrow`, the
+17 in `tokenizers`).
+
+### 4. The one real inconsistency found, and where it went
+
+`tests/py/test_tokenizer_train.py` treats the `tokenizers` package as
+**optional** (`@unittest.skipUnless(HAS_TOKENIZERS, …)`). But `test_sft.py`
+(`SftCase`, `SftStreamCursor` — 14 tests), `test_pipeline.py`, `test_export_browser.py`,
+`test_tokenizer_spec.py`, `test_instruction.py` and `test_train_scripts.py` all
+reach `ai/tokenizer/train.py:load()`, which does `from tokenizers import Tokenizer`
+with **no fallback**, and so they **error** when it is absent. Same question — *what
+if the package is missing?* — answered two different ways in one suite.
+
+The root cause is not the tests: **no dependency is declared anywhere in the
+repository.** There is no `pyproject.toml`, no setup file, no lock; the only
+install hints are two prose lines inside scripts (`train_smoke.py:482`,
+`fetch_corpus.py:325`). A fresh clone cannot know that four packages are needed,
+or which of them is optional — which is exactly why one module skips and five
+error. Closing it where the repo already documents how to run Python: a new
+**§0 Python environment** in `docs/TRAINING.md`, with the measured table above, the
+install line, and the two lines that make it useful — a red `tokenizers` failure
+means *install the package*, not *the code regressed*, and torch's absence is a
+skip rather than a failure. `pip install …` inside a fenced block is not picked up
+by `test_docs_commands.py` (`MODULE_RE`/`SCRIPT_RE` only match `python …`), and the
+validator still reports **10 tests OK**.
+
+### Evidence
+
+`python tests/py/_unused_scan.py` and `_assertless_scan.py` (throwaway, deleted) ·
+`python -m unittest discover -s tests/py -t .` → `Ran 353 … OK` · the same command
+with `.tmp-block-{torch,tokenizers,numpy,pyarrow}/<pkg>.py` on `PYTHONPATH` → the
+four rows of the table · the scratch `setUpClass` case → `Ran 0 tests … OK
+(skipped=1)` · `python -m unittest tests.py.test_docs_commands -v` → 10 OK ·
+`test_model_torch.py:57,144–146,166` · `test_fetch_corpus.py:454–476` ·
+`ai/tokenizer/train.py:156–163` · `training/scripts/fetch_corpus.py:246–292`
