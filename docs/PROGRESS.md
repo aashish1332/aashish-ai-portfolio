@@ -3256,13 +3256,13 @@ is a result, and because two of the entries are *nearly* gaps:
 | §6.4 unload the LLM after close + idle (~2 min) | **implemented** — `unloadLater()` on `close()`, `120_000` ms, then `session.dispose()`. Model files stay in Cache Storage, which is what makes the reload cheap (§9.3, `dev-offline-probe.js`) |
 | §6.4 "at most two wasm runtimes" | **compliant by construction and worth saying plainly**: this build has **zero** wasm runtimes. The engine is scalar JS, the recogniser and speaker are the browser's, and the VAD is our own energy code. The clause is a ceiling we are nowhere near, not a constraint we engineered against |
 | §6.4 iOS caution (treat iOS as T1–T2) | **true by construction, not by name** — and that distinction is the finding. Nothing clamps on user-agent: an iPhone/iPad reports a **coarse pointer**, which `chooseTier` treats as a thin device → T1, and T3 additionally requires a *reported* ≥ 8 GB (iOS Safari reports no `deviceMemory`), so T3 is unreachable there. So the outcome the clause asks for is where the heuristics land anyway. A real iPhone has still never run this — see `docs/FINAL_REPORT.md` limitations |
-| §6.5 network and storage etiquette | **mostly gated, with one surface of the §3/§10 deviation** — the size is always shown before the download starts (`chat.mjs`'s progress line names it), `navigator.storage.estimate()` feeds `chooseTier`'s quota blocker, a quota error or an evicted/corrupt cache is repaired by `loadWithCacheRecovery` (drop that version's cache, re-download once), shards are SHA-256-verified through SubtleCrypto, progress streams from the worker, and §6.5's ~8 MB shard cap is now a **gate** rather than a claim: `tests/build-bundle.test.mjs` asserts the shard's **raw** bytes, which the gzip budgets above cannot see, and the check was mutation-tested by lowering the cap to 1 KB (it fails naming the 5,059,584 B shard). **Two sub-clauses are not built and are recorded as such:** *parallel download* is moot (one shard), *resumable* is not implemented (a partial shard restarts; the integrity-repair path above is the recovery). *Low fetch priority* is deliberately not used, and the reason is the same retirement: §6.5 assumes "while they run, Quick Answers already works", which is what makes deprioritising the download free — with that answerer retired the model download **is** the foreground task, so the build announces the size and starts at normal priority. The *choice* UI §6.5 asks for ("Download ≈NN MB / Use quick answers") is the third surface of the §3/§10 retirement: with Quick Answers gone, the only alternative it could honestly offer is nothing |
+| §6.5 network and storage etiquette | **mostly gated, with one surface of the §3/§10 deviation** — the size is always shown before the download starts (`chat.mjs`'s progress line names it), `navigator.storage.estimate()` feeds `chooseTier`'s quota blocker, a quota error or an evicted/corrupt cache is repaired by `loadWithCacheRecovery` (drop that version's cache, re-download once), shards are SHA-256-verified through SubtleCrypto, the progress **events** come from the worker (per shard, not per byte — see below), and §6.5's ~8 MB shard cap is now a **gate** rather than a claim: `tests/build-bundle.test.mjs` asserts the shard's **raw** bytes, which the gzip budgets above cannot see, and the check was mutation-tested by lowering the cap to 1 KB (it fails naming the 5,059,584 B shard). **Three sub-clauses are not built and are recorded as such:** *parallel download* is moot (one shard); *resumable* is not implemented (a partial shard restarts; the integrity-repair path above is the recovery); and the *streaming* half of "progress via streaming `fetch`" is not implemented, which is the one of the three a visitor can see. The loader reads each shard with `response.arrayBuffer()` and reports only **after** it lands, so with one 5,059,584 B shard the weights stage emits exactly **two** updates — `loaded=0`, then `loaded=5059584` (measured against the shipped export, which emits 5 events end to end). The progress line therefore sits at "0.0 MB of 4.8 MB" for the duration of the download and then completes; on broadband that duration is about a second, and the clause's value would be on the slow connection where it is longest. *Low fetch priority* is deliberately not used, and the reason is the same retirement: §6.5 assumes "while they run, Quick Answers already works", which is what makes deprioritising the download free — with that answerer retired the model download **is** the foreground task, so the build announces the size and starts at normal priority. The *choice* UI §6.5 asks for ("Download ≈NN MB / Use quick answers") is the third surface of the §3/§10 retirement: with Quick Answers gone, the only alternative it could honestly offer is nothing |
 | §7.1 architecture (RoPE, GQA, RMSNorm, tied embeddings), §7.2 the tokenizer, §7.3 Stage A, §7.4 Stage B, §7.5 training engineering | **built and run** — the trained-shape pipeline works end to end at the `local` config (Stage A 1,100 steps, Stage B 60 with assistant-only loss), the forward pass is cross-checked torch ↔ numpy ↔ JS (argmax 100 %), the tokenizer has its own spec tests, and resume/checkpointing/eval are exercised by `tests/py/test_train_scripts.py`. What §7 has **not** delivered is quality, and that is the GPU item, not a missing clause |
 
 The honest summary of the sweep so far: §2 (eight rules, one deviation), §5 (clause
 audited and **honoured**, not a deviation — see the §5 section at the end of this
-file), §6.1–§6.4 and §7 (nothing unbuilt), §6.5 (gated, two sub-clauses not built
-and named above), §11.1 (all five initiative clauses built),
+file), §6.1–§6.4 and §7 (nothing unbuilt), §6.5 (gated, three sub-clauses not
+built and named above), §11.1 (all five initiative clauses built),
 §14 (measured, failing, at a scale that cannot pass), §15/§16/§17/§18/§19
 (rolled up). Every one of them is now a table with the thing that would fail
 next to it, which is the only form of "done" that survives a second reader.
@@ -3966,3 +3966,73 @@ per-file counts of `say(`/`record(`/`check(` across `dev-*.js` (5 files non-zero
 20, 13, 8, 12) · `docs/BENCHMARKS.md:917,1096,1145,1215` (which probes the docs
 actually cite as evidence — `dev-error-probe.js` is cited by none, only wired to
 `npm run probe` in `package.json`)
+
+---
+
+## §6–§10 re-read against the code: two checkable claims held, and one enumeration was a count short — 2026-09-30
+
+The coverage tables already name §6.1–§6.5, §7.1–§7.5, §8.2, §8.4, §9 and §10, so
+this pass aimed at the clauses whose claim is *checkable* rather than arguable — a
+**number** the spec states, or an **enumeration** the code should satisfy item by
+item. Both numbers held. The enumeration did not.
+
+### §8.3's "≥ 100 deterministic test cases" — holds, and is not padded
+
+`tests/language.test.mjs` asserts `CASES.length >= 100` **and** generates one
+`test()` per row asserting that row's exact verdict, so the count cannot be met by
+repeating a case. Counted anyway, because a guard and its table can drift: **106
+rows, 106 distinct inputs**. That pairing is the right shape — `>= 100` on its own
+would have been satisfied by 106 copies of one sentence.
+
+### §6.1's probe list — complete except the one flag the code cannot honour
+
+Present and probed: worker (+Blob+createObjectURL), wasm, SIMD (validated by
+*compiling a real module*, with a comment recording that the first byte array was
+malformed and forced every device to T0), `crossOriginIsolated`, threads, memory +
+`memoryReported`, `saveData`, `effectiveType`, storage bytes, coarse pointer,
+reduced motion, and WebGPU through the async `requestAdapter`. `benchmarkMs` has a
+real producer — `runBenchmark` in `ai/ui/chat.mjs`, a Worker named `ai-bench` — and
+the speech pair sits where the speech does: `ai/voice/caps.mjs` finds the
+constructor, `ai/voice/index.mjs:258` calls `available({ processLocally: true,
+langs })`, `getVoices` at 480. The one listed item with no flag is **"`fetch`
+streaming"** — and that is the honest state of the code, not a missing probe:
+nothing streams (below).
+
+### §6.5 — the bullet has five items, three are unbuilt, and the audit said two
+
+§6.5's line is *"Shards ≤ ~8 MB, parallel download, resumable, SHA-256 verified
+(SubtleCrypto), progress via streaming `fetch`."* The audit row named *parallel* and
+*resumable* as not built and called that **two**. The *streaming* half of the last
+item is a third, and it is the only one of the three a visitor can see.
+
+Measured rather than inferred, by driving the real loader against the real export
+with a file-backed `fetch`: the whole load emits **5** events, and the weights stage
+emits **two** — `loaded=0`, then `loaded=5059584` — because
+`ai/engine/manifest.mjs` reads each shard with `response.arrayBuffer()` and reports
+after it lands, and the shipped manifest has **one** shard of 5,059,584 B. So the
+progress line the shell writes (`chat.mjs`, `Downloading the on-device model —
+0.0 MB of 4.8 MB`) sits at zero for the entire download and then completes; on
+broadband that is about a second, and the clause's value would be exactly where it
+is missing.
+
+The two edits are the count (`Two` → `Three`, plus the item and the measurement)
+and one wording fix: "progress streams from the worker" was true of the *events*
+and misleading about the *bytes*, so it now reads "the progress **events** come from
+the worker (per shard, not per byte)". Listing the item is the right fix rather
+than building it: the same paragraph already records that *parallel* and *resumable*
+are not built at one shard, and a byte-level reader would be a loader change whose
+whole payoff is a few seconds of a second-long download. If the model ever ships
+more than one shard, the clause starts mattering and this line is where it will be
+found.
+
+### Evidence
+
+`tests/language.test.mjs:1–2,138` and the generated per-case `test()` at 141 · the
+106/106 distinct count (scratch regex over the table, deleted) ·
+`ai/governor/index.mjs:75–129` (`probeCapabilities`), `:113` (`SIMD_PROBE_BYTES`),
+`:131` (`hasSimd`), `:133` (`probeWebGPU`) · `ai/ui/chat.mjs:34,60,1377` (the §6.1
+micro-benchmark) · `ai/voice/caps.mjs:39`, `ai/voice/index.mjs:258,480` ·
+`ai/engine/manifest.mjs:120–133` (`arrayBuffer` + the per-shard `onProgress`) ·
+`ai/model-export/aashish-ai-1/manifest.json` (1 shard, 5,059,584 B) · the loader run
+→ `weights-stage events: 2 (0, 5059584)`, `5` events end to end ·
+`ai/ui/chat.mjs:1307–1311` (the label text)
