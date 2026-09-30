@@ -250,10 +250,19 @@ def filter_reasons(text: str) -> list[str]:
 
 
 def build_corpus(lines, source: str = "", kb_values: dict[str, str] | None = None,
-                 dedupe_threshold: float = NEAR_DUP_THRESHOLD) -> tuple[list[Record], Stats]:
-    """Run steps 1–5 over raw lines. Pure; returns records + honest stats."""
+                 dedupe_threshold: float = NEAR_DUP_THRESHOLD,
+                 deduper: "Deduper | None" = None) -> tuple[list[Record], Stats]:
+    """Run steps 1–5 over raw lines. Pure; returns records + honest stats.
+
+    `deduper` exists so the *scope* of deduplication can be chosen by the caller.
+    A caller that processes several sources must pass one shared `Deduper`, or
+    near-duplicates that straddle two sources are never compared — while
+    `leakage_report`, which is always whole-corpus, still looks for them. That
+    mismatch is not cosmetic: it makes a train/val leak possible that no per-source
+    dedupe can remove, and the pipeline then refuses the corpus it just built.
+    """
     stats = Stats()
-    deduper = Deduper(dedupe_threshold)
+    deduper = deduper or Deduper(dedupe_threshold)
     records: list[Record] = []
 
     for raw in lines:

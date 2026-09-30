@@ -73,8 +73,22 @@ def prepare(raw_dir: Path, out_dir: Path, tokenizer_dir: Path | None = None,
     records = []
     stats = pipeline.Stats()
     per_source: dict[str, dict] = {}
+    # One `Deduper` across every source, not one per source.
+    #
+    # The dedupe is a near-duplicate check and `leakage_report` is a whole-corpus
+    # one, so the two must have the same *scope*. With a deduper per source, a
+    # document in one source that near-duplicates a document in another is never
+    # compared — and if the split then puts those two on opposite sides of the
+    # train/val line, `leakage_report` finds a leak that nothing could have
+    # removed, and the pipeline refuses the corpus it just built. The first real
+    # corpus hit exactly this: 883,880 documents, `exact 0, near 1`, refused.
+    #
+    # Per-source *statistics* are unaffected: each call still counts its own
+    # drops, so `by_source` stays meaningful.
+    deduper = pipeline.Deduper()
     for name, lines in by_source.items():
-        recs, src_stats = pipeline.build_corpus(lines, source=name, kb_values=masked)
+        recs, src_stats = pipeline.build_corpus(lines, source=name, kb_values=masked,
+                                                deduper=deduper)
         records.extend(recs)
         per_source[name] = src_stats.as_dict()
         stats.seen += src_stats.seen

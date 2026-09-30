@@ -18,6 +18,7 @@ is downloaded.
 from __future__ import annotations
 
 import bz2
+import hashlib
 import io
 import json
 import sys
@@ -388,6 +389,82 @@ class ConnectsToThePipeline(unittest.TestCase):
             self.assertIn("no .txt files", message)
             self.assertIn("ai.data.extract", message,
                           "the error must name the step that fixes it")
+
+
+class TheDedupeScopeMatchesTheLeakageCheck(unittest.TestCase):
+    """Dedupe and the leakage check must see the same corpus, or the check finds
+    what the dedupe could not have removed.
+
+    The first real corpus stopped here: 883,880 documents from two Wikipedia dumps,
+    `leakage: CONTAMINATED (exact 0, near 1)`, refused. `build_corpus` was called
+    once per source, so each source had its own `Deduper` and a pair straddling two
+    sources was never compared — while `leakage_report`, which is always
+    whole-corpus, still looked for it. The leak is then unfixable by deduplication:
+    nothing in a per-source scope can collapse a cross-source pair, so the pipeline
+    refuses a corpus that is otherwise fine.
+
+    The fixture asserts its own premise first. A near-duplicate pair only causes
+    this if the two documents land in the same min-hash bucket, so the test checks
+    that they do; otherwise it would pass by testing nothing at all.
+    """
+
+    def _pair(self):
+        """Two long texts differing only at the very end, so they share a bucket."""
+        from ai.data import pipeline
+
+        body = " ".join(f"token{i:02d}word" for i in range(60))
+        first = f"{body} original closing sentence"
+        second = f"{body} a different closing sentence"
+
+        sh_first, sh_second = pipeline.shingles(first), pipeline.shingles(second)
+        self.assertGreaterEqual(pipeline.jaccard(sh_first, sh_second),
+                                pipeline.NEAR_DUP_THRESHOLD,
+                                "fixture: the pair must actually be a near-duplicate")
+        bucket_of = lambda sh: min(hashlib.sha1(s.encode("utf-8")).hexdigest()
+                                   for s in sh)[:8]
+        self.assertEqual(bucket_of(sh_first), bucket_of(sh_second),
+                         "fixture: the pair must share a bucket, or neither the "
+                         "dedupe nor the leakage check could ever see it")
+        return first, second
+
+    def test_a_near_duplicate_across_two_sources_is_collapsed(self):
+        from training.scripts.prepare_data import prepare
+
+        first, second = self._pair()
+        with tempfile.TemporaryDirectory() as tmp:
+            raw = Path(tmp) / "raw"
+            raw.mkdir(parents=True)
+            # Two files: `read_lines` labels records by file name, and the fix is
+            # about the scope *between* files.
+            (raw / "aaa_source.txt").write_text(first + "\n", encoding="utf-8")
+            (raw / "zzz_source.txt").write_text(second + "\n", encoding="utf-8")
+
+            summary = prepare(raw, Path(tmp) / "processed")
+
+            self.assertEqual(summary["stats"]["kept"], 1,
+                             "one of the pair must be dropped, whichever file it is "
+                             "in — a per-source deduper keeps both")
+            self.assertTrue(summary["leakage"]["clean"],
+                            "whole-corpus dedupe is what makes the whole-corpus "
+                            "leakage check unable to find a leak")
+
+            # The fix must not cost the per-source breakdown: each call still
+            # counts its own drops, so `by_source` stays meaningful.
+            by_source = summary["stats"]["by_source"]
+            self.assertEqual(set(by_source), {"aaa_source.txt", "zzz_source.txt"})
+            self.assertEqual(by_source["zzz_source.txt"]["dropped"].get("near_duplicate"), 1,
+                             "the second file's copy is the one dropped, and it says so")
+            self.assertEqual(by_source["aaa_source.txt"]["dropped"].get("near_duplicate", 0), 0)
+
+    def test_one_source_alone_still_dedupes(self):
+        """The single-source path is the one every other test uses, so it must not
+        have changed shape when the deduper became the caller's to supply."""
+        from ai.data import pipeline
+
+        first, second = self._pair()
+        records, stats = pipeline.build_corpus([first, second])
+        self.assertEqual(len(records), 1)
+        self.assertEqual(stats.dropped.get("near_duplicate"), 1)
 
 
 if __name__ == "__main__":
