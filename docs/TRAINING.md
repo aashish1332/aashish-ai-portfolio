@@ -386,8 +386,14 @@ upstream, so the setup cell has nothing to clone yet. Pick one:
    `data/extracted/` and `data/processed/`, and then the tokenizer artifact and the
    checkpoints. Run it from the mount and the first `--verify` dies with
    `OSError: [Errno 30] Read-only file system`. `/kaggle/working` is the writable
-   one, and it is the path the setup cell already looks in — so the copy is the
-   whole fix, and no notebook edit is needed.
+   one, and it is the path the setup cell already looks in.
+
+   The copy is necessary but it was not sufficient: both notebooks used to list
+   the Dataset mount **first**, so a session that had copied the tree correctly
+   still `chdir`-ed into the read-only mount. That is fixed — the working paths
+   now come first, the mount is last, and the cell writes and deletes a probe
+   file so the choice is verified instead of assumed
+   (`tests/py/test_notebook_refs.py::Workspace`).
 
 Either way the run needs `training/`, `ai/`, `inference/` and `data/sources.json`,
 and it does **not** need `ai/model-export/` (git-ignored: 5 MB of shipped weights)
@@ -653,7 +659,7 @@ changed with them", and `npm test` is what proves it rather than a memory of it.
 Run everything (no torch required; ~35 s for the JS suite, ~70 s for Python):
 
 ```bash
-npm run test:all          # 533 JS tests + 355 Python tests (0 skip: torch is installed)
+npm run test:all          # 533 JS tests + 356 Python tests (0 skip: torch is installed)
 npm run params            # analytic parameter counts + each config's own band gate
 npm run smoke             # tokenizer contract, shards, cursor, checkpoints
 npm run export:model      # checkpoint → browser artifact + parity fixture

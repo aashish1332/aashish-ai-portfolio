@@ -20,7 +20,10 @@ This file is what looks at them. All of it is offline:
 * every `--flag` passed exists in that CLI's parser;
 * every `$VAR` / `{VAR}` was assigned in an *earlier* cell, because a cell that
   uses `$TOKENIZER` three cells before it is defined is the classic way a
-  notebook fails halfway through a paid session.
+  notebook fails halfway through a paid session;
+* the repository the notebook chooses is a *writable* one: a `/kaggle/working`
+  path is offered ahead of the read-only `/kaggle/input` mount, and the chosen
+  directory is probed rather than assumed.
 
 Command lines are also read out of comments: those are the ones a human
 copy-pastes, so a stale one is worse than an absent one.
@@ -46,6 +49,7 @@ SCRIPT_RE = re.compile(r"^python3?\s+([\w./-]+\.py)")
 FLAG_RE = re.compile(r"(?<![\w-])(--[a-z][a-z0-9-]*)")
 ASSIGN_RE = re.compile(r"^([A-Z][A-Z0-9_]*)\s*=", re.M)
 VAR_RE = re.compile(r"[$]([A-Z][A-Z0-9_]*)|[{]([A-Z][A-Z0-9_]*)[}]")
+MOUNT_RE = re.compile(r"'(/kaggle/[^']+)'")
 
 # --help is a subprocess per CLI; the answers cannot change mid-run.
 _HELP_CACHE: dict[str, set[str] | None] = {}
@@ -231,6 +235,50 @@ class Ordering(unittest.TestCase):
         self.assertLess(first["tokenizer_train"], first["shard"],
                         "shards must be written with the frozen tokenizer — this is "
                         "the mismatch training now refuses rather than trains through")
+
+
+class Workspace(unittest.TestCase):
+    def test_the_chosen_repository_is_writable(self):
+        """`/kaggle/input` is a read-only mount, so a Dataset is not a workspace.
+
+        Both notebooks write before they train. Stage A writes `data/sources.json`
+        (the licence verification itself), `data/raw/`, `data/extracted/`,
+        `data/processed/` and the tokenizer artifact; Stage B writes the
+        instruction data and its checkpoints. The repository-location cell listed
+        the Dataset mount *first*, so a run that had correctly copied the tree
+        into `/kaggle/working` still `chdir`-ed into the read-only mount and died
+        on its first write with `OSError: [Errno 30] Read-only file system` —
+        with the GPU already allocated and the corpus half-downloaded.
+
+        Two properties of that one cell are what prevent it, and this is the only
+        check that can see either of them without a Kaggle account: a
+        `/kaggle/working` path has to be offered before any `/kaggle/input` path,
+        and the cell has to prove the directory it picked is writable instead of
+        assuming it. Copying the tree out is necessary but not sufficient, which
+        is exactly the half of §7.0's advice that was missing.
+        """
+        for name, path in each_notebook():
+            chosen = next((source for _index, source in code_cells(path)
+                           if "CANDIDATES" in source), None)
+            with self.subTest(notebook=name):
+                self.assertIsNotNone(chosen, f"{name} no longer chooses a repository")
+                mounts = MOUNT_RE.findall(chosen)
+                self.assertTrue(mounts, f"{name} names no /kaggle path")
+
+                writable = [index for index, mount in enumerate(mounts)
+                            if mount.startswith("/kaggle/working")]
+                read_only = [index for index, mount in enumerate(mounts)
+                             if mount.startswith("/kaggle/input")]
+                self.assertTrue(writable, f"{name} offers no /kaggle/working repository")
+                if read_only:
+                    self.assertLess(min(writable), min(read_only),
+                                    f"{name} prefers the read-only /kaggle/input "
+                                    f"mount over a writable copy")
+
+                self.assertIn("write_text", chosen,
+                              f"{name} assumes the repository is writable instead of "
+                              f"checking — the failure it is guarding is OSError 30 "
+                              f"on the first write, mid-session")
 
 
 if __name__ == "__main__":

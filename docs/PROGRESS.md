@@ -4151,6 +4151,18 @@ attaching a Dataset "needs no edit", which was true of the notebook and false of
 filesystem. The notebook also needs **Internet** enabled, for the clone and for every
 corpus download, and Kaggle gates that behind phone verification.
 
+**And the copy alone was not enough, because the notebooks preferred the mount.**
+Both listed `/kaggle/input/aashish-ai-portfolio` *first* in `CANDIDATES`, so a
+session that copied the tree correctly and skipped the copy step's real purpose
+still `chdir`-ed into the read-only mount — the copy would have been silently
+ignored and the first `--verify` would have died anyway, with the GPU allocated.
+Reordered to `/kaggle/working` first and `/kaggle/input` last in both notebooks,
+and the cell now **proves** the directory is writable (writes and unlinks
+`.tmp-writable`) rather than assuming it. This is the third variant of the same
+missed assumption in one day — prose, then filesystem, then the code that scans
+the filesystem — which is why the order and the probe are now pinned by a test
+rather than by the paragraph above them.
+
 **One sharp edge in the gate, recorded rather than fixed:** `status()` reports a
 verified source as `ready` even when it is an `hf_dataset` with no pinned `revision`,
 while `fetch()` refuses that same source (`no revision pinned. A dataset fetched from
@@ -4159,6 +4171,18 @@ while `fetch()` refuses that same source (`no revision pinned. A dataset fetched
 word *ready* — but someone reading `--check` could reasonably conclude that Sangraha
 was fetchable the moment it was verified. Pinning the revision is part of enabling it,
 and §7.4 says so next to the source.
+
+**The guard, and the fact that it fires for the right reason.**
+`tests/py/test_notebook_refs.py::Workspace` checks two properties of the one cell
+that can see either offline: a `/kaggle/working` path is offered before any
+`/kaggle/input` path, and the cell probes writability. Mutation-tested by putting
+both defects back in `train_stage_a.ipynb` — the mount listed first fails with
+`1 not less than 0 : prefers the read-only /kaggle/input mount over a writable
+copy`, and deleting the probe fails with `'write_text' not found`. The first
+version of the mutation script was itself wrong (it assigned into the list it was
+reading, aliasing the entries, and failed on `offers no /kaggle/working
+repository` — a message about the wrong defect); the aliasing is fixed and the
+messages above are from the corrected run. Restored: 8 tests OK.
 
 **The licence gate is 9 of 9 blocked, and `TRAINING.md` said "5 of 5".** The live
 `fetch_corpus --check` prints *9 sources, 9 blocked*, and `docs/DATA_LICENSES.md`
