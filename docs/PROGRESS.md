@@ -4498,3 +4498,61 @@ the exemption to prove it still catches one.
 `tests/py/test_train_scripts.PipelineOnly` and `tests/py/test_sft.StageBEntryPoint`
 (the banner-matches-the-machine assertions) · the docs-command validator still passes
 on the rewritten §7 · `npm test` **533**, `npm run test:py` **355**, 0 failures
+
+## The P4 corpus, on the real thing: the fix works, and the archive was still old code — 2026-10-01
+
+A fresh Kaggle session, the same 883,880 documents, and the cleanup **refused again**
+with numbers identical to the first refusal — `kept 872,808`, `near 1`,
+`near_dup_pairs 7,355,363`. Identical output, not similar output. That is the tell:
+no code changed between the two runs. The paste-in patch below had been applied to
+*that session's* working copy, and a session's working copy does not outlive it. Each
+new session re-extracts the repository from the uploaded archive, and the archive was
+built from `4e1efd0` — the commit **before** `abddd9d`, the dedupe fix. The check is
+one line: `git show 4e1efd0:training/scripts/prepare_data.py | grep deduper` returns
+nothing.
+
+So a delivery mechanism had been mistaken for the fix. A paste-in cell is
+per-session, and so is the archive it lands in; the durable repair is a new archive.
+The same patch was re-delivered, and the two `sha256` values it printed
+(`e7be3e5257af5b09`, `e3cff53d82f62b5a`) were reproduced locally from `4e1efd0` plus
+the replacements *before* pasting, so the anchors were known-good rather than
+hoped-for.
+
+### What the fix did, measured
+
+| | per-source deduper | one shared deduper |
+|---|---|---|
+| `kept` | 872,808 | **872,777** (−31) |
+| `near_duplicate` | 8,192 | **8,223** (+31) |
+| languages | en 453,118 · hi 418,909 · hinglish 781 | en 453,087 · hi 418,909 · hinglish 781 |
+| leakage | `near 1` → **refused** | **`near 0`, clean** |
+
+The 31 are cross-source near-duplicates, and they are attributable rather than
+inferred: the Hindi source is processed first and is bit-identical in both runs
+(kept 422,030, near_duplicate 6,184, near_dup_pairs 5,185,922). Every change is in
+`simple_english_wikipedia.txt` — kept 450,778 → 450,747, near_duplicate 2,008 →
+2,039 — and its `near_dup_pairs` counter jumps 2,169,441 → 7,362,723, because it is
+now compared against the Hindi buckets as well as its own. The leaked validation
+document was one of the 31.
+
+As a bound on the claim: this is *the* reason the two-source corpus needed the fix at
+all. Per-source, the deduper removes 31 fewer documents, and one of the 31 was the
+leak — which is why the pipeline refused a corpus no per-source dedupe could clean.
+
+### The whole-corpus deduper holds every fingerprint at once — checked, not assumed
+
+The fix raises peak memory: the shared `Deduper` keeps the exact-hash set and the
+min-hash buckets of *both* sources, where the per-source version discarded the first
+before the second ran. The corpus is ~700 MB of text across 872k kept documents, so
+this was worth a look before risking an OOM that would take the session — and the
+downloads — down with it. Measured on the instance: `free -g` → **31 GB total,
+29 GB available, 4 CPUs**; the run completed inside that. So it fits here, and there
+is now a number beside the claim instead of a shrug.
+
+### Evidence
+
+`git show 4e1efd0:…prepare_data.py | grep deduper` → empty · the re-delivered patch
+printed the two hashes that reproduce locally · the second cleanup run printed
+`leakage: clean (train 855,041 / val 17,736, exact 0, near 0)` · `free -g` on the
+instance → 31 GB total / 29 GB available · `npm test` **533**, `npm run test:py`
+**359**, 0 failures (README and `docs/TRAINING.md` said 357 and were corrected).
