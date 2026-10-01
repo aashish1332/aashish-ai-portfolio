@@ -1,11 +1,16 @@
 """tests/py/test_notebook_refs.py — the notebook, checked against the modules it calls.
 
 The notebooks in `training/notebooks/` are the artifacts a GPU session actually
-runs, so a defect in one is paid for in GPU-hours. Reading `train_stage_a.ipynb`
-found two that no test could have caught, because nothing had ever looked at the
-notebook: shards built with `seed-1k` while training with the 16k tokenizer, and
-a missing extraction step between `fetch_corpus` and `prepare_data`. The first
-would have produced an unusable checkpoint, silently.
+runs, so a defect in one is paid for in GPU-hours. Reading v1 of the Stage A
+notebook (`train_stage_a.ipynb`, since replaced by `train_stage_a_v2.ipynb`)
+found three that no test could have caught, because nothing had ever looked at
+the notebook: shards built with `seed-1k` while training with the 16k tokenizer,
+a missing extraction step between `fetch_corpus` and `prepare_data`, and — found
+on the real corpus, not by reading — a cell that printed the shard manifest
+whole: 3,492 file entries / 32,464 lines of JSON, which made the notebook's own
+page unresponsive even after a reload (Jupyter keeps every cell's output in the
+page and re-sends it on open). v1 is deleted; `BoundedOutputs` below keeps the
+output-size defect from returning in any notebook.
 
 `train_stage_b.ipynb` was added later, for the same reason: Stage B had a
 trainer and no way to run it on a GPU. Both are checked here.
@@ -45,7 +50,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 NOTEBOOKS = sorted((ROOT / "training" / "notebooks").glob("*.ipynb"))
-NOTEBOOK = ROOT / "training" / "notebooks" / "train_stage_a.ipynb"
+NOTEBOOK = ROOT / "training" / "notebooks" / "train_stage_a_v2.ipynb"
 
 MODULE_RE = re.compile(r"^python3?\s+-m\s+([A-Za-z0-9_.]+)")
 SCRIPT_RE = re.compile(r"^python3?\s+([\w./-]+\.py)")
@@ -250,6 +255,63 @@ class Ordering(unittest.TestCase):
         self.assertLess(first["tokenizer_train"], first["shard"],
                         "shards must be written with the frozen tokenizer — this is "
                         "the mismatch training now refuses rather than trains through")
+
+
+class BoundedOutputs(unittest.TestCase):
+    """No notebook may print a whole-corpus artifact into the page.
+
+    v1's §6 cell ended with `!cat …/shards/manifest.json`. On the real corpus
+    that file holds one entry per shard — 3,492 files — and the cell's output
+    was 32,464 lines of JSON. The kernel was healthy throughout; what broke was
+    the *page*: Jupyter retains every cell's output in the browser and re-sends
+    all of it when the notebook is re-opened, so the tab stayed unresponsive
+    across reloads and the session's state was reachable only through new cells.
+
+    The rule is about **scale, not names**: the artifacts that grow with the
+    corpus are the shard manifest (one entry per shard file) and stats.json
+    (one entry per extracted source file) — those must be summarised
+    (`training.scripts.shard_summary`, `training.scripts.stats_head`). A cell
+    may still `cat` a small fixed-shape file — leakage.json, meta.json, and
+    Stage B's `data/instruction/manifest.json`, which is a counts-and-mix
+    summary whose size is set by the §7.4 format, not by `--count`. The first
+    draft of this guard matched the bare name `manifest.json` and failed on
+    exactly that file; a guard that fires for the wrong reason teaches people
+    to ignore it, so it now asks what scales.
+    """
+
+    @staticmethod
+    def _scales_with_corpus(target: str) -> bool:
+        t = target.replace("\\", "/").lstrip("./")
+        if t.endswith("shards/manifest.json"):
+            return True  # one entry per shard file: 3,492 on the real corpus
+        return t.endswith("stats.json")  # one entry per extracted source file
+
+    def test_no_notebook_cats_a_whole_corpus_artifact(self):
+        for name, path in each_notebook():
+            for index, source in code_cells(path):
+                for raw in source.splitlines():
+                    command = raw.strip()
+                    if command.startswith("!"):
+                        command = command[1:].strip()
+                    if not command.startswith("cat "):
+                        continue
+                    target = command.split(None, 1)[1].split()[0]
+                    with self.subTest(notebook=name, cell=index, target=target):
+                        self.assertFalse(
+                            self._scales_with_corpus(target),
+                            f"{name} cell {index} cats {target} whole, and that "
+                            f"file scales with the corpus — its output froze v1's "
+                            f"page (32,464 lines, unresponsive across reloads). "
+                            f"Summarise it: shard_summary / stats_head")
+
+    def test_the_stage_a_notebook_summarises_the_big_two(self):
+        """The replacements must exist, not merely the absence of the `cat`s —
+        a cell that prints nothing at all would pass the guard above."""
+        joined = "\n".join(source for _index, source in code_cells(NOTEBOOK))
+        self.assertIn("training.scripts.shard_summary", joined,
+                      "the shard manifest must be summarised, not dumped")
+        self.assertIn("training.scripts.stats_head", joined,
+                      "stats.json must be summarised, not dumped")
 
 
 class Workspace(unittest.TestCase):

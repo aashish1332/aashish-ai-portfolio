@@ -356,7 +356,7 @@ every step calls a module that is already in the repository and tested, because
 
 | Notebook | Runs |
 |---|---|
-| `train_stage_a.ipynb` | licence gate → extract → shard → tokenizer → smoke → Stage A (~20k steps, config A) |
+| `train_stage_a_v2.ipynb` | licence gate → extract → shard → tokenizer → smoke → Stage A (~20k steps, config A); v2 = every output bounded (`shard_summary`/`stats_head`, no whole-artifact `cat`) after v1's manifest dump froze its own page |
 | `train_stage_b.ipynb` | the instruction data → **the mask, printed** → Stage B (`--init` the Stage A checkpoint, assistant-only loss) → sample the answers |
 
 Both are validated offline by `tests/py/test_notebook_refs.py`: every

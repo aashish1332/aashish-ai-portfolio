@@ -4622,3 +4622,86 @@ is real and the smaller vocab is the honest answer.
 `portfolio-bpe-12k-45395d2ebc83` · `npm test` **533**, `npm run test:py` **359**, 0
 failures · `python -m unittest tests.py.test_notebook_refs tests.py.test_train_scripts
 tests.py.test_pipeline tests.py.test_docs_commands` → 51 tests, OK.
+
+## The notebook froze its own page: an output that scaled, printed whole — 2026-10-01
+
+Mid-session, the Stage A notebook's page went unresponsive and stayed there across
+reloads. The kernel was never the problem — cells kept running, and the tokenizer +
+fertility + shard re-run at 16,384 all completed inside that session. What broke was
+the *page*: v1's §6 cell ended with `!cat data/processed/stage_a/shards/manifest.json`,
+and on the real corpus that manifest records every shard file — **3,492 entries,
+32,464 lines, ~1.2 MB of JSON** into one cell output. Jupyter keeps every cell's
+output in the browser and re-sends all of it when the notebook is re-opened, so the
+tab stayed unresponsive across reloads; the session's state was reachable only by
+opening new cells.
+
+The re-run at 16,384 still went through that session (the guard output was read via
+`output.txt`, not the page), but a notebook whose own reporting takes the page down
+with it fails the session it was built to protect: the next cell to freeze could be
+one holding the only copy of a nine-hour run's manifest.
+
+### What changed
+
+* **`training/scripts/shard_summary.py`** — the shard manifest as six lines: dtype,
+  vocab, tokenizer_version, and per-split docs/tokens/files. Measured bound: a
+  synthetic manifest with 50,000 file entries summarises to **255 characters**. The
+  missing-manifest path is a named `SystemExit`, not a traceback.
+* **`training/scripts/stats_head.py`** — `stats.json`'s headline block plus a bounded
+  per-source `head` (`--head`, default 20) and a `... (+N more sources)` marker.
+  Measured: 200 synthetic sources → 20 lines + marker, 1,857 characters.
+* **`training/notebooks/train_stage_a_v2.ipynb`** replaces v1 (deleted; history in
+  git). Same command sequence, every output bounded: `shard_summary` instead of the
+  manifest `cat`, `stats_head` instead of `stats.json` (`leakage.json` is a handful
+  of lines and stays a `cat`), `glob` + one line per manifest instead of `ls -la`,
+  `RUN_MANIFEST.json` read as fields instead of cat (it carries the full loss
+  history), smoke.json printed by `json.dumps` (small, fixed shape). v2's header also
+  marks the repository cell as the **one-way door** it is — re-running it
+  re-extracts the archive and erases the session's own downloads, text, artifact and
+  shards, which is what cost the second session its corpus.
+* **`tests/py/test_notebook_refs.py::BoundedOutputs`** — no notebook may `cat` an
+  artifact that scales with the corpus (`shards/manifest.json`, `stats.json`), plus
+  a positive test that the Stage A notebook actually *calls* the two summarisers.
+* `docs/TRAINING.md`'s notebook table now names v2 and says why v2 exists.
+
+### The guard's own false positive, kept as a lesson
+
+The first draft of `BoundedOutputs` matched the bare name `manifest.json` and
+immediately failed on **Stage B** — whose `data/instruction/manifest.json` is
+fixed-shape (counts, mix, shares; its size is set by the §7.4 format, not by
+`--count` or the corpus). That is exactly the failure mode this project hunts,
+pointed at the guard itself: a check that fails for the wrong reason teaches people
+to ignore it. The guard now asks what *scales* — one entry per shard file, one entry
+per extracted source file — and Stage B's manifest is commented in the test as a
+deliberate exemption.
+
+### Vulnerabilities reviewed in v2, cell by cell (this session's audit)
+
+* §0/§1 (setup + repository): `nvidia-smi`/torch prints only; the bf16 print is
+  annotated (a T4 misreports True); **no `git rev-parse`** — the archive carries no
+  `.git`, and the question is answered by the archive's sha256 (currently
+  `07be879febf2c45b17daab479ed4026574af43e2823aa421db7a7c138afe270b`) recorded
+  outside the session. The copy-out keeps v1's tested shape: writable candidates
+  before the read-only mount, writability proven by write-and-unlink, the four start
+  states still covered by `Workspace`.
+* §2–§3 (licence gate, download, extract): unchanged from v1 — bounded outputs, and
+  `fetch_manifest.json` listed one per line rather than `ls -la`.
+* §4 (pipeline pass 1): `stats_head` + `leakage.json` — the per-source section no
+  longer reaches the page.
+* §5 (tokenizer): v1's separate fertility cell was redundant — the trainer already
+  prints contract checks + fertility — so §5 is now train + a two-line identity
+  freeze. One less cell, no information lost.
+* §6 (shard pass 2): `shard_summary`; the comment names the guard (`train_smoke`
+  refuses a vocab/tokenizer mismatch) so the check is belt *and* braces, not either.
+* §7–§12: unchanged commands; §10's manifest cell reads fields, not the whole file.
+* Residual, **NOT TESTED on Kaggle**: v2 has not run in a live session yet — its
+  first run is still the test, and the one-way-door warning is prose, not a guard
+  (the test suite proves the *page* cannot be flooded, not that the human refrains
+  from re-extracting).
+
+### Evidence
+
+v1's cell output in the session log: 32,464 lines / 3,492 `files` entries ·
+`shard_summary` on a 50,000-entry synthetic manifest → 255 chars · `stats_head` on a
+200-source synthetic → 1,857 chars, `+180 more` marker · `npm run test:py` **361**
+(2 new: `BoundedOutputs`), `npm test` **533**, 0 failures · the guard's false
+positive on Stage B's fixed-shape manifest, and its fix, recorded above.
