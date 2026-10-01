@@ -1,7 +1,7 @@
 """training/scripts/train_stage_a.py — Stage A training (§7.3, P4).
 
     python -m training.scripts.train_stage_a \
-        --config A --tokenizer ai/tokenizer/artifacts/stage-a-12k \
+        --config A --tokenizer ai/tokenizer/artifacts/stage-a-16k \
         --shards data/processed/stage_a/shards \
         --run-dir /kaggle/working/checkpoints/stage-a \
         --steps 20000 --batch 16 --block 1024 --grad-accum 4 --amp \
@@ -40,7 +40,7 @@ from training.scripts.train_smoke import main as smoke_main  # noqa: E402
 
 STAGE_A_DEFAULTS = {
     "--config": "A",
-    "--tokenizer": "ai/tokenizer/artifacts/stage-a-12k",
+    "--tokenizer": "ai/tokenizer/artifacts/stage-a-16k",
     "--shards": "data/processed/stage_a/shards",
     "--run-dir": "training/checkpoints/stage-a",
     "--steps": "20000",

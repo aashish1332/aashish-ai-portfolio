@@ -35,14 +35,28 @@ class ResolveConfig(unittest.TestCase):
                          "the embedding must follow the tokenizer's vocab")
 
     def test_config_a_adopts_the_frozen_tokenizer_vocabulary(self):
-        cfg = train_smoke.resolve_config("A", 12288)
-        self.assertEqual(cfg.vocab_size, 12288)
+        """The Stage A tokenizer is trained at 16,384 (§7.1), so resolution is
+        the identity there — and that is the point: at 16,384 the number
+        `count_parameters.py` prints for config A is the number the run trains.
+        """
+        from ai.model.config import CONFIG_A
+
+        cfg = train_smoke.resolve_config("A", 16384)
+        self.assertEqual(cfg.vocab_size, 16384)
         self.assertEqual(cfg.hidden_size, 512)
         self.assertEqual(cfg.num_hidden_layers, 10)
         total = plan.counts(cfg)["total"]
-        self.assertTrue(30_000_000 <= total <= 50_000_000,
-                        "config A with the 12k tokenizer must stay in the §7.1 band")
-        self.assertLess(total, plan.counts(train_smoke.resolve_config("A", 16384))["total"])
+        self.assertEqual(total, plan.counts(CONFIG_A)["total"],
+                         "at the frozen tokenizer's vocab, config A must be "
+                         "unchanged — else the §7.1 count describes a model that "
+                         "is never trained")
+        # ...and the embedding must still follow the tokenizer when it differs,
+        # landing in the same band at the smaller size rather than silently
+        # keeping 16k rows.
+        smaller = plan.counts(train_smoke.resolve_config("A", 12288))["total"]
+        self.assertLess(smaller, total)
+        self.assertTrue(30_000_000 <= smaller,
+                        "a smaller tokenizer must still stay in the §7.1 band")
 
     def test_an_unknown_config_is_refused_loudly(self):
         with self.assertRaises(SystemExit) as ctx:

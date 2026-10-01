@@ -137,7 +137,13 @@ byte-exactly (English, Devanagari, Hinglish, SQL, URL/email, emoji, turn
 tokens).
 
 For the real run, the vocab decision is made from the fertility table on the
-licensed corpus, within §7.2's 12–16k window (hard ceiling 32k in code).
+licensed corpus, within §7.2's 12–16k window (hard ceiling 32k in code). The
+Stage A artifact is trained at **16,384** — config A's own vocabulary (§7.1),
+not a coincidence: the trainer sizes the embedding *from the artifact*, so a
+16,384 tokenizer is what makes `count_parameters.py`'s 37,890,560 the number
+actually trained. A 12,288 tokenizer would still land in the §7.1 band
+(35,793,408) but would train a model 2,097,152 smaller than the one the docs,
+the export and the parity checks all describe.
 
 ## 4. The smoke train (§7.5)
 
@@ -530,7 +536,7 @@ and not a wikitext parser; `MARKUP_LIMITATIONS` names what it misses.
 
    ```bash
    python -m training.scripts.train_stage_a \
-       --config A --tokenizer ai/tokenizer/artifacts/stage-a-12k \
+       --config A --tokenizer ai/tokenizer/artifacts/stage-a-16k \
        --shards data/processed/stage_a/shards \
        --run-dir /kaggle/working/checkpoints/stage-a \
        --steps 20000 --batch 16 --block 1024 --grad-accum 4 --amp --gate \
@@ -551,12 +557,12 @@ and not a wikitext parser; `MARKUP_LIMITATIONS` names what it misses.
 
    ```bash
    python -m training.scripts.make_instruction_data \
-       --tokenizer ai/tokenizer/artifacts/stage-a-12k \
+       --tokenizer ai/tokenizer/artifacts/stage-a-16k \
        --out data/instruction/sft.jsonl --count 40000
 
    python -m training.scripts.train_stage_b \
        --config A --init /kaggle/working/checkpoints/stage-a/latest.pt \
-       --tokenizer ai/tokenizer/artifacts/stage-a-12k \
+       --tokenizer ai/tokenizer/artifacts/stage-a-16k \
        --data data/instruction/sft.jsonl \
        --run-dir /kaggle/working/checkpoints/sft-a \
        --steps 3000 --batch 8 --block 1024 --grad-accum 2 --lr 5e-5 --warmup 100 \

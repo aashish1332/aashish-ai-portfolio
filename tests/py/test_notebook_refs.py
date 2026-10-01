@@ -3,7 +3,7 @@
 The notebooks in `training/notebooks/` are the artifacts a GPU session actually
 runs, so a defect in one is paid for in GPU-hours. Reading `train_stage_a.ipynb`
 found two that no test could have caught, because nothing had ever looked at the
-notebook: shards built with `seed-1k` while training with the 12k tokenizer, and
+notebook: shards built with `seed-1k` while training with the 16k tokenizer, and
 a missing extraction step between `fetch_corpus` and `prepare_data`. The first
 would have produced an unusable checkpoint, silently.
 

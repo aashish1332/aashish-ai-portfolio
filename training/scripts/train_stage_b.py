@@ -5,7 +5,7 @@
 
     # the real thing: continue the Stage A checkpoint on the instruction data
     python -m training.scripts.train_stage_b \
-        --tokenizer ai/tokenizer/artifacts/stage-a-12k \
+        --tokenizer ai/tokenizer/artifacts/stage-a-16k \
         --config A --init training/checkpoints/stage-a/latest.pt \
         --data data/instruction/sft.jsonl \
         --run-dir training/checkpoints/stage-b \

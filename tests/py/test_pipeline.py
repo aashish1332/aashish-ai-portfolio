@@ -246,10 +246,10 @@ class Shards(unittest.TestCase):
 class ShardTokenizerMatch(unittest.TestCase):
     """Guards the silent tokenizer mismatch, found by reading the P4 notebook.
 
-    The notebook sharded the corpus with `seed-1k`, then trained the 12k
+    The notebook sharded the corpus with `seed-1k`, then trained the 16k
     tokenizer from it and passed *that* to training while pointing `--shards`
     at the seed-1k shards. Every existing check passed: token ids are opaque,
-    and ids from a 1k vocabulary are all valid indices into a 12k embedding.
+    and ids from a 1k vocabulary are all valid indices into a 16k embedding.
     The embedding is sized from the config, so the run would have produced a
     model that encodes text one way and was trained another — hours of GPU
     spent on a checkpoint that cannot be used for inference.
@@ -281,11 +281,11 @@ class ShardTokenizerMatch(unittest.TestCase):
             shards, manifest = self.build(tmp, "seed-1k")
             with self.assertRaises(ValueError) as ctx:
                 shards.assert_matches_tokenizer({"vocab_size": manifest["vocab_size"] * 4,
-                                                 "tokenizer_version": "stage-a-12k"})
+                                                 "tokenizer_version": "stage-a-16k"})
             message = str(ctx.exception)
             self.assertIn("tokenizer mismatch", message)
             self.assertIn("seed-1k", message)
-            self.assertIn("stage-a-12k", message)
+            self.assertIn("stage-a-16k", message)
             self.assertIn("prepare_data", message, "the fix must be named, not implied")
 
     def test_a_smaller_tokenizer_is_refused_too(self):

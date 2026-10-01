@@ -4556,3 +4556,69 @@ printed the two hashes that reproduce locally · the second cleanup run printed
 `leakage: clean (train 855,041 / val 17,736, exact 0, near 0)` · `free -g` on the
 instance → 31 GB total / 29 GB available · `npm test` **533**, `npm run test:py`
 **359**, 0 failures (README and `docs/TRAINING.md` said 357 and were corrected).
+
+## The §7.1 count was measuring a config the run would not train — 2026-10-01
+
+The shard pass finished clean on the real corpus — `leakage: clean (train 855,041 /
+val 17,736, exact 0, near 0)`, `shard train 171,562,254 tokens in 3,421 file(s)`,
+`shard val 3,553,933 tokens in 71 file(s)`, and the manifest's `tokenizer_version`
+(`portfolio-bpe-12k-45395d2ebc83`) matched the frozen artifact — and
+`inference/count_parameters.py --config A --gate` passed: **37,890,560** params,
+counted analytically *and* materialised, agreeing to the unit (`MATCH`, 93 keys),
+inside §7.1's 30–50M. Two green results, and the next cell was the smoke train.
+
+The two did not describe the same model.
+
+Config A declares `vocab_size=16384`; the tokenizer was trained at **12,288**.
+`train_smoke.resolve_config()` sizes the embedding *from the tokenizer* — which is
+correct, and is what stops a run training a model that cannot use the artifact its
+checkpoints carry — so the Stage A run would have trained:
+
+| | measured (`plan.counts`) |
+|---|---|
+| nominal config A (vocab 16,384) | `37,890,560` |
+| what the run would actually train (vocab 12,288) | `35,793,408` |
+| difference | `2,097,152` |
+| still inside §7.1's band? | yes |
+
+So `count_parameters.py --config A` was a PASS for a size no run would produce, while
+`docs/AI_ARCHITECTURE.md`, `docs/BENCHMARKS.md`, `docs/FINAL_REPORT.md`,
+`docs/TRAINING.md` and `README.md` all quoted **37,890,560 / vocab 16,384** as the
+shipping target. That is the same shape this project keeps finding: a check that is
+green, a claim that is specific, and the check not being about the thing the claim is
+about. Nothing failed — the arithmetic, the parity check and the band verdict were all
+correct for config A; config A was just not the model in play.
+
+The decision was between two conforming readings — §7.2's window is 12–16k, so a
+12,288 tokenizer is legal *and* §7.2 prefers a small vocab — and it was taken
+deliberately: **train the tokenizer at 16,384**, config A's own vocabulary, so that
+the §7.1 count is the number actually trained rather than a design figure that a
+footnote has to explain. The 12,288 artifact and the shards built with it are
+superseded, not deleted; the artifact is renamed `stage-a-16k` across both notebooks,
+`train_stage_a.py`, `train_stage_b.py` and `docs/TRAINING.md`, and the notebook's §5
+cell now says why 16,384 and not merely that it is 16,384.
+
+A test was added rather than a comment: `config A at the frozen tokenizer's vocab
+must be unchanged from `CONFIG_A` — otherwise the §7.1 count describes a model that
+is never trained. The smaller-vocab case (`resolve_config("A", 12288)`) is kept beside
+it, still asserted to land in-band, so the embedding still provably follows the
+tokenizer when the two disagree.
+
+### As a bound on the claim
+
+The retrain itself is **NOT TESTED** here — the 16,384 artifact does not exist yet; it
+is the next Kaggle cell. What is measured is the arithmetic (`plan.counts` at both
+vocabs, above) and the fact that the run resolves the embedding from the artifact. If
+the 16,384 tokenizer trains, `count_parameters.py --config A` stops being a design
+figure and becomes a statement about the shipped model. The trainer can also refuse:
+it exits if the corpus cannot support 16,384 distinct forms, in which case the ceiling
+is real and the smaller vocab is the honest answer.
+
+### Evidence
+
+`python -c "plan.counts(replace(CONFIG_A, vocab_size=12288))"` → `35,793,408`
+(delta `2,097,152`) · `count_parameters.py --config A --gate` → `37,890,560`, `MATCH`,
+`PASS` · the shard manifest → `171,562,254` / `3,553,933` tokens, tokenizer_version
+`portfolio-bpe-12k-45395d2ebc83` · `npm test` **533**, `npm run test:py` **359**, 0
+failures · `python -m unittest tests.py.test_notebook_refs tests.py.test_train_scripts
+tests.py.test_pipeline tests.py.test_docs_commands` → 51 tests, OK.
