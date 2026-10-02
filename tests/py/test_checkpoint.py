@@ -14,6 +14,8 @@ What it does not buy: that a torch optimizer's state survives the trip.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import random
 import sys
@@ -558,6 +560,255 @@ class ARealOptimizerResumesIdentically(unittest.TestCase):
                                             lr=rate_at_20, initial_lr=1e-3)]})
         self.assertAlmostEqual(optimizer.param_groups[0]["lr"], rate_at_20,
                                places=15)
+
+
+class TheLearningRateCurveHasOneDefinition(unittest.TestCase):
+    """`tools/verify_checkpoint.py` must not restate the schedule it verifies.
+
+    Its first version carried a copy of `cosine_with_warmup`'s arithmetic marked
+    "verbatim", which is a copy of the thing being checked: change the curve and
+    the tool goes on predicting the old one, reporting correctly-saved
+    checkpoints as mismatched. The fix moved the curve to `train_smoke.lr_factor`
+    and had the tool import it; these two tests are what stops the copy coming
+    back.
+    """
+
+    VERIFIER = ROOT / "tools" / "verify_checkpoint.py"
+
+    @unittest.skipUnless(_have_torch(), "no torch on this machine")
+    def test_the_scheduler_uses_the_shared_factor(self):
+        """What this establishes, precisely — it is less than it looks.
+
+        The scheduler is built *from* `lr_factor`, so comparing the two cannot
+        tell whether the curve is *right*; it is close to tautological. What it
+        does establish is the **wiring**: that `cosine_with_warmup` routes every
+        step through the shared function rather than through a private closure.
+        That is exactly the mutation it is here to catch — someone re-inlining
+        the arithmetic, which would leave two curves again without deleting
+        anything the AST test below could see.
+
+        The curve's own properties are checked separately and only where they
+        are actually falsifiable: the final assertion (it anneals to exactly
+        zero) and `test_lr_schedule.py`, which replays the defect-3 case against
+        the measured 0.967.
+        """
+        import torch
+
+        from training.scripts.train_smoke import (cosine_with_warmup,
+                                                 lr_factor)
+
+        base, warmup, total = 3e-4, 5, 50
+        model = torch.nn.Linear(2, 2)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=base)
+        scheduler = cosine_with_warmup(optimizer, warmup, total)
+        for step_index in range(0, total + 1):
+            emitted = scheduler.get_last_lr()[0]
+            expected = base * lr_factor(step_index, warmup, total)
+            self.assertAlmostEqual(
+                emitted, expected, places=18,
+                msg=f"at scheduler step {step_index} the LambdaLR emitted "
+                    f"{emitted:.6e} but lr_factor predicts {expected:.6e}")
+            optimizer.step()
+            scheduler.step()
+        # ...and the curve really does reach zero, which is the property the
+        # defect-3 fix exists to guarantee.
+        self.assertEqual(lr_factor(total, warmup, total), 0.0)
+
+    def test_the_verifier_does_not_define_its_own_curve(self):
+        import ast
+
+        tree = ast.parse(self.VERIFIER.read_text(encoding="utf-8"))
+        names = {node.name for node in ast.walk(tree)
+                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        for banned in ("factor", "schedule_span", "lr_factor"):
+            self.assertNotIn(
+                banned, names,
+                f"{self.VERIFIER.name} defines its own {banned}() again. A copy "
+                f"of the curve is a copy of the thing being verified; import "
+                f"`training.scripts.train_smoke.lr_factor` instead.")
+
+    def test_the_verifier_imports_the_trainers_curve(self):
+        source = self.VERIFIER.read_text(encoding="utf-8")
+        self.assertIn("from training.scripts.train_smoke import lr_factor, schedule_span",
+                      source,
+                      "the verifier no longer imports the trainer's schedule, so "
+                      "it is predicting some other curve")
+
+    def test_reconstruct_recovers_a_known_schedule_from_a_known_rate(self):
+        """The inference behind the v2 finding, tested on its own.
+
+        `reconstruct` is the function that took v2's `peak/200` and named the
+        `(grad_accum, warmup)` pair that could produce it. It runs on the one
+        code path the rest of this file cannot reach — a checkpoint with no
+        recorded hyperparameters — and that path is where a refactor of the
+        imports left it raising `NameError` while every test stayed green. So
+        it gets a test of its own, as pure logic with no torch and no file.
+        """
+        from tools.verify_checkpoint import reconstruct
+        from training.scripts.train_smoke import lr_factor, schedule_span
+
+        # A run that really used grad_accum 8 over 20,000 steps with a
+        # 200-micro-step warmup, caught at scheduler step 137.
+        peak = 3e-4
+        warmup_u, updates = schedule_span(20_000, 200, 8)
+        rate = peak * lr_factor(137, warmup_u, updates)
+        assert rate != 0.0
+        # The first argument is the run's `--steps` (20,000), not the step the
+        # checkpoint was taken at. The first version of this test passed 137 for
+        # both, which made the reported grad-accum depend on a schedule the run
+        # never had — and it failed, which is how the same confusion in `main`
+        # was found.
+        found = reconstruct(20_000, 137, rate, peak, warmup=10,
+                            factor=lr_factor, schedule_span=schedule_span)
+        self.assertIsNotNone(found)
+        self.assertLess(found["rel_error"], 1e-9)
+        self.assertEqual(found["grad_accum"], 8)
+        self.assertEqual(found["updates"], updates)
+
+    def test_reconstruct_reports_a_large_residual_when_nothing_fits(self):
+        # The other half: it must be able to say "none of these explain this
+        # rate", because a search that always finds a close match is a search
+        # that proves nothing about the file it is applied to.
+        from tools.verify_checkpoint import reconstruct
+        from training.scripts.train_smoke import lr_factor, schedule_span
+
+        peak = 3e-4
+        # At `last_epoch` 0 the warmup branch is the only reachable one, so the
+        # explainable rates are `1/warmup_u` for integer `warmup_u`, plus 1.0.
+        # That is a sparse set with its widest gap between 1/2 and 1/1, so 0.75
+        # is the least explainable value available: the nearest candidates are
+        # 0.5 and 1.0, giving a residual near a third.
+        #
+        # The first version of this test used 0.37, which looks arbitrary and is
+        # within 9.9% of 1/3 — it failed, correctly, because the search *can*
+        # explain it. Picking a value that nothing fits is the test's job.
+        found = reconstruct(20_000, 0, peak * 0.75, peak, warmup=10,
+                            factor=lr_factor, schedule_span=schedule_span)
+        self.assertIsNotNone(found)
+        self.assertGreater(found["rel_error"], 0.2,
+                           "a rate nothing can explain was reported as explained")
+
+    def test_reconstruct_declines_a_peak_of_zero(self):
+        from tools.verify_checkpoint import reconstruct
+        from training.scripts.train_smoke import lr_factor, schedule_span
+
+        self.assertIsNone(reconstruct(20_000, 5, 0.0, 0.0, warmup=10,
+                                      factor=lr_factor,
+                                      schedule_span=schedule_span))
+
+    def test_a_cut_run_is_not_read_as_a_completed_one(self):
+        """The assumption that step == --steps, and why it has to be visible.
+
+        A cosine built over 20,000 micro-steps and cut at 6,000 does not end at
+        0, and its LR at the cut is not reachable by a cosine built over 6,000.
+        So the *same recorded rate* yields two different grad-accum answers
+        depending on which total is used — which is exactly the silent wrong
+        answer the tool would have given the first time a session was cut short.
+        """
+        from tools.verify_checkpoint import reconstruct
+        from training.scripts.train_smoke import lr_factor, schedule_span
+
+        peak = 3e-4
+        cut_at = 6_000
+        warmup_u, updates = schedule_span(20_000, 200, 8)
+        rate = peak * lr_factor(cut_at // 8, warmup_u, updates)
+        self.assertNotEqual(rate, 0.0, "a cut run does not end at zero")
+
+        right = reconstruct(20_000, cut_at // 8, rate, peak, warmup=10,
+                            factor=lr_factor, schedule_span=schedule_span)
+        wrong = reconstruct(cut_at, cut_at // 8, rate, peak, warmup=10,
+                            factor=lr_factor, schedule_span=schedule_span)
+        self.assertLess(right["rel_error"], 1e-9)
+        self.assertEqual(right["grad_accum"], 8)
+        self.assertGreater(wrong["rel_error"], 1e-6,
+                           "the wrong total produced a fit as good as the right "
+                           "one, so this test cannot tell them apart")
+
+    @unittest.skipUnless(_have_torch(), "no torch on this machine")
+    def test_main_uses_the_runs_own_total_not_the_checkpoint_step(self):
+        """The wiring, not the arithmetic — and the case v3 may actually hit.
+
+        A run cut short by the session cap has a checkpoint whose step is well
+        below the `--steps` its cosine was built over. `reconstruct` needs the
+        latter; the first version of `main` passed the former and was right only
+        for runs that reached their end. So this fabricates a cut run and runs
+        the tool twice, with and without `--total-steps`, and requires the
+        answers to differ — a mutation that always passes the checkpoint's step
+        makes them the same and fails here.
+        """
+        import torch
+
+        from ai.model.config import smoke_config
+        from tools.verify_checkpoint import main as verify_main
+        from training.scripts.train_smoke import lr_factor, schedule_span
+
+        peak = 3e-3
+        cut_at, total = 6_000, 20_000
+        warmup_u, updates = schedule_span(total, 200, 8)
+        rate = peak * lr_factor(cut_at // 8, warmup_u, updates)
+        self.assertNotEqual(rate, 0.0)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "latest.pt"
+            torch.save({
+                "model": {}, "step": cut_at, "epoch": 0,
+                "config": smoke_config(1024).to_hf_config(),
+                "tokenizer_version": "test", "rng": ckpt.capture_rng(),
+                "data_cursor": {"tokens_consumed": 0},
+                "loss_history": [0.0] * cut_at,
+                "optimizer": {"state": {0: {"step": 1}},
+                              "param_groups": [{"lr": rate, "initial_lr": peak}]},
+                "scheduler": {"last_epoch": cut_at // 8, "_last_lr": [rate]},
+                "scaler": {"scale": 1.0},
+                # no hyperparameters: this is the inference path
+            }, path)
+
+            base = ["--ckpt", str(path), "--config", "smoke",
+                    "--expect-params", "1820352", "--expect-vocab", "1024",
+                    "--grad-accum-hint", "8"]
+
+            def schedule_row(extra):
+                buffer = io.StringIO()
+                with contextlib.redirect_stdout(buffer):
+                    verify_main(base + extra)
+                for line in buffer.getvalue().splitlines():
+                    if "schedule" in line and ("inferred" in line or "reproduced" in line):
+                        return line
+                raise AssertionError(
+                    f"no schedule row in the output:\n{buffer.getvalue()}")
+
+            assumed = schedule_row([])
+            stated = schedule_row(["--total-steps", str(total)])
+
+        self.assertIn("PASS", stated, f"the correct total was rejected: {stated}")
+        self.assertIn("grad_accum=8", stated)
+        self.assertIn("FAIL", assumed,
+                      f"assuming the checkpoint's step was enough to reach the "
+                      f"right answer, so this test cannot tell them apart: "
+                      f"{assumed}")
+
+    def test_the_scheduler_is_not_built_from_a_private_copy(self):
+        # The other half of the same risk, checked over the AST: the curve is
+        # reached only through `lr_factor`, so a re-inlined closure cannot sit
+        # beside the shared one looking like the same thing.
+        import ast
+
+        tree = ast.parse((ROOT / "training" / "scripts" / "train_smoke.py")
+                         .read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef) or node.name != "cosine_with_warmup":
+                continue
+            # `ast.walk` yields the node itself, so exclude it: the question is
+            # whether cosine_with_warmup defines a *nested* function, and the
+            # first version of this guard flagged the outer one and failed.
+            inner = [n.name for n in ast.walk(node)
+                     if isinstance(n, ast.FunctionDef) and n is not node]
+            self.assertEqual(
+                inner, [],
+                f"cosine_with_warmup defines {inner} again — the schedule has two "
+                f"definitions, and the verifier only follows one of them")
+            return
+        self.fail("cosine_with_warmup is gone; update this guard")
 
 
 class ThereIsExactlyOneWayToWriteACheckpoint(unittest.TestCase):

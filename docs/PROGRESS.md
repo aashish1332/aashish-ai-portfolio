@@ -5541,3 +5541,52 @@ three orders of magnitude of headroom for a 150 MB cache and a 152 MB
 checkpoint, but is worth knowing before a plan decides to keep every `step_N`.
 
 `npm run test:py` **477**, `npm test` **533**, 0 failures, `npm run build` clean.
+
+### Follow-on 3: the verifier had a copy of the thing it verifies
+
+Two defects in `tools/verify_checkpoint.py`, both found by testing code paths
+that had only ever been run by hand, and both of the same family as the run
+this session is about — a check whose evidence is not the evidence it claims.
+
+**It restated the learning-rate curve.** The first version carried a copy of
+`cosine_with_warmup`'s arithmetic marked "verbatim", which is a copy of the
+thing being checked. The day the curve changes, the verifier goes on predicting
+the old one and reports correctly-saved checkpoints as mismatched — a
+false-positive generator built into the tool whose job is to be trusted. Fixed
+at the source rather than in the copy: the curve is now
+`train_smoke.lr_factor`, at module level, and `cosine_with_warmup` and the
+verifier both use it. Two guards stop the copy coming back, one over the AST
+(the verifier may define no `factor`/`schedule_span`) and one over the AST of
+the trainer (no nested function inside `cosine_with_warmup`).
+
+**It built the schedule over the wrong total.** `reconstruct` needs the run's
+`--steps`, because that is what the cosine was built over. `main` passed the
+**checkpoint's step** instead. For v2 — a completed 20,000-step run — those
+happen to be the same number, so it was right by accident. For a run the
+session cap cut short they are different, and it would have divided the
+schedule by the wrong total and reported a confidently wrong `grad_accum`
+(measured on a fabricated cut run: it says 3 for a run that used 8). That is the
+case v3 may be in. `main` now takes `--total-steps`, and when it is not given it
+**says out loud** that the checkpoint's step was assumed, and whether the
+evidence is consistent with that assumption — a completed cosine ends at exactly
+0, so a non-zero final LR is not what a completed run looks like.
+
+Both were invisible to a green test suite:
+`NameError: schedule_span` on the inference path and
+`UnboundLocalError: is_fresh`
+on a later edit of the same block, each on a path no test reached. That is now
+four separate times this session that "the suite is green" and "the code is
+right" were different statements, and each time the gap was a branch the tests
+never took.
+
+The new tests exercise those branches directly: `reconstruct` against a known
+schedule (exact fit, and a residual for a rate nothing can explain, on a value
+chosen inside the *widest* gap of the reachable set — the first attempt used
+0.37, which is within 9.9% of 1/3 and therefore *explainable*, so the test
+failed for being wrong about its own premise), the zero-peak decline, the
+cut-run case where the right and wrong totals must give different answers, and
+`main` run twice on a fabricated cut checkpoint to prove the wiring.
+
+`tools/mutate_checkpoints.py`: **19/19 caught for the right reason.**
+
+`npm run test:py` **486**, `npm test` **533**, 0 failures, `npm run build` clean.

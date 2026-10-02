@@ -110,23 +110,27 @@ class Report:
             print(f"all {len(self.rows)} checks passed{note}")
 
 
-def factor(step: int, warmup: int, total: int) -> float:
-    """training/scripts/train_smoke.py `cosine_with_warmup`, verbatim."""
-    if step < warmup:
-        return (step + 1) / max(1, warmup)
-    progress = (step - warmup) / max(1, total - warmup)
-    return 0.5 * (1 + math.cos(math.pi * min(1.0, progress)))
+def _load_schedule_definition():
+    """The trainer's own learning-rate curve, imported rather than restated.
+
+    The first version of this file carried a copy of `cosine_with_warmup`'s
+    arithmetic marked "verbatim". That is a copy of the thing being verified,
+    which is worse than useless: the day the curve changes, this tool keeps
+    predicting the old one and reports correctly-saved checkpoints as
+    mismatched. Importing means the tool follows the curve.
+
+    Imported lazily so that `--help` and a bad-path error do not need numpy,
+    and so that a box without the package still prints a reason instead of an
+    ImportError traceback.
+    """
+    from training.scripts.train_smoke import lr_factor, schedule_span
+
+    return lr_factor, schedule_span
 
 
-def schedule_span(steps: int, warmup: int, grad_accum: int) -> tuple[int, int]:
-    """training/scripts/train_smoke.py `schedule_span`, verbatim."""
-    updates = max(1, steps // max(1, grad_accum))
-    warmup_updates = max(0, warmup // max(1, grad_accum))
-    return min(warmup_updates, updates - 1), updates
-
-
-def reconstruct(step: int, last_epoch: int, recorded: float, peak: float,
-                warmup: int, max_accum: int = 64) -> dict | None:
+def reconstruct(total_micro_steps: int, last_epoch: int, recorded: float,
+                peak: float, warmup: int, factor, schedule_span,
+                max_accum: int = 64) -> dict | None:
     """Which `(grad_accum, warmup)` reproduces the recorded LR at this step?
 
     Returns the best match, or None. A guess that cannot be beaten by the
@@ -139,6 +143,22 @@ def reconstruct(step: int, last_epoch: int, recorded: float, peak: float,
     is `peak / 200`, which needs `warmup=200` (Stage A's setting) as well as
     the `grad_accum=1` that the search found. Reporting only the second half
     of that pair would have named half the defect.
+
+    `factor` and `schedule_span` are passed in rather than read from module
+    scope. The first version of this refactor left the imported names as locals
+    inside `main`, so this function raised `NameError: schedule_span` on exactly
+    one path — the one with no recorded hyperparameters, which is v2's, and
+    which no test covered at the time. Parameters make the dependency visible
+    and make the function callable from a test without an import dance.
+
+    `total_micro_steps` is the run's `--steps`, **not** the checkpoint's step,
+    and the distinction is not cosmetic: the schedule was built over the former.
+    The first version took the checkpoint's step and was right only by accident,
+    because it was written against a completed run (step 20000 of a 20,000-step
+    run). Aimed at a session that the time box cut short — the case this whole
+    exercise is about — it would have divided the schedule by the wrong total
+    and reported a confidently wrong grad-accum. `main` now passes the run's own
+    `--steps` where it is known and says plainly what it assumed where it is not.
     """
     if peak <= 0:
         return None
@@ -146,7 +166,7 @@ def reconstruct(step: int, last_epoch: int, recorded: float, peak: float,
     best = None
     for g in range(1, max_accum + 1):
         for w in warmups:
-            warmup_u, updates = schedule_span(step, w, g)
+            warmup_u, updates = schedule_span(total_micro_steps, w, g)
             predicted = peak * factor(last_epoch, warmup_u, updates)
             err = abs(predicted - recorded) / max(abs(recorded), 1e-12)
             if best is None or err < best["rel_error"]:
@@ -167,6 +187,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--grad-accum-hint", default="8",
                     help="the --grad-accum the notebook passed, quoted in the "
                          "inference note so the two can be compared")
+    ap.add_argument("--total-steps", type=int, default=None,
+                    help="the run's --steps (micro-steps). The cosine was built "
+                         "over this, not over the checkpoint's step. Defaults "
+                         "to the checkpoint's step, which is only correct for a "
+                         "run that reached its end — said out loud when assumed.")
     ap.add_argument("--allow-defective-lr", action="store_true",
                     help="report the anneal ratio without failing on it")
     ap.add_argument("--json", help="write the results to this path")
@@ -183,6 +208,8 @@ def main(argv: list[str] | None = None) -> int:
     from training.scripts.checkpoint import (REQUIRED_STATE_KEYS,
                                              MissingStateError,
                                              assert_state_fresh)
+
+    factor, schedule_span = _load_schedule_definition()
 
     path = Path(args.ckpt)
     if not path.is_file():
@@ -285,7 +312,17 @@ def main(argv: list[str] | None = None) -> int:
     last_lr = float((sched.get("_last_lr") or [current])[0])
     last_epoch = int(sched.get("last_epoch", 0) or 0)
     ratio = (last_lr / peak) if peak > 0 else float("nan")
+    # Computed here rather than down with the `fresh` row, because the inference
+    # below needs it to qualify its own assumption. It was read before it was
+    # assigned for one full run of this tool — an UnboundLocalError on exactly
+    # the path with no recorded hyperparameters, which is v2's.
+    moments = (state.get("optimizer") or {}).get("state")
+    is_fresh = bool(isinstance(moments, dict) and moments) and last_epoch > 0
     hyper = state.get("hyperparameters")
+    # Only meaningful for the inferred path, where the run's total step count
+    # had to be supplied or assumed. Reset to None when the file records its own
+    # settings, so the JSON never carries a number that nothing used.
+    total_steps: int | None = None
 
     print(f"\n  learning rate")
     print(f"    peak (initial_lr)  {peak:.4e}")
@@ -307,7 +344,22 @@ def main(argv: list[str] | None = None) -> int:
                  "warmup_updates": warmup_u, "predicted_lr": expected,
                  "rel_error": residual, "source": "recorded"}
     else:
-        match = reconstruct(step, last_epoch, last_lr, peak, args.warmup)
+        # The cosine spans the run's `--steps`, so that is what the prediction
+        # has to be built over. Falling back to the checkpoint's step assumes the
+        # run reached its end, which is true of a completed run and false of one
+        # the session cap cut short — so when it is assumed rather than known,
+        # say so, and say whether the evidence is consistent with it.
+        total_steps = args.total_steps if args.total_steps else step
+        if args.total_steps:
+            print(f"    total steps       {total_steps:,} (given)")
+        else:
+            ended = is_fresh and abs(last_lr) <= peak * ANNEAL_MAX
+            print(f"    total steps       {total_steps:,} (assumed = the "
+                  f"checkpoint's step; a completed cosine ends at 0, which is "
+                  f"{'what this looks like' if ended else 'NOT what this looks like'}"
+                  f" — pass --total-steps to say instead of assume)")
+        match = reconstruct(total_steps, last_epoch, last_lr, peak, args.warmup,
+                            factor, schedule_span)
         if match:
             match["source"] = "inferred"
             verdict = "exact" if match["rel_error"] < 1e-6 else "closest"
@@ -325,13 +377,11 @@ def main(argv: list[str] | None = None) -> int:
     # Observed staleness, reported before the trainer's own verdict. The guard
     # stops at the first thing it can prove, which for a pre-fix file is the
     # missing hyperparameters — true, and not the thing a reader needs to know.
-    moments = (state.get("optimizer") or {}).get("state")
     obs = []
     if isinstance(moments, dict):
         obs.append(f"optimizer holds moments for {len(moments)} tensors")
     if "last_epoch" in sched:
         obs.append(f"scheduler at last_epoch {last_epoch}")
-    is_fresh = bool(isinstance(moments, dict) and moments) and last_epoch > 0
     r.add("fresh", is_fresh, "; ".join(obs) or "no optimizer/scheduler fields to read")
 
     # The staleness guard is the trainer's own, so the verifier and the loader
@@ -386,6 +436,7 @@ def main(argv: list[str] | None = None) -> int:
         "peak_lr": peak, "final_lr": float(last_lr), "anneal_ratio": ratio,
         "scheduler": {"last_epoch": last_epoch},
         "fresh": is_fresh,
+        "total_steps": total_steps,
         "reconstructed": match,
         "checks": [{"name": n, "status": s, "detail": d} for n, s, d in r.rows],
         "failed": r.failed,

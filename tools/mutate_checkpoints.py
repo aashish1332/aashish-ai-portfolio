@@ -29,6 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CKPT = ROOT / "training" / "scripts" / "checkpoint.py"
 SMOKE = ROOT / "training" / "scripts" / "train_smoke.py"
 STAGE_B = ROOT / "training" / "scripts" / "train_stage_b.py"
+VERIFIER = ROOT / "tools" / "verify_checkpoint.py"
 
 # (label, file, find, replace, unittest target that MUST fail, evidence)
 #
@@ -219,6 +220,51 @@ MUTATIONS: list[tuple[str, Path, str, str, str, str]] = [
     # Kept as a note because an uncaught mutation is usually a hole in the
     # suite and occasionally a hole in the hypothesis, and telling those two
     # apart is the whole job.
+    (
+        "M16 the verifier restates the learning-rate curve",
+        VERIFIER,
+        "def _load_schedule_definition():\n",
+        "def factor(step, warmup, total):\n"
+        "    if step < warmup:\n"
+        "        return (step + 1) / max(1, warmup)\n"
+        "    progress = (step - warmup) / max(1, total - warmup)\n"
+        "    return 0.5 * (1 + math.cos(math.pi * min(1.0, progress)))\n\n\n"
+        "def schedule_span(steps, warmup, grad_accum):\n"
+        "    updates = max(1, steps // max(1, grad_accum))\n"
+        "    warmup_updates = max(0, warmup // max(1, grad_accum))\n"
+        "    return min(warmup_updates, updates - 1), updates\n\n\n"
+        "def _load_schedule_definition():\n",
+        "tests.py.test_checkpoint.TheLearningRateCurveHasOneDefinition."
+        "test_the_verifier_does_not_define_its_own_curve",
+        "defines its own",
+    ),
+    (
+        "M17 cosine_with_warmup re-inlines the arithmetic",
+        SMOKE,
+        "    return torch.optim.lr_scheduler.LambdaLR(\n"
+        "        optimizer, lambda step: lr_factor(step, warmup, total))\n",
+        "    def factor(step: int) -> float:\n"
+        "        if step < warmup:\n"
+        "            return (step + 1) / max(1, warmup)\n"
+        "        progress = (step - warmup) / max(1, total - warmup)\n"
+        "        return 0.5 * (1 + math.cos(math.pi * min(1.0, progress)))\n\n"
+        "    return torch.optim.lr_scheduler.LambdaLR(optimizer, factor)\n",
+        "tests.py.test_checkpoint.TheLearningRateCurveHasOneDefinition."
+        "test_the_scheduler_is_not_built_from_a_private_copy",
+        "defines ['factor'] again",
+    ),
+    (
+        "M18 the verifier builds the schedule over the step, not the run's --steps",
+        VERIFIER,
+        "        total_steps = args.total_steps if args.total_steps else step\n",
+        "        total_steps = step\n",
+        "tests.py.test_checkpoint.TheLearningRateCurveHasOneDefinition."
+        "test_main_uses_the_runs_own_total_not_the_checkpoint_step",
+        # This mutation also drops the `--total-steps` override, so the test
+        # notices at its first assertion rather than its second. Checked by
+        # hand: the tool then infers grad_accum=3 for a run that used 8.
+        "the correct total was rejected",
+    ),
     (
         "M15 the save drops the loss history",
         SMOKE,

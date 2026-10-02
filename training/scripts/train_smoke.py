@@ -225,16 +225,30 @@ def schedule_span(steps: int, warmup: int, grad_accum: int) -> tuple[int, int]:
     return min(warmup_updates, updates - 1), updates
 
 
+def lr_factor(step: int, warmup: int, total: int) -> float:
+    """The learning-rate curve, in one place and at module level.
+
+    Module level rather than a closure inside `cosine_with_warmup` because a
+    second reader needs it: `tools/verify_checkpoint.py` predicts what a
+    checkpoint's learning rate *should* be from the run's recorded settings, and
+    an earlier version of that tool carried its own copy of this arithmetic.
+    A copy is a lookup table for drift — the day this curve changes, the
+    verifier would go on applying the old one and report correctly-saved
+    checkpoints as wrong. So there is one definition and the tool imports it,
+    which means the tool follows the curve instead of asserting a stale memory
+    of it.
+    """
+    if step < warmup:
+        return (step + 1) / max(1, warmup)
+    progress = (step - warmup) / max(1, total - warmup)
+    return 0.5 * (1 + math.cos(math.pi * min(1.0, progress)))
+
+
 def cosine_with_warmup(optimizer, warmup: int, total: int):
     import torch
 
-    def factor(step: int) -> float:
-        if step < warmup:
-            return (step + 1) / max(1, warmup)
-        progress = (step - warmup) / max(1, total - warmup)
-        return 0.5 * (1 + math.cos(math.pi * min(1.0, progress)))
-
-    return torch.optim.lr_scheduler.LambdaLR(optimizer, factor)
+    return torch.optim.lr_scheduler.LambdaLR(
+        optimizer, lambda step: lr_factor(step, warmup, total))
 
 
 def resolve_config(name: str, vocab_size: int):
