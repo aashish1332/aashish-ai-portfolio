@@ -430,7 +430,12 @@ def verify_source(source_id: str, spdx: str, url: str, reviewer: str, notes: str
 
 
 # ── CLI ──────────────────────────────────────────────────────────────
-def print_check(registry: dict, stream=sys.stdout) -> int:
+def print_check(registry: dict, stream=None) -> int:
+    # Resolved at call time, not as a `stream=sys.stdout` default: a default is
+    # bound at import, which pins the original stdout, escapes
+    # `redirect_stdout`, and escapes the UTF-8 reconfiguration in `main` — on a
+    # cp1252 console the `→` on the next line then raises UnicodeEncodeError.
+    stream = sys.stdout if stream is None else stream
     policy = registry.get("policy", {})
     print("Stage A corpus sources (§7.3 licence gate)", file=stream)
     print(f"  {policy.get('rule', '')}\n", file=stream)

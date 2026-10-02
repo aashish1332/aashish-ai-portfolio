@@ -54,7 +54,11 @@ def measure(tokenizer, samples: dict[str, list[str]]) -> dict[str, dict]:
     return out
 
 
-def report(tokenizer, vocab_size: int | None = None, stream=sys.stdout) -> dict[str, dict]:
+def report(tokenizer, vocab_size: int | None = None, stream=None) -> dict[str, dict]:
+    # See `training/scripts/fetch_corpus.py::print_check`: a `stream=sys.stdout`
+    # default is bound at import, so it pins the original stdout and escapes both
+    # `redirect_stdout` and any UTF-8 reconfiguration.
+    stream = sys.stdout if stream is None else stream
     samples = load_samples()
     stats = measure(tokenizer, samples)
     vocab = vocab_size or tokenizer.get_vocab_size()
@@ -71,6 +75,8 @@ def report(tokenizer, vocab_size: int | None = None, stream=sys.stdout) -> dict[
 
 
 def main(argv: list[str] | None = None) -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     import argparse
 
     from ai.tokenizer.train import load

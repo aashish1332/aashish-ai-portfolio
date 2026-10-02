@@ -314,6 +314,150 @@ class BoundedOutputs(unittest.TestCase):
                       "stats.json must be summarised, not dumped")
 
 
+class MeasuredBeforeBudgeted(unittest.TestCase):
+    """The token budget must come from a measurement of the config it budgets.
+
+    Measured on Kaggle 2026-10-02: §9 ran
+    `estimate_budget --config A --from-run smoke.json`, and the tool printed
+
+        config A — 37,890,560 params (37.89M)
+          measured           6,270 tokens/s
+
+    where 6,270 tokens/s came from a **4,769,472**-parameter, 4-layer, ctx-256
+    smoke model. Nothing failed: the two numbers were on adjacent lines of the
+    same report and neither tool compared them. Steps-reachable,
+    tokens-per-parameter and hours-needed all inherited the error, and §10 then
+    set its step count from them.
+
+    The tool now refuses a mismatched measurement. These tests keep the
+    *notebook* on the right side of that refusal — a notebook that pointed §9
+    back at `smoke.json` would produce a clean tool error, which is better than
+    a wrong budget but still a wasted 48-minute session.
+    """
+
+    def _joined(self) -> str:
+        return "\n".join(source for _index, source in code_cells(NOTEBOOK))
+
+    def test_the_budget_is_not_filed_under_a_smoke_measurement(self):
+        """Read the whole command, not one line of it.
+
+        First draft scanned line by line for a line containing both
+        `estimate_budget` and `--from-run`. In this notebook those two sit on
+        *different* lines of a backslash continuation, so the guard never
+        inspected anything: a mutation that repointed §9 at `smoke.json` — the
+        exact defect this class exists to prevent — passed. A guard that has
+        never fired on the thing it describes is not a guard.
+        """
+        joined = "\n".join(source for _index, source in code_cells(NOTEBOOK))
+        budgets = self._commands_with(joined, "estimate_budget")
+        self.assertTrue(budgets, "§9 no longer runs estimate_budget at all")
+
+        for command in budgets:
+            parts = command.split()
+            with self.subTest(file=parts[parts.index("--from-run") + 1]):
+                source_file = parts[parts.index("--from-run") + 1]
+                self.assertNotIn(
+                    "smoke", source_file,
+                    f"config A is budgeted from {source_file}. The smoke model is "
+                    f"4,769,472 parameters and config A is 37,890,560; budgeting one "
+                    f"from the other reports a rate it has never run at. Measure "
+                    f"config A with gpu_probe.py and point --from-run at that.")
+
+    def test_config_a_is_probed_at_the_settings_stage_a_trains_at(self):
+        joined = "\n".join(source for _index, source in code_cells(NOTEBOOK))
+        probes = self._commands_with(joined, "gpu_probe")
+        self.assertTrue(probes,
+                        "no cell measures config A. The smoke run cannot stand in "
+                        "for it: a 4-layer ctx-256 model is launch-bound, a "
+                        "10-layer ctx-1024 one is arithmetic-bound, so neither its "
+                        "speed nor its memory says anything about config A's.")
+        probe = probes[0]
+        parts = probe.split()
+        self.assertIn("--amp", parts, "a probe without --amp does not measure the "
+                                      "run that will happen (Stage A uses fp16)")
+        self.assertIn("--json", parts,
+                      "the probe has to write its result: §9 reads it via --from-run")
+        self.assertEqual(parts[parts.index("--config") + 1], "A",
+                         "the probe must measure the config that is about to train")
+
+    @staticmethod
+    def _commands_with(source: str, module_fragment: str) -> list[str]:
+        """The notebook's `!python ...` invocations of one module, uncommented.
+
+        Comments are dropped and `\\` continuations joined, because both are
+        places where a flag can be *mentioned* without being *passed* — and a
+        test that reads a mention instead of the argument matches the prose
+        instead of the command, which is how a guard stops being able to fail.
+        """
+        commands, current = [], ""
+        for raw in source.splitlines():
+            stripped = raw.strip()
+            if stripped.startswith("#") or not stripped:
+                continue
+            current += stripped
+            if current.endswith("\\"):
+                current = current[:-1]
+                continue
+            if module_fragment in current and current.startswith("!python"):
+                commands.append(current)
+            current = ""
+        if current and module_fragment in current:
+            commands.append(current)
+        return commands
+
+    def test_the_probed_batch_matches_the_training_batch(self):
+        """A probe at different settings answers a different question."""
+        joined = "\n".join(source for _index, source in code_cells(NOTEBOOK))
+        probes = self._commands_with(joined, "gpu_probe")
+        trains = self._commands_with(joined, "train_stage_a ")
+        self.assertTrue(probes)
+        self.assertTrue(trains)
+
+        def setting(command: str, flag: str) -> str | None:
+            parts = command.split()
+            return parts[parts.index(flag) + 1] if flag in parts else None
+
+        for flag in ("--batch", "--block", "--grad-accum"):
+            with self.subTest(flag=flag):
+                self.assertIsNotNone(setting(probes[0], flag),
+                                     f"the probe does not pass {flag}")
+                self.assertEqual(setting(probes[0], flag), setting(trains[0], flag),
+                                 f"the probe and the training run disagree on "
+                                 f"{flag}, so the probe measured something else")
+
+    def test_the_learning_update_is_the_size_that_was_documented(self):
+        """Halving the micro-batch must not silently halve the batch the model
+        learns from. `8 x 1024 x 8` is `16 x 1024 x 4`; that equivalence is the
+        whole justification for the change and it is easy to break later."""
+        joined = "\n".join(source for _index, source in code_cells(NOTEBOOK))
+        command = self._commands_with(joined, "train_stage_a ")[0]
+        parts = command.split()
+
+        def number(flag: str) -> int:
+            return int(parts[parts.index(flag) + 1])
+
+        self.assertEqual(number("--batch") * number("--block") * number("--grad-accum"),
+                         8 * 1024 * 8,
+                         "the learning update is no longer 65,536 tokens — the "
+                         "batch the model learns from has changed, not just the "
+                         "memory")
+
+    def test_the_memory_that_ran_out_is_not_requested_again(self):
+        """16 x 1024 allocated 12.84 GiB of the T4's 14.56 GiB and died at
+        step 1 (measured, 2026-10-02). Asking for it again re-runs that."""
+        joined = "\n".join(source for _index, source in code_cells(NOTEBOOK))
+        command = self._commands_with(joined, "train_stage_a ")[0]
+        parts = command.split()
+        batch = parts[parts.index("--batch") + 1]
+        accum = parts[parts.index("--grad-accum") + 1]
+        self.assertEqual(batch, "8",
+                         f"Stage A trains at --batch {batch}, which OOMed on a T4 "
+                         f"(12.84 of 14.56 GiB)")
+        self.assertEqual(accum, "8",
+                         "--grad-accum 8 is what keeps the learning update at "
+                         "65,536 tokens while the micro-batch halves")
+
+
 class Workspace(unittest.TestCase):
     def test_the_chosen_repository_is_writable(self):
         """`/kaggle/input` is a read-only mount, so a Dataset is not a workspace.

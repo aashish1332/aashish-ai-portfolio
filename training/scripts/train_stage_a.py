@@ -4,7 +4,7 @@
         --config A --tokenizer ai/tokenizer/artifacts/stage-a-16k \
         --shards data/processed/stage_a/shards \
         --run-dir /kaggle/working/checkpoints/stage-a \
-        --steps 20000 --batch 16 --block 1024 --grad-accum 4 --amp \
+        --steps 20000 --batch 8 --block 1024 --grad-accum 8 --amp \
         --max-minutes 540 --resume auto --gate
 
 This is `train_smoke.py`'s loop with Stage A's defaults, not a second
@@ -19,9 +19,23 @@ Differences from the smoke defaults, and why:
 |---|---|---|
 | config | 1–3M params, 4 layers | config A, 10 layers (~37.9M) |
 | learning rate | 3e-3 (50 steps) | 3e-4 with a 200-step warmup |
-| batch × block × accum | 4 × 128 × 1 (2K tokens/step) | 16 × 1024 × 4 (65K tokens/step) |
+| batch × block × accum | 4 × 128 × 1 (2K tokens/update) | 8 × 1024 × 8 (65K tokens/update) |
 | eval/save | every 25/10 steps | every 250/250 steps |
 | `--max-minutes` | — | set it: Kaggle sessions are time-boxed, and a clean stop writes a checkpoint |
+
+**Why 8 × 1024 × 8 and not 16 × 1024 × 4** (measured, 2026-10-02, Kaggle T4):
+
+The first Stage A run on this project died at step 1 with
+`torch.OutOfMemoryError`, having allocated 12.84 GiB of the T4's 14.56 GiB at
+16 × 1024. Activation memory scales with the micro-batch and not at all with
+`grad_accum`, so halving the micro-batch is the lever that moves the number;
+doubling `grad_accum` back keeps the learning update at the same 65,536 tokens,
+which means the *training* is unchanged and only the memory is.
+
+The smoke run that preceded it passed, and told us nothing: it trains a
+4,769,472-parameter, 4-layer, ctx-256 model at 4 × 128, none of which scales
+with what ran out of memory. So run `gpu_probe.py` at these settings before
+the long run — it is about a minute and it is what would have caught this.
 
 `--amp` is fp16 (a T4 has no bf16, §7.5). Run the smoke test first: it is
 cheap, and it fails fast on a corpus or tokenizer problem that would otherwise
@@ -44,9 +58,9 @@ STAGE_A_DEFAULTS = {
     "--shards": "data/processed/stage_a/shards",
     "--run-dir": "training/checkpoints/stage-a",
     "--steps": "20000",
-    "--batch": "16",
+    "--batch": "8",
     "--block": "1024",
-    "--grad-accum": "4",
+    "--grad-accum": "8",
     "--lr": "3e-4",
     "--warmup": "200",
     "--eval-every": "250",
@@ -78,6 +92,12 @@ def apply_defaults(argv: list[str]) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # This module's docstring is full of `x`, `->` and `§`, and `train_smoke`
+    # prints several of them. On a cp1252 console that is a UnicodeEncodeError
+    # mid-run; the delegate does the same reconfigure for its own output, but
+    # not before this module's `--help` has already printed.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     argv = list(sys.argv[1:] if argv is None else argv)
     if "--help" in argv or "-h" in argv:
         return smoke_main(["--help"])

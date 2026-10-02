@@ -163,6 +163,10 @@ def load(out_dir: Path | str):
 
 
 def main(argv: list[str] | None = None) -> int:
+    # The §7.2 in this line is not decoration: on a cp1252 console argparse
+    # raises UnicodeEncodeError printing it.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(description="Train the scratch BPE tokenizer (§7.2)")
     ap.add_argument("--corpus", nargs="+", required=True,
                     help="corpus files or globs (data/raw/seed/*.txt)")

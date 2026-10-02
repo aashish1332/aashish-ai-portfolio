@@ -113,7 +113,11 @@ def _time(fn):
 
 def benchmark(cfg: ModelConfig, tokens: int, prompt_tokens: int, warmup: int,
               threads: int, baseline_rss: int | None = None,
-              stream=sys.stdout) -> dict:
+              stream=None) -> dict:
+    # Resolved on entry, not as a `stream=sys.stdout` default: a default is
+    # bound at import, which pins the original stdout and escapes both
+    # `redirect_stdout` and the UTF-8 reconfiguration in `main`.
+    stream = sys.stdout if stream is None else stream
     import torch
     from ai.model.model import build
 
@@ -181,7 +185,9 @@ def benchmark(cfg: ModelConfig, tokens: int, prompt_tokens: int, warmup: int,
     return result
 
 
-def report(r: dict, stream=sys.stdout) -> None:
+def report(r: dict, stream=None) -> None:
+    stream = sys.stdout if stream is None else stream
+
     def mb(v):
         return "not measured this run" if v is None else f"{v / 1024 / 1024:.1f} MB"
 

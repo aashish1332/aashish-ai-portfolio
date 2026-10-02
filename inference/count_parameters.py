@@ -46,7 +46,11 @@ def fmt(n: int) -> str:
     return f"{n:,}"
 
 
-def report(cfg: ModelConfig, stream=sys.stdout) -> dict:
+def report(cfg: ModelConfig, stream=None) -> dict:
+    # Resolved on entry, not as a `stream=sys.stdout` default: a default is
+    # bound at import, which pins the original stdout and escapes both
+    # `redirect_stdout` and the UTF-8 reconfiguration in `main`.
+    stream = sys.stdout if stream is None else stream
     c = plan.counts(cfg)
     table = plan.param_table(cfg)
     table_total = plan.table_total(cfg)
@@ -99,8 +103,9 @@ def report(cfg: ModelConfig, stream=sys.stdout) -> dict:
             "target": target}
 
 
-def verify(cfg: ModelConfig, stream=sys.stdout) -> dict:
+def verify(cfg: ModelConfig, stream=None) -> dict:
     """Build the real module and compare. Skips honestly without torch."""
+    stream = sys.stdout if stream is None else stream
     try:
         import torch  # noqa: F401
     except ImportError as exc:  # pragma: no cover - environment dependent
@@ -128,7 +133,7 @@ def verify(cfg: ModelConfig, stream=sys.stdout) -> dict:
             "torch": torch.__version__, "match": True}
 
 
-def target_verdict(cfg: ModelConfig, total: int, stream=sys.stdout) -> dict:
+def target_verdict(cfg: ModelConfig, total: int, stream=None) -> dict:
     """Is this config inside the band it was sized for?
 
     Every config gets *its own* band or no verdict at all. A config that fell
@@ -136,6 +141,7 @@ def target_verdict(cfg: ModelConfig, total: int, stream=sys.stdout) -> dict:
     ever asked it to hit — which then failed `npm run params` (`--gate`, every
     config) for the one config that was behaving correctly.
     """
+    stream = sys.stdout if stream is None else stream
     if cfg.name == "A":
         lo, hi = TARGET_MIN, TARGET_MAX
         note = (f"§7.1 target {TARGET_MIN / 1e6:.0f}–{TARGET_MAX / 1e6:.0f}M "

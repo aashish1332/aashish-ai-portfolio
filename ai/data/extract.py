@@ -389,7 +389,12 @@ def load_fetch_manifest(source_dir: Path) -> dict | None:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def print_check(stream=sys.stdout) -> int:
+def print_check(stream=None) -> int:
+    # See `training/scripts/fetch_corpus.py::print_check`: a `stream=sys.stdout`
+    # default is bound at import, so it pins the original stdout and escapes both
+    # `redirect_stdout` and the UTF-8 reconfiguration in `main` — and the `→`
+    # below raises UnicodeEncodeError on a cp1252 console.
+    stream = sys.stdout if stream is None else stream
     print("Extractable sources (the fetch → .txt step the pipeline needs)", file=stream)
     print(f"  input:  {RAW_DIR}", file=stream)
     print(f"  output: {EXTRACTED_DIR}/<source id>.txt, one document per line\n", file=stream)

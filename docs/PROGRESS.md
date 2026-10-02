@@ -4705,3 +4705,131 @@ v1's cell output in the session log: 32,464 lines / 3,492 `files` entries ·
 200-source synthetic → 1,857 chars, `+180 more` marker · `npm run test:py` **361**
 (2 new: `BoundedOutputs`), `npm test` **533**, 0 failures · the guard's false
 positive on Stage B's fixed-shape manifest, and its fix, recorded above.
+
+---
+
+## The first Stage A run on real text — and the three defects it found — 2026-10-02
+
+The kernel did **not** die of a session timeout. `kernels status` returned
+`KernelWorkerStatus.ERROR` and the log's last entry is a `torch.OutOfMemoryError`
+at **47m33s** into a session that could have run twelve hours. Fetched with
+`KaggleApi.kernels_logs(ref)` — `kernels output` was no use, because it
+downloads all of `/kaggle/working` and that is ~600 MB of Wikipedia.
+
+### What the run proved (MEASURED, Kaggle T4, commit 282e687)
+
+| § | Result |
+|---|---|
+| 3 licence gate | 9 sources, **5 blocked** — `sangraha_verified`, `l3cube_hingcorpus`, `topical_chat`, `dailydialog`, `personachat` |
+| 2 fetch | hiwiki 241,701,076 B · simplewiki 356,186,307 B |
+| 2 extract | 433,262 + 453,744 documents |
+| 6 pipeline | kept **875,859 / 887,006** (11,147 dropped: 8,267 near-duplicate, 1,541 too-long, 1,020 PII, 315 blocklist, 4 no-letters) · en 453,108 / hi 421,901 / hinglish 850 · **leakage clean** (858,051 train / 17,808 val, exact 0, near 0) |
+| 5 tokenizer 16k | vocab **16,384** (63 placeholders), corpus 671,243,801 B, 6 special tokens ✓, 63 placeholders atomic ✓, 7 round-trips ✓ |
+| 6 shard | **170,276,818 train tokens in 3,433 files** · val 3,532,988 in 72 files · dtype uint16 |
+| 7.1 params | **37,890,560** analytic == materialised, 93 state-dict keys, `PASS` at 37.89M |
+| 8 smoke | 50 steps `PASS` (9.4249 → 5.5111) · resume to 80 `PASS` |
+| 10 Stage A | **`OutOfMemoryError` at step 1** |
+
+**The freeze fix worked.** `shard_summary` printed six lines for a 3,433-file
+manifest — the v1 cell had produced 32,464 lines there. That fix is no longer a
+hope; it is a measured line count in a session log.
+
+So the corpus pass, the licence gate, the tokenizer, the shards and the §7.1
+parameter arithmetic are all **MEASURED correct on real data at 16,384 vocab**.
+
+### Defect 1 — Stage A's batch did not fit, and the smoke test could not have said so
+
+```
+torch.OutOfMemoryError: Tried to allocate 1024.00 MiB.
+GPU 0 has a total capacity of 14.56 GiB of which 544.81 MiB is free.
+this process has 13.93 GiB in use. Of the allocated memory 12.84 GiB is
+allocated by PyTorch
+```
+
+at `--batch 16 --block 1024`. The §7.5 smoke run immediately before it passed,
+and that is the finding: the smoke run trains a **4,769,472**-parameter, 4-layer,
+ctx-256 model at 4 × 128. Not one number in it scales with what ran out of
+memory. It is a check that could not fail for the reason the run needed checking.
+
+**Decision (user, 2026-10-02): halve the micro-batch, keep the maths identical.**
+`--batch 8 --grad-accum 8`. Activation memory scales with the micro-batch and not
+at all with `grad_accum`; doubling `grad_accum` holds the learning update at the
+same 65,536 tokens. The training is unchanged; only the memory is.
+
+*NOT TESTED*: that 8 × 1024 × 8 fits. It is the measured failure being halved
+along a linear axis, and `gpu_probe.py` exists to confirm it on the card in about
+a minute rather than after 48 minutes of downloading.
+
+### Defect 2 — §9 budgeted config A with the smoke model's speed
+
+```
+config A — 37,890,560 params (37.89M)
+  measured           6,270 tokens/s
+  step               512 tokens (0.08 s/step)
+  reachable          0.193B tokens · 376,951 steps · 5.1 tokens/param
+  at this rate       needs 33.6 h → does NOT fit
+```
+
+6,270 tokens/s was measured on the **4,769,472**-parameter smoke model. Its step
+was 512 tokens (128 × 4, the smoke settings); config A's real step is 65,536.
+Throughput does not transfer between them — the small model is bound by
+kernel-launch overhead, the large one by arithmetic — and `estimate_budget` never
+compared `params`, so it printed config A's name beside the toy model's speed and
+every number below that line inherited the error. §10 then set its step count
+from it.
+
+**Fixed, in three parts:**
+
+1. `check_measurement()` refuses a `--from-run` file whose `params` is not the
+   config being budgeted, and refuses a file with no `params` at all rather than
+   assuming. `report()` prints where the rate came from.
+2. `train_smoke --json` now records `config` and `grad_accum`, so the provenance
+   exists to check and the step is the real one. `estimate_budget` inherits both.
+3. The estimate distinguishes **micro-steps** (what `--steps` counts) from
+   **learning updates** (what the optimizer takes). At grad-accum 8 they differ
+   by 8×; reporting one as "steps" is how a step count gets set wrong by 8.
+
+**New: `training/scripts/gpu_probe.py`** — five steps at the settings Stage A
+will use, reporting peak allocated/reserved, headroom, and tokens/sec *for that
+model*. An OOM is a reported result and exit 1, not a traceback. Output is capped
+at `MAX_REPORTED_STEPS = 10` lines, because it prints into a notebook cell.
+
+### Defect 3, found while testing the fix
+
+`def report(est, stream=sys.stdout)` — a default argument is evaluated **at
+import**, so `stream` was bound to the original stdout for the life of the
+process. That object escaped both `contextlib.redirect_stdout` and the UTF-8
+reconfiguration in `main`, and on a cp1252 console the first `→` raised
+`UnicodeEncodeError` mid-report. Nine functions across the tree had the same
+default. All fixed to `stream=None` resolved on entry.
+
+`tests/py/test_output_streams.py` guards the *pattern* by AST, and carries a
+demonstration that reproduces the defect (it prints `x` to the real console while
+the test believes it redirected stdout). The second test requires every entry
+point that prints non-ASCII to reconfigure its console — it immediately found
+four that did not.
+
+### Evidence
+
+- `KaggleApi.kernels_logs('aashishkumarrajput/training-stage-a-v2')` — 48,050 B,
+  412 records, decoded to `kaggle-push/out/kaggle.txt`
+- guard: `estimate_budget --config A --from-run <the actual Kaggle smoke.json>` →
+  `SystemExit`, **0 lines of stdout**, no report printed
+- mutation-tested: guard disabled → 7 failures · compare config *name* instead of
+  parameter count → 1 failure · stop inheriting `grad_accum` → 1 failure
+- notebook mutations, applied from Python because Git Bash rewrites `/kaggle/…`
+  and mangles `--flag`: point §9 at `smoke.json` → caught · probe a different
+  batch than training → caught · train at `--batch 16` → caught · shrink
+  `grad-accum` → caught · probe without `--amp` → caught. **5/5.**
+- a first attempt at the notebook guard scanned line by line for `estimate_budget`
+  and `--from-run` together; they sit on different lines of a `\` continuation, so
+  it inspected nothing and mutation A survived. Fixed to parse joined commands.
+- `npm run test:py` **387** (was 361: `MeasurementProvenance`, `StepUnits`,
+  `MeasuredBeforeBudgeted`, `gpu_probe`, `output_streams`), `npm test` **533**,
+  0 failures · `npm run build` clean · `count_parameters --config all --gate` PASS
+
+### Not tested
+
+Whether 8 × 1024 × 8 fits on a T4; config A's real tokens/s (the probe measures
+it and §9 consumes it — until a run does it, every §14 throughput number is
+still open); and whether 20,000 micro-steps at that rate fits 540 minutes.

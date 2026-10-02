@@ -517,12 +517,38 @@ and not a wikitext parser; `MARKUP_LIMITATIONS` names what it misses.
    is cheap enough to run before every change and it fails fast on a corpus or
    tokenizer problem that would otherwise surface 40 minutes in.
 5. **`count_parameters.py --config A --gate`** — analytic and materialised.
-6. **Measure throughput for ~100 steps**, then decide the budget:
+6. **Measure the config you are about to train**, then decide the budget:
 
    ```bash
-   python -m training.scripts.estimate_budget --config A --from-run smoke.json \
+   python -m training.scripts.gpu_probe --config A \
+       --tokenizer ai/tokenizer/artifacts/stage-a-16k \
+       --shards data/processed/stage_a/shards \
+       --batch 8 --block 1024 --grad-accum 8 --steps 5 --amp \
+       --json probe-a.json
+
+   python -m training.scripts.estimate_budget --config A --from-run probe-a.json \
        --hours 9 --dataset-tokens data/processed/stage_a/shards
    ```
+
+   The probe costs about a minute and answers the two questions that decide the
+   run: **does this config fit** (peak memory, on this card, at this batch) and
+   **how fast is this config** (tokens/sec for *this* model).
+
+   **It has to be the config being budgeted.** On 2026-10-02 §9 read the smoke
+   run's `smoke.json` instead, and `estimate_budget` printed
+
+   ```
+   config A — 37,890,560 params (37.89M)
+     measured           6,270 tokens/s
+   ```
+
+   where 6,270 tokens/s belonged to a **4,769,472**-parameter, 4-layer, ctx-256
+   smoke model. Nothing failed: the two numbers were adjacent lines of one report
+   and neither tool compared them. Throughput does not transfer — the small model
+   is bound by kernel-launch overhead, the large one by arithmetic — so the step
+   count was then set from a rate config A has never run at.
+   `estimate_budget` now refuses a measurement whose `params` is not the config's,
+   and says which model it was measured on.
 
    §7.3: the budget is decided *after* measuring tokens/sec, and "~20 tokens per
    parameter" is a reference. The tool answers the question a Kaggle session
@@ -532,6 +558,10 @@ and not a wikitext parser; `MARKUP_LIMITATIONS` names what it misses.
    the free tier's ~30 h/week; on a T4 expect the *measured* figure to differ by
    a large factor, which is exactly why it is measured first.
 
+   The report names its unit. `micro-steps` is what `--steps` counts; one
+   optimizer update happens every `--grad-accum` of them, so `--steps 20000` at
+   grad-accum 8 is 2,500 updates.
+
 7. **Stage A training, resumable:**
 
    ```bash
@@ -539,9 +569,18 @@ and not a wikitext parser; `MARKUP_LIMITATIONS` names what it misses.
        --config A --tokenizer ai/tokenizer/artifacts/stage-a-16k \
        --shards data/processed/stage_a/shards \
        --run-dir /kaggle/working/checkpoints/stage-a \
-       --steps 20000 --batch 16 --block 1024 --grad-accum 4 --amp --gate \
+       --steps 20000 --batch 8 --block 1024 --grad-accum 8 --amp --gate \
        --max-minutes 540 --resume auto
    ```
+
+   **Why `--batch 8 --grad-accum 8`** (measured, 2026-10-02, Kaggle T4): at
+   `--batch 16` the first Stage A run raised `torch.OutOfMemoryError` at step 1
+   after allocating 12.84 GiB of the card's 14.56 GiB. Activation memory scales
+   with the micro-batch and not at all with `grad_accum`, so the micro-batch is
+   the lever — and doubling `grad_accum` keeps the learning update at the same
+   65,536 tokens, which means the *training* is unchanged and only the memory is.
+   Step 6's probe is what checks this now, in about a minute, instead of after
+   48 minutes of downloading and sharding.
 
    `train_stage_a.py` is the smoke loop with Stage A's defaults (config A, lr
    3e-4, 200-step warmup, 65K tokens/step), **not a second implementation** — a
@@ -660,9 +699,11 @@ A run is only useful if its numbers come back here, because §14's grades and th
 ABOUT card's status text are coupled to `docs/EVALUATION.json`. Four things, in
 order, and none of them needs the checkpoint to travel:
 
-1. **Throughput, from the smoke run** — the `tokens_per_second` line, or the whole
-   `/kaggle/working/smoke.json` (`--json` writes it). That one measurement is what
-   makes §9 a decision instead of a guess.
+1. **Throughput and peak memory, from the probe** — `/kaggle/working/probe-a.json`
+   (`gpu_probe --json` writes it), or the `throughput` and `peak memory` lines.
+   That one measurement of *config A* is what makes the budget a decision instead
+   of a guess. The smoke run's `tokens_per_second` is a real number about a
+   4,769,472-parameter model and must not be filed under config A.
 2. **The budget print** — `estimate_budget` turns that measurement into hours, and
    the number it prints is the one to size the session to, not an intuition from a
    local card.
@@ -694,7 +735,7 @@ changed with them", and `npm test` is what proves it rather than a memory of it.
 Run everything (no torch required; ~35 s for the JS suite, ~70 s for Python):
 
 ```bash
-npm run test:all          # 533 JS tests + 359 Python tests (0 skip: torch is installed)
+npm run test:all          # 533 JS tests + 387 Python tests (0 skip: torch is installed)
 npm run params            # analytic parameter counts + each config's own band gate
 npm run smoke             # tokenizer contract, shards, cursor, checkpoints
 npm run export:model      # checkpoint → browser artifact + parity fixture

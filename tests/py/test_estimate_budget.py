@@ -87,6 +87,123 @@ class BudgetArithmetic(unittest.TestCase):
         self.assertIn("does NOT fit", buffer.getvalue())
 
 
+class StepUnits(unittest.TestCase):
+    """`--steps` counts micro-steps; the optimizer moves every `grad_accum`.
+
+    Reporting only one of the two is how a step count gets set 8x wrong, so
+    both are in the estimate and the one `--steps` takes is named as such.
+    """
+
+    def test_micro_step_and_learning_update_are_distinct_at_grad_accum_8(self):
+        est = eb.budget(CONFIG_A, 45_000.0, 9.0, block=1024, batch=8, grad_accum=8,
+                        overhead=0.0)
+        self.assertEqual(est["tokens_per_micro_step"], 8 * 1024)
+        self.assertEqual(est["tokens_per_update"], 8 * 1024 * 8)
+        self.assertAlmostEqual(est["micro_steps_reachable"],
+                               est["tokens_reachable"] / (8 * 1024))
+        self.assertAlmostEqual(est["learning_updates_reachable"],
+                               est["tokens_reachable"] / (8 * 1024 * 8))
+        self.assertAlmostEqual(est["micro_steps_reachable"]
+                               / est["learning_updates_reachable"], 8.0)
+
+    def test_the_two_units_coincide_when_there_is_no_accumulation(self):
+        est = eb.budget(CONFIG_A, 45_000.0, 9.0, block=1024, batch=8, grad_accum=1,
+                        overhead=0.0)
+        self.assertEqual(est["micro_steps_reachable"], est["learning_updates_reachable"])
+
+    def test_report_names_which_unit_steps_takes(self):
+        import io
+
+        buffer = io.StringIO()
+        eb.report(eb.budget(CONFIG_A, 45_000.0, 9.0, block=1024, batch=8, grad_accum=8),
+                  stream=buffer)
+        text = buffer.getvalue()
+        self.assertIn("micro-steps", text)
+        self.assertIn("learning update", text)
+        self.assertIn("--steps", text)
+
+
+class MeasurementProvenance(unittest.TestCase):
+    """A throughput number must belong to the config it is filed under.
+
+    Measured on Kaggle 2026-10-02: `estimate_budget --config A --from-run
+    smoke.json` printed `config A — 37,890,560 params` beside
+    `measured 6,270 tokens/s`, where that rate came from a 4,769,472-parameter
+    smoke model. Nothing failed, so the whole token budget was arithmetic on a
+    speed config A has never run at. These tests use those exact numbers.
+    """
+
+    SMOKE = {"config": "smoke", "params": 4_769_472, "tokens_per_second": 6270.278,
+             "block": 128, "batch": 4, "grad_accum": 1}
+
+    def test_a_smoke_measurement_cannot_budget_config_a(self):
+        with self.assertRaises(SystemExit) as ctx:
+            eb.check_measurement(self.SMOKE, CONFIG_A)
+        message = str(ctx.exception)
+        self.assertIn("37,890,560", message)
+        self.assertIn("4,769,472", message)
+        self.assertIn("gpu_probe", message,
+                      "the error should say how to get a measurement that is usable")
+
+    def test_a_measurement_of_the_config_itself_is_accepted(self):
+        eb.check_measurement({"config": "A",
+                              "params": plan.counts(CONFIG_A)["total"],
+                              "tokens_per_second": 45_000.0}, CONFIG_A)
+
+    def test_a_file_with_no_params_is_refused_not_assumed(self):
+        # Silence here is the original bug one indirection away: an older
+        # metrics file simply has no provenance to check, so it must not pass.
+        with self.assertRaises(SystemExit) as ctx:
+            eb.check_measurement({"tokens_per_second": 6270.278}, CONFIG_A)
+        self.assertIn("params", str(ctx.exception))
+
+    def test_every_other_config_is_also_caught(self):
+        from ai.model.config import CONFIGS
+
+        for name, cfg in CONFIGS.items():
+            with self.subTest(config=name):
+                with self.assertRaises(SystemExit, msg=f"{name} should reject the smoke run"):
+                    eb.check_measurement(self.SMOKE, cfg)
+
+    def test_cli_refuses_the_kaggle_smoke_file_end_to_end(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "smoke.json"
+            path.write_text(json.dumps(self.SMOKE), encoding="utf-8")
+            with self.assertRaises(SystemExit):
+                eb.main(["--config", "A", "--from-run", str(path), "--hours", "9"])
+
+    def test_cli_inherits_grad_accum_so_the_step_is_the_real_one(self):
+        run = dict(self.SMOKE)
+        run.update(config="A", params=plan.counts(CONFIG_A)["total"], block=1024,
+                   batch=8, grad_accum=8)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "probe.json"
+            path.write_text(json.dumps(run), encoding="utf-8")
+            out = Path(tmp) / "est.json"
+            code = eb.main(["--config", "A", "--from-run", str(path), "--hours", "9",
+                            "--json", str(out)])
+            self.assertEqual(code, 0)
+            data = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(data["grad_accum"], 8)
+            self.assertEqual(data["tokens_per_update"], 8 * 1024 * 8)
+            self.assertIn("config A", data["measured_on"])
+
+    def test_report_states_where_the_rate_came_from(self):
+        import io
+
+        buffer = io.StringIO()
+        eb.report(eb.budget(CONFIG_A, 45_000.0, 9.0, measured_on="config A, 37,890,560 params"),
+                  stream=buffer)
+        self.assertIn("37,890,560", buffer.getvalue())
+
+    def test_an_unverified_command_line_rate_says_so(self):
+        import io
+
+        buffer = io.StringIO()
+        eb.report(eb.budget(CONFIG_A, 45_000.0, 9.0), stream=buffer)
+        self.assertIn("unverified", buffer.getvalue())
+
+
 class Inputs(unittest.TestCase):
     def test_dataset_tokens_reads_a_shard_manifest(self):
         with tempfile.TemporaryDirectory() as tmp:

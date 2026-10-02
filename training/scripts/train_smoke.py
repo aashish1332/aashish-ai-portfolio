@@ -403,10 +403,16 @@ def _finish(args, cfg, meta, counts, manager, batcher, losses, verdict, started)
     print(f"checkpoints: {manager.summary()}")
     print(f"manifest: {manifest}")
     if args.json:
+        # `config` and `grad_accum` are provenance, not decoration:
+        # `estimate_budget.py --from-run` refuses a throughput number measured on
+        # a different parameter count, which is only possible if this file
+        # records which model produced it.
         Path(args.json).write_text(json.dumps(
-            {"loss": losses, "verdict": verdict, "params": counts["total"],
+            {"loss": losses, "verdict": verdict, "config": args.config,
+             "params": counts["total"],
              "tokens_per_second": round(tokens_per_second, 3),
              "block": args.block, "batch": args.batch,
+             "grad_accum": args.grad_accum,
              "checkpoints": manager.summary()}, indent=2) + "\n", encoding="utf-8")
     if args.gate and verdict["verdict"] != "PASS":
         return 1
