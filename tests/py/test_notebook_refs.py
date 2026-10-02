@@ -816,12 +816,21 @@ class SessionWorkSurvives(unittest.TestCase):
     def test_the_archive_is_verified_before_it_is_written(self):
         """`archive` calls `verify` first, so a cache whose shards and tokenizer
         disagree cannot leave the session as a single file that a later session
-        installs without complaint."""
-        joined = self._joined()
-        self.assertIn("corpus_cache save", joined)
-        self.assertIn("corpus_cache archive", joined)
-        save_at = joined.index("corpus_cache save")
-        archive_at = joined.index("corpus_cache archive")
+        installs without complaint.
+
+        Comment lines are excluded before the two are ordered. Without that,
+        explaining in the cache cell that `corpus_cache archive` wraps its
+        payload in a directory put that phrase earlier in the notebook than the
+        save that precedes it, and the guard failed on a sentence.
+        """
+        commands = "\n".join(
+            line for _index, source in code_cells(NOTEBOOK)
+            for line in source.splitlines() if not line.strip().startswith("#")
+        )
+        self.assertIn("corpus_cache save", commands)
+        self.assertIn("corpus_cache archive", commands)
+        save_at = commands.index("corpus_cache save")
+        archive_at = commands.index("corpus_cache archive")
         self.assertLess(save_at, archive_at,
                         "archiving before saving has nothing to read")
 
@@ -978,23 +987,81 @@ class CacheIsFoundWhereKagglePutsIt(unittest.TestCase):
                          "was wrong")
 
     def test_the_cell_actually_finds_a_cache_under_the_real_layout(self):
-        """The strongest form: run the lookup against a simulated mount."""
+        """The strongest form: run the lookup against a simulated mount.
+
+        Four shapes, because three of them are real. The published corpus
+        dataset holds one `corpus-cache.tgz` — a directory of 3,521 files was
+        uploaded with `kaggle datasets create -p .` and only `CACHE.json`
+        arrived, silently and with no error. And `corpus_cache archive` writes
+        its members rooted at `corpus-cache/`, so extracting into a directory of
+        that name nests it twice; the first version of the cell looked one level
+        down and found nothing, which would have looked exactly like no cache.
+        """
+        import io as _io
+        import tarfile as _tarfile
         import tempfile as _tempfile
         from pathlib import Path as _Path
 
         source = self._cache_cell().split("if CACHE:")[0]
-        with _tempfile.TemporaryDirectory() as tmp:
-            mount = _Path(tmp) / "input"
-            nested = mount / "datasets" / "aashishkumarrajput" / \
-                "aashish-ai-stage-a-corpus"
-            nested.mkdir(parents=True)
-            (nested / "CACHE.json").write_text("{}", encoding="utf-8")
-            body = source.replace("MOUNT = '/kaggle/input'", f"MOUNT = {str(mount)!r}")
+
+        def lookup(mount_root, work_root):
+            body = source.replace("MOUNT = '/kaggle/input'",
+                                  f"MOUNT = {str(mount_root)!r}")
+            body = body.replace("WORK = '/kaggle/working'",
+                                f"WORK = {str(work_root)!r}")
             namespace: dict = {}
-            exec(compile(body, "cache-cell", "exec"), namespace)  # noqa: S102
-            self.assertEqual(namespace.get("CACHE"), nested,
-                             "the lookup did not find a cache sitting exactly "
-                             "where Kaggle puts one")
+            real, sys.stdout = sys.stdout, _io.StringIO()
+            try:
+                exec(compile(body, "cache-cell", "exec"), namespace)  # noqa: S102
+            finally:
+                sys.stdout = real
+            return namespace.get("CACHE")
+
+        def archive(destination, wrapped: bool, scratch):
+            payload_dir = _Path(scratch) / "payload"
+            payload_dir.mkdir(parents=True, exist_ok=True)
+            prefix = "corpus-cache/" if wrapped else ""
+            with _tarfile.open(destination, "w:gz") as tar:
+                for member, payload in (("CACHE.json", "{}"),
+                                        ("shards/manifest.json", "{}")):
+                    holder = payload_dir / _Path(member).name
+                    holder.write_text(payload, encoding="utf-8")
+                    tar.add(holder, arcname=prefix + member)
+
+        with _tempfile.TemporaryDirectory() as tmp:
+            root = _Path(tmp)
+            # 1. the published shape: one archive whose payload is wrapped
+            mount = root / "input" / "datasets" / "aashishkumarrajput" / \
+                "aashish-ai-stage-a-corpus"
+            mount.mkdir(parents=True)
+            archive(mount / "corpus-cache.tgz", wrapped=True, scratch=root)
+            found = lookup(root / "input", root / "working")
+            self.assertIsNotNone(found, "the published archive was not found")
+            self.assertTrue((found / "CACHE.json").is_file(),
+                            f"extraction landed somewhere unexpected: {found}")
+
+        with _tempfile.TemporaryDirectory() as tmp:
+            root = _Path(tmp)
+            # 2. a flat archive, no wrapping directory
+            mount = root / "input" / "datasets" / "u" / "s"
+            mount.mkdir(parents=True)
+            archive(mount / "corpus-cache.tgz", wrapped=False, scratch=root)
+            found = lookup(root / "input", root / "working")
+            self.assertIsNotNone(found, "a flat archive was not found")
+
+        with _tempfile.TemporaryDirectory() as tmp:
+            root = _Path(tmp)
+            # 3. a directory holding CACHE.json — a cache attached any other way
+            direct = root / "input" / "datasets" / "u" / "s"
+            (direct / "shards").mkdir(parents=True)
+            (direct / "CACHE.json").write_text("{}", encoding="utf-8")
+            self.assertEqual(lookup(root / "input", root / "working"), direct)
+
+        with _tempfile.TemporaryDirectory() as tmp:
+            root = _Path(tmp)
+            # 4. nothing attached must report absent, not invent one
+            (root / "input").mkdir()
+            self.assertIsNone(lookup(root / "input", root / "working"))
 
     def test_an_absent_cache_is_reported_with_where_it_looked(self):
         """`"searched" in cell` is a tautology: declaring the list satisfies it.
