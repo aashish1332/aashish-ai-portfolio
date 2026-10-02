@@ -648,6 +648,55 @@ Dataset, Drive, or the Hub — or `/kaggle/working` plus a Save Version each tim
 `--max-minutes` stops cleanly and writes a checkpoint before the time box ends,
 so an interrupted run is a resume rather than a loss.
 
+**`/kaggle/working` does survive a failed run.** Measured 2026-10-02: version 1
+raised `OutOfMemoryError` at 47m33s and its working directory was still
+retrievable afterwards with `kaggle kernels output --file-pattern`. Note that
+`kaggle kernels files` reports `[]` for the same version, so use the downloader,
+not the lister, to decide whether something is there. The listing is slow (it
+enumerates a ~1.3 GB tree), so treat retrieval as a recovery path, not as the
+plan — push checkpoints out while the session is still alive.
+
+#### Caching the corpus pass
+
+From session start to the first training step is **47 minutes** (measured
+2026-10-02): two Wikipedia downloads, two extractions, the §7.3 filter pass and a
+170M-token shard write over 3,433 files. `/kaggle/working` is wiped between
+sessions and `§1` re-extracts the archive, so every session pays it again — and
+§7.3's reference budget implies about 3.7 sessions for config A.
+
+`corpus_cache` carries the two artifacts that are expensive to rebuild and cheap
+to move: the shards and the tokenizer artifact. **347.6 MB**, against 1,301 MB for
+`data/raw` + `data/extracted`, which is exactly what the shards were derived from.
+
+```bash
+# at the end of a session that did the work
+python -m training.scripts.corpus_cache save \
+    --shards data/processed/stage_a/shards \
+    --tokenizer ai/tokenizer/artifacts/stage-a-16k \
+    --out /kaggle/working/corpus-cache
+
+# in every later session, with that directory attached as a dataset
+python -m training.scripts.corpus_cache install \
+    --cache /kaggle/input/<corpus-dataset>
+```
+
+`install` verifies before it copies, and `verify` is the whole point of the tool.
+A stale cache fails *silently* without it: token ids are indices into the
+embedding, so shards built with a 12,288-token tokenizer are still structurally
+valid against a 16,384-token one — they train a model that reads text one way and
+was trained another, and no downstream check can see it. `train_smoke`'s
+`assert_matches_tokenizer` cannot catch it either, because it compares the shards
+to the tokenizer *present*, and a cache carrying a mismatched pair would be
+checking the pair against itself. So `verify` checks the **relationship**: the
+manifest's digest, the manifest's own `tokenizer_version` and `vocab_size`
+against `CACHE.json`, the tokenizer artifact's `tokenizer_version` against the
+shard generation, and every file present at its recorded size. Any failure is a
+named non-zero exit.
+
+**Until a cache exists, the notebook is unchanged by this** — no cache attached
+means the full pass runs exactly as before. The tool is built and tested first on
+purpose: a consumer built before its producer has nothing to be tested against.
+
 ### 7.4 What is still blocked on a decision
 
 Everything above is code that exists and is tested without torch. What remains
@@ -735,7 +784,7 @@ changed with them", and `npm test` is what proves it rather than a memory of it.
 Run everything (no torch required; ~35 s for the JS suite, ~70 s for Python):
 
 ```bash
-npm run test:all          # 533 JS tests + 387 Python tests (0 skip: torch is installed)
+npm run test:all          # 533 JS tests + 399 Python tests (0 skip: torch is installed)
 npm run params            # analytic parameter counts + each config's own band gate
 npm run smoke             # tokenizer contract, shards, cursor, checkpoints
 npm run export:model      # checkpoint → browser artifact + parity fixture
