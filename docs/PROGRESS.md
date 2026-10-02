@@ -5122,7 +5122,7 @@ without re-deriving it. Nothing in this session had produced that number, and
 reading the manifest is what caught it. `docs/TRAINING.md` now says so, because
 the mistake is worth remembering: do not quote a token count from notes.
 
-`npm run test:py` **438**, `npm test` **533**, 0 failures.
+`npm run test:py` **442**, `npm test` **533**, 0 failures.
 
 ### "The tests pass against the extracted archive" was not true — 2026-10-02
 
@@ -5155,4 +5155,53 @@ Measured both states rather than asserting either:
 | working tree (fixture present) | **436 tests, 0 skipped** |
 | same tree with `data/processed/` removed | **436 tests, 8 skipped, 0 failures** |
 
-`npm run test:py` **438**, `npm test` **533**, 0 failures.
+`npm run test:py` **442**, `npm test` **533**, 0 failures.
+
+### The cache would never have been found — 2026-10-02
+
+Caught while preparing v3, before it cost a session. The cache cell looked for
+the corpus dataset at:
+
+```python
+IMAGE = '/kaggle/input/aashish-ai-stage-a-corpus'
+CACHE = IMAGE if os.path.isdir(IMAGE) else None
+```
+
+That path does not exist. The notebook's own repository cell documents, from the
+first real session, that a Kaggle Dataset does **not** mount at
+`/kaggle/input/<name>` — "Your Datasets" land under
+`/kaggle/input/datasets/<username>/<slug>/`. So the check was always false, the
+cell printed "no corpus cache attached", and the session would have spent 47
+minutes rebuilding a corpus sitting on the mount.
+
+**The worst kind of failure, because it announces itself as success.** A cache
+that is not found and a cache that does not exist print the same thing, so the
+one run that could prove the feature worked was the run that skipped it.
+
+The claim had two independent sources and both were wrong:
+
+- `publish_corpus.py`'s docstring stated the flat mount as fact, and
+- `test_notebook_refs.CacheIsActuallyUsed` *required* the literal
+  `/kaggle/input/aashish-ai-stage-a-corpus` in the notebook, with the message
+  "the mount path must be the one publish_corpus.py creates".
+
+A guard that requires the defect is worse than no guard: it reads as coverage and
+actively blocks the fix. Both are corrected. The guard now asserts the opposite —
+that the slug does **not** appear — because the cell finds the cache by its
+`CACHE.json` and the dataset's name is genuinely irrelevant. Reintroducing the
+name-based lookup is caught by that guard *and* by a new one that executes the
+cell's lookup against a simulated `datasets/<user>/<slug>/` mount.
+
+Two of my own checks were also wrong while fixing it, both found by running them:
+
+- The first mutation runner decided pass/fail from the **last line of stdout**.
+  One of the new tests prints — it runs the cell — so every verdict read
+  "caught" and proved nothing. Keying on the exit code is the fix.
+- `test_an_absent_cache_is_reported_with_where_it_looked` asserted
+  `"searched" in cell`, which a bare `searched = []` satisfies. Deleting the
+  reporting loop left the variable behind and the guard passed. It now requires
+  the loop that does the reporting.
+
+4/4 mount mutations caught; 1/1 slug-guard mutation caught by two guards.
+
+`npm run test:py` **442**, `npm test` **533**, 0 failures.

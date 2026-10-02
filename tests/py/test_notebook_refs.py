@@ -580,8 +580,21 @@ class CacheIsActuallyUsed(unittest.TestCase):
                       "the notebook never reads a cache, so a cached session "
                       "pays the full 47 minutes anyway")
         self.assertIn("install", joined)
-        self.assertIn("/kaggle/input/aashish-ai-stage-a-corpus", joined,
-                      "the mount path must be the one publish_corpus.py creates")
+        # The corpus dataset's *slug* must NOT appear. It used to, in the path
+        # `/kaggle/input/aashish-ai-stage-a-corpus`, which is the mount that does
+        # not exist — Kaggle puts "Your Datasets" under
+        # `/kaggle/input/datasets/<username>/<slug>/`, as the notebook's own
+        # repository cell learned in the first real session. Requiring that
+        # literal made this guard defend the defect it should have caught.
+        #
+        # Requiring the slug to appear is no better: the cell finds the cache by
+        # its `CACHE.json`, so the name is genuinely irrelevant, and a guard that
+        # demands it would push the bug back in. Where it mounts is
+        # `CacheIsFoundWhereKagglePutsIt`, which executes the lookup.
+        self.assertNotIn("aashish-ai-stage-a-corpus", joined,
+                         "the notebook must find the corpus cache by its "
+                         "CACHE.json, not by a dataset name — that name-based "
+                         "lookup is the mount path that never exists")
 
     def test_a_failed_verification_stops_the_notebook(self):
         """`install` exits non-zero on a stale cache. If the cell ignores the
@@ -933,6 +946,68 @@ class ManifestKeysExist(unittest.TestCase):
                         f"read by every later session; a key that is missing is a "
                         f"shape change, and defaulting it reports a number "
                         f"instead of failing.")
+
+
+class CacheIsFoundWhereKagglePutsIt(unittest.TestCase):
+    """A dataset mount that is never found is a silent no-op.
+
+    The cache cell used to check one hard-coded path, `/kaggle/input/<slug>`.
+    The notebook's own repository cell records, from the first real session,
+    that a Kaggle Dataset does **not** mount there — "Your Datasets" land under
+    `/kaggle/input/datasets/<username>/<slug>/`. So the check was always false,
+    the cell printed "no corpus cache attached", and the session spent 47
+    minutes rebuilding a corpus that was sitting on the mount. Nothing failed;
+    the feature simply never ran.
+    """
+
+    def _cache_cell(self) -> str:
+        for _index, source in code_cells(NOTEBOOK):
+            if "CACHE" in source and "corpus_cache" in source:
+                return source
+        raise AssertionError("no cell looks for the corpus cache")
+
+    def test_it_searches_for_the_cache_record(self):
+        self.assertIn("CACHE.json", self._cache_cell(),
+                      "the cell must find the cache by its own record, not by a "
+                      "guessed path")
+
+    def test_it_walks_the_mount_rather_than_naming_one_directory(self):
+        cell = self._cache_cell()
+        self.assertRegex(cell, r"rglob\(\s*'CACHE\.json'\s*\)",
+                         "the mount must be walked; a single named path is what "
+                         "was wrong")
+
+    def test_the_cell_actually_finds_a_cache_under_the_real_layout(self):
+        """The strongest form: run the lookup against a simulated mount."""
+        import tempfile as _tempfile
+        from pathlib import Path as _Path
+
+        source = self._cache_cell().split("if CACHE:")[0]
+        with _tempfile.TemporaryDirectory() as tmp:
+            mount = _Path(tmp) / "input"
+            nested = mount / "datasets" / "aashishkumarrajput" / \
+                "aashish-ai-stage-a-corpus"
+            nested.mkdir(parents=True)
+            (nested / "CACHE.json").write_text("{}", encoding="utf-8")
+            body = source.replace("MOUNT = '/kaggle/input'", f"MOUNT = {str(mount)!r}")
+            namespace: dict = {}
+            exec(compile(body, "cache-cell", "exec"), namespace)  # noqa: S102
+            self.assertEqual(namespace.get("CACHE"), nested,
+                             "the lookup did not find a cache sitting exactly "
+                             "where Kaggle puts one")
+
+    def test_an_absent_cache_is_reported_with_where_it_looked(self):
+        """`"searched" in cell` is a tautology: declaring the list satisfies it.
+
+        The first version asserted only that, and deleting the reporting loop
+        left the variable behind -- so the guard passed on a cell that had
+        stopped saying where it looked. Assert the loop that does the reporting.
+        """
+        self.assertRegex(
+            self._cache_cell(), r"for\s+\w+\s+in\s+searched\b",
+            "when the cache is missing the cell must actually iterate what it "
+            "found and say where it looked; a `searched = []` that is never read "
+            "reports nothing")
 
 
 class ScratchStaysOutOfGit(unittest.TestCase):
