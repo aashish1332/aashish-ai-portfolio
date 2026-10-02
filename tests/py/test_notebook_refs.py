@@ -666,10 +666,14 @@ class CacheIsActuallyUsed(unittest.TestCase):
 class StepsComeFromTheMeasurement(unittest.TestCase):
     """`--steps 20000` was a constant no measurement produced.
 
-    At a pessimistic 10,000 tokens/s it is 4.6 h of a 9 h session and leaves the
-    rest of the quota unused; at 30,000 it is under two hours. And because the
-    cosine is built over `--steps`, a step count that does not match what fits
-    also decides where the learning rate ends up.
+    At a pessimistic 10,000 tokens/s it is 4.6 h of the 12 h session Kaggle
+    documents and leaves most of the quota unused; at 30,000 it is under two
+    hours. And because the cosine is built over `--steps`, a step count that
+    does not match what fits also decides where the learning rate ends up.
+
+    The 12 h is the *session*; the *week* is the tighter budget in practice —
+    see `docs/TRAINING.md` §7.0a for the arithmetic against the ~30 GPU-hour
+    weekly quota.
     """
 
     @staticmethod
@@ -723,13 +727,19 @@ class StepsComeFromTheMeasurement(unittest.TestCase):
         the kernel, `/kaggle/working` is wiped and nothing is published at all,
         so the checkpoint is lost rather than shortened.
 
-        The cap is not a single published number: 9 h on Kaggle's own forum,
-        12 h in 2026 third-party guides. Budgeting against the larger one is
-        budgeting for a session that may not exist, so the guard bounds the
-        budget by the smaller. Measured 2026-10-02: a run sized for 8.55 h of
-        training plus the 47-minute corpus phase overran a 9 h session.
+        **The cap, researched 2026-10-02 rather than recalled.** Kaggle's
+        documented limit is **12 h for CPU and GPU** notebook sessions, with 9 h
+        for TPU; the 2022 product update that raised it from 9 h says so in as
+        many words, and a Kaggle staff reply states "12 hours run for CPU and 9
+        hours for TPU". The "9 h" figures that circulate are TPU, or predate
+        January 2022. So the budget is *not* bounded by a misquoted cap: it is
+        bounded by 12 h minus `HEADROOM_HOURS`, which is the part that has to
+        absorb everything the budget does not mention — the data phase, the
+        smoke run, the probe, and a throughput estimate that comes in low.
         """
-        CAP_HOURS = 9.0
+        SESSION_CAP_HOURS = 12.0
+        HEADROOM_HOURS = 3.0
+        CAP_HOURS = SESSION_CAP_HOURS - HEADROOM_HOURS
 
         command = self._train_command()
         parts = command.split()
@@ -759,10 +769,11 @@ class StepsComeFromTheMeasurement(unittest.TestCase):
 
         self.assertLessEqual(
             hours, CAP_HOURS,
-            f"the run is budgeted for {hours:g} h of training. Kaggle's own forum "
-            f"says a GPU session is capped at {CAP_HOURS:g} h; budgeting past that "
-            f"means the kernel is killed and, because /kaggle/working is wiped, "
-            f"nothing is published")
+            f"the run is budgeted for {hours:g} h of training, leaving less than "
+            f"{HEADROOM_HOURS:g} h of a {SESSION_CAP_HOURS:g} h session for the "
+            f"data phase, the smoke run and the probe — none of which the budget "
+            f"counts. If the session cuts in first the kernel is killed and, "
+            f"because /kaggle/working is wiped, nothing is published at all")
         self.assertGreater(
             minutes, hours * 60,
             f"--max-minutes {minutes:g} is not above the {hours:g} h the budget was "

@@ -352,23 +352,53 @@ proven end to end on a run that finishes.
 
 ### 7.0a Size the run to the session, not to the quota
 
-Kaggle does not publish one GPU-session limit. **9 h** appears on Kaggle's own
-forum (`kaggle.com/general/397547`); **12 h** appears in 2026 third-party
-guides. Budget against the smaller one. The notebook's `--hours` is therefore
-**8**, not 9, and `StepsComeFromTheMeasurement` asserts that it stays at or below
-9 *and* that `--max-minutes` stays above it.
+**The two limits, researched 2026-10-02 rather than recalled.** Kaggle
+documents **12 h** for CPU and GPU notebook sessions and **9 h** for TPU; the
+[2022 product update](https://www.kaggle.com/product-feedback/302908) that
+raised CPU/GPU from 9 h to 12 h says so directly, and a Kaggle staff reply
+states "12 hours run for CPU and 9 hours for TPU". The "9 h" figures that
+circulate are TPU, or predate January 2022 — an earlier revision of this
+section repeated one of them as if it were a live CPU/GPU cap and budgeted
+against it. The separate, tighter limit is the **weekly GPU quota, ~30 h**,
+which Kaggle's own `efficient-gpu-usage` page describes as "30 hours or
+sometimes higher depending on demand".
 
-The two failure modes are not the same, and this is the reason for both halves
-of that guard:
+The notebook's `--hours` is **8**. That is not 12 minus a misquoted cap; it is
+12 minus 3 h of headroom, and the headroom is the part doing the work — the
+data phase, the smoke run and the probe are all *unbudgeted overhead* on top of
+those 8 h, and a throughput estimate that comes in low eats the rest.
+`StepsComeFromTheMeasurement` asserts both halves: hours ≤ cap − headroom, and
+`--max-minutes` **above** the budgeted hours.
+
+The two failure modes are not the same, which is why the guard has two halves:
 
 | what cuts in first | what happens |
 |---|---|
 | `--max-minutes` | the cosine stops part-way, the LR never reaches zero, and the quota is spent producing a checkpoint that was never annealed |
 | the Kaggle session | the kernel is killed, `/kaggle/working` is wiped, and **nothing is published** — the checkpoint is lost, not shortened |
 
-The second is why a run is not simply sized to fill whatever quota is left. With
-the corpus cache attached the data phase costs about a minute rather than 47, so
-8 h of training ends near 7 h of wall clock and leaves roughly 2 h of margin.
+#### The week is tighter than the session
+
+A 12 h session cap is generous; the **30 h/week** quota is not. Config A's run
+is budgeted at 8 h of training, and §7.3's reference budget implies about 3.7
+sessions for the corpus plan:
+
+| | h |
+|---|---|
+| one Stage A session, budgeted training | 8.0 |
+| × 3.7 sessions | **29.6** |
+| weekly GPU quota | **30** |
+
+That leaves **0.4 h** of slack. It is not a caution — it is the reason to treat
+a failed session as costing a week rather than an afternoon, and the reason the
+corpus phase is cached, the checkpoint is published, and a session is resumed
+rather than restarted. Every one of those exists to make a session worth
+keeping rather than to make it faster.
+
+Also worth knowing, because it constrains what a session can leave behind:
+`/kaggle/working` is auto-saved to **20 GB**. The corpus cache is 150 MB and a
+checkpoint 152 MB per file, so the budget is not close — but a plan that wrote
+`step_N` for every step would be.
 
 **Measured on a T4, 2026-10-02** (config A, 37,890,560 params, `--batch 8
 --block 1024 --grad-accum 8 --amp`): 13,493 tokens/s, 0.61 s per micro-step,

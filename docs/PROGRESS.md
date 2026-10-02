@@ -5489,3 +5489,55 @@ apart is the whole job, and the only way to tell is to go measure.
 deleted, with the reason in the file).
 
 `npm run test:py` **477**, `npm test` **533**, 0 failures, `npm run build` clean.
+
+### Correction: the session cap was 12 h, and the week is what binds
+
+Prompted by the instruction to research rather than assume, and it turned up a
+fact this project had recorded wrongly.
+
+**What was recorded.** `docs/TRAINING.md` §7.0a, the Stage A notebook, and a
+guard's docstring all said Kaggle "does not publish one GPU-session limit": 9 h
+on Kaggle's own forum, 12 h in 2026 third-party guides, therefore budget the
+smaller. The 8 h budget was justified as sitting "~2 h of margin under the lower
+of the two".
+
+**What is true.** Kaggle documents **12 h for CPU and GPU** notebook sessions
+and **9 h for TPU**, and has since January 2022 — the
+[product update](https://www.kaggle.com/product-feedback/302908) is titled
+"Increased session runtimes for notebooks" and says "from 9 hours to 12 hours
+for CPU and GPU notebooks. Limits will remain at 9 hours for TPU notebook
+sessions." A Kaggle staff reply is equally direct: "It is 12 hours run for CPU
+and 9 hours for TPU." The 9 h forum threads are TPU, or predate the change.
+(Corroborated across four independent sources; kaggle.com itself is DNS-blocked
+from this host, which is why the snippets are quoted rather than linked to the
+docs page.)
+
+So the claim was not merely pessimistic, it was **misattributed** — and the
+budget it produced was right by accident. The 8 h is defensible for reasons that
+have nothing to do with a cap: the data phase, the smoke run and the probe are
+unbudgeted overhead on top of it, and a low throughput estimate eats the rest.
+The notebook and §7.0a now say that instead, and `StepsComeFromTheMeasurement`
+keeps its teeth by deriving its bound as `12 h − 3 h of headroom` rather than
+from a number nobody could source. Re-checked by mutation: raising the
+notebook's `--hours` to 10 still fails the guard.
+
+**And the limit that actually binds a plan.** The **weekly GPU quota is ~30 h**
+(Kaggle's `efficient-gpu-usage`: "30 hours or sometimes higher depending on
+demand"). Against §7.3's ~3.7 sessions for config A at 8 h of training each:
+
+| | h |
+|---|---|
+| one Stage A session, budgeted training | 8.0 |
+| × 3.7 sessions | **29.6** |
+| weekly quota | **30** |
+
+**0.4 h of slack.** That number is the reason the corpus phase is cached, the
+checkpoint is published and a session resumes instead of restarting: not speed,
+but the fact that a wasted session costs a week rather than an afternoon. It is
+now written down in §7.0a, where the decision it informs actually lives.
+
+Also corrected while there: `/kaggle/working` auto-saves **20 GB**, which is
+three orders of magnitude of headroom for a 150 MB cache and a 152 MB
+checkpoint, but is worth knowing before a plan decides to keep every `step_N`.
+
+`npm run test:py` **477**, `npm test` **533**, 0 failures, `npm run build` clean.
