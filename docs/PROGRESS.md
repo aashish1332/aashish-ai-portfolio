@@ -5700,3 +5700,85 @@ than assuming.
 reaches a terminal state: that the corpus cache was found and installed, and that
 the learning rate anneals to ~0. v2's log is intact at
 `kaggle-push/out/kaggle-v2.log`, 130,711 B.
+
+---
+
+## 2026-10-02 (later) — the run log gets an auditor, and one of my own claims fails its own test
+
+The v2 log was read by eye, filed, and a checkpoint defect in it went unnoticed.
+So while v3 runs, the reading became a tool: `tools/audit_run_log.py` takes a
+decoded transcript and reports each of 19 stated claims as
+
+* **FOUND** — the evidence is there, quoted, with the line number so a human can
+  go and look at it;
+* **ABSENT** — the log explicitly records the *other* legitimate outcome (for
+  example `no corpus cache attached`), which is not a failure but does change
+  what the timings mean;
+* **MISSING** — neither. Treated as a **failure**, and the exit code is 1, so
+  this can gate a publish instead of being a report someone must remember to
+  read.
+
+That last rule is the whole design. `MISSING` can only be produced by a claim
+that did not happen or a search looking in the wrong place, and there is no third
+explanation — so the honest reading of it is "this session cannot be checked",
+which is not the same as "this session was fine".
+
+### A comment I wrote, falsified by my own mutation
+
+`probe throughput` and `throughput at the end` compete for the same word, and I
+had tightened the probe's pattern to `throughput\s{2,}` with a comment saying
+`\s+` "matched the trainer's colon form too". The mutation that widened it back
+to `\s+` was **not caught**, which sent me to check the premise:
+
+    throughput: 12,471 tokens/s      <- the trainer
+
+`throughput\s+` does **not** match that, because a colon is not whitespace. So
+the tightening was never load-bearing and the story justifying it was false — a
+guard kept for a reason that does not hold, which is the same defect class as the
+checkpoint bug two entries up. Corrected both: the comment now names the colon as
+the discriminator, and the mutation now uses the form that actually collides,
+`throughput[:\s]+`, which is caught.
+
+### An absence must carry its reason
+
+Also fixed by mutation testing: `ABSENT` was asserted by its *label* first, so a
+mutation that destroyed the explanation still failed the test — for the wrong
+reason. The reason is now asserted first, and a test asserts the ordering.
+
+### Tested against real trainer output, not a fixture I invented
+
+Fourteen of the tests use hand-written transcripts, which can only prove the
+auditor reads *my idea of* a log. So one test runs `train_smoke` for six steps
+and audits its actual stdout, and asserts both directions on real data: the
+claims a local run *can* establish are FOUND (step bound, params, state keys,
+throughput, gate, manifest, checkpoints), and the Kaggle-only claims are MISSING
+(cache, probe, STEPS, budget, sample). Skipped by name where the seed shards are
+absent, like the suite's other torch-dependent tests.
+
+Writing it also exposed two smaller things:
+
+* `tests/py/__init__.py` said "on this development machine torch is not
+  installed". Checked instead of trusted: `torch 2.14.0+cpu`, and
+  `tests.py.test_train_scripts` runs 14 tests with **0 skips**. The skip
+  machinery is still right for archive extracts and other hosts; the claim about
+  the machine was not.
+* Loading a module by path with `importlib` breaks `@dataclass`, because the
+  decorator resolves annotations through `sys.modules[cls.__module__]`. The error
+  names neither the tool nor the cause, so the loader now registers the module
+  first and says why.
+
+`tools/audit_run_log.py` · `tools/mutate_audit.py` ·
+`tests/py/test_audit_run_log.py` (18) · `tests/py/test_watch_kernel.py` ·
+`tools/watch_kernel.py` · `tests/py/__init__.py`.
+
+`tools/mutate_audit.py`: **6/6 caught for the right reason** (after the two
+corrections above — 4/6 on the first run, one UNCAUGHT and one WRONG REASON).
+
+`npm run test:py` **518** (was 500; +18), `npm test` **533**, 0 failures,
+`npm run build` clean.
+
+**Not yet done, on purpose:** the auditor has never been pointed at a real Kaggle
+transcript, because v3 is still RUNNING (poll 19 at 22:00:55, alive). Until it
+has, the claim patterns are validated only against a local run's output and the
+invented lines in the tests. When v3 lands, `tools/audit_run_log.py` runs on
+`kaggle-push/out/kaggle-training-stage-a-v2-v3.txt` before anything is published.

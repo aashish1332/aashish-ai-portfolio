@@ -952,7 +952,23 @@ run — the P4 gate itself.
 
 A run is only useful if its numbers come back here, because §14's grades and the
 ABOUT card's status text are coupled to `docs/EVALUATION.json`. Four things, in
-order, and none of them needs the checkpoint to travel:
+order, and none of them needs the checkpoint to travel.
+
+**Audit the transcript before filing anything from it.** Version 2's log was read
+by eye and its checkpoint defect was missed, so the reading is now a command:
+
+```bash
+PYTHONUTF8=1 python tools/audit_run_log.py kaggle-push/out/kaggle-*.txt
+```
+
+It reports each of §7's claims as **FOUND** (the evidence is quoted, with the line
+number, so it can be checked rather than believed), **ABSENT** (the log records
+*the other* legitimate outcome — e.g. `no corpus cache attached` — which is not a
+failure but does change what the timings mean) or **MISSING** (neither, and it
+exits 1, so a session whose log cannot be checked does not read as a session that
+passed). This runs on the **decoded transcript**; `tools/watch_kernel.py` writes
+one next to the raw log, and the raw log is the artifact that cannot be recovered
+later.
 
 1. **Throughput and peak memory, from the probe** — `/kaggle/working/probe-a.json`
    (`gpu_probe --json` writes it), or the `throughput` and `peak memory` lines.
@@ -990,7 +1006,7 @@ changed with them", and `npm test` is what proves it rather than a memory of it.
 Run everything (no torch required; ~35 s for the JS suite, ~70 s for Python):
 
 ```bash
-npm run test:all          # 533 JS tests + 500 Python tests (0 skip: torch is installed)
+npm run test:all          # 533 JS tests + 518 Python tests (0 skip: torch is installed)
 npm run params            # analytic parameter counts + each config's own band gate
 npm run smoke             # tokenizer contract, shards, cursor, checkpoints
 npm run export:model      # checkpoint → browser artifact + parity fixture
