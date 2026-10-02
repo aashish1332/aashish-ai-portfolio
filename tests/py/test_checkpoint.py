@@ -343,6 +343,87 @@ class HyperparameterRecord(unittest.TestCase):
         self.assertIn(record["device"], ("cpu", "cuda"))
 
 
+class ThereIsExactlyOneWayToWriteACheckpoint(unittest.TestCase):
+    """Every `manager.save` lives in a `_snapshot`, in both trainers.
+
+    The 2026-10-02 defect needed three save sites to all forget the same three
+    fields, and the final save forgot a fourth. `CheckpointManager(live=…)`
+    closes the optimizer/scheduler/scaler half of that by making them
+    impossible to pass wrongly; this closes the rest, by making "refresh the
+    moving fields, then save" a single function nobody can partially copy.
+
+    Checked over the AST rather than the text. `assertIn("_snapshot(", source)`
+    would pass on a file that also contained a fourth, inline save — the
+    substring would still be there, which is the failure mode this project has
+    now hit three times. Here an added save site fails the check.
+    """
+
+    TRAINERS = ("training/scripts/train_smoke.py", "training/scripts/train_stage_b.py")
+
+    # Only the training loop is constrained. `pipeline_checks` and
+    # `verify_resume_semantics` also call `manager.save`, on purpose: they are
+    # the torch-free demonstration that atomicity, pruning and latest/best
+    # selection work, and they save synthetic `_fake_state` dicts with no live
+    # optimizer behind them. Requiring them to go through `_snapshot` would be
+    # requiring a real training checkpoint's refresh list to describe a
+    # fixture. Scoping the rule to `train` is what makes it enforceable at all.
+    LOOP = "train"
+
+    def _saves_outside_snapshot(self, path: Path) -> list[str]:
+        import ast
+
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        offenders = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef) or node.name != self.LOOP:
+                continue
+            for inner in ast.walk(node):
+                if (isinstance(inner, ast.Call)
+                        and isinstance(inner.func, ast.Attribute)
+                        and inner.func.attr == "save"
+                        and isinstance(inner.func.value, ast.Name)
+                        and "manager" in inner.func.value.id.lower()):
+                    offenders.append(f"line {inner.lineno}")
+        return offenders
+
+    def test_the_training_loop_saves_only_through_snapshot(self):
+        for rel in self.TRAINERS:
+            with self.subTest(trainer=rel):
+                offenders = self._saves_outside_snapshot(ROOT / rel)
+                self.assertEqual(
+                    offenders, [],
+                    f"{rel} writes a checkpoint inline in {self.LOOP}(): "
+                    f"{offenders}. Every field that moves between saves has to "
+                    f"be refreshed in the same place, or one call site will "
+                    f"forget — which is how the final save lost its RNG state.")
+
+    def test_snapshot_refreshes_all_three_moving_fields(self):
+        # The fields `CheckpointManager` cannot refresh for us. Listed here so
+        # that adding a fourth one without adding it to `_snapshot` is a visible
+        # omission in review rather than a silent divergence between trainers.
+        import ast
+
+        for rel in self.TRAINERS:
+            with self.subTest(trainer=rel):
+                tree = ast.parse((ROOT / rel).read_text(encoding="utf-8"))
+                found = {None}
+                for node in ast.walk(tree):
+                    if not isinstance(node, ast.FunctionDef) or node.name != "_snapshot":
+                        continue
+                    for inner in ast.walk(node):
+                        if isinstance(inner, ast.Assign) and len(inner.targets) == 1:
+                            target = inner.targets[0]
+                            if (isinstance(target, ast.Subscript)
+                                    and isinstance(target.value, ast.Name)
+                                    and target.value.id == "state"):
+                                key = target.slice
+                                if isinstance(key, ast.Constant):
+                                    found.add(key.value)
+                for key in ("loss_history", "data_cursor", "rng"):
+                    self.assertIn(key, found,
+                                  f"{rel} _snapshot does not refresh {key!r}")
+
+
 class Rng(unittest.TestCase):
     def test_capture_and_restore_reproduce_the_same_numbers(self):
         ckpt.restore_rng(ckpt.capture_rng())

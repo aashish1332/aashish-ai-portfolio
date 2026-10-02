@@ -256,6 +256,29 @@ def resolve_config(name: str, vocab_size: int):
     return replace(CONFIGS[name], vocab_size=vocab_size)
 
 
+def _snapshot(state, losses, batcher, manager, step, is_best: bool = False) -> None:
+    """The one place a checkpoint is written, so the three fields that move
+    cannot be refreshed at two of the three call sites.
+
+    This is `train_stage_b._snapshot` with a different stream type, and the
+    duplication is deliberate rather than accidental: the two trainers are
+    meant to be the same loop over different data, and this is where that
+    shows. It also fixes a defect the inline version had — the final save
+    refreshed `loss_history` and `data_cursor` but **not** `rng`, so a
+    completed run's last checkpoint carried the RNG state from the last
+    periodic save rather than the run's own. Harmless for a finished run,
+    wrong for one that is resumed from it.
+
+    The optimizer, scheduler and scaler do not appear here because they cannot
+    be got wrong from this side: `CheckpointManager` was handed the live
+    objects and re-reads them itself.
+    """
+    state["loss_history"] = losses
+    state["data_cursor"] = batcher.state()
+    state["rng"] = ckpt.capture_rng()
+    manager.save(state, step=step, is_best=is_best)
+
+
 def hyperparameters(args) -> dict:
     """§7.5's hyperparameter record, built once and written twice.
 
@@ -396,20 +419,13 @@ def train(args) -> int:
             print(f"          val loss {val:.4f}")
             if val < best_val:
                 best_val = val
-                state["loss_history"] = losses
-                state["data_cursor"] = batcher.state()
-                state["rng"] = ckpt.capture_rng()
-                manager.save(state, step=step, is_best=True)
+                _snapshot(state, losses, batcher, manager, step, is_best=True)
 
         if step % args.save_every == 0:
-            state["loss_history"] = losses
-            state["data_cursor"] = batcher.state()
-            state["rng"] = ckpt.capture_rng()
-            manager.save(state, step=step)
+            _snapshot(state, losses, batcher, manager, step)
 
-    state["loss_history"] = losses
-    state["data_cursor"] = batcher.state()
-    manager.save(state, step=step, is_best=not manager.exists("best"))
+    _snapshot(state, losses, batcher, manager, step,
+              is_best=not manager.exists("best"))
 
     verdict = loss_verdict(losses)
     return _finish(args, cfg, meta, counts, manager, batcher, losses, verdict, started)

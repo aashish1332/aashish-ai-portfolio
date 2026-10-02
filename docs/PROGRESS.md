@@ -5396,3 +5396,36 @@ Unchanged by this work. The staleness guards have been exercised against real
 torch checkpoints and a real training loop, but not against a checkpoint
 produced *by the fixed trainer* on a GPU inside a Kaggle session, because no
 such run has finished yet. v3 is the first.
+
+### Follow-on: the same shape, one function over
+
+Auditing for the pattern immediately after committing the fix turned up the
+remainder of it in the same file. `train_smoke` had **three** inline save
+sites, each repeating the same three-line refresh — and the third, the final
+save at the end of the run, refreshed only two of them. The completed run's
+last checkpoint therefore carried the RNG state from the last *periodic* save,
+not the run's own. Harmless for a run nobody resumes; wrong for one that is,
+and wrong in a way that would have looked like a reproducibility bug
+somewhere else entirely.
+
+`train_stage_b` never had it, because it already routed every save through a
+single `_snapshot`. So the fix was to make the two trainers match the better
+half: `train_smoke` now has a `_snapshot` too, and all three call sites go
+through it. The missing `rng` is fixed by construction rather than by
+remembering.
+
+That invariant is now checked **over the AST**, not the text —
+`ThereIsExactlyOneWayToWriteACheckpoint` walks both trainers and fails if the
+training loop ever calls `manager.save` inline again. `assertIn("_snapshot(",
+source)` would have passed on exactly the mutation that matters, since the
+string survives an added save site; that is the third time in this run a
+text-shaped guard has been satisfiable without the behaviour. The rule is
+scoped to the `train` function and no further: `pipeline_checks` and
+`verify_resume_semantics` also call `manager.save`, on synthetic `_fake_state`
+dicts with no optimizer behind them, and demanding a real checkpoint's
+refresh list describe a fixture would be a rule nobody could satisfy.
+
+`tools/mutate_checkpoints.py` grows to **14/14 caught for the right reason**
+(M11 adds a fourth inline save site, M12 deletes the `rng` refresh).
+
+`npm run test:py` **471**, `npm test` **533**, 0 failures, `npm run build` clean.

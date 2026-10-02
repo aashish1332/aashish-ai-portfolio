@@ -171,6 +171,31 @@ MUTATIONS: list[tuple[str, Path, str, str, str, str]] = [
         "test_a_payload_that_is_not_a_dict_is_refused",
         "AttributeError",
     ),
+    (
+        "M11 the loop grows a fourth, inline save site",
+        SMOKE,
+        """        if step % args.save_every == 0:
+            _snapshot(state, losses, batcher, manager, step)
+""",
+        """        if step % args.save_every == 0:
+            _snapshot(state, losses, batcher, manager, step)
+        if step == args.steps - 1:
+            state["loss_history"] = losses
+            manager.save(state, step=step)
+""",
+        "tests.py.test_checkpoint.ThereIsExactlyOneWayToWriteACheckpoint."
+        "test_the_training_loop_saves_only_through_snapshot",
+        "writes a checkpoint inline",
+    ),
+    (
+        "M12 _snapshot stops refreshing the RNG",
+        SMOKE,
+        '    state["rng"] = ckpt.capture_rng()\n    manager.save(state, step=step, is_best=is_best)\n',
+        '    manager.save(state, step=step, is_best=is_best)\n',
+        "tests.py.test_checkpoint.ThereIsExactlyOneWayToWriteACheckpoint."
+        "test_snapshot_refreshes_all_three_moving_fields",
+        "does not refresh 'rng'",
+    ),
 ]
 
 
