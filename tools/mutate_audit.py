@@ -121,6 +121,25 @@ MUTATIONS: list[tuple[str, Path, str, str, str, str]] = [
         "test_a_correct_rate_early_in_the_run_is_not_called_broken",
         "a correct rate mid-run was called broken",
     ),
+    (
+        # The worst version of this defect: a transcript with no rates at all -
+        # which is what a resumed session produces - passing the anneal check
+        # instead of reporting that it cannot be checked.
+        "A9 the anneal check passes when there is no evidence to check",
+        AUDIT,
+        '            return ("MISSING",\n'
+        '                    "no `lr <value>` lines in the transcript, so the schedule "\n'
+        '                    "cannot be checked from the log alone")\n',
+        '            return ("CHECKED", "nothing to check, so it is fine")\n',
+        "tests.py.test_audit_run_log.TheScheduleIsMeasuredNotGlancedAt."
+        "test_no_rates_at_all_is_missing_rather_than_a_pass",
+        # The assertion's own message, not a guess at unittest's rendering of
+        # assertEqual. The first version of this used "None != 'MISSING'", which
+        # is the wrong way round as well as fragile - the mutation was caught,
+        # then reported as WRONG REASON, because the evidence string was
+        # invented rather than read.
+        "a transcript with no rates passed the anneal check",
+    ),
 ]
 
 

@@ -196,7 +196,8 @@ class TheScheduleIsMeasuredNotGlancedAt(unittest.TestCase):
 
     def test_no_rates_at_all_is_missing_rather_than_a_pass(self):
         kind, _ = module.check_annealed("loss: 9.0 -> 3.3 over 20000 steps\n")
-        self.assertEqual(kind, "MISSING")
+        self.assertEqual(kind, "MISSING",
+                         "a transcript with no rates passed the anneal check")
 
     def test_a_failed_anneal_changes_the_exit_code(self):
         path = Path(tempfile.mkdtemp()) / "v2like.txt"
@@ -284,6 +285,26 @@ class AgainstRealTrainerOutput(unittest.TestCase):
         cls.transcript.write_text(proc.stdout + proc.stderr, encoding="utf-8")
         cls.stdout = proc.returncode
 
+        # The same run resumed at its own step bound. Costs about a second,
+        # because there is nothing left to do, and it is the case that decides
+        # *which* transcript the anneal can be checked on.
+        cls.resumed = cls.tmp / "resumed.txt"
+        again = subprocess.run(
+            [sys.executable, "-m", "training.scripts.train_smoke",
+             "--config", "local",
+             "--tokenizer", "ai/tokenizer/artifacts/seed-1k",
+             "--shards", "data/processed/seed/shards",
+             "--run-dir", str(cls.tmp / "run"),
+             "--steps", "6", "--batch", "8", "--block", "256",
+             "--lr", "1.5e-3", "--warmup", "2",
+             "--eval-every", "3", "--save-every", "3", "--log-every", "1",
+             "--resume", "auto"],
+            cwd=ROOT, capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
+        )
+        cls.resumed.write_text(again.stdout + again.stderr, encoding="utf-8")
+        cls.resume_stdout = again.stdout
+
     def findings(self):
         text = module.load_text(self.transcript)
         found, _ = module.audit(text)
@@ -315,6 +336,23 @@ class AgainstRealTrainerOutput(unittest.TestCase):
         # numeric path against real trainer output rather than a written line.
         by_name = self.findings()
         self.assertEqual(by_name["schedule annealed"], "CHECKED")
+
+    def test_a_resumed_session_prints_no_step_lines_and_the_auditor_says_so(self):
+        # Measured 2026-10-02: a resume at the step bound announces itself, finds
+        # nothing to do, and exits - so its log has no `lr` lines at all. The
+        # anneal is a property of the whole run and lives in the FIRST session's
+        # log, so the correct answer here is MISSING with an explanation, not a
+        # silent pass. A future change that starts printing rates on resume would
+        # make this fail, which is the point: the two facts are linked.
+        self.assertIn("resumed from latest.pt", self.resume_stdout)
+        self.assertNotIn(" lr ", self.resume_stdout,
+                         "the resumed run now prints rates, so the docs' "
+                         "'audit the first session' note is stale")
+
+        findings, _ = module.audit(self.resumed.read_text(encoding="utf-8"))
+        anneal = {c.name: (k, d) for c, k, d in findings}["schedule annealed"]
+        self.assertEqual(anneal[0], "MISSING")
+        self.assertIn("cannot be checked from the log alone", anneal[1])
 
     def test_and_it_exits_non_zero_because_of_them(self):
         code, out = run_auditor([str(self.transcript), "--quiet"])

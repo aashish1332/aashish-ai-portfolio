@@ -5782,3 +5782,60 @@ transcript, because v3 is still RUNNING (poll 19 at 22:00:55, alive). Until it
 has, the claim patterns are validated only against a local run's output and the
 invented lines in the tests. When v3 lands, `tools/audit_run_log.py` runs on
 `kaggle-push/out/kaggle-training-stage-a-v2-v3.txt` before anything is published.
+
+---
+
+## 2026-10-02 (22:45) — the docs' own verification table, re-run
+
+The §7.5 table is a list of claims with ✅ next to them, and a ✅ that nobody
+re-runs is a memory rather than a check. So three of them were re-measured tonight.
+
+**Reproduced exactly:**
+
+* `train_smoke.py --gate`, 50 steps: `loss: 6.9452 → 4.5294 over 50 steps`,
+  `gate 'loss decreases': PASS (6.6847 → 4.3151)`. Both loss figures unmoved.
+* `train_smoke.py --resume auto --gate`: `resumed from latest.pt at step 50 (loss
+  history 50 entries, 27,648 tokens consumed)`. The wording is the claim — a resume
+  that silently began a new run would also print a passing loss line.
+* `npm run params`: `39 state-dict keys (lm_head tied)` at smoke, and
+  `torch 2.14.0+cpu: 1,820,352 params, 39 state-dict keys — MATCH the analytic
+  schema`.
+
+**Corrected:**
+
+* The table's timings — "13.6 s, 1,879 tok/s" — measured **12.0 s, 2,131 tok/s** on
+  this box tonight. Not an error: they describe the machine, and the loss figures
+  are deterministic and did not move. The row now says so, so the next person does
+  not read a 14% throughput difference as a regression.
+* `test_checkpoint.py (17 tests)` is now **48**. The count had drifted through
+  every addition in this session without anyone re-reading the row.
+
+**And the resume row is now a real end-to-end check of tonight's fix.** That
+command only succeeds because `assert_state_fresh` accepts the checkpoint: a stale
+one — the v2 defect — is refused at load, loudly, with the reason. So the
+checkpoint-staleness work is not only unit-tested; a real 50-step run, written and
+re-read, goes through the guard and passes.
+
+### A consequence worth knowing before v3 lands
+
+A session that resumes at its step bound prints **no progress lines at all** — it
+announces the resume, finds nothing to do, and exits (measured: 0.3 s, zero `lr`
+lines). So its transcript cannot be used to check the anneal, and the auditor
+correctly reports `MISSING` there: "cannot be checked from the log alone".
+
+That is the auditor being right rather than a gap. The anneal is a property of the
+whole run, so its evidence lives in the **first** session's log. If v3 needs a
+second session, `tools/audit_run_log.py` has to be pointed at session one's
+transcript. Now stated in §7.5, and pinned by a test that also asserts the
+resumed run still prints no rates — so if that ever changes, the note fails
+rather than quietly becoming wrong.
+
+`tools/mutate_audit.py`: **9/9 caught for the right reason.** The ninth (an
+anneal check that *passes* when there is no evidence to check) first came back
+WRONG REASON, because I had invented the evidence string `None != 'MISSING'` as a
+guess at what `assertEqual` prints. The assertion now carries a message and the
+evidence is that message.
+
+`npm run test:py` **526** (was 518; +8), `npm test` **533**, 0 failures.
+
+**Running:** v3 at poll 36 (22:43:58), still RUNNING, watcher alive.

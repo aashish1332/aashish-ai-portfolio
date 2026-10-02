@@ -970,6 +970,15 @@ passed). This runs on the **decoded transcript**; `tools/watch_kernel.py` writes
 one next to the raw log, and the raw log is the artifact that cannot be recovered
 later.
 
+**Audit the first session, not the resumed one.** A session that resumes at the
+step bound prints no progress lines at all — it announces the resume, finds
+nothing left to do, and exits. So its transcript has no `lr` lines, and the
+schedule-anneal check correctly reports MISSING there ("cannot be checked from
+the log alone"). That is the auditor being right, not a gap to work around: the
+anneal is a property of the *whole* run, so the evidence for it lives in the
+first session's log. Measured 2026-10-02 on a 50-step resume — `resumed from
+latest.pt at step 50`, 0.3 s, no step lines.
+
 1. **Throughput and peak memory, from the probe** — `/kaggle/working/probe-a.json`
    (`gpu_probe --json` writes it), or the `throughput` and `peak memory` lines.
    That one measurement of *config A* is what makes the budget a decision instead
@@ -1006,7 +1015,7 @@ changed with them", and `npm test` is what proves it rather than a memory of it.
 Run everything (no torch required; ~35 s for the JS suite, ~70 s for Python):
 
 ```bash
-npm run test:all          # 533 JS tests + 518 Python tests (0 skip: torch is installed)
+npm run test:all          # 533 JS tests + 526 Python tests (0 skip: torch is installed)
 npm run params            # analytic parameter counts + each config's own band gate
 npm run smoke             # tokenizer contract, shards, cursor, checkpoints
 npm run export:model      # checkpoint → browser artifact + parity fixture
@@ -1023,9 +1032,9 @@ npm run verify:engine     # §9.2 gate on the exported weights (exit 1 on any di
 | KV cache 10.00 KB/token at config A | `test_model_schema.test_kv_cache_matches_the_spec_claim` | ✅ |
 | HF Llama key set + shapes | `test_key_set_matches_hf_llama` (21 keys for a 2-layer config), 93 keys at config A | ✅ |
 | RoPE is a rotation; GQA grouping; RMSNorm formula | `test_model_schema.RopeMath` / `GqaHeadMap` / `ReferenceMath` | ✅ |
-| **Loss decreases over ~50 steps** | `train_smoke.py --gate` | ✅ 6.9452 → 4.5294 over 50 steps (13.6 s, 1,879 tok/s); `gate 'loss decreases': PASS` |
-| **Training loop resumes** | `train_smoke.py --resume auto --gate` | ✅ `resumed from latest.pt at step 50` with the loss history (50 entries) and token count (27,648) intact |
-| The *data stream* and *state* resume exactly | `test_checkpoint.py` (17 tests) | ✅ without torch |
+| **Loss decreases over ~50 steps** | `train_smoke.py --gate` | ✅ 6.9452 → 4.5294 over 50 steps; `gate 'loss decreases': PASS (6.6847 → 4.3151)`. The two *rates* re-measured on 2026-10-02 and are not invariant: 12.0 s / 2,131 tok/s on this box against 13.6 s / 1,879 tok/s when first recorded. The loss figures are deterministic and did not move; treat the seconds as describing the machine, not the run |
+| **Training loop resumes** | `train_smoke.py --resume auto --gate` | ✅ re-measured 2026-10-02: `resumed from latest.pt at step 50 (loss history 50 entries, 27,648 tokens consumed)`. The *wording* matters — a resume that silently began a new run would also print a passing loss line, and this is the sentence that distinguishes them |
+| The *data stream* and *state* resume exactly | `test_checkpoint.py` (48 tests, was 17 when written) | ✅ without torch |
 | A real run at §7.1 shape trains on CPU | `npm run train:local` → 4,984,064 params, val loss 2.1917 → **0.6423** | ✅ but see [4.1](#41-the-local-config--a-real-run-on-a-laptop-71-shape-cpu): pipeline, not quality |
 | The checkpoint survives export and round-trips into the browser engine | `npm run export:model` + `npm run verify:engine` | ✅ 138 positions, argmax **100 %**, worst abs Δ logit **8.82e-06** |
 | Model quality of any kind | — | ❌ not measured; §7.5's smoke test is not a quality result, and neither is the 4.98M `local` run |
