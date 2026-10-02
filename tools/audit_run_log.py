@@ -48,6 +48,98 @@ class Claim:
     alternatives: tuple[tuple[str, str], ...] = ()
 
 
+#: Checks that are not "is this line present" but "does this number say what it
+#: must". Kept separate from CLAIMS because the failure mode is different: a
+#: CLAIM that is present can still be *wrong*, and that is the case this file
+#: exists for.
+#:
+#: The learning-rate one is the reason. v2 completed 20,000 steps and reported a
+#: loss curve that looked fine, while the LR never annealed at all - it ended at
+#: 96.7% of peak because the schedule was built over the wrong span. Nothing in
+#: the log said so, and a presence check cannot: "lr" appears on every line.
+DERIVED: list[tuple[str, str]] = [
+    ("schedule annealed",
+     "the learning rate reached ~0 by the end. If it did not, the cosine was "
+     "built over the wrong span and the run trained at a rate it should have "
+     "left behind - the defect v2 shipped with, invisible in the loss curve"),
+]
+
+
+#: The trainer's progress line, with the step, the total and the rate together.
+#: All three are needed: the rate alone cannot be judged, because where it
+#: *should* be depends on how far through the run the line was printed.
+STEP_LINE = re.compile(
+    r"step\s+(\d+)/(\d+)\s+loss\s+([\d.]+)\s+lr\s+([0-9.]+e[+-]?[0-9]+)",
+    re.IGNORECASE)
+LR_LINE = re.compile(r"lr\s+([0-9.]+e[+-]?[0-9]+)", re.IGNORECASE)
+
+#: How far the rate may sit above the cosine's value at that point before the
+#: schedule is called wrong. Generous, because warmup, the last logged step not
+#: being the final step, and float32 all move the number slightly. The defect
+#: this catches is not subtle: it leaves the rate at ~97% of peak where the
+#: cosine should be at ~0.
+ANNEAL_TOLERANCE = 0.05
+
+
+def _cosine_ratio(fraction: float) -> float:
+    """What a correct cosine leaves, as a fraction of peak, at `fraction`."""
+    import math
+    return (1.0 + math.cos(math.pi * min(max(fraction, 0.0), 1.0))) / 2.0
+
+
+def check_annealed(text: str) -> tuple[str, str]:
+    """Is the learning rate where the cosine says it should be?
+
+    Not "is the final rate near zero". That test is wrong whenever the last
+    logged step is not the last step: at `--log-every 5000` the final printed
+    rate could sit at 3% of peak while the schedule is perfectly correct, and a
+    fixed threshold would call a good run broken. So this compares the observed
+    rate against the cosine's value *at the fraction the line was printed*, and
+    fails only when the observed rate is materially higher.
+
+    v2 is the case it was built for: 20,000 steps, a loss curve that looked
+    fine, and a rate ending at 96.7% of peak where the schedule should have put
+    it at ~0, because the cosine was spanned over the wrong number of steps.
+    """
+    rows = [(int(a), int(b), float(c), float(d))
+            for a, b, c, d in STEP_LINE.findall(text)]
+    if not rows:
+        rates = [float(m) for m in LR_LINE.findall(text)]
+        if not rates:
+            return ("MISSING",
+                    "no `lr <value>` lines in the transcript, so the schedule "
+                    "cannot be checked from the log alone")
+        peak, final = max(rates), rates[-1]
+        if peak <= 0:
+            return ("FAILED", f"every logged rate is {peak} - the schedule never "
+                               f"started")
+        ratio = final / peak
+        if ratio <= 0.001:
+            return ("CHECKED", f"no step numbers to place them, but {len(rates)} "
+                                f"rate(s) end at {ratio:.4%} of peak ({peak:.3e} -> "
+                                f"{final:.3e})")
+        return ("FAILED", f"no step numbers to place them, but {len(rates)} "
+                           f"rate(s) end at {ratio:.4%} of peak - suspiciously "
+                           f"close to where a broken cosine leaves it")
+
+    step, total, _, final = rows[-1]
+    peak = max(r[3] for r in rows)
+    if peak <= 0:
+        return ("FAILED", f"every logged rate is {peak} - the schedule never "
+                           f"started")
+    fraction = step / total if total else 0.0
+    observed, expected = final / peak, _cosine_ratio(fraction)
+    detail = (f"{len(rows)} step line(s); last at step {step:,}/{total:,} "
+              f"({fraction:.1%} of the run), rate {final:.3e} = {observed:.4%} "
+              f"of peak {peak:.3e}; a cosine leaves {expected:.4%} there")
+    if observed <= expected + ANNEAL_TOLERANCE:
+        return ("CHECKED", detail)
+    return ("FAILED", detail + ". The rate is far above where the schedule "
+                              "should have it, which is what a cosine built "
+                              "over the wrong span looks like - v2 ended at "
+                              "96.7% of peak with nothing reporting it.")
+
+
 CLAIMS: list[Claim] = [
     Claim("device", r"torch\s+(\S+)\s+\|\s+cuda\s+(\w+)",
           "records the torch build and whether a GPU was actually present — a "
@@ -194,6 +286,11 @@ def audit(text: str) -> tuple[list[tuple[Claim, str, str]], list[str]]:
             findings.append((claim, "MISSING",
                              f"no line matching /{claim.pattern}/ and no "
                              f"recorded alternative outcome"))
+
+    for name, why in DERIVED:
+        kind, detail = check_annealed(text)
+        findings.append((Claim(name, "(computed)", why), kind, detail))
+
     alarms = [note for pattern, note in ALARMS
               if re.search(pattern, text, re.IGNORECASE)]
     return findings, alarms
@@ -214,22 +311,30 @@ def main(argv: list[str] | None = None) -> int:
     text = load_text(args.transcript)
     findings, alarms = audit(text)
 
-    found = sum(1 for _, kind, _ in findings if kind == "FOUND")
+    found = sum(1 for _, kind, _ in findings if kind in ("FOUND", "CHECKED"))
     absent = sum(1 for _, kind, _ in findings if kind == "ABSENT")
     missing = [f for f in findings if f[1] == "MISSING"]
+    failed = [f for f in findings if f[1] == "FAILED"]
 
     print(f"=== {args.transcript} ({len(text):,} chars, "
           f"{text.count(chr(10)) + 1:,} lines) ===")
     for claim, kind, detail in findings:
-        if args.quiet and kind == "FOUND":
+        if args.quiet and kind in ("FOUND", "CHECKED"):
             continue
-        mark = {"FOUND": "OK     ", "ABSENT": "ABSENT ", "MISSING": "MISSING"}[kind]
+        mark = {"FOUND": "OK     ", "ABSENT": "ABSENT ", "MISSING": "MISSING",
+                "CHECKED": "CHECKED", "FAILED": "FAILED "}[kind]
         print(f"\n{mark} {claim.name}")
         print(f"        {claim.why}")
         print(f"        -> {detail}")
 
-    print(f"\n{found}/{len(CLAIMS)} claims found, {absent} legitimately absent, "
-          f"{len(missing)} missing")
+    total = len(findings)
+    print(f"\n{found}/{total} claims found or checked, {absent} legitimately "
+          f"absent, {len(missing)} missing, {len(failed)} FAILED")
+
+    if failed:
+        print("\nfailures — the log says otherwise:")
+        for claim, _, detail in failed:
+            print(f"  x {claim.name}: {detail}")
 
     if alarms:
         print("\nalarms:")
@@ -240,6 +345,7 @@ def main(argv: list[str] | None = None) -> int:
         print("\nMISSING is a failure, not a silence: the run either did not do "
               "this or the search cannot see it. Fix one or the other before "
               "treating this session as read.")
+    if missing or failed:
         return 1
     return 0
 

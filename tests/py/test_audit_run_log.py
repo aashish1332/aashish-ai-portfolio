@@ -152,6 +152,59 @@ class AnOutcomeTheLogRecordsIsNotAnAbsence(unittest.TestCase):
         self.assertIn("MISSING", out)
 
 
+class TheScheduleIsMeasuredNotGlancedAt(unittest.TestCase):
+    """The anneal check, which is the one v3 exists to satisfy.
+
+    v2 ran 20,000 steps with a loss curve that looked fine and a learning rate
+    that ended at 96.7% of its peak, because the cosine was spanned over the
+    wrong number of steps. Nothing in the log said so. These tests are what make
+    the log say it.
+    """
+
+    V2_DEFECT = ("step    1/20000  loss 9.87  lr 1.50e-03\n"
+                 "step 20000/20000  loss 2.14  lr 1.45e-03\n")
+
+    def test_the_v2_defect_is_caught_from_the_log_alone(self):
+        kind, detail = module.check_annealed(self.V2_DEFECT)
+        self.assertEqual(kind, "FAILED")
+        self.assertIn("96.6667% of peak", detail)
+        self.assertIn("20,000/20,000", detail)
+
+    def test_an_annealed_run_is_accepted(self):
+        text = ("step 1/6  loss 6.9471  lr 1.50e-03\n"
+                "step 6/6  loss 5.6484  lr 0.00e+00\n")
+        self.assertEqual(module.check_annealed(text)[0], "CHECKED")
+
+    def test_a_correct_rate_early_in_the_run_is_not_called_broken(self):
+        # The reason this compares against the cosine instead of a fixed
+        # threshold: at 88.8% of the run a *correct* schedule still sits at
+        # 3.08% of peak, and a "must be near zero" rule would fail a good run.
+        text = ("step 1/45065  loss 9.0  lr 1.50e-03\n"
+                "step 40000/45065  loss 3.3  lr 4.65e-05\n")
+        kind, detail = module.check_annealed(text)
+        self.assertEqual(kind, "CHECKED")
+        self.assertIn("a cosine leaves 3.0846% there", detail)
+
+    def test_a_rate_stuck_at_peak_midway_is_still_caught(self):
+        # 44.4% in, the cosine should be at 58.8%; 96.7% means the schedule is
+        # not moving, whatever the loss curve does.
+        text = ("step 1/45065  loss 9.0  lr 1.50e-03\n"
+                "step 20000/45065  loss 4.0  lr 1.45e-03\n")
+        self.assertEqual(module.check_annealed(text)[0], "FAILED")
+
+    def test_no_rates_at_all_is_missing_rather_than_a_pass(self):
+        kind, _ = module.check_annealed("loss: 9.0 -> 3.3 over 20000 steps\n")
+        self.assertEqual(kind, "MISSING")
+
+    def test_a_failed_anneal_changes_the_exit_code(self):
+        path = Path(tempfile.mkdtemp()) / "v2like.txt"
+        path.write_text(self.V2_DEFECT, encoding="utf-8")
+        code, out = run_auditor([str(path), "--quiet"])
+        self.assertEqual(code, 1, "a run whose schedule never annealed passed")
+        self.assertIn("schedule annealed", out)
+        self.assertIn("FAILED", out)
+
+
 class AlarmsAreSurfaced(unittest.TestCase):
     def test_a_wall_clock_stop_is_called_out(self):
         # The run stopping on --max-minutes means the cosine never finished, so
@@ -254,6 +307,12 @@ class AgainstRealTrainerOutput(unittest.TestCase):
                      "budget", "sample generation"):
             with self.subTest(claim=name):
                 self.assertEqual(by_name[name], "MISSING")
+
+    def test_the_real_run_s_rate_is_read_and_checked(self):
+        # The 6-step run anneals to exactly 0.00e+00, so this exercises the
+        # numeric path against real trainer output rather than a written line.
+        by_name = self.findings()
+        self.assertEqual(by_name["schedule annealed"], "CHECKED")
 
     def test_and_it_exits_non_zero_because_of_them(self):
         code, out = run_auditor([str(self.transcript), "--quiet"])
