@@ -219,7 +219,7 @@ idle page cost a measured 1.2 s of blocked main thread (`docs/BENCHMARKS.md` §1
 | [experiments/ternary/README.md](experiments/ternary/README.md) | §13's written go/no-go on the ternary experiment (no-go, and why) |
 
 ```bash
-npm run test:all     # 533 JS + 526 Python tests
+npm run test:all     # 533 JS + 531 Python tests
 node dev-ai-probe.js     # the click → answer gate in a real browser (60 checks, real GPU; SW_GL=1 software GL, THROTTLE=4 weak-device profile)
 npm run probe:firefox # the same gate as a Firefox smoke test (11 checks; WebDriver BiDi, FF_BIN overrides the binary)
 node dev-offline-probe.js # §9.3 cache: a second visit with model-export blocked

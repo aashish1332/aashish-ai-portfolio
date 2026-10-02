@@ -5839,3 +5839,87 @@ evidence is that message.
 `npm run test:py` **526** (was 518; +8), `npm test` **533**, 0 failures.
 
 **Running:** v3 at poll 36 (22:43:58), still RUNNING, watcher alive.
+
+---
+
+## 2026-10-02 (22:55) — a weights-only publish would have killed the first Stage B run
+
+Pre-flighting the publish, so a failure could not surface at 01:00 with eight
+GPU-hours behind it. The chain has two ends: `tools/publish_checkpoint.py` decides
+what is uploaded, and `train_stage_b.ipynb` decides what is read. The link between
+them is a **filename** — the one kind of coupling nothing notices until the far
+end moves.
+
+So: listed the staged archive, then listed what the notebook opens under
+`$STAGE_A`. They disagreed.
+
+| staged (weights-only) | read by `train_stage_b.ipynb` |
+|---|---|
+| `stage-a/latest.pt` | `$STAGE_A/latest.pt` (cell 13, `--init`) |
+| `stage-a/CHECKPOINT.json` | — |
+| | `{STAGE_A}/RUN_MANIFEST.json` (cell 5, `json.load`) |
+
+A weights-only publish staged **no `RUN_MANIFEST.json`**, so the first Stage B
+session that could ever consume a weights-only Stage A checkpoint — and v3's
+checkpoint *is* weights-only, because v3 runs the trainer as it stood before the
+staleness fix — would have refused to start.
+
+> **Corrected 23:05, an hour after writing it.** This entry first claimed the
+> failure was a bare `FileNotFoundError` in cell 5. That was a guess about a
+> failure mode, and it was wrong. `train_stage_b.ipynb`'s `find_stage_a()` will not
+> return a directory unless **both** `latest.pt` and `RUN_MANIFEST.json` are
+> present, so it returned `None` and cell 3 raised a deliberate
+> `SystemExit: No Stage A checkpoint found. Looked for a RUN_MANIFEST.json beside
+> a latest.pt, and for stage-a-checkpoint.tgz, under /kaggle/input` — naming the
+> missing file and the way out. The block was real and total; the diagnosis was
+> far better than the one I wrote. Measured by executing the notebook's own
+> function against both archive shapes, and now pinned by
+> `test_the_notebooks_own_finder_accepts_both_publish_shapes`, so the consequence
+> is established by the suite rather than argued in a comment.
+
+`RUN_MANIFEST.json` is **474,610 B against 151,607,329 B**, so there was never a
+size argument for leaving it out. The resumable path already shipped it
+(`collect()` listed it); the weights-only branch built its own file list and simply
+did not.
+
+**Fixed by making the list a function that drives the copy**, `staged_names(resumable)`,
+used by both the validation and the copy, so the two cannot drift again. The
+publisher moved from the gitignored `kaggle-push/` into `tools/`, for the same
+reason `verify_checkpoint.py` and `watch_kernel.py` did: it had just been found
+one bug away from destroying the work it exists to deliver, which makes it part of
+the project's evidence rather than its scratch. Its *output* is still scratch and
+still lands in `kaggle-push/`.
+
+`tests/py/test_publish_checkpoint.py` (7) parses the notebook for the files it
+reads under `$STAGE_A`, checks both publish shapes cover them, **and** runs the
+notebook's own `find_stage_a()` over an archive built from each declared shape.
+
+`tools/mutate_publish.py`: **4/4 caught for the right reason.** The middle one is
+the interesting one — it breaks the *extraction* of the notebook's references
+rather than the publisher, and the two coverage tests still pass, because
+"notebook's files ⊆ staged files" is trivially true when the notebook's list is
+empty. Only the anti-vacuity test catches it, which is why that test exists and
+why it is pinned here. A fourth aims the same defect at the execution test, so
+it cannot turn out to be decoration. Two of the three first came back WRONG REASON
+because I had *invented* the evidence strings as guesses at what `assertEqual`
+prints; the assertions now carry messages and the evidence is read from them.
+
+`npm run test:py` **533** (was 526; +7), `npm test` **533**, 0 failures,
+`npm run build` clean.
+
+**Running:** v3 at poll 39 (22:51:32), still RUNNING, watcher alive. Weights-only
+publish dry-run re-verified against the v2 checkpoint: 140.9 MB, `latest.pt` +
+`RUN_MANIFEST.json` + `CHECKPOINT.json`, `resumable False` with the reason named.
+
+### The lesson, stated because it has now happened four times this week
+
+Every wrong claim in this log has had the same shape: **a predicted failure mode
+written down instead of a measured one.** The `throughput` regex, the two test
+counts, the mangled header, and now this. Three of the four were caught by
+mutation testing, which is why the runners keep insisting on *evidence* rather
+than a non-zero exit. This one was caught by copying the notebook's function out
+and running it, which is the only reason it was caught at all — the text-shaped
+checks I had around it all passed.
+
+So the standing rule, now paid for four times: **before writing down what a defect
+would look like, run the thing.**
