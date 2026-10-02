@@ -36,6 +36,7 @@ copy-pastes, so a stale one is worse than an absent one.
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
@@ -456,6 +457,262 @@ class MeasuredBeforeBudgeted(unittest.TestCase):
         self.assertEqual(accum, "8",
                          "--grad-accum 8 is what keeps the learning update at "
                          "65,536 tokens while the micro-batch halves")
+
+
+MAGIC = "__magic__"
+
+
+def cell_python(source: str) -> str:
+    """A notebook cell as compilable Python, with `!` magics kept as calls.
+
+    IPython's `!cmd` is not Python, so a cell containing one cannot be parsed
+    directly — and a cell that only *runs on Kaggle* is a cell nobody finds the
+    syntax error in until an hour into a GPU session.
+
+    The magic becomes `__magic__("cmd")` rather than `pass`, so the command text
+    survives into the AST. That is what makes it possible to ask whether a
+    command is *inside* a conditional instead of merely somewhere in the cell —
+    the difference between a guard and a mention. Backslash continuations are
+    folded onto the first line.
+    """
+    out: list[str] = []
+    buffer: str | None = None
+    buffer_indent = ""
+    for raw in source.splitlines():
+        stripped = raw.lstrip()
+        indent = raw[:len(raw) - len(stripped)]
+        if buffer is not None:
+            buffer += " " + stripped.rstrip("\\").strip()
+            if not stripped.endswith("\\"):
+                out.append(f"{buffer_indent}{MAGIC}({buffer!r})")
+                buffer = None
+            continue
+        if stripped.startswith("!"):
+            body = stripped[1:].strip()
+            if body.endswith("\\"):
+                buffer, buffer_indent = body[:-1].strip(), indent
+                continue
+            out.append(f"{indent}{MAGIC}({body!r})")
+            continue
+        out.append(raw)
+    if buffer is not None:
+        out.append(f"{buffer_indent}{MAGIC}({buffer!r})")
+    return "\n".join(out)
+
+
+def parse_cell(source: str) -> tuple[ast.AST, dict[ast.AST, ast.AST]]:
+    """The cell's AST plus a child -> parent map, for ancestry questions."""
+    tree = ast.parse(cell_python(source))
+    parents: dict[ast.AST, ast.AST] = {}
+    for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            parents[child] = node
+    return tree, parents
+
+
+def magic_calls(source: str) -> list[tuple[str, ast.AST, dict[ast.AST, ast.AST]]]:
+    """Every `!` command in the cell, with its node and the parent map."""
+    tree, parents = parse_cell(source)
+    calls = []
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                and node.func.id == MAGIC):
+            calls.append((node.args[0].value, node, parents))
+    return calls
+
+
+def enclosed_by(node: ast.AST, parents: dict[ast.AST, ast.AST],
+                name: str) -> bool:
+    """Is this node inside an `if` whose test mentions `name`?"""
+    current = parents.get(node)
+    while current is not None:
+        if isinstance(current, ast.If):
+            mentioned = {n.id for n in ast.walk(current.test)
+                         if isinstance(n, ast.Name)}
+            if name in mentioned:
+                return True
+        current = parents.get(current)
+    return False
+
+
+class CellsAreValidPython(unittest.TestCase):
+    def test_every_code_cell_compiles_with_its_magics_stubbed(self):
+        for index, source in code_cells(NOTEBOOK):
+            with self.subTest(cell=index):
+                try:
+                    compile(cell_python(source), f"<cell {index}>", "exec")
+                except SyntaxError as exc:
+                    self.fail(f"cell {index} does not parse: {exc.msg} "
+                              f"(line {exc.lineno}). Every later cell in the "
+                              f"notebook is skipped when one raises, so this "
+                              f"would surface as a missing step, not as a crash.")
+
+
+class CacheIsActuallyUsed(unittest.TestCase):
+    """Installing a cache is not the same as *using* it.
+
+    A cache that is installed and then followed by the same unconditional
+    fetch / extract / pipeline / shard cells saves nothing at all — it costs 348
+    MB of dataset transfer and 47 minutes still. The guards are the feature; the
+    install cell alone is decoration. So this asserts every expensive step sits
+    behind the flag.
+    """
+
+    EXPENSIVE = {
+        # Match the flag that fetches, not the module name: `--check` is the
+        # licence gate — it prints a table and downloads nothing — so keying on
+        # `training.scripts.fetch_corpus` alone made the guard fire on a cheap
+        # cell. A guard that fires for the wrong reason teaches people to ignore
+        # it (the same mistake `_scales_with_corpus` was written to avoid).
+        "training.scripts.fetch_corpus --source": "the Wikipedia downloads",
+        "ai.data.extract --source": "extraction",
+        "training.scripts.prepare_data": "the pipeline and shard passes",
+        "ai.tokenizer.train": "tokenizer training",
+    }
+
+    @staticmethod
+    def _joined() -> str:
+        return "\n".join(source for _index, source in code_cells(NOTEBOOK))
+
+    def test_the_notebook_installs_a_cache_when_one_is_attached(self):
+        joined = self._joined()
+        self.assertIn("corpus_cache", joined,
+                      "the notebook never reads a cache, so a cached session "
+                      "pays the full 47 minutes anyway")
+        self.assertIn("install", joined)
+        self.assertIn("/kaggle/input/aashish-ai-stage-a-corpus", joined,
+                      "the mount path must be the one publish_corpus.py creates")
+
+    def test_a_failed_verification_stops_the_notebook(self):
+        """`install` exits non-zero on a stale cache. If the cell ignores the
+        return code, the session proceeds to shard from whatever is on disk —
+        the silent-mismatch outcome the whole tool exists to prevent.
+
+        Structural again: asserting the words `returncode` and `raise
+        SystemExit` appear somewhere passes for `if False: ... raise`, which is
+        the mutation that matters. The requirement is a conditional that tests
+        `returncode` and stops inside it.
+        """
+        found = False
+        for index, source in code_cells(NOTEBOOK):
+            if "corpus_cache" not in source:
+                continue
+            tree, _parents = parse_cell(source)
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.If):
+                    continue
+                tests_returncode = any(
+                    isinstance(n, ast.Attribute) and n.attr == "returncode"
+                    for n in ast.walk(node.test))
+                stops = any(isinstance(n, ast.Raise) for n in ast.walk(node))
+                if tests_returncode and stops:
+                    found = True
+        self.assertTrue(found,
+                        "the cache cell must branch on install's exit status and "
+                        "stop the notebook in that branch")
+
+    def test_every_expensive_step_is_behind_the_cache_flag(self):
+        """Structural, not textual.
+
+        The first draft asserted that a cell containing an expensive command
+        also contained the word `CACHED` somewhere. Flipping the actual guard to
+        `if False:` left the word present in a second conditional further down
+        the same cell, so the mutation survived: the check could not fail for
+        the reason it claimed. What matters is membership in the *body* of a
+        `CACHED` test, so that is what is asked.
+        """
+        for index, source in code_cells(NOTEBOOK):
+            for command, node, parents in magic_calls(source):
+                for needle, label in self.EXPENSIVE.items():
+                    if needle not in command:
+                        continue
+                    with self.subTest(cell=index, step=label, command=command[:60]):
+                        self.assertTrue(
+                            enclosed_by(node, parents, "CACHED"),
+                            f"cell {index} runs {label} outside any `CACHED` "
+                            f"conditional, so an attached cache saves nothing — "
+                            f"it costs 348 MB of transfer and 47 minutes still. "
+                            f"A stash that is installed and never used is "
+                            f"decoration.")
+
+    def test_the_expensive_steps_still_exist(self):
+        """Guarding a step is not the same as deleting it: a session with no
+        cache attached has to run all of them."""
+        joined = self._joined()
+        for needle in self.EXPENSIVE:
+            self.assertIn(needle, joined,
+                          f"{needle} is gone from the notebook, so a session "
+                          f"without a cache cannot build the corpus at all")
+
+    def test_both_branches_are_reachable(self):
+        """`CACHED` must be assigned before anything tests it."""
+        joined = self._joined()
+        self.assertIn("CACHED = bool(CACHE)", joined)
+
+
+class StepsComeFromTheMeasurement(unittest.TestCase):
+    """`--steps 20000` was a constant no measurement produced.
+
+    At a pessimistic 10,000 tokens/s it is 4.6 h of a 9 h session and leaves the
+    rest of the quota unused; at 30,000 it is under two hours. And because the
+    cosine is built over `--steps`, a step count that does not match what fits
+    also decides where the learning rate ends up.
+    """
+
+    @staticmethod
+    def _train_command() -> str:
+        joined = "\n".join(source for _index, source in code_cells(NOTEBOOK))
+        commands, current = [], ""
+        for raw in joined.splitlines():
+            stripped = raw.strip()
+            if stripped.startswith("#") or not stripped:
+                continue
+            current += stripped
+            if current.endswith("\\"):
+                current = current[:-1]
+                continue
+            commands.append(current)
+            current = ""
+        return next(c for c in commands if "train_stage_a " in c)
+
+    def test_the_step_count_is_a_variable_not_a_constant(self):
+        command = self._train_command()
+        parts = command.split()
+        steps = parts[parts.index("--steps") + 1]
+        self.assertEqual(steps, "$STEPS",
+                         f"--steps is {steps!r}. A literal here is a number no "
+                         f"measurement produced, which is how the session came "
+                         f"to stop on the step bound and leave quota unused.")
+
+    def test_the_variable_is_read_from_the_budget_the_probe_produced(self):
+        joined = "\n".join(source for _index, source in code_cells(NOTEBOOK))
+        self.assertIn("micro_steps_reachable", joined,
+                      "STEPS must come from estimate_budget's own field, not from "
+                      "a formula re-implemented in the notebook, which is the "
+                      "thing that would then drift from the tool")
+        self.assertIn("budget.json", joined)
+        self.assertIn("--json", joined)
+
+    def test_a_missing_budget_stops_rather_than_defaulting(self):
+        joined = "\n".join(source for _index, source in code_cells(NOTEBOOK))
+        self.assertIn("did not fit", joined,
+                      "the probe exits non-zero when the config does not fit, so "
+                      "there is no budget file; the notebook must say so instead "
+                      "of picking a number")
+
+    def test_the_time_box_is_above_the_budgeted_hours(self):
+        """--max-minutes must be a backstop, not the binding bound: if it cuts in
+        first, the cosine stops part-way and the LR never reaches zero."""
+        command = self._train_command()
+        parts = command.split()
+        minutes = float(parts[parts.index("--max-minutes") + 1])
+        joined = "\n".join(source for _index, source in code_cells(NOTEBOOK))
+        self.assertIn("--hours 9", joined, "the budget is stated in hours")
+        self.assertGreater(minutes, 9 * 60,
+                           f"--max-minutes {minutes:g} is not above the 9 hours "
+                           f"the budget was computed for, so the time box would "
+                           f"bind before the step count and the cosine would stop "
+                           f"part-way down")
 
 
 class Workspace(unittest.TestCase):

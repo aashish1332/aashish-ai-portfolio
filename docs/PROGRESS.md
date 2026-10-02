@@ -4890,3 +4890,52 @@ two hours at 30,000 — so the session would stop on the step bound, not on
 probe, then a step count, then a run whose cosine spans exactly that count. The
 corpus cache is what makes the probe pass cheap enough to be worth a separate
 session.
+
+### Prepared for the next push, while the run was in flight
+
+Four things had to exist before the run's output could be used, and one of them
+had already failed:
+
+* **`kaggle-push/watch_kernel.py`** — polls the kernel and pulls the log the
+  moment it reaches a terminal state. Two facts learned the hard way: the Kaggle
+  CLI's `kernels output` downloads all of `/kaggle/working` (~600 MB of
+  Wikipedia) and its enumeration exceeds a 300 s timeout, while
+  `KaggleApi.kernels_logs` returns the log in one call; and **that endpoint
+  returns an empty body while the kernel is still RUNNING**, so mid-run peeking
+  is not available and the terminal state is the only moment the log exists.
+  Both watchers then died on a single `RemoteDisconnected`, which is why the poll
+  now rides out transient failures and the log fetch retries — the watcher is the
+  only thing standing between a finished kernel and a log that can no longer be
+  fetched. It also writes the **raw** body to disk before decoding, because the
+  raw log is the irreplaceable artifact and the transcript is reproducible from
+  it. Version 1's raw log was lost exactly that way, to a `fetch_log.py` call
+  that overwrote it with an empty mid-run response.
+
+* **`kaggle-push/pull_artifacts.py`** and **`publish_corpus.py`** — the path from
+  a finished kernel to a reusable cache. Note `kernels_list_files` and
+  `kernels_output` disagree: on 2026-10-02 the lister reported **0 files** for
+  version 1 while the downloader retrieved that version's tree. So `--dry-run`
+  shows the patterns and is not a presence check; the download's exit code is
+  the answer.
+
+* **The notebook now uses a cache if one is attached** (§1b), and every expensive
+  step sits behind `CACHED`: fetch, extraction, both pipeline passes, and
+  tokenizer training. §10's `--steps` now comes from §9's probe via
+  `budget.json`'s `micro_steps_reachable`, and `--max-minutes 570` sits above the
+  9 hours the budget covers so the **step** count is the binding bound and the
+  cosine completes. With no cache attached the notebook runs exactly as before.
+
+* **Guards for all of it**, 26 notebook tests and 7 mutations. Two of those
+  guards were themselves wrong on the first attempt and mutation-testing is the
+  only reason that surfaced: both asserted that a cell *contained* the word
+  `CACHED` or `returncode` somewhere, so flipping the real conditional to
+  `if False:` — or moving the `raise` into a branch that never runs — left the
+  word present and the suite green. They are now structural: the commands are
+  kept as `__magic__("...")` calls so the AST records where each one sits, and
+  the test asks whether it is inside the *body* of a `CACHED` test. A third
+  mutation (re-indenting a guarded body to 8 spaces) also survived, because
+  Python accepts any consistent indentation and the "mutation" changed nothing;
+  it was replaced with a dedent that genuinely breaks the cell, plus a dropped
+  colon.
+
+`npm run test:py` **419**, `npm test` **533**, 0 failures, build clean.
