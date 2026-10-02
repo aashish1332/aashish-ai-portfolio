@@ -131,6 +131,14 @@ class PipelineOnly(unittest.TestCase):
         if train_smoke.have_torch():
             self.assertIn("torch is installed here", text)
             self.assertNotIn("torch is not installed", text)
+            # And it must name the check that does cover these two, because a
+            # banner saying "not verified by this pass" is read as "not
+            # verified" unless it points somewhere. The pointer is only worth
+            # asserting because the suite really does run both: the two tests
+            # below this one exercise the loop and resume it.
+            self.assertIn("tests.py.test_train_scripts", text,
+                          "the banner does not say where 'loss decreases' and "
+                          "'the training loop resumes' are actually checked")
         else:
             self.assertIn("torch is not installed on this machine", text)
         self.assertIn("data cursor", text)

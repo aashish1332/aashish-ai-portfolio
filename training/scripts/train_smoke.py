@@ -111,9 +111,17 @@ def pipeline_checks(tokenizer, meta, shards: dataset.ShardSet, cfg, run_dir: Pat
     print("  " + "─" * 62)
     print("  NOT VERIFIED BY THIS PASS: 'loss decreases' and 'training loop resumes'.")
     if have_torch():
-        print("  torch is installed here — drop --pipeline-only to run them.")
+        print("  torch is installed here — drop --pipeline-only to run them, or run")
+        print("  the ones that already cover both:")
+        print("    python -m unittest tests.py.test_train_scripts")
     else:
-        print("  torch is not installed on this machine; they run on Kaggle (P4).")
+        # "cannot run here" and "nobody has run it" are different claims, and
+        # the suite covers both of these on any machine with torch — including
+        # the one this prints on, if torch were installed. Saying only the first
+        # reads as if the second were also true.
+        print("  torch is not installed on this machine; they run on Kaggle (P4),")
+        print("  and are covered by tests.py.test_train_scripts wherever torch is")
+        print("  installed.")
     return {"mode": "pipeline-only", "checks": "passed",
             "unverified": ["loss decreases", "checkpoint resume under a real optimizer"]}
 

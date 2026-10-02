@@ -5590,3 +5590,20 @@ cut-run case where the right and wrong totals must give different answers, and
 `tools/mutate_checkpoints.py`: **19/19 caught for the right reason.**
 
 `npm run test:py` **486**, `npm test` **533**, 0 failures, `npm run build` clean.
+
+### Follow-on 4: the pipeline-only banner understated what is verified
+
+`npm run smoke` prints "NOT VERIFIED BY THIS PASS: 'loss decreases' and
+'training loop resumes'", and on a machine with torch follows it with "torch is
+installed here — drop --pipeline-only to run them". Both true of *that pass*.
+Together they read as "nobody has run these", which stopped being true when the
+suite gained `test_the_saved_checkpoint_carries_this_run_s_optimizer_and_schedule`
+and `test_an_interrupted_run_resumes_to_the_same_numbers` — two tests that run
+the real loop and resume it.
+
+Two phrasings of an honest statement can still add up to a false impression, so
+the banner now names the check: `python -m unittest tests.py.test_train_scripts`.
+A test asserts the pointer is present, which is only worth asserting because the
+suite really does cover both.
+
+`npm run test:py` **486**, `npm test` **533**, 0 failures.
