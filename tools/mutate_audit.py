@@ -37,10 +37,17 @@ MUTATIONS: list[tuple[str, Path, str, str, str, str]] = [
         "NO CACHE was attached",
     ),
     (
+        # This used to mutate `if missing:` — the *message* — and came back
+        # UNCAUGHT, correctly. The exit path is a separate `if missing or
+        # failed: return 1`, so suppressing the message leaves the guard intact,
+        # and the test still found the string "MISSING" in the per-claim
+        # listing. The mutation was aimed at the wrong line. This one drops
+        # `missing` from the exit condition, which is the real defect shape: a
+        # "simplification" that makes an uncheckable run look fine.
         "A2 MISSING stops failing the run",
         AUDIT,
-        "    if missing:\n",
-        "    if False:\n",
+        "    if missing or failed:\n        return 1\n",
+        "    if failed:\n        return 1\n",
         "tests.py.test_audit_run_log.AnOutcomeTheLogRecordsIsNotAnAbsence."
         "test_no_evidence_at_all_is_missing_and_fails_the_run",
         "MISSING did not change the exit code",
@@ -85,10 +92,34 @@ MUTATIONS: list[tuple[str, Path, str, str, str, str]] = [
     (
         "A6 --quiet stops suppressing what is already found",
         AUDIT,
-        "        if args.quiet and kind == \"FOUND\":\n",
+        '        if args.quiet and kind in ("FOUND", "CHECKED"):\n',
         "        if False:\n",
         "tests.py.test_audit_run_log.InputShapes.test_quiet_keeps_only_what_is_wrong",
         "manifest written",
+    ),
+    (
+        # The anneal check is the one v3 exists to satisfy, and it is the only
+        # claim that is a *number* rather than a line. These two mutations are
+        # the two ways it can go wrong: stop comparing against the schedule (and
+        # so let a broken cosine through), or go back to the naive "near zero"
+        # rule (and fail every run that has not printed its last line yet).
+        "A7 the anneal check stops comparing against the cosine",
+        AUDIT,
+        "    if observed <= expected + ANNEAL_TOLERANCE:\n"
+        "        return (\"CHECKED\", detail)\n",
+        "    if True:\n        return (\"CHECKED\", detail)\n",
+        "tests.py.test_audit_run_log.TheScheduleIsMeasuredNotGlancedAt."
+        "test_the_v2_defect_is_caught_from_the_log_alone",
+        "the v2 defect was not caught from the log",
+    ),
+    (
+        "A8 the anneal check goes back to a fixed near-zero threshold",
+        AUDIT,
+        "    if observed <= expected + ANNEAL_TOLERANCE:\n",
+        "    if observed <= 0.001:\n",
+        "tests.py.test_audit_run_log.TheScheduleIsMeasuredNotGlancedAt."
+        "test_a_correct_rate_early_in_the_run_is_not_called_broken",
+        "a correct rate mid-run was called broken",
     ),
 ]
 

@@ -166,7 +166,7 @@ class TheScheduleIsMeasuredNotGlancedAt(unittest.TestCase):
 
     def test_the_v2_defect_is_caught_from_the_log_alone(self):
         kind, detail = module.check_annealed(self.V2_DEFECT)
-        self.assertEqual(kind, "FAILED")
+        self.assertEqual(kind, "FAILED", "the v2 defect was not caught from the log")
         self.assertIn("96.6667% of peak", detail)
         self.assertIn("20,000/20,000", detail)
 
@@ -182,7 +182,8 @@ class TheScheduleIsMeasuredNotGlancedAt(unittest.TestCase):
         text = ("step 1/45065  loss 9.0  lr 1.50e-03\n"
                 "step 40000/45065  loss 3.3  lr 4.65e-05\n")
         kind, detail = module.check_annealed(text)
-        self.assertEqual(kind, "CHECKED")
+        self.assertEqual(kind, "CHECKED",
+                         "a correct rate mid-run was called broken")
         self.assertIn("a cosine leaves 3.0846% there", detail)
 
     def test_a_rate_stuck_at_peak_midway_is_still_caught(self):
@@ -190,7 +191,8 @@ class TheScheduleIsMeasuredNotGlancedAt(unittest.TestCase):
         # not moving, whatever the loss curve does.
         text = ("step 1/45065  loss 9.0  lr 1.50e-03\n"
                 "step 20000/45065  loss 4.0  lr 1.45e-03\n")
-        self.assertEqual(module.check_annealed(text)[0], "FAILED")
+        self.assertEqual(module.check_annealed(text)[0], "FAILED",
+                         "a rate stuck at peak midway was not caught")
 
     def test_no_rates_at_all_is_missing_rather_than_a_pass(self):
         kind, _ = module.check_annealed("loss: 9.0 -> 3.3 over 20000 steps\n")
