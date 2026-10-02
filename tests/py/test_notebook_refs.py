@@ -1077,6 +1077,136 @@ class CacheIsFoundWhereKagglePutsIt(unittest.TestCase):
             "reports nothing")
 
 
+class StageBHasAStageAToStartFrom(unittest.TestCase):
+    """`--init` must point at something a Stage B session can actually reach.
+
+    Stage B used to set `STAGE_A = '/kaggle/working/checkpoints/stage-a'` — the
+    *session's own* ephemeral directory. Stage A runs in a different kernel
+    version and `/kaggle/working` is wiped when that session ends, so that path
+    can never hold a checkpoint. The cell printed `stage A checkpoint: False` and
+    carried on, so the failure surfaced two cells later as a missing `--init` and
+    read like a Stage B fault.
+
+    The checkpoint is published as a dataset and *found* on the mount, for the
+    same reason the corpus cache is: a Kaggle Dataset does not land at
+    `/kaggle/input/<name>`.
+    """
+
+    STAGE_B = ROOT / "training" / "notebooks" / "train_stage_b.ipynb"
+
+    def _cell(self) -> str:
+        for _index, source in code_cells(self.STAGE_B):
+            if "find_stage_a" in source or "STAGE_A" in source:
+                return source
+        raise AssertionError("no cell establishes STAGE_A")
+
+    def test_it_does_not_name_the_ephemeral_working_directory(self):
+        joined = "\n".join(source for _i, source in code_cells(self.STAGE_B))
+        offenders = [line.strip() for line in joined.splitlines()
+                     if "STAGE_A" in line and "/kaggle/working/checkpoints/stage-a" in line]
+        self.assertEqual(
+            offenders, [],
+            "STAGE_A must not be the session's own /kaggle/working: Stage A runs "
+            "in a different kernel version and that directory is wiped when it "
+            "ends, so the path can never hold a checkpoint")
+
+    def test_it_finds_a_real_checkpoint_and_refuses_the_rest(self):
+        """Run the cell's lookup against synthetic mounts.
+
+        Three substring guards on this cell all turned out to be satisfiable
+        without the behaviour, and mutation testing is what showed it:
+
+        * `assertIn("rglob", cell)` — replacing the *search* with a fixed mount
+          path passed, because `rglob` still appears on the archive line.
+        * `assertRegex(cell, r"raise\\s+SystemExit")` — swapping `raise
+          SystemExit(` for `print(` passed, because `ensure_repo` earlier in the
+          same cell raises too.
+        * `assertIn("RUN_MANIFEST.json", cell)` — dropping the manifest
+          requirement passed, because the string is still there.
+
+        So the cell is executed instead. Five routes, four of which must not
+        yield a checkpoint.
+        """
+        import io as _io
+        import tarfile as _tarfile
+        import tempfile as _tempfile
+        from pathlib import Path as _Path
+
+        source = self._cell()
+        tail = source[source.index("def find_stage_a():"):
+                      source.index("print('stage A checkpoint:'")]
+        preamble = (
+            "import pathlib, tarfile\n"
+            f"MOUNT = pathlib.Path({str(_Path('/tmp/unused'))!r})\n"
+            "WORK = pathlib.Path('/tmp/unused')\n"
+        )
+
+        def lookup(mount_root, work_root):
+            body = preamble.replace(f"MOUNT = pathlib.Path({str(_Path('/tmp/unused'))!r})",
+                                    f"MOUNT = pathlib.Path({str(mount_root)!r})")
+            body = body.replace("WORK = pathlib.Path('/tmp/unused')",
+                                f"WORK = pathlib.Path({str(work_root)!r})")
+            namespace: dict = {}
+            real, sys.stdout = sys.stdout, _io.StringIO()
+            try:
+                exec(compile(body + tail, "stage-b-cell", "exec"), namespace)  # noqa: S102
+            finally:
+                sys.stdout = real
+            return namespace["STAGE_A"]
+
+        def checkpoint(directory, manifest: bool = True) -> _Path:
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / "latest.pt").write_bytes(b"pt")
+            if manifest:
+                (directory / "RUN_MANIFEST.json").write_text("{}", encoding="utf-8")
+            return directory
+
+        # 1. a directory on the mount, where Kaggle actually puts datasets
+        with _tempfile.TemporaryDirectory() as tmp:
+            root = _Path(tmp)
+            found = checkpoint(root / "input" / "datasets" / "u" / "s" / "stage-a")
+            self.assertEqual(lookup(root / "input", root / "working"), found)
+
+        # 2. the published archive, payload wrapped in a directory
+        with _tempfile.TemporaryDirectory() as tmp:
+            root = _Path(tmp)
+            mount = root / "input" / "datasets" / "u" / "s"
+            mount.mkdir(parents=True)
+            source_dir = checkpoint(root / "src" / "stage-a")
+            with _tarfile.open(mount / "stage-a-checkpoint.tgz", "w:gz") as tar:
+                tar.add(source_dir, arcname="stage-a")
+            found = lookup(root / "input", root / "working")
+            self.assertIsNotNone(found, "the published archive was not found")
+            self.assertTrue((found / "latest.pt").is_file())
+
+        # 3. the published archive, payload flat
+        with _tempfile.TemporaryDirectory() as tmp:
+            root = _Path(tmp)
+            mount = root / "input" / "datasets" / "u" / "s"
+            mount.mkdir(parents=True)
+            source_dir = checkpoint(root / "src2")
+            with _tarfile.open(mount / "stage-a-checkpoint.tgz", "w:gz") as tar:
+                for name in ("latest.pt", "RUN_MANIFEST.json"):
+                    tar.add(source_dir / name, arcname=name)
+            self.assertIsNotNone(lookup(root / "input", root / "working"),
+                                 "a flat archive was not found")
+
+        # 4. a latest.pt with no manifest beside it is not a checkpoint
+        with _tempfile.TemporaryDirectory() as tmp:
+            root = _Path(tmp)
+            checkpoint(root / "input" / "datasets" / "u" / "s", manifest=False)
+            with self.assertRaises(SystemExit):
+                lookup(root / "input", root / "working")
+
+        # 5. nothing attached must stop the notebook, not carry on
+        with _tempfile.TemporaryDirectory() as tmp:
+            root = _Path(tmp)
+            (root / "input").mkdir()
+            with self.assertRaises(SystemExit) as ctx:
+                lookup(root / "input", root / "working")
+            self.assertIn("No Stage A checkpoint found", str(ctx.exception))
+
+
 class ScratchStaysOutOfGit(unittest.TestCase):
     """The dataset tarball and the Kaggle working files are build outputs.
 
@@ -1182,6 +1312,20 @@ taught us the previous cell was wrong:
             (base / "training" / "notebooks").mkdir(parents=True)
             (base / "package.json").write_text("{}", encoding="utf-8")
 
+        def plant_stage_a(mount: Path) -> None:
+            """A Stage A checkpoint on the mount, so the cell can get past it.
+
+            Stage B's cell now stops when there is no Stage A checkpoint — which
+            is correct, and which made this test error for a reason that has
+            nothing to do with where the repository landed. A real Stage B
+            session has the checkpoint dataset attached, so the fixture has one
+            too; the test's subject is still repository placement.
+            """
+            stage_a = mount / "datasets" / "someone" / "aashish-ai-stage-a-checkpoint"
+            (stage_a / "latest.pt").parent.mkdir(parents=True, exist_ok=True)
+            (stage_a / "latest.pt").write_bytes(b"pt")
+            (stage_a / "RUN_MANIFEST.json").write_text("{}", encoding="utf-8")
+
         def plant_archive(base: Path) -> None:
             """Only the archive, as Kaggle actually mounted it.
 
@@ -1224,6 +1368,10 @@ taught us the previous cell was wrong:
                     target = (work if where[0] == "working" else mount).joinpath(
                         *where[1:])
                     planter(target)
+                    # The Stage A checkpoint rides on the *dataset mount* in
+                    # every scenario, including "already in working" where the
+                    # repository is not on the mount at all.
+                    plant_stage_a(mount)
 
                     # as_posix: a Windows temp path inside a single-quoted literal
                     # is a unicode-escape error, and the branch under test is the

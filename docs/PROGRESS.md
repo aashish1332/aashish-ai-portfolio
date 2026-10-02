@@ -5122,7 +5122,7 @@ without re-deriving it. Nothing in this session had produced that number, and
 reading the manifest is what caught it. `docs/TRAINING.md` now says so, because
 the mistake is worth remembering: do not quote a token count from notes.
 
-`npm run test:py` **442**, `npm test` **533**, 0 failures.
+`npm run test:py` **444**, `npm test` **533**, 0 failures.
 
 ### "The tests pass against the extracted archive" was not true — 2026-10-02
 
@@ -5155,7 +5155,7 @@ Measured both states rather than asserting either:
 | working tree (fixture present) | **436 tests, 0 skipped** |
 | same tree with `data/processed/` removed | **436 tests, 8 skipped, 0 failures** |
 
-`npm run test:py` **442**, `npm test` **533**, 0 failures.
+`npm run test:py` **444**, `npm test` **533**, 0 failures.
 
 ### The cache would never have been found — 2026-10-02
 
@@ -5204,4 +5204,65 @@ Two of my own checks were also wrong while fixing it, both found by running them
 
 4/4 mount mutations caught; 1/1 slug-guard mutation caught by two guards.
 
-`npm run test:py` **442**, `npm test` **533**, 0 failures.
+`npm run test:py` **444**, `npm test` **533**, 0 failures.
+
+### Stage B could never find a Stage A checkpoint — 2026-10-02
+
+Found while v3 trained, so it cost no GPU. `train_stage_b.ipynb` set
+
+```python
+STAGE_A = '/kaggle/working/checkpoints/stage-a'
+```
+
+That is **this session's own ephemeral directory**. Stage A runs in a different
+kernel version, and `/kaggle/working` is wiped when that session ends — so the
+path can never hold a checkpoint. The cell then printed
+`stage A checkpoint: False` and carried on, so the real failure surfaced two
+cells later as a missing `--init`, reading like a Stage B fault rather than a
+missing input.
+
+Stage B is now the same shape as the corpus cache, for the same reason: the
+checkpoint is published as a dataset and **found** on the mount, never named. A
+missing one stops the notebook, because Stage B has nothing to initialise from
+without it.
+
+`kaggle-push/publish_checkpoint.py` does the publishing — one archive, because
+a directory of files does not survive `kaggle datasets create` (the 3,521-file
+corpus cache uploaded one file and reported success). It records the sha256 of
+every file it ships, the parameter count, the step and the tokenizer generation
+in a `CHECKPOINT.json` inside the archive. Dry run against the pulled v2
+checkpoint:
+
+```
+staged 281.8 MB
+  step              20000
+  params            37,890,560
+  tokenizer         portfolio-bpe-16k-45395d2ebc83
+  latest.pt           151,795,920 B  sha a1e892e4a8649836
+  best.pt             151,795,142 B  sha 9581f41caf6052fe
+  RUN_MANIFEST.json       474,610 B  sha deb4d0ae806ad283
+```
+
+**Not published.** That is the v2 checkpoint, the one trained with the LR
+defect; Stage B should not be built on it.
+
+Three substring guards on the new cell all turned out to be satisfiable without
+the behaviour, and mutation testing is the only reason that is known:
+
+| guard | mutation that survived it |
+|---|---|
+| `assertIn("rglob", cell)` | replacing the *search* with a fixed mount path — `rglob` still appears on the archive line |
+| `assertRegex(cell, r"raise\s+SystemExit")` | swapping `raise SystemExit(` for `print(` — `ensure_repo` earlier in the same cell raises too |
+| `assertIn("RUN_MANIFEST.json", cell)` | dropping the manifest requirement — the string is still there |
+
+So the guard **executes** the cell's lookup against synthetic mounts, five
+routes: a directory on the mount, the archive with its payload wrapped, the
+archive flat, a `latest.pt` with no manifest beside it, and nothing attached at
+all. **5/5 mutations caught**, including all three that survived the text
+checks.
+
+This is the third time in this run that a text-shaped guard passed a cell whose
+behaviour was wrong. The rule that keeps holding: if the claim is about what
+code *does*, run the code.
+
+`npm run test:py` **444**, `npm test` **533**, 0 failures.
