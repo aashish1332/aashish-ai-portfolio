@@ -5607,3 +5607,96 @@ A test asserts the pointer is present, which is only worth asserting because the
 suite really does cover both.
 
 `npm run test:py` **486**, `npm test` **533**, 0 failures.
+
+---
+
+## 2026-10-02 (evening) — the log watcher was one invocation from erasing the log it protects
+
+Found while waiting on a live run, by asking the same question this project keeps
+asking: *which of my own tools has a claim wider than its check?*
+
+`kaggle-push/watch_kernel.py` is the only thing standing between a finished
+Kaggle kernel and a training log that can never be fetched again — `kernels_logs`
+only answers while the run exists, and a new kernel version replaces it. Its own
+comment calls the raw log "the irreplaceable artifact". Its output filenames were
+hardcoded:
+
+    raw_path = OUT / "kaggle-v2.log"
+
+`REF` names the *kernel* (`training-stage-a-v2`); each run is a *version* of it.
+The run I am watching is version 3. So starting a watch for v3 would have written
+v3's log straight over v2's — silently, because `write_text` on an existing path
+is not an error and leaves no evidence of what used to be there. Reproduced
+deliberately: **11,000 bytes to 7 bytes, no warning.**
+
+Fixed by construction rather than by care:
+
+* `log_paths(ref, tag)` puts a tag in the name; an untagged watch gets a
+  timestamp. Not auto-derived from a version number, because there is no API to
+  ask: `ApiKernelMetadata.current_version_number` reads back as `0` from
+  `kernels_list` (measured), and `ApiGetKernelSessionStatusResponse` exposes only
+  `status`. An inferred name with no source to infer from is a guess wearing a
+  version number's clothes.
+* `_free_path` refuses to clobber, ever — the name bumps to `.2`, `.3`. The
+  timestamp alone only moved the window from "same run twice" to "same second
+  twice".
+* The tag is sanitised against **both** separators, not `os.sep`. A test asking
+  for `../escaped` caught the difference: on Windows `/` separates directories
+  and `os.sep` is `\`, so the log was written to a sibling directory.
+
+### Two more from the same watch, both about how the tool fails
+
+**It can be killed without a word.** The previous watch ran 88 healthy polls and
+then stopped at 20:45:43 — no exit message. Polls were ~151 s apart, so
+88 × 150 s = 220 min is short of any window it was given: it was killed, not
+timed out. (The runner's `BACKGROUND` process type turns out not to exist, which
+is a plausible cause.) A tool that can be killed silently has to describe itself
+*before* it starts, so the watcher now prints a header: ref, start time, pid, tag,
+the window and the time it closes, and the exact file it will write. Silence is
+now "stopped", never "still fine".
+
+**A failed fetch was recorded as a fact about Kaggle.** Five failed fetch
+attempts and a genuinely empty log fell through to the same message, "the log came
+back EMPTY for a terminal run" — a claim about the run, made from evidence about
+the network, written to a permanent artifact. They now separate: a failed fetch
+says so and writes *nothing* (so the filename stays free, proved by asserting the
+output directory is still empty); an empty log says so and also writes nothing,
+because a 0-byte file is indistinguishable from a lost one.
+
+**And the header was not verbatim.** Redirected stdout here defaults to cp1252, so
+the `·` in the first header was written as byte 0xB7 and read back as `U+FFFD`.
+`use_utf8_stdout()` already existed — it was called from `decode`, which runs
+*after* every header line is on disk. Moving it to the top of `main` is the fix,
+and the *timing* is the whole fix.
+
+### A test of mine that could not fail for the reason it claimed
+
+The first version of the encoding test used `redirect_stdout(io.StringIO())`.
+`StringIO` has no `reconfigure`, so the code's `hasattr` guard made the call a
+silent no-op and the test passed no matter where it sat. Replaced with a stream
+that records `reconfigure` calls and writes, so it can assert **ordering**: the
+encoding is fixed before any header line is emitted. The same "identical bytes
+compare equal" flaw was in the re-watch test, which used one payload for both
+watches — its byte comparison could never have failed. It now uses two different
+payloads.
+
+`tools/watch_kernel.py` (moved out of the gitignored `kaggle-push/`, like
+`verify_checkpoint.py`, for the same reason: it stopped being scratch the moment
+it protected something irreplaceable) · `tools/mutate_watch.py` ·
+`tests/py/test_watch_kernel.py` (14).
+
+`tools/mutate_watch.py`: **10/10 caught for the right reason.** Four of the first
+ten results were WRONG REASON, all four my runner's fault, and one of them
+(`NameError` vs `UnboundLocalError` — `state` is assigned in the loop, so it is an
+unbound local, not an undefined global) was found by reading the traceback rather
+than assuming.
+
+`npm run test:py` **500** (was 486; +14), `npm test` **533**, 0 failures,
+`npm run build` clean.
+
+**Running, not yet read:** kernel v3, RUNNING throughout this work (poll 7 at
+21:30 of the restarted watch, `--tag v3`, target
+`kaggle-push/out/kaggle-training-stage-a-v2-v3.log`). Still to confirm when it
+reaches a terminal state: that the corpus cache was found and installed, and that
+the learning rate anneals to ~0. v2's log is intact at
+`kaggle-push/out/kaggle-v2.log`, 130,711 B.
