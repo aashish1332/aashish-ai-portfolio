@@ -4833,3 +4833,60 @@ four that did not.
 Whether 8 × 1024 × 8 fits on a T4; config A's real tokens/s (the probe measures
 it and §9 consumes it — until a run does it, every §14 throughput number is
 still open); and whether 20,000 micro-steps at that rate fits 540 minutes.
+
+### Defect 4 — the learning rate never annealed
+
+Found while planning the step count, not while training. Replaying the trainer's
+own stepping rule against the shipped numbers (2026-10-02):
+
+| run | `--grad-accum` | LR multiplier at the end |
+|---|---|---|
+| smoke, 50 steps | 1 | **0.002** — as intended |
+| Stage A, 20000 steps | 8 | **0.967** — barely moved |
+| Stage B, 3000 steps | 2 | **0.999** — barely moved |
+
+`cosine_with_warmup` builds the cosine over `total`, and the trainer calls
+`scheduler.step()` **inside** the `if (step + 1) % args.grad_accum == 0:` branch —
+once per optimizer update. `--steps` counts micro-steps. So the schedule was
+built `grad_accum` times too long and never reached its decay: a full Stage A run
+would finish at 96.7 % of peak learning rate, which is the regime that produces
+the worst final loss, with a warmup eight times too long as well.
+
+**The smoke test could not see it.** At `grad_accum=1` the two units coincide and
+the bug needs them to differ — the third defect in this one Kaggle run that the
+§7.5 smoke test was structurally unable to detect, after a batch that did not fit
+and a budget taken from a 4.8M-parameter model. A smoke test that shares no
+parameter with the real run is a smoke test of a different run.
+
+`schedule_span(steps, warmup, grad_accum)` now does the conversion in one place:
+`--steps` and `--warmup` keep meaning micro-steps everywhere (which is also the
+unit `estimate_budget` prints, because it is the unit `--steps` takes). Both
+trainers use it. Measured after the fix: Stage A **0.0000**, Stage B **0.0000**,
+smoke **0.0015** — unchanged, as it should be.
+
+Worth stating plainly: **the Stage A run now in flight on Kaggle has this bug.**
+Its loss curve is still evidence that the loop learns at 37.89M parameters, but
+it is not a run that finished annealing, and it should not be the checkpoint §14
+is graded on.
+
+### The step count was never derived from anything
+
+`--steps 20000` predates the budget work and was never checked against a
+measurement. The table below is `estimate_budget` run over a range of rates at
+Stage A's settings, so the next push can be sized from the probe instead of from
+a constant:
+
+| tokens/s | micro-steps in 9 h | tokens | tokens/param | §7.3 reference fits? |
+|---|---|---|---|---|
+| 10,000 | 37,573 | 0.308B | 8.1 | no |
+| 20,000 | 75,146 | 0.616B | 16.2 | no |
+| 30,000 | 112,720 | 0.923B | 24.4 | yes |
+| 45,000 | 169,080 | 1.385B | 36.6 | yes |
+| 60,000 | 225,439 | 1.847B | 48.7 | yes |
+
+`--steps 20000` fits in **4.6 h at the pessimistic 10,000 tokens/s** and in under
+two hours at 30,000 — so the session would stop on the step bound, not on
+`--max-minutes`, and leave the rest of the quota unused. The right shape is a
+probe, then a step count, then a run whose cosine spans exactly that count. The
+corpus cache is what makes the probe pass cheap enough to be worth a separate
+session.

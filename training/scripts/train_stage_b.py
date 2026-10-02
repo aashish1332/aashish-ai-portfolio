@@ -56,6 +56,7 @@ from ai.model import plan  # noqa: E402
 from training.scripts import checkpoint as ckpt  # noqa: E402
 from training.scripts.train_smoke import (  # noqa: E402
     cosine_with_warmup, have_torch, loss_verdict, make_scaler, resolve_config,
+    schedule_span,
 )
 
 DEFAULT_SCOPE = ("Stage B — instruction tuning on the §7.4 data: answer from the "
@@ -253,7 +254,12 @@ def train(args) -> int:
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, betas=(0.9, 0.95),
                                   weight_decay=args.weight_decay)
-    scheduler = cosine_with_warmup(optimizer, args.warmup, args.steps)
+    # `--steps` and `--warmup` are micro-steps; the scheduler advances once per
+    # optimizer update. Stage B runs `--grad-accum 2`, so passing them straight
+    # through left the LR at 0.999 of peak at the end of a full run — it never
+    # annealed. See `schedule_span` for the measurement.
+    scheduler = cosine_with_warmup(optimizer, *schedule_span(args.steps, args.warmup,
+                                                            args.grad_accum))
     use_amp = bool(args.amp) and device.type == "cuda"
     scaler = make_scaler(device.type, use_amp)
     manager = ckpt.CheckpointManager(args.run_dir, keep_last=args.keep_last)

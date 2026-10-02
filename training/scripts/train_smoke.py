@@ -179,6 +179,43 @@ def make_scaler(device_type: str, enabled: bool):
     return torch.cuda.amp.GradScaler(enabled=enabled)  # pragma: no cover - old torch
 
 
+def schedule_span(steps: int, warmup: int, grad_accum: int) -> tuple[int, int]:
+    """The LR schedule in *optimizer updates*, from two micro-step counts.
+
+    The trainer advances the scheduler inside the `grad_accum` branch — one
+    `scheduler.step()` per optimizer update — while `--steps` and `--warmup`
+    count micro-steps. Feeding those straight into a schedule that is advanced
+    once per *update* makes the cosine run `grad_accum` times too slowly, so the
+    learning rate never anneals.
+
+    Measured on the shipped numbers (2026-10-02), by replaying the trainer's own
+    stepping rule:
+
+    | run | grad_accum | LR multiplier at the end |
+    |---|---|---|
+    | smoke, 50 steps | 1 | **0.002** — as intended |
+    | Stage A, 20000 steps | 8 | **0.967** — barely moved |
+
+    Stage A trained its whole run and finished at 96.7 % of peak learning rate,
+    which is the regime that gives the worst final loss. The warmup was eight
+    times too long for the same reason.
+
+    The smoke test could not catch it: at `grad_accum=1` the two units coincide,
+    and the bug needs them to differ. That is the third defect in this run that
+    the smoke test was structurally unable to see, after the batch that did not
+    fit and the budget taken from another model.
+
+    So the conversion happens here, once, and `--steps` keeps meaning micro-steps
+    everywhere else (`estimate_budget` reports reachable micro-steps for the same
+    reason: it is the unit `--steps` takes).
+    """
+    updates = max(1, steps // max(1, grad_accum))
+    warmup_updates = max(0, warmup // max(1, grad_accum))
+    # A warmup longer than the run would leave the cosine branch unreached and
+    # the LR pinned at peak for the whole run — the same failure, differently.
+    return min(warmup_updates, updates - 1), updates
+
+
 def cosine_with_warmup(optimizer, warmup: int, total: int):
     import torch
 
@@ -241,7 +278,8 @@ def train(args) -> int:
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, betas=(0.9, 0.95),
                                   weight_decay=args.weight_decay)
-    scheduler = cosine_with_warmup(optimizer, args.warmup, args.steps)
+    scheduler = cosine_with_warmup(optimizer, *schedule_span(args.steps, args.warmup,
+                                                            args.grad_accum))
     use_amp = bool(args.amp) and device.type == "cuda"
     scaler = make_scaler(device.type, use_amp)
     manager = ckpt.CheckpointManager(args.run_dir, keep_last=args.keep_last)
