@@ -153,7 +153,17 @@ def budget(cfg: ModelConfig, tokens_per_second: float, hours: float,
 
 
 def dataset_tokens_from(path: Path | str) -> int:
-    """Total train tokens from a shards manifest (or a prepared corpus dir)."""
+    """Total train tokens from a shards manifest, a prepared corpus dir, or a count.
+
+    A bare integer is accepted because that is what the flag is named for, and
+    the number is frequently already known -- it is in the run log, or on the
+    shard summary. Reading it as a path made `170276818` die with a bare
+    FileNotFoundError, which reads like a missing file rather than a mistake
+    about the argument's type.
+    """
+    text = str(path).strip().replace("_", "").replace(",", "")
+    if text.isdigit():
+        return int(text)
     path = Path(path)
     if path.is_dir():
         path = path / "manifest.json"
@@ -239,7 +249,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--tokens-per-second", type=float, help="measured on the real device")
     ap.add_argument("--from-run", help="a train_smoke.py --json metrics file")
     ap.add_argument("--hours", type=float, default=9.0, help="session length available")
-    ap.add_argument("--dataset-tokens", help="shard manifest or prepared corpus directory")
+    ap.add_argument("--dataset-tokens",
+                    help="a token count, or a shard manifest / prepared corpus "
+                         "directory to read one from")
     ap.add_argument("--block", type=int, default=1024)
     ap.add_argument("--batch", type=int, default=16)
     ap.add_argument("--grad-accum", type=int, default=1)

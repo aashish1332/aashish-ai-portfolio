@@ -213,6 +213,19 @@ class Inputs(unittest.TestCase):
             self.assertEqual(eb.dataset_tokens_from(path), 749_590)
             self.assertEqual(eb.dataset_tokens_from(Path(tmp)), 749_590)
 
+    def test_a_bare_token_count_is_accepted(self):
+        """The flag is named --dataset-tokens, so a number is the obvious input.
+
+        It is also the common one: the count is printed by `shard_summary` and
+        appears in the run log, so there is no manifest to point at. Reading the
+        number as a path made `170276818` fail with a bare FileNotFoundError,
+        which reads like a missing file rather than a mistake about the type.
+        """
+        self.assertEqual(eb.dataset_tokens_from("170276818"), 170_276_818)
+        self.assertEqual(eb.dataset_tokens_from("170_276_818"), 170_276_818)
+        self.assertEqual(eb.dataset_tokens_from("170,276,818"), 170_276_818)
+        self.assertEqual(eb.dataset_tokens_from(170_276_818), 170_276_818)
+
     def test_a_non_manifest_gives_a_clear_error(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "manifest.json"

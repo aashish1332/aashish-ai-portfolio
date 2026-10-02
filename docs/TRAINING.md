@@ -350,13 +350,47 @@ proven end to end on a run that finishes.
 
 ## 7. Kaggle (P4) — the runbook
 
+### 7.0a Size the run to the session, not to the quota
+
+Kaggle does not publish one GPU-session limit. **9 h** appears on Kaggle's own
+forum (`kaggle.com/general/397547`); **12 h** appears in 2026 third-party
+guides. Budget against the smaller one. The notebook's `--hours` is therefore
+**8**, not 9, and `StepsComeFromTheMeasurement` asserts that it stays at or below
+9 *and* that `--max-minutes` stays above it.
+
+The two failure modes are not the same, and this is the reason for both halves
+of that guard:
+
+| what cuts in first | what happens |
+|---|---|
+| `--max-minutes` | the cosine stops part-way, the LR never reaches zero, and the quota is spent producing a checkpoint that was never annealed |
+| the Kaggle session | the kernel is killed, `/kaggle/working` is wiped, and **nothing is published** — the checkpoint is lost, not shortened |
+
+The second is why a run is not simply sized to fill whatever quota is left. With
+the corpus cache attached the data phase costs about a minute rather than 47, so
+8 h of training ends near 7 h of wall clock and leaves roughly 2 h of margin.
+
+**Measured on a T4, 2026-10-02** (config A, 37,890,560 params, `--batch 8
+--block 1024 --grad-accum 8 --amp`): 13,493 tokens/s, 0.61 s per micro-step,
+65,536 tokens per learning update. Against the real 170,276,818-token corpus
+that is **3.51 h per epoch**, so 8 h buys 2.17 passes ≈ 45,065 micro-steps ≈
+9.7 tokens/param against §7.3's 20-tokens/param reference. The reference does
+not fit — `estimate_budget` says so in as many words rather than quietly
+rounding down.
+
+One epoch is the interesting unit here, not the session. 20,000 micro-steps is
+0.96 epochs, so the run that produced the first checkpoint saw nearly every
+token exactly once; training past it is repetition, and repetition at a
+*correctly annealed* learning rate is a different experiment from repetition at
+96.7 % of peak (see the 2026-10-02 entry in `PROGRESS.md`).
+
 The notebooks in `training/notebooks/` are **drivers**, not implementations:
 every step calls a module that is already in the repository and tested, because
 §7.5 requires training to work without the notebook.
 
 | Notebook | Runs |
 |---|---|
-| `train_stage_a_v2.ipynb` | licence gate → extract → shard → tokenizer → smoke → Stage A (~20k steps, config A); v2 = every output bounded (`shard_summary`/`stats_head`, no whole-artifact `cat`) after v1's manifest dump froze its own page |
+| `train_stage_a_v2.ipynb` | licence gate → extract → shard → tokenizer → smoke → **probe** → Stage A (config A, `--steps` read from the probe's budget); v2 = every output bounded (`shard_summary`/`stats_head`, no whole-artifact `cat`) after v1's manifest dump froze its own page |
 | `train_stage_b.ipynb` | the instruction data → **the mask, printed** → Stage B (`--init` the Stage A checkpoint, assistant-only loss) → sample the answers |
 
 Both are validated offline by `tests/py/test_notebook_refs.py`: every
@@ -818,7 +852,7 @@ changed with them", and `npm test` is what proves it rather than a memory of it.
 Run everything (no torch required; ~35 s for the JS suite, ~70 s for Python):
 
 ```bash
-npm run test:all          # 533 JS tests + 428 Python tests (0 skip: torch is installed)
+npm run test:all          # 533 JS tests + 431 Python tests (0 skip: torch is installed)
 npm run params            # analytic parameter counts + each config's own band gate
 npm run smoke             # tokenizer contract, shards, cursor, checkpoints
 npm run export:model      # checkpoint → browser artifact + parity fixture

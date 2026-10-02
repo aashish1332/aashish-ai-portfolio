@@ -700,19 +700,61 @@ class StepsComeFromTheMeasurement(unittest.TestCase):
                       "there is no budget file; the notebook must say so instead "
                       "of picking a number")
 
-    def test_the_time_box_is_above_the_budgeted_hours(self):
-        """--max-minutes must be a backstop, not the binding bound: if it cuts in
-        first, the cosine stops part-way and the LR never reaches zero."""
+    def test_the_budgeted_session_fits_inside_the_cap_kaggle_enforces(self):
+        """The budgeted hours must fit the session, and the time box must be a
+        backstop rather than the binding bound.
+
+        Two claims are being checked, and they are different. If `--max-minutes`
+        cuts in first, the cosine stops part-way and the LR never reaches zero
+        — the run wastes its quota. If the *session* cuts in first, Kaggle kills
+        the kernel, `/kaggle/working` is wiped and nothing is published at all,
+        so the checkpoint is lost rather than shortened.
+
+        The cap is not a single published number: 9 h on Kaggle's own forum,
+        12 h in 2026 third-party guides. Budgeting against the larger one is
+        budgeting for a session that may not exist, so the guard bounds the
+        budget by the smaller. Measured 2026-10-02: a run sized for 8.55 h of
+        training plus the 47-minute corpus phase overran a 9 h session.
+        """
+        CAP_HOURS = 9.0
+
         command = self._train_command()
         parts = command.split()
         minutes = float(parts[parts.index("--max-minutes") + 1])
-        joined = "\n".join(source for _index, source in code_cells(NOTEBOOK))
-        self.assertIn("--hours 9", joined, "the budget is stated in hours")
-        self.assertGreater(minutes, 9 * 60,
-                           f"--max-minutes {minutes:g} is not above the 9 hours "
-                           f"the budget was computed for, so the time box would "
-                           f"bind before the step count and the cosine would stop "
-                           f"part-way down")
+
+        # Parse the budget's own call rather than grepping for a literal, so a
+        # comment quoting "--hours 9" cannot satisfy this. Continuations are
+        # joined first: the notebook writes these commands across several lines
+        # with trailing backslashes, and a line-by-line scan finds the command
+        # name on one line and its flags on the next -- which is how an earlier
+        # version of this guard matched the name and then inspected nothing.
+        joined = "\\n".join(
+            source.replace("\\\n", " ")
+            for _index, source in code_cells(NOTEBOOK)
+        )
+        joined = "\n".join(
+            line for line in joined.splitlines() if not line.strip().startswith("#")
+        )
+        match = re.search(r"estimate_budget\b.*", joined)
+        self.assertIsNotNone(match, "the probe's budget call is missing")
+        hours_match = re.search(r"--hours\s+([0-9.]+)", match.group(0))
+        self.assertIsNotNone(
+            hours_match,
+            "the budget call states no --hours, so the step count is sized "
+            "against no session length at all")
+        hours = float(hours_match.group(1))
+
+        self.assertLessEqual(
+            hours, CAP_HOURS,
+            f"the run is budgeted for {hours:g} h of training. Kaggle's own forum "
+            f"says a GPU session is capped at {CAP_HOURS:g} h; budgeting past that "
+            f"means the kernel is killed and, because /kaggle/working is wiped, "
+            f"nothing is published")
+        self.assertGreater(
+            minutes, hours * 60,
+            f"--max-minutes {minutes:g} is not above the {hours:g} h the budget was "
+            f"computed for, so the time box would bind before the step count and "
+            f"the cosine would stop part-way down")
 
 
 class SessionWorkSurvives(unittest.TestCase):
@@ -787,6 +829,110 @@ class SessionWorkSurvives(unittest.TestCase):
         self.assertIn("BEFORE pushing a new kernel version", joined,
                       "the pull must happen before the next push, and the notebook "
                       "is where that order is read")
+
+
+class ManifestKeysExist(unittest.TestCase):
+    """The notebook reads `RUN_MANIFEST.json`, so it must read keys it has.
+
+    Measured on Kaggle 2026-10-02: the Stage A notebook's manifest cell printed
+    `loss history entries: 0` on a run that had just recorded **20,000** losses
+    and passed its gate (first 9.881879, last 3.331249). It read
+    `manifest.get('loss_history', [])`; `ckpt.write_run_manifest` nests the same
+    data as `loss: {history: [...], verdict: {...}}`. The `.get` default turned a
+    wrong key into a tidy `0` — a number, and the wrong one. A `KeyError` would
+    have been obvious; this read like a run that recorded nothing.
+    """
+
+    @staticmethod
+    def _manifest_shape() -> dict:
+        """A manifest in the shape `ckpt.write_run_manifest` actually writes."""
+        return {
+            "run": "stage-a",
+            "config": {"vocab_size": 16384, "hidden_size": 512,
+                       "num_hidden_layers": 10},
+            "tokenizer_version": "portfolio-bpe-16k-45395d2ebc83",
+            "params": 37890560,
+            "hyperparameters": {"steps": 20000, "batch": 8, "block": 1024,
+                                "grad_accum": 8, "lr": 3e-4, "warmup": 200,
+                                "clip": 1.0, "weight_decay": 0.1, "amp": True,
+                                "device": "cuda"},
+            "seed": 1337,
+            "data": {"shards": "data/processed/stage_a/shards", "sha256": {}},
+            "loss": {"history": [9.881879, 3.331249], "verdict": {
+                "verdict": "PASS", "first": 9.8859, "last": 2.8211,
+                "delta": -7.0648, "window": 5, "steps": 20000}},
+            "throughput": {"tokens_per_second": 13493.314, "seconds_per_step": 0.6071,
+                           "block": 1024, "batch": 8},
+            "run_scope": "...", "scope": "...",
+        }
+
+    @staticmethod
+    def _key_paths(node, prefix: str = "") -> set[str]:
+        """Every dotted path a key lookup on this manifest can resolve."""
+        paths: set[str] = set()
+        if isinstance(node, dict):
+            for key, value in node.items():
+                path = f"{prefix}.{key}" if prefix else key
+                paths.add(path)
+                paths |= ManifestKeysExist._key_paths(value, path)
+        return paths
+
+    def test_every_manifest_key_the_notebook_reads_exists(self):
+        import ast as _ast
+
+        available = self._key_paths(self._manifest_shape())
+        checked = 0
+        for index, source in code_cells(NOTEBOOK):
+            if "RUN_MANIFEST" not in source:
+                continue
+            for node in _ast.walk(_ast.parse(cell_python(source))):
+                # manifest['a']['b'] — a chain of constant subscripts
+                if not isinstance(node, _ast.Subscript):
+                    continue
+                target = node.value
+                if not (isinstance(target, _ast.Subscript)
+                        and isinstance(target.value, _ast.Name)
+                        and target.value.id == "manifest"):
+                    continue
+                first = node.slice
+                outer = target.slice
+                if not (isinstance(first, _ast.Constant) and isinstance(first.value, str)
+                        and isinstance(outer, _ast.Constant) and isinstance(outer.value, str)):
+                    continue
+                path = f"{outer.value}.{first.value}"
+                checked += 1
+                with self.subTest(cell=index, key=path):
+                    self.assertIn(path, available,
+                                  f"cell {index} reads manifest[{path!r}], which "
+                                  f"the manifest does not have")
+        self.assertGreater(checked, 0,
+                           "no manifest key lookup was found to check — the guard "
+                           "is inspecting nothing")
+
+    def test_the_cell_does_not_default_a_manifest_key_to_empty(self):
+        """.get(key, default) on a manifest is how a missing key becomes a
+        plausible number instead of a traceback.
+
+        Comment lines are excluded, and not as a nicety: the first version fired
+        on the cell's own explanatory comment, which quotes `` `.get(..., [])` ``
+        while describing the defect it fixed. A guard that trips over the note
+        explaining why it exists is a guard nobody will leave on.
+        """
+        for index, source in code_cells(NOTEBOOK):
+            for raw in source.splitlines():
+                stripped = raw.strip()
+                if stripped.startswith("#"):
+                    continue
+                if "manifest" not in raw or ".get(" not in raw:
+                    continue
+                with self.subTest(cell=index, line=stripped[:70]):
+                    self.fail(
+                        f"cell {index} reads a manifest key with `.get(...)`: "
+                        f"{stripped!r}\n"
+                        f"  A manifest is written once by write_run_manifest and "
+                        f"read by every later session; a key that is missing is a "
+                        f"shape change, and defaulting it reports a number "
+                        f"instead of failing.")
 
 
 class Workspace(unittest.TestCase):

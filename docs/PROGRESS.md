@@ -4978,3 +4978,102 @@ pair cannot leave a session as one tidy file that the next session installs
 without complaint.
 
 `npm run test:py` **428**, `npm test` **533**, 0 failures.
+
+## The Stage A run finished — what it proves, and what it is not — 2026-10-02
+
+Kernel version 2 of `training-stage-a-v2` ran **4 h 21 m** and exited cleanly.
+The log is 130,711 B of decoded JSON, the checkpoints are pulled, and this is
+the first Stage A checkpoint that exists at all.
+
+### MEASURED
+
+| | |
+|---|---|
+| §7.1 parameters | **37,890,560**, 93 state-dict tensors, analytic == materialised |
+| §7.3 licence gate | 9 sources, 5 blocked |
+| pipeline | leakage clean — exact 0, near 0 |
+| shards | **170,276,818 tokens** (the number the whole budget is derived from) |
+| §9 probe, config A | 12,471 tokens/s at `--batch 4`; peak **6.85 GiB** allocated, 7.25 GiB reserved of 14.56 GiB |
+| §10 Stage A | **13,493 tokens/s** at `--batch 8 --block 1024 --grad-accum 8`; 20,000 / 20,000 steps |
+| loss | 9.8819 → **3.3312** last, **2.1372** min, at step 18,902 |
+| checkpoints | `best.pt` and `latest.pt`, 151.8 MB each, both load with `All keys matched successfully` |
+
+Both checkpoints verify against config A with no missing resume keys and the
+right `tokenizer_version` (`portfolio-bpe-16k-45395d2ebc83`). A file existing
+proves nothing — a truncated download and a checkpoint from the wrong config
+both look like success until something loads it, so both were loaded.
+
+### What this checkpoint is not
+
+It is **not** the checkpoint §14 should be graded on. It trained with the LR
+defect recorded above: `scheduler.step()` advances once per optimizer update
+while the cosine was built over micro-steps, so at `grad_accum=8` the schedule
+travelled an eighth of the way it thought and the run ended at **96.7 % of peak
+learning rate**.
+
+I predicted a visible signature — a curve whose best value arrives early and
+whose tail sits high — and **the data does not show it.** The last 500-step
+bucket has the lowest mean of the whole run (3.1691, against 3.2513 for the 500
+before the global minimum). The model was still improving at the end. What the
+run has is a noisier, higher-floor endpoint than a correctly annealed run of the
+same length would, not a visibly broken one. Recording the prediction as wrong
+is the point: the arithmetic was right and the *visual* consequence was not the
+one I described.
+
+`git_commit` is `None` in the checkpoint. That is expected and not a bug — the
+dataset is a `git archive` with no `.git`, so there is no commit to record. It
+does mean a checkpoint cannot be traced to a commit from inside itself; the
+archive sha256 has to carry that.
+
+### A defect the run exposed in the notebook
+
+§12 printed `loss history entries: 0` while 20,000 existed. It read a key with
+`.get(..., [])`, and the manifest has no such key — a missing key is a shape
+change, and defaulting it renders as a plausible zero instead of a traceback.
+`ManifestKeysExist` now checks that every manifest key the notebook reads exists
+in the writer, and that no cell defaults one.
+
+### The run also answered a question the smoke test never could
+
+The whole reason `--batch 8 --grad-accum 8` was chosen instead of the
+`--batch 16 --grad-accum 4` that raised `OutOfMemoryError` is §9's probe, and
+the probe reported **50 % headroom at `--batch 4`**. Activation memory scales
+with the micro-batch and not at all with `grad_accum`, so the micro-batch is the
+only lever; at 16 the first run allocated 12.84 GiB and died at step 1. The
+learning update is 65,536 tokens either way, so nothing about the optimisation
+changed — only the memory. This is the first claim in this run that a cheap
+check made true before the expensive thing was attempted.
+
+### Sizing the next run
+
+`estimate_budget --from-run` now refuses a measurement whose parameter count is
+not the config's, so §9's probe cannot silently become §10's input. Against the
+real corpus at the real rate:
+
+```
+$ python training/scripts/estimate_budget.py --config A \
+    --tokens-per-second 13493 --hours 8 --dataset-tokens 170276818 \
+    --block 1024 --batch 8 --grad-accum 8
+  reachable          0.369B tokens · 45,065 micro-steps · 5,633 updates · 9.7 tokens/param
+  corpus             0.170B tokens → 2.17 passes (3.51 h/epoch)
+  at this rate       needs 15.6 h → does NOT fit
+```
+
+`--dataset-tokens` took the count as a bare integer only after this run: it is
+named for a number, and feeding it `170276818` produced a bare
+`FileNotFoundError`, which reads like a missing file rather than a mistake about
+the argument's type.
+
+The notebook budgets **8 h**, not 9. Kaggle does not publish one session limit —
+9 h on its own forum, 12 h in 2026 third-party guides — and the difference
+decides whether a killed session costs a shortened run or the whole checkpoint,
+because `/kaggle/working` is wiped when a kernel is killed.
+`StepsComeFromTheMeasurement.test_the_budgeted_session_fits_inside_the_cap_kaggle_enforces`
+now bounds the budget by the smaller figure and keeps `--max-minutes` above it.
+4/4 mutations caught, plus a fifth that proves the guard's continuation-joining
+is load-bearing rather than decorative: with the join removed, a reformatted
+command hides `--hours` from the guard entirely. That is the same line-joining
+mistake this file records twice already, made a third time in a guard written
+specifically to avoid it.
+
+`npm run test:py` **431**, `npm test` **533**, 0 failures.
