@@ -157,7 +157,7 @@ def dataset_tokens_from(path: Path | str) -> int:
 
     A bare integer is accepted because that is what the flag is named for, and
     the number is frequently already known -- it is in the run log, or on the
-    shard summary. Reading it as a path made `170276818` die with a bare
+    shard summary. Reading it as a path made `170589770` die with a bare
     FileNotFoundError, which reads like a missing file rather than a mistake
     about the argument's type.
     """

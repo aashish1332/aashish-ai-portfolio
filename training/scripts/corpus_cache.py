@@ -81,11 +81,54 @@ def sha256_file(path: Path, chunk: int = 1 << 20) -> str:
 def inventory(files: list[Path], root: Path) -> str:
     """One digest over the sorted `relpath:size` lines.
 
-    Hashing every shard would cost more than the copy; the sizes plus the
-    manifest digest are enough to catch a truncated or substituted upload, which
-    is the failure that actually happens.
+    Sizes plus the manifest digest catch a truncated, missing or substituted
+    upload, which is the failure that actually happens in transit. They do not
+    catch same-size corruption, so `content_inventory` below checks that too —
+    the first version of this docstring claimed hashing every shard would cost
+    more than the copy, and measured on 2026-10-02 it costs about six times
+    *less*: 351.8 MB hashed in 4.96 s at 71 MB/s, against 30 s to move the same
+    bytes over Kaggle's measured 4.6 MB/s. The claim was never measured and was
+    wrong in the direction that mattered.
     """
     lines = sorted(f"{p.relative_to(root)}:{p.stat().st_size}" for p in files)
+    return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
+
+
+def content_inventory(files: list[Path], root: Path, manifest: dict) -> str:
+    """One digest over the manifest's own per-shard digests, re-measured.
+
+    `write_shards` already records a sha256 prefix for every shard, so verifying
+    content needs no extra state — only the read. A shard whose name and size
+    are right but whose bytes are wrong still trains; it just trains on
+    something nobody can account for.
+    """
+    expected = {}
+    for split in manifest.get("shards", {}).values():
+        listed = split.get("files")
+        # A count rather than a list is a manifest written before per-shard
+        # digests existed. There is nothing to check against, and pretending
+        # otherwise would report a content check that never ran. (Named `listed`,
+        # not `files`: reusing the parameter's name shadowed it and turned the
+        # loop below into an iteration over dicts.)
+        if not isinstance(listed, list):
+            continue
+        for entry in listed:
+            if isinstance(entry, dict) and entry.get("sha256"):
+                expected[entry["file"]] = entry["sha256"]
+    if not expected:
+        return ""
+    lines = []
+    for path in sorted(files):
+        name = path.name
+        if name not in expected:
+            continue
+        digest = sha256_file(path)
+        if not digest.startswith(expected[name]):
+            raise SystemExit(
+                f"{path}: content does not match the manifest "
+                f"({digest[:16]}… vs {expected[name]}…). Refusing to install a "
+                f"cache whose shards are not the shards it claims to hold.")
+        lines.append(f"{name}:{expected[name]}")
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
 
@@ -144,6 +187,7 @@ def save(shards: Path, tokenizer: Path, out: Path) -> int:
         "shard_files": len(files),
         "manifest_sha256": sha256_file(out / "shards" / "manifest.json"),
         "inventory_sha256": inventory(files, out / "shards"),
+        "content_sha256": content_inventory(files, out / "shards", manifest),
     }
     (out / CACHE_FILE).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
 
@@ -153,6 +197,9 @@ def save(shards: Path, tokenizer: Path, out: Path) -> int:
     print(f"  files          {record['shard_files']:,} shard file(s) + tokenizer artifact")
     print(f"  manifest sha   {record['manifest_sha256'][:16]}…")
     print(f"  inventory sha  {record['inventory_sha256'][:16]}…")
+    if record["content_sha256"]:
+        print(f"  content sha    {record['content_sha256'][:16]}… "
+              f"(every shard re-hashed against the manifest)")
     return 0
 
 
@@ -211,22 +258,55 @@ def check(cache: Path) -> dict:
             f"{record.get('shard_files')}. An incomplete upload would train on "
             f"part of the corpus without saying so.")
     return {"cache": str(cache), "record": record, "files": len(files),
+            "files_paths": files,
+            "manifest": manifest,
             "inventory_sha256": inventory(files, shards)}
+
+
+def content_check(cache: Path, shards: Path, files: list[Path],
+                  manifest: dict) -> str:
+    """Re-hash every shard and compare, unless the cache predates the check.
+
+    A cache written before `content_sha256` existed is still checked for its
+    file set, tokenizer generation and sizes; it says so rather than claiming a
+    content check it never did.
+    """
+    recorded = (cache / CACHE_FILE)
+    expected = _read_json(recorded).get("content_sha256")
+    if not expected:
+        return ""
+    actual = content_inventory(files, shards, manifest)
+    if actual != expected:
+        raise SystemExit(
+            f"{shards}: shard contents do not match the recorded content digest "
+            f"({actual[:16]}… vs {expected[:16]}…). Names and sizes match, so only "
+            f"reading the bytes finds this.")
+    return actual
 
 
 def verify(cache: Path) -> int:
     result = check(cache)
     record = result["record"]
+    shards = cache / "shards"
     if result["inventory_sha256"] != record["inventory_sha256"]:
         raise SystemExit(
-            f"{cache / 'shards'}: the file sizes do not match the recorded "
+            f"{shards}: the file sizes do not match the recorded "
             f"inventory, so the contents are not the ones that were cached.")
+    content = content_check(cache, shards, result["files_paths"], result["manifest"])
     print(f"cache OK — {cache}")
     print(f"  tokenizer      {record['tokenizer_version']} (vocab {record['vocab_size']:,})")
     print(f"  tokens         train {record['train']:,} · val {record['val']:,}")
     print(f"  files          {result['files']:,}")
-    print("  shards and tokenizer are the same generation, and the file set is "
-          "complete")
+    if content:
+        print(f"  content sha    {content[:16]}… "
+              f"(every shard re-hashed against the manifest)")
+        print("  shards and tokenizer are the same generation, the file set is "
+              "complete, and every shard's bytes match the manifest")
+    else:
+        print("  shards and tokenizer are the same generation, and the file set "
+              "is complete")
+        print("  content not checked — this cache predates the per-shard digest "
+              "check, so only names and sizes were verified")
     return 0
 
 

@@ -4992,7 +4992,7 @@ the first Stage A checkpoint that exists at all.
 | §7.1 parameters | **37,890,560**, 93 state-dict tensors, analytic == materialised |
 | §7.3 licence gate | 9 sources, 5 blocked |
 | pipeline | leakage clean — exact 0, near 0 |
-| shards | **170,276,818 tokens** (the number the whole budget is derived from) |
+| shards | **170,589,770** train tokens in 3,447 files · val 3,542,112 in 72 files (the train figure is what the whole budget is derived from) |
 | §9 probe, config A | 12,471 tokens/s at `--batch 4`; peak **6.85 GiB** allocated, 7.25 GiB reserved of 14.56 GiB |
 | §10 Stage A | **13,493 tokens/s** at `--batch 8 --block 1024 --grad-accum 8`; 20,000 / 20,000 steps |
 | loss | 9.8819 → **3.3312** last, **2.1372** min, at step 18,902 |
@@ -5052,7 +5052,7 @@ real corpus at the real rate:
 
 ```
 $ python training/scripts/estimate_budget.py --config A \
-    --tokens-per-second 13493 --hours 8 --dataset-tokens 170276818 \
+    --tokens-per-second 13493 --hours 8 --dataset-tokens 170589770 \
     --block 1024 --batch 8 --grad-accum 8
   reachable          0.369B tokens · 45,065 micro-steps · 5,633 updates · 9.7 tokens/param
   corpus             0.170B tokens → 2.17 passes (3.51 h/epoch)
@@ -5060,7 +5060,7 @@ $ python training/scripts/estimate_budget.py --config A \
 ```
 
 `--dataset-tokens` took the count as a bare integer only after this run: it is
-named for a number, and feeding it `170276818` produced a bare
+named for a number, and feeding it `170589770` produced a bare
 `FileNotFoundError`, which reads like a missing file rather than a mistake about
 the argument's type.
 
@@ -5077,3 +5077,49 @@ mistake this file records twice already, made a third time in a guard written
 specifically to avoid it.
 
 `npm run test:py` **431**, `npm test` **533**, 0 failures.
+
+### The cache claimed an integrity check it did not do — 2026-10-02
+
+`corpus_cache verify` digested every cached file as `relpath:size`. That catches
+a truncated, missing, renamed or resized shard, and silently passes a shard whose
+name and size are right and whose bytes are wrong — which still trains, on
+something nobody can account for. The docstring explained why hashing the
+contents was unnecessary: *"hashing every shard would cost more than the
+copy."*
+
+That claim was never measured. Measured now, on the real shard set:
+
+| | |
+|---|---|
+| sha256 over all 351.8 MB | **4.96 s** — 71 MB/s, 825 shards timed directly |
+| the same bytes over Kaggle's link | **30 s** at the 4.6 MB/s measured on the pull |
+
+It costs about six times **less** than the copy, not more. And the digests were
+already written: `write_shards` records a sha256 prefix per shard, so the state
+existed and only the read was missing. `verify` and `install` now re-hash every
+shard against the manifest and refuse a mismatch by name.
+
+Two further things surfaced while testing it:
+
+- **The fixture was shaped unlike reality.** `build_corpus` wrote
+  `"files": 2`; `write_shards` writes a list of per-shard entries. Every content
+  check would have been vacuous against that fixture, while the suite reported
+  the tool as covered.
+- **One corrupt payload cannot catch an inverted comparison.** A mutation that
+  raises when a digest starts with `"0"` passes any test written against a
+  single corrupt payload whose digest happens to start with `0` — which is what
+  the first version used, and the mutation survived it. Brute-forcing a second
+  payload whose digest starts with `f` makes the difference observable: 6 of 7
+  mutations now caught. The seventh is equivalent — the per-shard check already
+  raised, naming the file, before the aggregate digest is compared — and is
+  documented as such rather than papered over.
+
+Also corrected: this file earlier attributed **170,276,818** train tokens to the
+finished run. It has **170,589,770** in 3,447 files, which is what both
+`manifest.json` and the run's own `shard_summary` say. The wrong figure came
+from an *earlier* corpus in an earlier session — 3,433 files — carried forward
+without re-deriving it. Nothing in this session had produced that number, and
+reading the manifest is what caught it. `docs/TRAINING.md` now says so, because
+the mistake is worth remembering: do not quote a token count from notes.
+
+`npm run test:py` **436**, `npm test` **533**, 0 failures.

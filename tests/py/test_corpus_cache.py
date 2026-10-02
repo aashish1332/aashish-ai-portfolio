@@ -19,6 +19,7 @@ correct, and is also asserted below, because that is what the guard is for.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import shutil
@@ -38,22 +39,44 @@ TOKENIZER_VERSION = "portfolio-bpe-1k-45395d2ebc83"
 
 
 def build_corpus(root: Path, version: str = TOKENIZER_VERSION, vocab: int = 1024) -> Path:
-    """A minimal but honest shards + tokenizer pair."""
+    """A minimal but honest shards + tokenizer pair.
+
+    `files` is a list of per-shard entries carrying a sha256 prefix, because
+    that is what `write_shards` actually writes. The first version of this
+    fixture used a plain count (`"files": 2`), which is a shape the real
+    manifest never has -- so it exercised none of the content checking and made
+    a guard look covered that was not.
+    """
     shards = root / "shards"
     shards.mkdir(parents=True)
+    payloads = {
+        "train-00000.bin": b"\x00\x01" * 32,
+        "train-00001.bin": b"\x02\x03" * 32,
+        "val-00000.bin": b"\x04\x05" * 32,
+    }
     manifest = {
         "dtype": "uint16",
         "vocab_size": vocab,
         "end_token_id": 4,
         "tokenizer_version": version,
         "shards": {
-            "train": {"docs": 16893, "tokens": 749590, "files": 2},
-            "val": {"docs": 844, "tokens": 37479, "files": 1},
+            "train": {"docs": 16893, "tokens": 749590, "files": [
+                {"file": name, "docs": 2, "tokens": 64,
+                 "sha256": hashlib.sha256(payload).hexdigest()[:16],
+                 "langs": {"en": 2}}
+                for name, payload in payloads.items() if name.startswith("train")
+            ]},
+            "val": {"docs": 844, "tokens": 37479, "files": [
+                {"file": name, "docs": 2, "tokens": 64,
+                 "sha256": hashlib.sha256(payload).hexdigest()[:16],
+                 "langs": {"en": 2}}
+                for name, payload in payloads.items() if name.startswith("val")
+            ]},
         },
     }
     (shards / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    for name in ("train-00000.bin", "train-00001.bin", "val-00000.bin"):
-        (shards / name).write_bytes(b"\x00\x01" * 32)
+    for name, payload in payloads.items():
+        (shards / name).write_bytes(payload)
 
     tokenizer = root / "tokenizer"
     tokenizer.mkdir()
@@ -62,6 +85,135 @@ def build_corpus(root: Path, version: str = TOKENIZER_VERSION, vocab: int = 1024
     }), encoding="utf-8")
     (tokenizer / "tokenizer.json").write_text("{}", encoding="utf-8")
     return root
+
+
+def same_size_payload(size: int, want_prefix: str) -> bytes:
+    """A `size`-byte payload whose sha256 starts with `want_prefix`.
+
+    Needed because an inverted comparison is invisible from one sample. A
+    mutation that raises when the digest starts with `"0"` passes every test
+    written against a single corrupt payload whose digest happens to start with
+    `0` — which is exactly what the first version of this class did, and the
+    mutation survived it. Two payloads, one matching the inverted predicate and
+    one not, make the difference observable.
+    """
+    for i in range(200_000):
+        payload = i.to_bytes(8, "little") * (size // 8)
+        if hashlib.sha256(payload).hexdigest().startswith(want_prefix):
+            return payload
+    raise AssertionError(f"no {size}-byte payload hashes to a {want_prefix}… prefix")
+
+
+class ContentIsChecked(unittest.TestCase):
+    """A shard whose name and size are right but whose bytes are wrong.
+
+    The inventory digest is `relpath:size`, so it catches a truncated, missing,
+    renamed or resized file — and silently passes this case. Only re-hashing
+    against the manifest's own per-shard digest finds it, and a silently
+    corrupted shard still trains.
+
+    One mutation here is *equivalent* and no test can kill it: removing the
+    aggregate comparison in `content_check`, because `content_inventory` already
+    raises per shard, naming the file, before the aggregate is ever computed.
+    Keeping both is deliberate — the aggregate is what a future manifest shape
+    with no per-shard entries would fall back on.
+    """
+
+    def test_every_same_size_rewrite_is_caught(self):
+        """Two payloads: one whose digest starts with 0, one that does not."""
+        for want in ("0", "f"):
+            with self.subTest(digest_starts_with=want):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    source = build_corpus(root / "src")
+                    cache = root / "cache"
+                    with redirect_stdout(io.StringIO()):
+                        cc.main(["save", "--shards", str(source / "shards"),
+                                 "--tokenizer", str(source / "tokenizer"),
+                                 "--out", str(cache)])
+                    victim = cache / "shards" / "train-00000.bin"
+                    size = victim.stat().st_size
+                    victim.write_bytes(same_size_payload(size, want))
+                    with redirect_stdout(io.StringIO()):
+                        with self.assertRaises(SystemExit) as ctx:
+                            cc.main(["verify", "--cache", str(cache)])
+                    self.assertIn("content does not match", str(ctx.exception))
+                    self.assertIn("train-00000.bin", str(ctx.exception))
+
+    def test_a_count_shaped_manifest_is_reported_as_unchecked(self):
+        """An older manifest lists a count, not digests. Say so, do not fake it."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = build_corpus(root / "src")
+            cache = root / "cache"
+            manifest_path = source / "shards" / "manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            for split in manifest["shards"].values():
+                split["files"] = len(split["files"])
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            with redirect_stdout(io.StringIO()):
+                cc.main(["save", "--shards", str(source / "shards"),
+                         "--tokenizer", str(source / "tokenizer"), "--out", str(cache)])
+            record = json.loads((cache / cc.CACHE_FILE).read_text(encoding="utf-8"))
+            self.assertEqual(record["content_sha256"], "")
+
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                cc.main(["verify", "--cache", str(cache)])
+            self.assertIn("content not checked", buf.getvalue())
+
+    def test_a_same_size_rewrite_is_caught(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = build_corpus(root / "src")
+            cache = root / "cache"
+            with redirect_stdout(io.StringIO()):
+                cc.main(["save", "--shards", str(source / "shards"),
+                         "--tokenizer", str(source / "tokenizer"), "--out", str(cache)])
+
+            # 64 bytes in, 64 bytes out: the inventory digest is unchanged.
+            victim = cache / "shards" / "train-00000.bin"
+            before = victim.stat().st_size
+            victim.write_bytes(b"\xff\xfe" * 32)
+            self.assertEqual(victim.stat().st_size, before)
+
+            with redirect_stdout(io.StringIO()):
+                with self.assertRaises(SystemExit) as ctx:
+                    cc.main(["verify", "--cache", str(cache)])
+            self.assertIn("content does not match", str(ctx.exception))
+
+    def test_the_size_inventory_alone_would_have_passed(self):
+        """The claim above is only worth making if the sizes really do match."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = build_corpus(root / "src")
+            cache = root / "cache"
+            with redirect_stdout(io.StringIO()):
+                cc.main(["save", "--shards", str(source / "shards"),
+                         "--tokenizer", str(source / "tokenizer"), "--out", str(cache)])
+            files = [p for p in (cache / "shards").rglob("*") if p.is_file()]
+            record = json.loads((cache / cc.CACHE_FILE).read_text(encoding="utf-8"))
+            (cache / "shards" / "train-00000.bin").write_bytes(b"\xff\xfe" * 32)
+            after = [p for p in (cache / "shards").rglob("*") if p.is_file()]
+            self.assertEqual(cc.inventory(files, cache / "shards"),
+                             record["inventory_sha256"])
+            self.assertEqual(cc.inventory(after, cache / "shards"),
+                             record["inventory_sha256"])
+
+    def test_the_fixture_carries_real_per_shard_digests(self):
+        """Otherwise the two tests above would be testing an empty branch."""
+        with tempfile.TemporaryDirectory() as tmp:
+            source = build_corpus(Path(tmp) / "src")
+            manifest = json.loads(
+                (source / "shards" / "manifest.json").read_text(encoding="utf-8"))
+            listed = manifest["shards"]["train"]["files"]
+            self.assertIsInstance(listed, list)
+            self.assertEqual(len(listed), 2)
+            for entry in listed:
+                digest = hashlib.sha256(
+                    (source / "shards" / entry["file"]).read_bytes()).hexdigest()
+                self.assertTrue(digest.startswith(entry["sha256"]))
 
 
 class ArchiveIsOneFile(unittest.TestCase):

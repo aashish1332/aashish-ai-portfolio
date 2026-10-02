@@ -218,13 +218,13 @@ class Inputs(unittest.TestCase):
 
         It is also the common one: the count is printed by `shard_summary` and
         appears in the run log, so there is no manifest to point at. Reading the
-        number as a path made `170276818` fail with a bare FileNotFoundError,
+        number as a path made `170589770` fail with a bare FileNotFoundError,
         which reads like a missing file rather than a mistake about the type.
         """
-        self.assertEqual(eb.dataset_tokens_from("170276818"), 170_276_818)
-        self.assertEqual(eb.dataset_tokens_from("170_276_818"), 170_276_818)
-        self.assertEqual(eb.dataset_tokens_from("170,276,818"), 170_276_818)
-        self.assertEqual(eb.dataset_tokens_from(170_276_818), 170_276_818)
+        self.assertEqual(eb.dataset_tokens_from("170589770"), 170_589_770)
+        self.assertEqual(eb.dataset_tokens_from("170_589_770"), 170_589_770)
+        self.assertEqual(eb.dataset_tokens_from("170,589,770"), 170_589_770)
+        self.assertEqual(eb.dataset_tokens_from(170_589_770), 170_589_770)
 
     def test_a_non_manifest_gives_a_clear_error(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -372,17 +372,23 @@ the corpus cache attached the data phase costs about a minute rather than 47, so
 
 **Measured on a T4, 2026-10-02** (config A, 37,890,560 params, `--batch 8
 --block 1024 --grad-accum 8 --amp`): 13,493 tokens/s, 0.61 s per micro-step,
-65,536 tokens per learning update. Against the real 170,276,818-token corpus
-that is **3.51 h per epoch**, so 8 h buys 2.17 passes ≈ 45,065 micro-steps ≈
-9.7 tokens/param against §7.3's 20-tokens/param reference. The reference does
-not fit — `estimate_budget` says so in as many words rather than quietly
-rounding down.
+65,536 tokens per learning update. Against the real **170,589,770**-token train
+split (3,447 shard files; `shard_summary` prints it, and `manifest.json` is the
+authority) that is **3.51 h per epoch**, so 8 h buys 2.16 passes ≈ 45,065
+micro-steps ≈ 9.7 tokens/param against §7.3's 20-tokens/param reference. The
+reference does not fit — `estimate_budget` says so in as many words rather than
+quietly rounding down.
 
 One epoch is the interesting unit here, not the session. 20,000 micro-steps is
 0.96 epochs, so the run that produced the first checkpoint saw nearly every
 token exactly once; training past it is repetition, and repetition at a
 *correctly annealed* learning rate is a different experiment from repetition at
 96.7 % of peak (see the 2026-10-02 entry in `PROGRESS.md`).
+
+Never quote a token count from memory or from an earlier session's notes. An
+earlier draft of this section carried a figure from a *previous* corpus (3,433
+files, a different train split) and attributed it to this one; the manifest and
+`shard_summary` agree exactly at 170,589,770, and only reading them catches it.
 
 The notebooks in `training/notebooks/` are **drivers**, not implementations:
 every step calls a module that is already in the repository and tested, because
@@ -724,8 +730,36 @@ to the tokenizer *present*, and a cache carrying a mismatched pair would be
 checking the pair against itself. So `verify` checks the **relationship**: the
 manifest's digest, the manifest's own `tokenizer_version` and `vocab_size`
 against `CACHE.json`, the tokenizer artifact's `tokenizer_version` against the
-shard generation, and every file present at its recorded size. Any failure is a
+shard generation, every file present at its recorded size, and **every shard's
+bytes re-hashed against the manifest's own per-shard digest**. Any failure is a
 named non-zero exit.
+
+That last check was missing and the code said it did not need it, on a cost
+argument that was never measured and was wrong by about six times. `inventory`
+digests `relpath:size`, so it catches a truncated, missing, renamed or resized
+shard — and silently passes a shard whose name and size are right and whose bytes
+are wrong, which still trains. The stated reason was that "hashing every shard
+would cost more than the copy". Measured 2026-10-02 on the real shard set:
+
+| | |
+|---|---|
+| sha256 over all 351.8 MB | **4.96 s** (71 MB/s, 825 shards timed directly) |
+| the same bytes over Kaggle's measured link | **30 s** (4.6 MB/s) |
+
+The digests were already in `manifest.json`; only the read was missing.
+
+Getting the test to *catch* an inverted comparison took two payloads rather than
+one. A mutation that raises when a digest starts with `"0"` passes every test
+written against a single corrupt payload whose digest happens to start with `0`
+— which is what the first version did, and the mutation survived it. Two
+payloads, one matching the inverted predicate and one not, make the difference
+observable. One mutation still survives and is documented as equivalent:
+removing the aggregate digest comparison changes nothing, because the per-shard
+check already raised, naming the file, before it is reached.
+
+The test fixture also used `"files": 2` where `write_shards` writes a list of
+per-shard entries. A fixture shaped unlike the real thing exercises none of the
+content checking and makes a guard look covered that was not.
 
 **Until a cache exists, the notebook is unchanged by this** — no cache attached
 means the full pass runs exactly as before. The tool is built and tested first on
@@ -852,7 +886,7 @@ changed with them", and `npm test` is what proves it rather than a memory of it.
 Run everything (no torch required; ~35 s for the JS suite, ~70 s for Python):
 
 ```bash
-npm run test:all          # 533 JS tests + 431 Python tests (0 skip: torch is installed)
+npm run test:all          # 533 JS tests + 436 Python tests (0 skip: torch is installed)
 npm run params            # analytic parameter counts + each config's own band gate
 npm run smoke             # tokenizer contract, shards, cursor, checkpoints
 npm run export:model      # checkpoint → browser artifact + parity fixture
