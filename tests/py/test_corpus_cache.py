@@ -19,6 +19,7 @@ correct, and is also asserted below, because that is what the guard is for.
 
 from __future__ import annotations
 
+import io
 import json
 import shutil
 import sys
@@ -61,6 +62,96 @@ def build_corpus(root: Path, version: str = TOKENIZER_VERSION, vocab: int = 1024
     }), encoding="utf-8")
     (tokenizer / "tokenizer.json").write_text("{}", encoding="utf-8")
     return root
+
+
+class ArchiveIsOneFile(unittest.TestCase):
+    """The archive is not a convenience: it is the only practical pull.
+
+    Measured 2026-10-02, Kaggle's kernel-output API downloads **one file per HTTP
+    request** and pages the listing 20 at a time by default, so a working
+    directory holding the repository plus **3,505 shard files** exceeded a
+    300-second timeout enumerating (7 seconds with `--page-size 200`). There is
+    also an open Kaggle report of notebook outputs being capped at 500 items.
+    One archive is one request and does not depend on the item count.
+    """
+
+    def _saved(self, tmp: str) -> tuple[Path, Path]:
+        source = build_corpus(Path(tmp) / "corpus")
+        cache = Path(tmp) / "cache"
+        with redirect_stdout(io.StringIO()):
+            cc.main(["save", "--shards", str(source / "shards"),
+                     "--tokenizer", str(source / "tokenizer"), "--out", str(cache)])
+        return source, cache
+
+    def test_archive_writes_one_gzipped_file_holding_the_whole_cache(self):
+        import tarfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            _source, cache = self._saved(tmp)
+            out = Path(tmp) / "corpus-cache.tgz"
+            with redirect_stdout(io.StringIO()):
+                code = cc.main(["archive", "--cache", str(cache),
+                                "--archive", str(out)])
+            self.assertEqual(code, 0)
+            self.assertTrue(out.is_file())
+            with tarfile.open(out) as tar:
+                names = set(tar.getnames())
+        for expected in ("CACHE.json", "shards/manifest.json",
+                         "tokenizer/meta.json", "shards/train-00000.bin"):
+            self.assertTrue(
+                any(n.endswith(expected) for n in names),
+                f"{expected} missing from the archive: {sorted(names)}")
+
+    def test_archive_refuses_a_stale_cache_and_writes_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _source, cache = self._saved(tmp)
+            meta = json.loads(
+                (cache / "tokenizer" / "meta.json").read_text(encoding="utf-8"))
+            meta["tokenizer_version"] = "portfolio-bpe-16k-45395d2ebc83"
+            (cache / "tokenizer" / "meta.json").write_text(
+                json.dumps(meta), encoding="utf-8")
+            out = Path(tmp) / "corpus-cache.tgz"
+            with self.assertRaises(SystemExit):
+                with redirect_stdout(io.StringIO()):
+                    cc.main(["archive", "--cache", str(cache), "--archive", str(out)])
+            self.assertFalse(out.exists(),
+                             "a stale cache must not leave the session as one "
+                             "file that a later session installs without "
+                             "complaint")
+
+    def test_archive_needs_a_destination(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _source, cache = self._saved(tmp)
+            with self.assertRaises(SystemExit) as ctx:
+                with redirect_stdout(io.StringIO()):
+                    cc.main(["archive", "--cache", str(cache)])
+            self.assertIn("--archive", str(ctx.exception))
+
+    def test_the_archive_round_trips_back_through_install(self):
+        import tarfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            _source, cache = self._saved(tmp)
+            archive = Path(tmp) / "corpus-cache.tgz"
+            with redirect_stdout(io.StringIO()):
+                cc.main(["archive", "--cache", str(cache), "--archive", str(archive)])
+
+            unpacked = Path(tmp) / "unpacked"
+            unpacked.mkdir()
+            with tarfile.open(archive) as tar:
+                tar.extractall(unpacked, filter="data")
+            restored = next(p for p in unpacked.iterdir() if p.is_dir())
+
+            shards_to = Path(tmp) / "work" / "shards"
+            tokenizer_to = Path(tmp) / "work" / "tokenizer"
+            with redirect_stdout(io.StringIO()) as out:
+                code = cc.main(["install", "--cache", str(restored),
+                                "--shards-to", str(shards_to),
+                                "--tokenizer-to", str(tokenizer_to)])
+            self.assertEqual(code, 0)
+            self.assertTrue((shards_to / "manifest.json").is_file())
+            self.assertTrue((tokenizer_to / "meta.json").is_file())
+            self.assertIn("installed", out.getvalue())
 
 
 class RoundTrip(unittest.TestCase):

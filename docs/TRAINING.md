@@ -697,6 +697,40 @@ named non-zero exit.
 means the full pass runs exactly as before. The tool is built and tested first on
 purpose: a consumer built before its producer has nothing to be tested against.
 
+#### Pulling it back: three things the Kaggle output API actually does
+
+Measured 2026-10-02 against `aashishkumarrajput/training-stage-a-v2/1`:
+
+1. **It downloads one file per HTTP request.** A finished session's
+   `/kaggle/working` holds the repository plus **3,505 shard files**, so pulling
+   the shards that way is 3,505 separate requests. §6 therefore writes
+   `corpus-cache.tgz` — **one** verified archive, one request:
+
+   ```bash
+   kaggle kernels output <owner>/<kernel> \
+       --file-pattern 'corpus-cache.tgz$' --page-size 200 -p <dir>
+   ```
+
+2. **The listing is paged 20 at a time by default**, which is ~188 round trips
+   of enumeration before a single byte is fetched. `kaggle kernels output`
+   exceeded a **300-second timeout** on that tree; the same call finished in
+   **7 seconds** with `--page-size 200` (the documented maximum). Always pass it.
+
+3. **The output API cannot target a version.** `ApiListKernelSessionOutputRequest`
+   exposes no `kernel_version_number`, and `kernels_output` parses `owner/slug/1`
+   and then never sets it — so the call always returns the **latest** version's
+   output. **Pull before you push.** Publishing a new kernel version discards the
+   previous one's artifacts, silently, and there is no way to ask for them again.
+
+Also worth knowing: `kaggle kernels files` reported **0 files** for a version
+whose output downloaded fine, so it is not a presence check. And
+`kaggle kernels output` with no pattern pulls the whole working directory —
+~600 MB of Wikipedia — which is not what anyone wants.
+
+To pull the raw log without that, `KaggleApi.kernels_logs(ref)` returns it in one
+call. It returns an **empty body while the kernel is RUNNING**, so the log exists
+only once the run reaches a terminal state.
+
 ### 7.4 What is still blocked on a decision
 
 Everything above is code that exists and is tested without torch. What remains
@@ -784,7 +818,7 @@ changed with them", and `npm test` is what proves it rather than a memory of it.
 Run everything (no torch required; ~35 s for the JS suite, ~70 s for Python):
 
 ```bash
-npm run test:all          # 533 JS tests + 409 Python tests (0 skip: torch is installed)
+npm run test:all          # 533 JS tests + 428 Python tests (0 skip: torch is installed)
 npm run params            # analytic parameter counts + each config's own band gate
 npm run smoke             # tokenizer contract, shards, cursor, checkpoints
 npm run export:model      # checkpoint → browser artifact + parity fixture

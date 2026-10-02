@@ -56,6 +56,7 @@ import hashlib
 import json
 import shutil
 import sys
+import tarfile
 from pathlib import Path
 
 if __package__ in (None, ""):
@@ -243,6 +244,37 @@ def install(cache: Path, shards_to: Path, tokenizer_to: Path) -> int:
     return 0
 
 
+def archive(cache: Path, out: Path) -> int:
+    """Write a verified cache as ONE .tgz.
+
+    The reason this exists is measured, 2026-10-02. Kaggle's kernel-output API
+    downloads **one file per HTTP request** and pages the listing 20 at a time by
+    default, so a `/kaggle/working` holding the repo tree plus 3,505 shard files
+    is ~188 round trips of enumeration before anything is fetched — `kernels
+    output` blew a 300-second timeout, and with `--page-size 200` the same call
+    finished in 7 seconds. Even at that speed the shards would arrive as 3,505
+    separate requests.
+
+    A single archive is one request. It also sidesteps whatever cap there may be
+    on the *number* of output items, which is the risk that cannot be tested from
+    here: there is a "[Bug] Kaggle notebook outputs are limited to 500 items"
+    report on Kaggle, and this tree is 3,757 files.
+
+    Verified first, and the archive is not written if verification fails.
+    """
+    verify(cache)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    root = cache.parent
+    with tarfile.open(out, "w:gz") as tar:
+        tar.add(cache, arcname=cache.name)
+    size = out.stat().st_size
+    print(f"\nwrote {out} ({size / 1e6:,.1f} MB) — one file, one request")
+    print(f"pull it with:  kaggle kernels output <ref> "
+          f"--file-pattern '{out.name}$' --page-size 200")
+    del root
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """One parser, one `command` positional, every flag visible in `--help`.
 
@@ -259,8 +291,10 @@ def build_parser() -> argparse.ArgumentParser:
         epilog="commands:\n"
                "  save     write a cache from this session's shards + tokenizer\n"
                "  verify   check a cache is usable (refuses a stale one)\n"
-               "  install  verify, then copy the cache into the workspace\n")
-    ap.add_argument("command", choices=["save", "verify", "install"])
+               "  install  verify, then copy the cache into the workspace\n"
+               "  archive  verify, then write the cache as one .tgz (one request "
+               "to pull)\n")
+    ap.add_argument("command", choices=["save", "verify", "install", "archive"])
     ap.add_argument("--shards", type=Path, default=DEFAULT_SHARDS,
                     help="shard directory (save), or where to install them")
     ap.add_argument("--tokenizer", type=Path, default=DEFAULT_TOKENIZER,
@@ -271,6 +305,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="install destination for the shards")
     ap.add_argument("--tokenizer-to", type=Path, default=DEFAULT_TOKENIZER,
                     help="install destination for the tokenizer artifact")
+    ap.add_argument("--archive", type=Path,
+                    help="with `archive`: write the verified cache to this .tgz")
     return ap
 
 
@@ -287,6 +323,10 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(f"{args.command} needs --cache <directory>")
     if args.command == "verify":
         return verify(args.cache)
+    if args.command == "archive":
+        if args.archive is None:
+            raise SystemExit("archive needs --archive <path.tgz>")
+        return archive(args.cache, args.archive)
     return install(args.cache, args.shards_to, args.tokenizer_to)
 
 

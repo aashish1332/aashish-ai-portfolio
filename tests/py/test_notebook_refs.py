@@ -715,6 +715,80 @@ class StepsComeFromTheMeasurement(unittest.TestCase):
                            f"part-way down")
 
 
+class SessionWorkSurvives(unittest.TestCase):
+    """A session must leave behind something one request can fetch.
+
+    Measured 2026-10-02, on the Kaggle kernel-output API: it downloads **one file
+    per HTTP request** and pages the listing 20 at a time by default. A working
+    directory holding the repository plus **3,505 shard files** made
+    `kaggle kernels output` exceed a 300-second timeout enumerating; the same
+    call with `--page-size 200` finished in 7 seconds. Even then the shards
+    would arrive as 3,505 separate requests — and there is an open Kaggle report
+    of notebook outputs being capped at 500 items, which cannot be checked from
+    here.
+
+    So the session writes **one** verified archive. Without this cell the corpus
+    pass happens, is not retrievable in any practical way, and the next session
+    redoes it: 47 minutes per session, forever.
+    """
+
+    @staticmethod
+    def _joined() -> str:
+        return "\n".join(source for _index, source in code_cells(NOTEBOOK))
+
+    def test_the_session_writes_a_single_cache_archive(self):
+        joined = self._joined()
+        self.assertIn("corpus_cache archive", joined,
+                      "nothing in the notebook produces the one-file archive the "
+                      "pull depends on")
+        self.assertIn("corpus-cache.tgz", joined)
+
+    def test_the_archive_is_written_after_the_shards_exist(self):
+        shard_cell = None
+        archive_cell = None
+        for index, source in code_cells(NOTEBOOK):
+            if "training.scripts.shard_summary" in source:
+                shard_cell = index
+            if "corpus_cache archive" in source:
+                archive_cell = index
+        self.assertIsNotNone(shard_cell, "the shard pass is gone")
+        self.assertIsNotNone(archive_cell, "the archive cell is gone")
+        self.assertLess(shard_cell, archive_cell,
+                        "an archive written before the shards exist would contain "
+                        "no corpus — the 47-minute pass would be discarded at the "
+                        "exact moment it finished")
+
+    def test_the_archive_is_verified_before_it_is_written(self):
+        """`archive` calls `verify` first, so a cache whose shards and tokenizer
+        disagree cannot leave the session as a single file that a later session
+        installs without complaint."""
+        joined = self._joined()
+        self.assertIn("corpus_cache save", joined)
+        self.assertIn("corpus_cache archive", joined)
+        save_at = joined.index("corpus_cache save")
+        archive_at = joined.index("corpus_cache archive")
+        self.assertLess(save_at, archive_at,
+                        "archiving before saving has nothing to read")
+
+    def test_the_consumed_text_is_dropped(self):
+        """1.3 GB of data/raw and data/extracted outlives its usefulness the
+        moment §6 has run, and only makes the output tree slower to commit."""
+        joined = self._joined()
+        self.assertIn("data/raw", joined)
+        self.assertIn("data/extracted", joined)
+        self.assertIn("rmtree", joined)
+
+    def test_the_pull_order_is_written_down(self):
+        """The output API has no version field — `ApiListKernelSessionOutputRequest`
+        exposes no `kernel_version_number` and `kernels_output` parses `owner/slug/1`
+        then never sets it — so a call returns the **latest** version's output.
+        Pushing a new kernel before pulling silently discards this one."""
+        joined = self._joined()
+        self.assertIn("BEFORE pushing a new kernel version", joined,
+                      "the pull must happen before the next push, and the notebook "
+                      "is where that order is read")
+
+
 class Workspace(unittest.TestCase):
     def test_the_chosen_repository_is_writable(self):
         """`/kaggle/input` is a read-only mount, so a Dataset is not a workspace.

@@ -4939,3 +4939,42 @@ had already failed:
   colon.
 
 `npm run test:py` **419**, `npm test` **533**, 0 failures, build clean.
+
+### Getting the artifacts back — what the Kaggle output API actually does
+
+Researched against `aashishkumarrajput/training-stage-a-v2/1`, 2026-10-02,
+because pulling 348 MB of shards out of a finished kernel was the one step still
+unproven. Reading the installed SDK (`KaggleApi.kernels_output`) and probing the
+API answered three questions that changed the design:
+
+1. **One HTTP request per file.** The method loops `response.files`, and for each
+   match does `requests.get(item.url)` and writes `download_response.content`. A
+   finished session's `/kaggle/working` holds the repository plus **3,505 shard
+   files**, so pulling them individually is 3,505 requests. §6 now writes
+   `corpus-cache.tgz` — one verified archive, one request.
+2. **The listing is paged 20 at a time by default** (`page_size: int = 20`), i.e.
+   ~188 round trips of enumeration before anything is fetched. Measured:
+   `kaggle kernels output` exceeded a **300-second timeout** on that tree; the
+   same call finished in **7 seconds** with `--page-size 200`, the documented
+   maximum. `pull_artifacts.py` had been calling the API *without* `page_size`,
+   so it was silently using 20 — that alone was the timeout.
+3. **The output API cannot target a version.** `ApiListKernelSessionOutputRequest`
+   raises `AttributeError: Unknown field ... kernel_version_number`, and
+   `kernels_output` parses `owner/slug/1` into `version` and then never sets it on
+   the request. **The call always returns the latest version's output.** So
+   *pull before you push*: publishing a new kernel version discards the previous
+   one's artifacts, with no way to ask for them again. That ordering is now
+   written into the notebook next to the pull command.
+
+Two more measured facts worth keeping: `kaggle kernels files` reported **0 files**
+for a version whose output downloaded perfectly, so it is not a presence check;
+and `kernels_logs` returns an **empty body while the kernel is RUNNING**, so the
+log exists only at a terminal state and mid-run peeking is impossible.
+
+Also added: §6 drops `data/raw` and `data/extracted` (1.3 GB) once the shard pass
+has consumed them, which shrinks the tree the version has to commit; and
+`corpus_cache archive` refuses a stale cache *before* writing, so a mismatched
+pair cannot leave a session as one tidy file that the next session installs
+without complaint.
+
+`npm run test:py` **428**, `npm test` **533**, 0 failures.
