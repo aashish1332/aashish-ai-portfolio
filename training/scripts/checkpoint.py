@@ -11,12 +11,32 @@ Spec requirements, and how each one is met here:
 | data-shard cursor | the caller's `data_cursor` key (see `ai/data/dataset.py`) |
 | atomic writes | temp file in the same directory → `os.replace` → `fsync` dir |
 | auto-resume | `resolve_resume("auto")` finds `latest.pt` and reports what it is |
+| **the saved state is current** | `live=` objects re-read on every save; `assert_state_fresh` on save *and* load |
 
-The missing-key check is the one that earns its keep. An auto-resume that
-finds a checkpoint written by an older, buggy save (no GradScaler, say)
-otherwise trains with a *fresh* scaler and silently changes the effective
-loss scale mid-run; the failure is invisible and only shows up as worse
-numbers later. `CheckpointManager` refuses to load instead.
+The missing-key check earns its keep. An auto-resume that finds a checkpoint
+written by an older, buggy save (no GradScaler, say) otherwise trains with a
+*fresh* scaler and silently changes the effective loss scale mid-run; the
+failure is invisible and only shows up as worse numbers later.
+`CheckpointManager` refuses to load instead.
+
+**The key check was not enough, and finding that out cost a 4h21m GPU run.**
+Presence is not freshness. Stage A v2 (2026-10-02) trained 20,000 steps to a
+final loss of 3.33 and wrote a checkpoint with all eleven required keys
+present, a correct config, a matching tokenizer generation, and an optimizer
+that had never been stepped: `optimizer.state` was empty and
+`scheduler.last_epoch` was 0, because the state dict was built once at step 0
+and the three save sites refreshed only `loss_history`, `data_cursor` and
+`rng`. Every check that asked *is the key there* passed. Nothing asked
+*does it hold this step's value*. So there are now two guards: the trainer
+hands its live objects to the manager and cannot save a stale one, and
+`assert_state_fresh` compares the values against the run's own recorded
+hyperparameters on the way in and out.
+
+Note what the stale file could still do: `--init` reads four keys and is
+unaffected, which is why `train_stage_b.load_init_weights` deliberately does
+not come through `load`. A weights-only file (`WEIGHTS_ONLY_KEYS`) is
+initialisable and impossible to resume, which is the correct state of affairs
+for a run whose optimizer state was never captured.
 """
 
 from __future__ import annotations
@@ -47,13 +67,135 @@ REQUIRED_STATE_KEYS = (
     "rng",
     "data_cursor",
     "loss_history",
+    "hyperparameters",
 )
+
+# The parts of a state dict that keep changing as the run proceeds, and which
+# therefore have to be re-read from the live objects at every save. See
+# `CheckpointManager.__init__` for why this list is enforced rather than
+# remembered.
+REFRESHABLE_STATE = ("optimizer", "scheduler", "scaler")
+
+# The keys a *weights-only* checkpoint keeps. Deliberately not a subset of
+# `REQUIRED_STATE_KEYS` that `load` would accept: a stripped file must fail to
+# resume, loudly and by name, or the next person to find it will resume from a
+# model whose optimizer was thrown away. It is initialisable and nothing else.
+WEIGHTS_ONLY_KEYS = ("model", "config", "tokenizer_version", "step", "epoch",
+                     "rng")
+
+# The hyperparameter keys a checkpoint must record for `assert_state_fresh` to
+# be able to tell "no optimizer moments yet" (step < grad_accum, correct) from
+# "the moments were never captured" (step >= grad_accum, the defect).
+REQUIRED_HYPERPARAMS = ("grad_accum", "steps", "warmup")
 
 RUN_MANIFEST = "RUN_MANIFEST.json"
 
 
 class MissingStateError(ValueError):
     """A checkpoint that would resume into a different training run."""
+
+
+class StaleStateError(MissingStateError):
+    """A checkpoint whose keys are all present but whose values are not current.
+
+    Separate from `MissingStateError` because it is a different failure and
+    needs a different fix: nothing is absent, so the key check passes, and a
+    resume proceeds believing it has Adam moments and a schedule position it
+    does not have. This is the defect the 2026-10-02 Stage A run (v2) shipped
+    — see `CheckpointManager.save`.
+    """
+
+
+def _optimizer_is_stale(opt: dict) -> bool | None:
+    """True/False if the dict's shape settles it, None if it cannot tell.
+
+    The question is "does this carry any optimizer moment?", and the honest
+    answer is only available for a torch-shaped dict, which is what a trainer
+    writes: `{"state": {...}, "param_groups": [...]}`. Two rules, in order:
+
+    * `state` present and empty → stale, unconditionally. That is v2.
+    * `state` present and non-empty → fresh. That is every checkpoint written
+      after the first optimizer update.
+    * `state` absent → cannot tell, unless `param_groups` is there, which means
+      it is a torch optimizer dict and `state` was dropped. Stale.
+
+    Returning None rather than guessing matters: the pure-logic tests build
+    state dicts by hand with an optimizer of their own shape, and a check that
+    called all of those stale would be a check that cries wolf. But the third
+    rule is why None does not leave a hole — the only dicts that reach it are
+    the ones that are not pretending to be torch optimizers.
+    """
+    if not isinstance(opt, dict):
+        return None
+    if "state" in opt:
+        return not opt["state"]
+    if "param_groups" in opt:
+        return True
+    return None
+
+
+def _scheduler_is_stale(sched: dict) -> bool | None:
+    """Same discipline. A torch LR scheduler always carries `last_epoch`."""
+    if not isinstance(sched, dict) or "last_epoch" not in sched:
+        return None
+    return int(sched.get("last_epoch") or 0) <= 0
+
+
+def assert_state_fresh(state: dict, label: str) -> None:
+    """Refuse a checkpoint whose optimizer/scheduler are older than its step.
+
+    Every required key was present in v2's 20,000-step checkpoint, so the
+    `REQUIRED_STATE_KEYS` check passed and the run looked resumable. It was
+    not: `optimizer.state` was empty and `scheduler.last_epoch` was 0, because
+    both objects had been snapshotted into the state dict once at step 0 and
+    never refreshed. Resuming it would have restarted the cosine from the
+    beginning with an AdamW that had no moments.
+
+    Presence is not freshness. A key can be there and hold the wrong step's
+    value, and no amount of checking that the key exists will notice. This
+    check compares the *values* against the run's own recorded
+    hyperparameters, which is the only evidence that can tell the two apart:
+    a checkpoint at step 3 with `grad_accum=8` is legitimately moment-free,
+    and one at step 3,000 is not.
+    """
+    step = int(state.get("step", 0) or 0)
+    hyper = state.get("hyperparameters")
+    grad_accum = None
+    if isinstance(hyper, dict) and "grad_accum" in hyper:
+        grad_accum = max(1, int(hyper["grad_accum"]))
+    if grad_accum is not None and step < grad_accum:
+        return  # no optimizer update has happened yet; an empty state is correct
+
+    # Observable staleness is checked *before* the hyperparameter record, and
+    # the order matters for what a reader is told. A file written before the
+    # record existed is missing `hyperparameters`, and that is a true thing to
+    # report — but on v2 the empty optimizer is the defect, and leading with
+    # the missing bookkeeping gets a reader looking in the wrong place.
+    if _optimizer_is_stale(state.get("optimizer")):
+        extra = ("" if grad_accum is None else
+                 f" (>= grad_accum {grad_accum})")
+        raise StaleStateError(
+            f"{label} is at step {step}{extra} but its optimizer holds no "
+            f"moments for any parameter: the optimizer was captured before the "
+            f"first update and never refreshed. Resuming this would silently "
+            f"restart Adam with no state.")
+    if _scheduler_is_stale(state.get("scheduler")):
+        raise StaleStateError(
+            f"{label} is at step {step} but its scheduler is at last_epoch "
+            f"<= 0: the schedule was captured at construction and never "
+            f"stepped, so a resume would re-run the whole warmup and cosine "
+            f"from the start.")
+
+    if not isinstance(hyper, dict):
+        raise MissingStateError(
+            f"{label} records no hyperparameters, so the one legitimate "
+            f"reason for an optimizer with no moments — step < grad_accum — "
+            f"cannot be ruled out (step {step})")
+    absent = [k for k in REQUIRED_HYPERPARAMS if k not in hyper]
+    if absent:
+        raise MissingStateError(
+            f"{label} hyperparameters are missing {absent} — §7.5's manifest "
+            f"fields are needed to tell a fresh optimizer from a stale one")
 
 
 def git_commit() -> str | None:
@@ -144,11 +286,37 @@ def default_serializer():
 
 
 class CheckpointManager:
-    def __init__(self, run_dir: Path | str, keep_last: int = 3, serializer=None):
+    """Writes resumable checkpoints. `live` is how it avoids writing stale ones.
+
+    The 2026-10-02 Stage A run (v2) produced a 20,000-step checkpoint whose
+    `optimizer.state` was empty and whose `scheduler.last_epoch` was 0. The
+    cause was one line, repeated at three save sites: the trainer built its
+    state dict once at step 0 and then refreshed only `loss_history`,
+    `data_cursor` and `rng` before each `save`. The optimizer, scheduler and
+    scaler in that dict were the objects as they were before the first
+    optimizer update, and they stayed that way for the whole run.
+
+    So `live` holds the live objects and `save` re-reads them on every write.
+    The alternative — passing the fresh state in at each of the three call
+    sites — is the same thing that already failed, with an extra step for
+    whoever adds the fourth save site. A trainer hands the manager its
+    optimizer once and cannot then save a stale one.
+    """
+
+    def __init__(self, run_dir: Path | str, keep_last: int = 3, serializer=None,
+                 live: dict | None = None):
         self.run_dir = Path(run_dir)
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.keep_last = keep_last
         self.serializer = serializer or default_serializer()
+        self.live = dict(live or {})
+        unknown = sorted(set(self.live) - set(REFRESHABLE_STATE))
+        if unknown:
+            # A misspelled key would be silently ignored, and the checkpoint
+            # would be written stale — the exact failure this exists to stop.
+            raise ValueError(
+                f"live={unknown} are not refreshable state; pass only "
+                f"{list(REFRESHABLE_STATE)} (the rest is rebuilt per save anyway)")
 
     # ── paths ────────────────────────────────────────────────────────
     def path(self, which: str = "latest") -> Path:
@@ -183,6 +351,11 @@ class CheckpointManager:
         payload.setdefault("epoch", 0)
         payload["saved_at"] = time.time()
         payload["git_commit"] = git_commit()
+        for name in REFRESHABLE_STATE:
+            obj = self.live.get(name)
+            if obj is not None:
+                payload[name] = obj.state_dict()
+        assert_state_fresh(payload, f"checkpoint at step {step}")
         if extra:
             payload["extra"] = extra
 
@@ -243,6 +416,7 @@ class CheckpointManager:
             raise MissingStateError(
                 f"{path.name} is missing {missing} — it was written by a different "
                 f"(or older) trainer and resuming from it would silently change the run")
+        assert_state_fresh(state, path.name)
         return state
 
     def info(self) -> dict | None:

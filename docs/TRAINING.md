@@ -688,6 +688,80 @@ Dataset, Drive, or the Hub — or `/kaggle/working` plus a Save Version each tim
 `--max-minutes` stops cleanly and writes a checkpoint before the time box ends,
 so an interrupted run is a resume rather than a loss.
 
+#### A checkpoint that is present, complete, and wrong
+
+Stage A v2 (2026-10-02, 4h21m, 20,000 steps, loss 9.88 → 3.33) produced a
+checkpoint that passed every check this project had and could not be resumed.
+MEASURED, by loading the file:
+
+```
+optimizer.state            {}          ← 0 of 38 tensors hold moments
+scheduler.last_epoch       0
+scheduler._step_count      1
+optimizer lr               1.5e-06     ← peak/200: the construction value
+required keys              11/11 present
+config / tokenizer         correct
+strict load                93 tensors, no missing or unexpected keys
+```
+
+The cause was one line repeated at three save sites. The trainer built its
+state dict once, before the loop:
+
+```python
+state = {"model": …, "optimizer": optimizer.state_dict(),
+         "scheduler": scheduler.state_dict(), "scaler": scaler.state_dict(), …}
+```
+
+and each save refreshed only `loss_history`, `data_cursor` and `rng`. The
+optimizer, scheduler and scaler in that dict were the objects as they were
+**before the first optimizer update**, and they stayed that way for 20,000
+steps. Resuming it would have restarted Adam with no moments and replayed the
+entire warmup and cosine from step 0.
+
+This is the failure mode the §7.5 "required keys enforced" check was built to
+prevent, and it sailed past it, because a key can be present and hold the wrong
+step's value. Nothing was missing. The fix is in three parts:
+
+| part | what it stops |
+|---|---|
+| `CheckpointManager(live={…})` | the trainer handing over a snapshot instead of the objects. `save` re-reads them every time, so no save site *can* forget. |
+| `hyperparameters` in the state | staleness being undecidable. A checkpoint at step 3 with `grad_accum=8` is legitimately moment-free; at step 3,000 it is not. Only the recorded `grad_accum` tells those apart. |
+| `assert_state_fresh` on save **and** load | a stale file arriving from anywhere — an older run, a download, a colleague's laptop. |
+
+`assert_state_fresh` is deliberately tolerant about dicts that are not claiming
+to be torch optimizers, and deliberately intolerant about ones that are: a
+`param_groups` with no `state` is a torch optimizer dict with its state
+stripped, not a mystery. Both directions are tested, and the whole guard set is
+mutation-tested — 12 mutations, each breaking one piece and naming the test that
+must notice (`tools/mutate_checkpoints.py`).
+
+**`--init` is not `--resume`.** `train_stage_b --init` reads four keys
+(`WEIGHTS_ONLY_KEYS`); continuing a run needs twelve. Routing `--init` through
+`CheckpointManager.load` made the two the same question and therefore required a
+resumable checkpoint to initialise from — which is why the weights-only publish
+path below exists at all, and why the module's docstring and its code disagreed
+until this was fixed.
+
+Verify a pulled checkpoint before believing anything about it:
+
+```bash
+PYTHONUTF8=1 python tools/verify_checkpoint.py --ckpt <path>/latest.pt
+```
+
+It reports PASS/FAIL/**SKIP** per check. The SKIP is load-bearing: `anneal` is
+skipped rather than passed when the file's scheduler is stale, because a green
+tick computed from step 0's learning rate is how v2 looked healthy. A healthy
+smoke checkpoint passes 11/11; v2's `latest.pt` and `best.pt` both fail 4 and
+skip 1.
+
+`publish_checkpoint.py` refuses to publish a checkpoint that fails
+`assert_state_fresh`, and says which of the two things is wrong. With
+`--weights-only` it strips the unusable optimizer/scheduler/scaler, ships
+`latest.pt` only (there is no resume to serve, and `best.pt` is 150 MB of
+near-identical weights no one reads), and records `resumable: false` in
+`CHECKPOINT.json`. The stripped file is refused by name on any attempt to
+resume it, which is the correct behaviour rather than a limitation.
+
 **`/kaggle/working` does survive a failed run.** Measured 2026-10-02: version 1
 raised `OutOfMemoryError` at 47m33s and its working directory was still
 retrievable afterwards with `kaggle kernels output --file-pattern`. Note that
@@ -886,7 +960,7 @@ changed with them", and `npm test` is what proves it rather than a memory of it.
 Run everything (no torch required; ~35 s for the JS suite, ~70 s for Python):
 
 ```bash
-npm run test:all          # 533 JS tests + 444 Python tests (0 skip: torch is installed)
+npm run test:all          # 533 JS tests + 469 Python tests (0 skip: torch is installed)
 npm run params            # analytic parameter counts + each config's own band gate
 npm run smoke             # tokenizer contract, shards, cursor, checkpoints
 npm run export:model      # checkpoint → browser artifact + parity fixture

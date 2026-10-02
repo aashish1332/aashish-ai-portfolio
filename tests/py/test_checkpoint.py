@@ -13,6 +13,7 @@ What it does not buy: that a torch optimizer's state survives the trip.
 
 from __future__ import annotations
 
+import argparse
 import json
 import random
 import sys
@@ -30,10 +31,19 @@ from training.scripts import checkpoint as ckpt  # noqa: E402
 
 
 def state(step: int, tokens: int = 0, extra_losses=None) -> dict:
+    """A state dict shaped like the one a real trainer writes.
+
+    The optimizer and scheduler here carry the *values* a run at `step` would
+    have, not just the keys. That is deliberate: `assert_state_fresh` compares
+    values against the step, so a fixture whose optimizer is empty at step 500
+    would be describing the defect rather than a healthy run, and every test
+    built on it would be asserting against a fiction.
+    """
     return {
         "model": {"w": np.arange(8, dtype=np.float32)},
-        "optimizer": {"step": np.int64(step)},
-        "scheduler": {"last_lr": 1e-3},
+        "optimizer": {"state": {0: {"step": np.int64(step)}},
+                      "param_groups": [{"lr": 1e-3, "initial_lr": 3e-3}]},
+        "scheduler": {"last_epoch": step, "_last_lr": [1e-3]},
         "scaler": {"scale": 512.0},
         "step": step, "epoch": 0,
         "config": {"vocab_size": 1024},
@@ -43,6 +53,8 @@ def state(step: int, tokens: int = 0, extra_losses=None) -> dict:
                         "block": 8, "batch": 2, "rng": {"state": "x"},
                         "batches_drawn": 0},
         "loss_history": extra_losses or [1.0, 0.9, 0.8],
+        "hyperparameters": {"grad_accum": 1, "steps": 100, "warmup": 10,
+                            "batch": 2, "block": 8, "lr": 3e-3},
     }
 
 
@@ -124,6 +136,211 @@ class CheckpointManager(unittest.TestCase):
         self.assertEqual(summary["steps"], [2])
         self.assertTrue(summary["has_latest"])
         self.assertIn(summary["serializer"], ("pickle", "torch"))
+
+
+class _Live:
+    """Stands in for an optimizer/scheduler/scaler: a `state_dict` and a tick."""
+
+    def __init__(self, value):
+        self.value = value
+
+    def state_dict(self):
+        return {"value": self.value}
+
+    def tick(self):
+        self.value += 1
+
+
+class LiveObjectsAreRereadOnEverySave(unittest.TestCase):
+    """The defect this class exists for, found 2026-10-02 on Stage A v2.
+
+    The trainer built its state dict once at step 0 and refreshed only
+    `loss_history`, `data_cursor` and `rng` before each save, so all 20,000
+    steps of `latest.pt` carried an optimizer with no moments and a scheduler
+    at `last_epoch` 0. Every required key was present, so the key check passed
+    and the checkpoint looked resumable. The weights were fine; the run's
+    optimizer and schedule were not in the file at all.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.opt, self.sched, self.scaler = _Live(0), _Live(0), _Live(0)
+        self.manager = ckpt.CheckpointManager(
+            self.dir, keep_last=5,
+            live={"optimizer": self.opt, "scheduler": self.sched,
+                  "scaler": self.scaler})
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _load(self, which="latest"):
+        return self.manager.serializer.load(self.manager.path(which))
+
+    def test_a_second_save_carries_the_newer_optimizer(self):
+        # The state dict is built once and never touched, exactly as the
+        # trainers build it. Only the live objects move. If `save` re-reads
+        # them, the second checkpoint differs from the first.
+        payload = state(0)
+        self.manager.save(payload, step=8)
+        first = self._load()["optimizer"]["value"]
+        for _ in range(3):
+            self.opt.tick()
+            self.sched.tick()
+        payload["step"] = 16
+        self.manager.save(payload, step=16)
+        second = self._load()
+        self.assertEqual(first, 0)
+        self.assertEqual(second["optimizer"]["value"], 3,
+                         "the second save wrote a stale optimizer")
+        self.assertEqual(second["scheduler"]["value"], 3,
+                         "the second save wrote a stale scheduler")
+        self.assertEqual(second["step"], 16)
+
+    def test_the_scaler_is_refreshed_too(self):
+        self.manager.save(state(8), step=8)
+        self.scaler.tick()
+        self.manager.save(state(16), step=16)
+        self.assertEqual(self._load()["scaler"]["value"], 1)
+
+    def test_a_name_the_manager_cannot_refresh_is_refused(self):
+        # A typo here would be silently ignored and the checkpoint written
+        # stale — the failure this mechanism exists to prevent.
+        with self.assertRaises(ValueError) as ctx:
+            ckpt.CheckpointManager(self.dir, live={"optimiser": _Live(0)})
+        self.assertIn("optimiser", str(ctx.exception))
+
+    def test_a_manager_without_live_objects_still_works(self):
+        # The pure-logic tests build states by hand and must keep working;
+        # `live` is an improvement, not a new requirement.
+        plain = ckpt.CheckpointManager(self.dir / "plain", keep_last=2)
+        plain.save(state(4), step=4)
+        self.assertTrue(plain.exists("latest"))
+
+
+class StaleStateIsRefused(unittest.TestCase):
+    """Presence is not freshness: a key can be present and hold step 0's value."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+        self.manager = ckpt.CheckpointManager(self.dir, keep_last=2)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_a_checkpoint_at_step_500_with_no_optimizer_moments_is_refused(self):
+        stale = state(500)
+        stale["optimizer"] = {"state": {}, "param_groups": [{"lr": 1e-6}]}
+        with self.assertRaises(ckpt.StaleStateError) as ctx:
+            self.manager.save(stale, step=500)
+        self.assertIn("no moments", str(ctx.exception))
+        self.assertFalse(self.manager.exists("latest"),
+                         "a refused checkpoint was written anyway")
+
+    def test_a_scheduler_stuck_at_last_epoch_zero_is_refused(self):
+        stale = state(500)
+        stale["scheduler"] = {"last_epoch": 0, "_last_lr": [1.5e-6]}
+        with self.assertRaises(ckpt.StaleStateError) as ctx:
+            self.manager.save(stale, step=500)
+        self.assertIn("last_epoch", str(ctx.exception))
+
+    def test_no_moments_before_the_first_optimizer_update_is_correct(self):
+        # The false-positive guard, and the reason the check consults
+        # `grad_accum` instead of asking whether the moments are non-empty. At
+        # step 2 with grad_accum 8 nothing has been stepped yet, so an empty
+        # optimizer is the truth and must be allowed through.
+        early = state(2)
+        early["optimizer"] = {"state": {}, "param_groups": [{"lr": 1e-6}]}
+        early["scheduler"] = {"last_epoch": 0, "_last_lr": [1e-6]}
+        early["hyperparameters"]["grad_accum"] = 8
+        self.manager.save(early, step=2)
+        self.assertTrue(self.manager.exists("latest"))
+
+    def test_a_stale_checkpoint_written_by_an_older_trainer_is_refused_on_load(self):
+        # `save` refuses to write one, so this is the other direction: a file
+        # that already exists (v2's, on disk) must not be resumable either.
+        stale = state(20_000)
+        stale["optimizer"] = {"state": {}, "param_groups": [{"lr": 1.5e-6}]}
+        stale["scheduler"] = {"last_epoch": 0, "_last_lr": [1.5e-6]}
+        path = self.manager.path("latest")
+        self.manager.serializer.save(stale, path)
+        with self.assertRaises(ckpt.StaleStateError):
+            self.manager.load("latest")
+
+    def test_a_checkpoint_with_no_hyperparameters_is_refused_with_a_reason(self):
+        bare = state(20_000)
+        del bare["hyperparameters"]
+        with self.assertRaises(ckpt.MissingStateError) as ctx:
+            self.manager.save(bare, step=20_000)
+        self.assertIn("hyperparameters", str(ctx.exception))
+
+    def test_a_hyperparameter_record_missing_a_required_field_is_refused(self):
+        # `estimate_budget.py --from-run` reads these out of the manifest, and
+        # the staleness check reads grad_accum out of the checkpoint. A record
+        # that has lost one is not a record.
+        partial = state(20_000)
+        del partial["hyperparameters"]["grad_accum"]
+        with self.assertRaises(ckpt.MissingStateError) as ctx:
+            self.manager.save(partial, step=20_000)
+        self.assertIn("grad_accum", str(ctx.exception))
+
+    def test_a_torch_optimizer_dict_with_its_state_key_dropped_is_stale(self):
+        # The rule that stops `_optimizer_is_stale` returning None from being a
+        # hole. `param_groups` is present, so this is a torch optimizer dict,
+        # and a torch optimizer dict always has `state` — its absence means it
+        # was stripped or never written.
+        dropped = state(20_000)
+        dropped["optimizer"] = {"param_groups": [{"lr": 1.5e-6}]}
+        with self.assertRaises(ckpt.StaleStateError) as ctx:
+            self.manager.save(dropped, step=20_000)
+        self.assertIn("no moments", str(ctx.exception))
+
+    def test_an_optimizer_dict_whose_shape_says_nothing_is_not_judged(self):
+        # The other half: a dict that is not pretending to be a torch
+        # optimizer cannot be called stale, and a check that called everything
+        # stale would be a check nobody could satisfy.
+        odd = state(20_000)
+        odd["optimizer"] = {"value": 3}
+        odd["scheduler"] = {"value": 3}
+        self.manager.save(odd, step=20_000)
+        self.assertTrue(self.manager.exists("latest"))
+
+    def test_a_populated_optimizer_is_fresh(self):
+        # The check must not be a ratchet that only ever fails.
+        self.manager.save(state(20_000), step=20_000)
+        loaded = self.manager.load("latest")
+        self.assertEqual(loaded["step"], 20_000)
+        self.assertTrue(loaded["optimizer"]["state"])
+
+    def test_stale_is_reported_as_its_own_error(self):
+        # One `except MissingStateError` in a caller would otherwise swallow
+        # this, and the message about restoring Adam is worth surfacing.
+        self.assertTrue(issubclass(ckpt.StaleStateError, ckpt.MissingStateError))
+        self.assertIsNot(ckpt.StaleStateError, ckpt.MissingStateError)
+
+
+class HyperparameterRecord(unittest.TestCase):
+    def test_the_helper_carries_every_field_the_checks_read(self):
+        from training.scripts.train_smoke import hyperparameters
+
+        args = argparse.Namespace(steps=20000, batch=8, block=1024, lr=3e-4,
+                                  warmup=200, grad_accum=8, clip=1.0,
+                                  weight_decay=0.1, amp=True, device="cpu")
+        record = hyperparameters(args)
+        for field in ckpt.REQUIRED_HYPERPARAMS:
+            self.assertIn(field, record)
+        self.assertEqual(record["grad_accum"], 8)
+        self.assertEqual(record["device"], "cpu")
+
+    def test_a_device_the_machine_lacks_does_not_crash_the_record(self):
+        from training.scripts.train_smoke import hyperparameters
+
+        args = argparse.Namespace(steps=2, batch=1, block=8, lr=1e-3, warmup=1,
+                                  grad_accum=1, clip=1.0, weight_decay=0.1,
+                                  amp=False, device="cuda")
+        record = hyperparameters(args)
+        self.assertIn(record["device"], ("cpu", "cuda"))
 
 
 class Rng(unittest.TestCase):

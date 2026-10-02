@@ -144,5 +144,74 @@ class PipelineOnly(unittest.TestCase):
             self.assertIn("tokenizer", str(ctx.exception).lower())
 
 
+class ARealRunWritesAResumableCheckpoint(unittest.TestCase):
+    """The test that was missing while Stage A v2 shipped a broken checkpoint.
+
+    Every other test in this file stops before the loop. The defect this class
+    covers lives *inside* the loop's save path, so nothing short of running it
+    can see it — and on 2026-10-02 a 20,000-step Kaggle run finished with an
+    optimizer holding no moments and a scheduler at `last_epoch` 0, both
+    snapshotted at step 0. The keys were all present, so every key-based check
+    passed.
+
+    Six steps of a ~1M-parameter model on CPU is a few seconds and is the only
+    way to know the trainer hands the manager its live objects rather than
+    describing the fact in a docstring.
+    """
+
+    @unittest.skipUnless(HAVE_SEED_SHARDS, SEED_SHARDS_MISSING)
+    @unittest.skipUnless(train_smoke.have_torch(), "no torch on this machine")
+    def test_the_saved_checkpoint_carries_this_run_s_optimizer_and_schedule(self):
+        import torch
+
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "run"
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = train_smoke.main([
+                    "--config", "smoke", "--steps", "6", "--batch", "2",
+                    "--block", "32", "--grad-accum", "2", "--warmup", "2",
+                    "--save-every", "6", "--eval-every", "6", "--log-every", "6",
+                    "--device", "cpu", "--run-dir", str(run_dir),
+                ])
+            self.assertEqual(code, 0)
+
+            saved = torch.load(run_dir / "latest.pt", map_location="cpu",
+                               weights_only=False)
+            self.assertEqual(saved["step"], 6)
+            # The three assertions that would each have caught v2 on their own.
+            self.assertTrue(saved["optimizer"]["state"],
+                            "the saved optimizer holds no moments — it was "
+                            "captured before the first update")
+            self.assertGreater(saved["scheduler"]["last_epoch"], 0,
+                               "the saved scheduler never stepped")
+            self.assertEqual(saved["hyperparameters"]["grad_accum"], 2)
+            # ...and the moments are this run's, not a zero tensor left over.
+            first = next(iter(saved["optimizer"]["state"].values()))
+            self.assertGreater(int(first["step"]), 0)
+            self.assertTrue(torch.isfinite(first["exp_avg"]).all())
+
+    @unittest.skipUnless(HAVE_SEED_SHARDS, SEED_SHARDS_MISSING)
+    @unittest.skipUnless(train_smoke.have_torch(), "no torch on this machine")
+    def test_the_checkpoint_loads_back_through_the_manager(self):
+        # The freshness check runs on load as well as save, so a resume is
+        # refused rather than silently restarting Adam — which is the failure
+        # the whole class is about.
+        from training.scripts import checkpoint as ckpt
+
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "run"
+            with contextlib.redirect_stdout(io.StringIO()):
+                train_smoke.main([
+                    "--config", "smoke", "--steps", "6", "--batch", "2",
+                    "--block", "32", "--grad-accum", "2", "--warmup", "2",
+                    "--save-every", "6", "--eval-every", "6", "--log-every", "6",
+                    "--device", "cpu", "--run-dir", str(run_dir),
+                ])
+            manager = ckpt.CheckpointManager(run_dir)
+            loaded = manager.load("latest")
+            self.assertEqual(loaded["step"], 6)
+            self.assertTrue(manager.info()["which"], "auto-resume found nothing")
+
+
 if __name__ == "__main__":
     unittest.main()

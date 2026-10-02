@@ -5266,3 +5266,133 @@ behaviour was wrong. The rule that keeps holding: if the claim is about what
 code *does*, run the code.
 
 `npm run test:py` **444**, `npm test` **533**, 0 failures.
+
+---
+
+## 2026-10-02 — Defect 11: the checkpoint that was present, complete, and wrong
+
+Found while pre-flighting step 3 of the v3 plan (verify the pulled checkpoint
+before publishing it) — hours before v3 finishes, which is the only reason it
+was found at all rather than after Stage B had been built on it.
+
+### What was wrong
+
+Stage A v2 trained 20,000 steps over 4h21m and finished at loss 3.3312. Its
+`latest.pt` and `best.pt` cannot be resumed. MEASURED, by loading the file:
+
+```
+optimizer.state        {}        0 of 38 tensors hold moments
+scheduler.last_epoch   0
+scheduler._step_count  1
+optimizer lr           1.5e-06   = peak/200, the construction value
+required keys          11/11 present
+config                 correct (config A, vocab 16,384)
+tokenizer_version      portfolio-bpe-16k-45395d2ebc83
+strict load            93 tensors, no missing or unexpected keys
+params                 37,890,560 materialised = 37,890,560 analytic
+```
+
+The cause was one line at three save sites. `train_smoke.train` builds its
+state dict once, before the loop, and each `manager.save` refreshed only
+`loss_history`, `data_cursor` and `rng`. The `optimizer`, `scheduler` and
+`scaler` inside it were the objects as they were **before the first optimizer
+update**, and they stayed that way for the whole run.
+
+`--resume auto` would have loaded an optimizer with no moments, a scheduler at
+`last_epoch` 0, and a loss history claiming 20,000 completed steps.
+
+### Why every check passed
+
+The §7.5 guarantee is "required keys enforced on both save and load", and it
+was enforced. Nothing was missing. **Presence is not freshness**: a key can be
+present and hold the wrong step's value, and no amount of asking whether the key
+is there will notice.
+
+This is the same shape as defect 5 in this run (a `corpus_cache` check that
+claimed a content guarantee it was not making) and the third time the *lesson*
+has been that a check has to be able to fail for the reason it claims. The
+difference is that this one was in the code that everything else depends on.
+
+### The fix, in three parts
+
+| part | what it stops |
+|---|---|
+| `CheckpointManager(live={...})` | the trainer passing a snapshot. `save` re-reads the objects every time, so there is no save site that *can* forget. Three sites forgot; a fourth argument per site would have been the same bug with more steps. |
+| `hyperparameters` in the checkpoint state | staleness being undecidable. Step 3 with `grad_accum=8` is legitimately moment-free; step 3,000 is not. Only the recorded `grad_accum` separates them, so it is now a required key. |
+| `assert_state_fresh`, on save *and* load | a stale file arriving from anywhere: an older run, a truncated download, another machine. |
+
+The predicate is deliberately split. A dict that is not claiming to be a torch
+optimizer cannot be called stale, and a check that called everything stale would
+be a check nobody could satisfy. A dict with `param_groups` and no `state` *is*
+claiming to be a torch optimizer, and a torch optimizer always has `state` — so
+its absence means it was stripped. Both directions are tested; M5 removes the
+second rule and the test that covers it fails.
+
+### `--init` is not `--resume`, and the docstring was right
+
+`train_stage_b`'s docstring has always said "`--init` loads model weights only.
+Optimizer, scaler and scheduler start fresh." The code disagreed: it went
+through `CheckpointManager.load` and so demanded all twelve resume keys. That
+only became visible when a weights-only file had to be initialisable — the
+defect was latent, because every checkpoint so far happened to be resumable.
+
+`load_init_weights` now reads the four keys it needs (`read_weights`, trying the
+torch and pickle readers in turn, since which serializer a file uses is a
+property of the machine that wrote it). The two paths are now separate and
+separately tested: the same file initialises and is refused as a resume.
+
+### Verified, not asserted
+
+- `assert_state_fresh` exercised against the real v2 files: `latest.pt` and
+  `best.pt` both FAIL. A healthy 20-step smoke checkpoint on CPU passes 11/11
+  with `anneal` measured at 0.0% of peak and a schedule residual of 0.00e+00.
+- `tools/verify_checkpoint.py` (new) has three states, not two. `anneal`
+  is **SKIP**ped when the file's scheduler is stale, because a green tick
+  computed from step 0's learning rate is precisely how v2 looked healthy.
+- `tools/mutate_checkpoints.py` (new): **12/12 mutations caught for the right
+  reason.** Each mutation breaks one piece of the fix and names the test that
+  must notice. Two were first reported as caught-when-they-were-not: one
+  reinstated the resume loader without the pickle serializer, so it tripped
+  torch's "Invalid magic number" instead of the key check, and the runner
+  changed to record the *evidence* each mutation must produce, not just a
+  non-zero exit. A third went stale when the code it targeted was reordered,
+  and the runner said so rather than counting it.
+- End-to-end: a real 6-step run of the loop on CPU writes a checkpoint with
+  moments and `last_epoch > 0`. This is the test that was missing while v2
+  shipped; every other test in the file stopped before the loop.
+- `publish_checkpoint.py` now refuses a checkpoint that fails
+  `assert_state_fresh` and names which of the two things is wrong.
+  `--weights-only` strips the unusable state, ships `latest.pt` only (nothing
+  reads `best.pt` when there is no resume to serve — 281.6 MB → 140.8 MB), and
+  records `resumable: false`. MEASURED on the stripped archive: a resume is
+  refused by name, `--init` loads it, and a vocab mismatch is still refused.
+
+### The independent confirmation, from the file alone
+
+The checkpoint reconstructs its own schedule. With no `hyperparameters` recorded,
+`verify_checkpoint.py` scans `(grad_accum, warmup)` and finds an **exact**
+match (residual 0.00e+00) at `grad_accum=1, warmup=200, 20,000 updates` — for a
+run that passed `--grad-accum 8`. That is the defect 3 schedule (built over
+micro-steps) sitting in the file, derived without the log. The first version of
+that scan searched `grad_accum` alone and could not land on the answer, because
+`peak/200` needs the warmup too; reporting half the pair would have named half
+the defect.
+
+### What this means for v3
+
+v3 is running the code as it stood when it was pushed, so **its checkpoint will
+have the same stale optimizer and scheduler.** Its weights are unaffected — the
+defect is in the save path, not the training — and the fixed cosine is visible
+in its log. So the plan is unchanged: let it run, read the log, verify the
+weights, and publish with `--weights-only`. Not re-run 7 hours for state that
+was never written.
+
+`npm run test:py` **469** (+25), `npm test` **533**, 0 failures, `npm run build`
+clean.
+
+### Still NOT TESTED
+
+Unchanged by this work. The staleness guards have been exercised against real
+torch checkpoints and a real training loop, but not against a checkpoint
+produced *by the fixed trainer* on a GPU inside a Kaggle session, because no
+such run has finished yet. v3 is the first.

@@ -230,6 +230,135 @@ class SftStreamCursor(unittest.TestCase):
         self.assertLess(stream.supervised_consumed, stream.tokens_consumed)
 
 
+class _Recorder:
+    """Stands in for the model module.
+
+    `load_init_weights` only calls `load_state_dict`, so a recorder keeps this
+    test torch-free — and torch-free matters, because the point is *which keys
+    are demanded*, which must not depend on a machine that happens to have
+    torch installed.
+    """
+
+    def __init__(self):
+        self.loaded = None
+
+    def load_state_dict(self, state_dict, strict=True):
+        self.loaded = state_dict
+        return ()
+
+
+class InitIsNotAResume(unittest.TestCase):
+    """`--init` reads weights; `--resume` continues a run. Different questions.
+
+    Found 2026-10-02 while publishing Stage A v2's checkpoint. That file could
+    not be resumed — its optimizer held no moments — so it was stripped to
+    weights, and the stripped file could not be `--init`'d either, because
+    `load_init_weights` went through `CheckpointManager.load` and inherited its
+    twelve-key requirement. The module's own docstring said "`--init` loads
+    model weights only" and the code demanded a full resume. The docstring was
+    the true one.
+    """
+
+    def _weights_only(self, directory, drop=(), **overrides) -> Path:
+        import pickle
+
+        from ai.model.config import CONFIGS
+        from training.scripts.checkpoint import WEIGHTS_ONLY_KEYS
+
+        payload = {key: {"w": 1} for key in WEIGHTS_ONLY_KEYS if key not in drop}
+        payload["config"] = CONFIGS["A"].to_hf_config()
+        payload["tokenizer_version"] = "test"
+        payload["step"] = 20_000
+        payload["weights_only"] = True
+        payload.update(overrides)
+        path = Path(directory) / "latest.pt"
+        with path.open("wb") as handle:
+            pickle.dump(payload, handle)
+        return path
+
+    def test_a_weights_only_file_can_be_initialised_from(self):
+        from ai.model.config import CONFIGS
+
+        with tempfile.TemporaryDirectory() as tmp:
+            model = _Recorder()
+            info = train_stage_b.load_init_weights(model, self._weights_only(tmp),
+                                                   CONFIGS["A"])
+            self.assertEqual(info["step"], 20_000)
+            self.assertTrue(info["weights_only"])
+            self.assertEqual(model.loaded, {"w": 1})
+
+    def test_the_same_file_is_still_refused_as_a_resume(self):
+        # The point of separating the two questions: making --init permissive
+        # must not have made a resume permissive.
+        from training.scripts import checkpoint as ckpt
+
+        with tempfile.TemporaryDirectory() as tmp:
+            self._weights_only(tmp)
+            # The fixture is pickle-serialised, so read it with the matching
+            # serializer: a manager saves and loads with the same one, and
+            # substituting a reader is what the pickle fallback in
+            # `read_weights` is for, not this.
+            manager = ckpt.CheckpointManager(Path(tmp),
+                                             serializer=ckpt._PickleSerializer)
+            with self.assertRaises(ckpt.MissingStateError) as ctx:
+                manager.load("latest")
+            self.assertIn("optimizer", str(ctx.exception))
+
+    def test_a_file_with_no_model_key_is_refused_by_name(self):
+        from ai.model.config import CONFIGS
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._weights_only(tmp, drop=("model",))
+            with self.assertRaises(SystemExit) as ctx:
+                train_stage_b.load_init_weights(_Recorder(), path, CONFIGS["A"])
+            self.assertIn("no 'model' key", str(ctx.exception))
+
+    def test_a_payload_that_is_not_a_dict_is_refused(self):
+        from ai.model.config import CONFIGS
+
+        import pickle
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "latest.pt"
+            with path.open("wb") as handle:
+                pickle.dump([1, 2, 3], handle)
+            with self.assertRaises(SystemExit) as ctx:
+                train_stage_b.load_init_weights(_Recorder(), path, CONFIGS["A"])
+            self.assertIn("state dict", str(ctx.exception))
+
+    def test_a_corrupt_file_is_refused_with_a_reason_not_a_traceback(self):
+        from ai.model.config import CONFIGS
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "latest.pt"
+            path.write_bytes(b"this is not a checkpoint at all")
+            with self.assertRaises(SystemExit) as ctx:
+                train_stage_b.load_init_weights(_Recorder(), path, CONFIGS["A"])
+            self.assertIn("could not be read", str(ctx.exception))
+
+    def test_a_missing_init_file_says_so(self):
+        from ai.model.config import CONFIGS
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(SystemExit) as ctx:
+                train_stage_b.load_init_weights(_Recorder(),
+                                                Path(tmp) / "nope.pt",
+                                                CONFIGS["A"])
+            self.assertIn("no such file", str(ctx.exception))
+
+    def test_a_vocab_mismatch_is_still_refused(self):
+        from dataclasses import replace
+
+        from ai.model.config import CONFIGS
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._weights_only(tmp)
+            wider = replace(CONFIGS["A"], vocab_size=32_000)
+            with self.assertRaises(SystemExit) as ctx:
+                train_stage_b.load_init_weights(_Recorder(), path, wider)
+            self.assertIn("vocab_size", str(ctx.exception))
+
+
 class StageBEntryPoint(unittest.TestCase):
     def test_defaults_differ_from_stage_a_where_they_must(self):
         parser = train_stage_b.build_parser()
@@ -257,6 +386,7 @@ class StageBEntryPoint(unittest.TestCase):
                 "config": smoke_config(1024).to_hf_config(),
                 "tokenizer_version": "test", "rng": ckpt.capture_rng(),
                 "data_cursor": {}, "loss_history": [],
+                "hyperparameters": {"grad_accum": 1, "steps": 10, "warmup": 1},
             }, step=5)
             wider = train_stage_b.resolve_config("A", 12288)
             self.assertNotEqual(wider.vocab_size, 1024)

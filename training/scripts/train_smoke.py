@@ -124,6 +124,13 @@ def _fake_state(step: int, tokens: int) -> dict:
     Deliberately uses numpy instead of torch so the checkpoint *logic*
     (required keys, atomicity, pruning, latest/best selection) is exercised
     on a machine with no torch at all.
+
+    The optimizer and scheduler here are not torch-shaped, and that is the
+    point: `assert_state_fresh` returns "cannot tell" for a dict that is not
+    claiming to be a torch optimizer, so this fake exercises the key and
+    atomicity logic without having to invent moments it never had. The torch
+    path is covered by `tests/py/test_train_scripts.py`, which runs the real
+    loop.
     """
     return {
         "model": {"w": list(range(4))},
@@ -137,6 +144,8 @@ def _fake_state(step: int, tokens: int) -> dict:
         "rng": ckpt.capture_rng(),
         "data_cursor": {"tokens_consumed": tokens},
         "loss_history": [1.0 / (step + 1)],
+        "hyperparameters": {"grad_accum": 1, "steps": 100, "warmup": 10,
+                            "batch": 2, "block": 128, "lr": 3e-3},
     }
 
 
@@ -247,6 +256,31 @@ def resolve_config(name: str, vocab_size: int):
     return replace(CONFIGS[name], vocab_size=vocab_size)
 
 
+def hyperparameters(args) -> dict:
+    """§7.5's hyperparameter record, built once and written twice.
+
+    It goes into the checkpoint state *and* the run manifest from this single
+    dict, so the two cannot drift. That matters more than tidiness: the
+    checkpoint's copy is what `checkpoint.assert_state_fresh` uses to tell a
+    legitimately moment-free optimizer (step < grad_accum) from a stale one,
+    and the manifest's copy is what `estimate_budget.py --from-run` reads
+    before accepting a throughput number as belonging to a config. Two
+    hand-written copies of the same fields is two chances to file one run's
+    numbers under another's name.
+    """
+    device_type = "cpu"
+    try:
+        import torch
+
+        device_type = torch.device(args.device).type
+    except ImportError:  # pragma: no cover - environment dependent
+        pass
+    return {"steps": args.steps, "batch": args.batch, "block": args.block,
+            "lr": args.lr, "warmup": args.warmup, "grad_accum": args.grad_accum,
+            "clip": args.clip, "weight_decay": args.weight_decay,
+            "amp": bool(args.amp), "device": device_type}
+
+
 def train(args) -> int:
     import numpy as np
     import torch
@@ -282,7 +316,13 @@ def train(args) -> int:
                                                             args.grad_accum))
     use_amp = bool(args.amp) and device.type == "cuda"
     scaler = make_scaler(device.type, use_amp)
-    manager = ckpt.CheckpointManager(args.run_dir, keep_last=args.keep_last)
+    # `live` is handed over once and `save` re-reads it every time, so no save
+    # site can write the optimizer and scheduler as they were before the first
+    # update. See `CheckpointManager.__init__` for how that went wrong.
+    manager = ckpt.CheckpointManager(args.run_dir, keep_last=args.keep_last,
+                                     live={"optimizer": optimizer,
+                                           "scheduler": scheduler,
+                                           "scaler": scaler})
 
     batcher = dataset.TokenBatcher(shards, split="train", block=args.block,
                                    batch=args.batch, seed=args.seed)
@@ -293,6 +333,7 @@ def train(args) -> int:
         "step": 0, "epoch": 0, "config": cfg.to_hf_config(),
         "tokenizer_version": meta["tokenizer_version"], "rng": ckpt.capture_rng(),
         "data_cursor": batcher.state(), "loss_history": [],
+        "hyperparameters": hyperparameters(args),
     }
 
     resume = ckpt.resolve_resume(manager, args.resume)
@@ -422,11 +463,7 @@ def _finish(args, cfg, meta, counts, manager, batcher, losses, verdict, started)
         "config": cfg.to_hf_config(),
         "tokenizer_version": meta["tokenizer_version"],
         "params": counts["total"],
-        "hyperparameters": {"steps": args.steps, "batch": args.batch, "block": args.block,
-                            "lr": args.lr, "warmup": args.warmup,
-                            "grad_accum": args.grad_accum, "clip": args.clip,
-                            "weight_decay": args.weight_decay, "amp": bool(args.amp),
-                            "device": torch.device(args.device).type},
+        "hyperparameters": hyperparameters(args),
         "seed": args.seed,
         "data": {"shards": str(args.shards),
                  "sha256": {f["file"]: f["sha256"]

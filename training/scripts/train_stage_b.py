@@ -55,8 +55,8 @@ from ai.data import sft  # noqa: E402
 from ai.model import plan  # noqa: E402
 from training.scripts import checkpoint as ckpt  # noqa: E402
 from training.scripts.train_smoke import (  # noqa: E402
-    cosine_with_warmup, have_torch, loss_verdict, make_scaler, resolve_config,
-    schedule_span,
+    cosine_with_warmup, have_torch, hyperparameters, loss_verdict, make_scaler,
+    resolve_config, schedule_span,
 )
 
 DEFAULT_SCOPE = ("Stage B — instruction tuning on the §7.4 data: answer from the "
@@ -199,8 +199,25 @@ def load_init_weights(model, path: Path, cfg) -> dict:
     or depth would load *some* keys and leave the rest at their initial
     values, and the run would then train a half-random model with no error to
     notice.
+
+    **This does not go through `CheckpointManager.load`,** which is the
+    deliberate difference. That loader answers "can this run be continued?",
+    and continuing needs twelve things — the optimizer's moments, the
+    scheduler's position, the data cursor. Initialising needs four: the
+    weights, the config, the tokenizer generation and the step. Routing
+    `--init` through the resume loader made the two claims the same claim, so
+    a checkpoint that could perfectly well be initialised from was refused for
+    lacking state that this run would have thrown away anyway.
+
+    That is not hypothetical. Stage A v2's checkpoint (2026-10-02) is
+    unusable for a resume — its optimizer was captured before the first update
+    and never refreshed — so `publish_checkpoint.py --weights-only` strips
+    exactly those parts to make the truth visible. With this change the
+    stripped file is exactly as initialisable as the original, and still just
+    as impossible to resume.
     """
-    state = ckpt.CheckpointManager(Path(path).parent).load(Path(path).stem)
+    path = Path(path)
+    state = read_weights(path)
     saved = state.get("config") or {}
     live = cfg.to_hf_config()
     for key in ("vocab_size", "hidden_size", "num_hidden_layers"):
@@ -208,9 +225,58 @@ def load_init_weights(model, path: Path, cfg) -> dict:
             raise SystemExit(
                 f"--init {path} is {key}={saved[key]} but this run is {live[key]}. "
                 f"Stage B must continue the model it will be exported from.")
+    if "model" not in state:
+        raise SystemExit(f"--init {path} has no 'model' key; it is not a "
+                         f"checkpoint this trainer can initialise from.")
     model.load_state_dict(state["model"])
     return {"checkpoint": str(path), "step": state.get("step"),
-            "tokenizer_version": state.get("tokenizer_version")}
+            "tokenizer_version": state.get("tokenizer_version"),
+            "weights_only": bool(state.get("weights_only"))}
+
+
+def read_weights(path: Path) -> dict:
+    """The keys an initialisation needs, from a torch- or pickle-serialised file.
+
+    Both are tried, in that order, and the order does not matter: which
+    serializer a checkpoint uses is a property of the machine that *wrote* it,
+    not of the machine reading it. `checkpoint.py` picks torch when it can and
+    pickle when it cannot, so a file produced on a box without torch is a real
+    possibility — and torch.load's "Invalid magic number" on a pickle file is a
+    perfectly good file being called corrupt by a reader that assumed too much.
+    """
+    import pickle
+
+    path = Path(path)
+    if not path.is_file():
+        raise SystemExit(f"--init {path}: no such file.")
+
+    state = None
+    problems = []
+    try:
+        import torch
+
+        state = torch.load(path, map_location="cpu", weights_only=False)
+    except ImportError:
+        pass  # no torch here; the pickle reader below is the only option
+    except Exception as exc:  # noqa: BLE001
+        problems.append(f"torch: {exc.__class__.__name__}")
+
+    if state is None:
+        try:
+            with path.open("rb") as handle:
+                state = pickle.load(handle)
+        except Exception as exc:  # noqa: BLE001
+            problems.append(f"pickle: {exc.__class__.__name__}")
+
+    if state is None:
+        # A truncated download, or a file that is not a checkpoint at all. The
+        # alternative is a traceback several frames deep that names neither.
+        raise SystemExit(f"--init {path} could not be read as a checkpoint "
+                         f"({'; '.join(problems) or 'unknown'}).")
+    if not isinstance(state, dict):
+        raise SystemExit(f"--init {path} did not load as a state dict "
+                         f"(got {type(state).__name__}).")
+    return state
 
 
 def train(args) -> int:
@@ -262,7 +328,10 @@ def train(args) -> int:
                                                             args.grad_accum))
     use_amp = bool(args.amp) and device.type == "cuda"
     scaler = make_scaler(device.type, use_amp)
-    manager = ckpt.CheckpointManager(args.run_dir, keep_last=args.keep_last)
+    manager = ckpt.CheckpointManager(args.run_dir, keep_last=args.keep_last,
+                                     live={"optimizer": optimizer,
+                                           "scheduler": scheduler,
+                                           "scaler": scaler})
 
     state = {
         "model": model.state_dict(), "optimizer": optimizer.state_dict(),
@@ -270,6 +339,7 @@ def train(args) -> int:
         "step": 0, "epoch": 0, "config": cfg.to_hf_config(),
         "tokenizer_version": meta["tokenizer_version"], "rng": ckpt.capture_rng(),
         "data_cursor": stream.state(), "loss_history": [],
+        "hyperparameters": hyperparameters(args),
     }
 
     resume = ckpt.resolve_resume(manager, args.resume)
@@ -392,11 +462,7 @@ def _finish(args, cfg, meta, summary, measured, init, manager, losses, verdict,
             "supervised_tokens_cumulative": stream_totals[1],
             "measured": measured,
         },
-        "hyperparameters": {"steps": args.steps, "batch": args.batch, "block": args.block,
-                            "lr": args.lr, "warmup": args.warmup,
-                            "grad_accum": args.grad_accum, "clip": args.clip,
-                            "weight_decay": args.weight_decay, "amp": bool(args.amp),
-                            "device": torch.device(args.device).type},
+        "hyperparameters": hyperparameters(args),
         "seed": args.seed,
         "loss": {"history": [round(v, 6) for v in losses], "verdict": verdict},
         "throughput": {"tokens_per_second": round(tokens_seen / seconds, 3) if seconds else 0.0,

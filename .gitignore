@@ -98,3 +98,9 @@ desktop.ini
 /kaggle-push/
 /aashish-ai-portfolio.tgz
 /output.txt
+
+# `corpus_cache` names its index CACHE.json, and a run aimed at a relative
+# --out leaves a 2-byte `{}` in the repository root. Found there on 2026-10-02,
+# untracked, from a run before this session; ignored so the next one cannot be
+# committed by `git add -A`, which is how 167 MB of scratch got in before.
+/CACHE.json
