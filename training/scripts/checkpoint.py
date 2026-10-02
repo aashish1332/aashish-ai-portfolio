@@ -341,20 +341,28 @@ class CheckpointManager:
     # ── save ─────────────────────────────────────────────────────────
     def save(self, state: dict, step: int, is_best: bool = False,
              extra: dict | None = None) -> Path:
-        missing = [k for k in REQUIRED_STATE_KEYS if k not in state]
-        if missing:
-            raise MissingStateError(
-                f"checkpoint state is missing {missing}. Refusing to write a "
-                f"checkpoint that cannot resume the run it came from (§7.5).")
-
         payload = dict(state)
         payload.setdefault("epoch", 0)
-        payload["saved_at"] = time.time()
-        payload["git_commit"] = git_commit()
         for name in REFRESHABLE_STATE:
             obj = self.live.get(name)
             if obj is not None:
                 payload[name] = obj.state_dict()
+        # After the refresh, not before: handing the manager the live objects
+        # is a complete way to supply these three keys, so a caller that did
+        # that should not also have to pass a snapshot of them. The first
+        # version checked first and rejected a perfectly good call, which is
+        # the wrong way round — a check that fires on correct code teaches
+        # people to work around it.
+        missing = [k for k in REQUIRED_STATE_KEYS if k not in payload]
+        if missing:
+            raise MissingStateError(
+                f"checkpoint state is missing {missing}. Refusing to write a "
+                f"checkpoint that cannot resume the run it came from (§7.5). "
+                f"{sorted(self.live)} are supplied from the live objects; the "
+                f"rest have to be in the state dict.")
+
+        payload["saved_at"] = time.time()
+        payload["git_commit"] = git_commit()
         assert_state_fresh(payload, f"checkpoint at step {step}")
         if extra:
             payload["extra"] = extra

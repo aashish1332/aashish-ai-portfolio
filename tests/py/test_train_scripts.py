@@ -144,6 +144,36 @@ class PipelineOnly(unittest.TestCase):
             self.assertIn("tokenizer", str(ctx.exception).lower())
 
 
+def _run_until(run_dir: Path, args: list[str], cut_step: int) -> None:
+    """Run the trainer until its periodic save at `cut_step`, then abandon it.
+
+    Raising out of the *save* is the closest cheap stand-in for a time-boxed
+    session ending: the checkpoint is on disk and the loop stops mid-run, which
+    is exactly the state a resume has to pick up.
+
+    It has to be the **periodic** save, not "the Nth save". An eval-best save
+    and a periodic save can land on the same step, and counting calls put the
+    cut at 6 instead of 12 when this was first written — which is the kind of
+    mistake a test makes silently and then asserts the wrong thing about.
+    """
+    from training.scripts import checkpoint as ckpt
+
+    real_save = ckpt.CheckpointManager.save
+
+    def save_then_die(self, state, step, is_best=False, extra=None):
+        path = real_save(self, state, step, is_best, extra)
+        if step == cut_step and not is_best:
+            raise KeyboardInterrupt("simulated session timeout")
+        return path
+
+    ckpt.CheckpointManager.save = save_then_die
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            train_smoke.main(args + ["--run-dir", str(run_dir)])
+    finally:
+        ckpt.CheckpointManager.save = real_save
+
+
 class ARealRunWritesAResumableCheckpoint(unittest.TestCase):
     """The test that was missing while Stage A v2 shipped a broken checkpoint.
 
@@ -189,6 +219,116 @@ class ARealRunWritesAResumableCheckpoint(unittest.TestCase):
             first = next(iter(saved["optimizer"]["state"].values()))
             self.assertGreater(int(first["step"]), 0)
             self.assertTrue(torch.isfinite(first["exp_avg"]).all())
+
+    @unittest.skipUnless(HAVE_SEED_SHARDS, SEED_SHARDS_MISSING)
+    @unittest.skipUnless(train_smoke.have_torch(), "no torch on this machine")
+    def test_an_interrupted_run_resumes_to_the_same_numbers(self):
+        """The resume *glue*, not just the resume *mechanism*.
+
+        `ARealOptimizerResumesIdentically` in test_checkpoint.py proves that a
+        checkpoint restores a bit-identical continuation, but it builds its own
+        model and optimizer, so it cannot see the four `load_state_dict` calls
+        in `train()`. Two mutations found that gap exactly: dropping the
+        schedule-agreement guard, and swapping the optimizer and scheduler load
+        order. Neither failed a test, because nothing ran the resume path.
+
+        So run the real thing. `_run_until` abandons the run at a periodic save
+        — the checkpoint is on disk and the loop stops mid-run, which is what a
+        time-boxed session does. Phase two resumes with `--resume auto` and the
+        *same* `--steps`, so the cosine it inherits is the one phase one was
+        running rather than a fresh schedule over a shorter span. The weights
+        and the whole loss history must then match an uninterrupted run of the
+        same length exactly.
+        """
+        import torch
+
+        args = ["--config", "smoke", "--steps", "24", "--batch", "2",
+                "--block", "32", "--grad-accum", "2", "--warmup", "4",
+                "--save-every", "6", "--eval-every", "6", "--log-every", "100",
+                "--device", "cpu"]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            reference_dir = Path(tmp) / "reference"
+            cut_dir = Path(tmp) / "cut"
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                train_smoke.main(args + ["--run-dir", str(reference_dir)])
+            reference = torch.load(reference_dir / "latest.pt", map_location="cpu",
+                                   weights_only=False)
+
+            with self.assertRaises(KeyboardInterrupt):
+                _run_until(cut_dir, args, cut_step=12)
+
+            partial = torch.load(cut_dir / "latest.pt", map_location="cpu",
+                                 weights_only=False)
+            self.assertEqual(partial["step"], 12)
+            self.assertEqual(len(partial["loss_history"]), 12)
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                train_smoke.main(args + ["--run-dir", str(cut_dir),
+                                         "--resume", "auto"])
+            resumed = torch.load(cut_dir / "latest.pt", map_location="cpu",
+                                 weights_only=False)
+
+        self.assertEqual(resumed["step"], 24)
+        self.assertEqual(len(resumed["loss_history"]), 24)
+        # Exact, not close. A resume that is merely near the uninterrupted run
+        # is a different run, which is the defect this whole exercise is about.
+        self.assertEqual(resumed["loss_history"], reference["loss_history"],
+                         "the resumed run's losses differ from the uninterrupted "
+                         "run's — something in the resume path is not restored")
+        for name, want in reference["model"].items():
+            self.assertTrue(torch.equal(want, resumed["model"][name]),
+                            f"{name} differs after resume")
+
+    @unittest.skipUnless(HAVE_SEED_SHARDS, SEED_SHARDS_MISSING)
+    @unittest.skipUnless(train_smoke.have_torch(), "no torch on this machine")
+    def test_a_resume_from_a_file_whose_two_rates_disagree_is_refused(self):
+        """The guard's own case, constructed rather than hoped for.
+
+        `optimizer.param_groups['lr']` and `scheduler._last_lr` are two fields
+        that only `scheduler.step()` ever writes together, so a file can hold
+        one from step N and the other from step M. Nothing in torch objects.
+        The trainer refuses instead of picking one.
+
+        Worth being precise about what this does *not* cover: v2's file had
+        both halves consistently at step 0, so it agreed with itself and this
+        guard would have stayed quiet. Catching that needed the value check in
+        `checkpoint.assert_state_fresh`, and the two checks are not
+        substitutes for each other.
+        """
+        import torch
+
+        args = ["--config", "smoke", "--steps", "24", "--batch", "2",
+                "--block", "32", "--grad-accum", "2", "--warmup", "4",
+                "--save-every", "6", "--eval-every", "6", "--log-every", "100",
+                "--device", "cpu"]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "run"
+            # Cut at 12 rather than letting the run finish. A completed cosine
+            # anneals to *exactly* 0, and halving 0 still agrees with 0 — the
+            # first version of this test tampered with a rate of 0.0 and then
+            # asserted the guard would notice, which it never could.
+            with self.assertRaises(KeyboardInterrupt):
+                _run_until(run_dir, args, cut_step=12)
+
+            saved = torch.load(run_dir / "latest.pt", map_location="cpu",
+                               weights_only=False)
+            rate = saved["optimizer"]["param_groups"][0]["lr"]
+            self.assertNotEqual(rate, 0.0,
+                                "this test needs a non-zero rate to disagree "
+                                "about; the checkpoint it tampered with was "
+                                "already annealed")
+            # One half rewound to a different step than the other.
+            saved["optimizer"]["param_groups"][0]["lr"] = rate * 0.5
+            torch.save(saved, run_dir / "latest.pt")
+
+            with contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaises(SystemExit) as ctx:
+                    train_smoke.main(args + ["--run-dir", str(run_dir),
+                                             "--resume", "auto"])
+        self.assertIn("schedule is at", str(ctx.exception))
 
     @unittest.skipUnless(HAVE_SEED_SHARDS, SEED_SHARDS_MISSING)
     @unittest.skipUnless(train_smoke.have_torch(), "no torch on this machine")

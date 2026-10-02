@@ -5429,3 +5429,63 @@ refresh list describe a fixture would be a rule nobody could satisfy.
 (M11 adds a fourth inline save site, M12 deletes the `rng` refresh).
 
 `npm run test:py` **471**, `npm test` **533**, 0 failures, `npm run build` clean.
+
+### Follow-on 2: the resume path was never executed by any test
+
+Two more mutations, both of which survived every test in the suite:
+
+| mutation | what it broke | what caught it |
+|---|---|---|
+| the schedule-agreement guard is deleted | a resume no longer checks the two rates match | **nothing** |
+| optimizer/scheduler load order swapped | (see below) | **nothing** |
+
+The first was a genuine hole and it is now closed. The reason it existed is
+worth stating: `ARealOptimizerResumesIdentically` proves the resume *mechanism*
+— it builds its own model, optimizer and scheduler and shows a checkpoint
+restores a bit-identical continuation — but it never calls `train()`, so the
+four `load_state_dict` calls in the trainer's resume block were covered by
+nothing at all. The trainer's resume path had **zero** test coverage.
+
+`test_an_interrupted_run_resumes_to_the_same_numbers` now runs the real thing.
+`_run_until` abandons a run at a periodic save (raising out of `save` is the
+closest cheap stand-in for a session ending), then the same command resumes
+with `--resume auto` and the *same* `--steps`, so the cosine it inherits is the
+one the first phase was running. The resumed run's **weights and full loss
+history are equal to an uninterrupted run's**, not close to it.
+
+Writing it produced two of its own lessons, both recorded in the test:
+
+- Cutting at "the second save" landed at step 6, not 12, because an eval-best
+  save and a periodic save can fall on the same step. The cut is now specified
+  as the periodic save at a given step. A test that silently cuts in the wrong
+  place asserts the wrong thing about the right claim.
+- The first version of the disagreement test tampered with a learning rate of
+  **0.0** and then asserted the guard would notice. A completed cosine anneals
+  to exactly zero, and half of zero still agrees with zero. The guard was
+  correct; the test was incapable of failing. It now cuts the run at step 12 so
+  there is a non-zero rate to disagree about, and asserts that precondition.
+
+### The mutation that was wrong, rather than the test
+
+The second survivor was not a hole. Swapping the two `load_state_dict` calls
+changes nothing: `optimizer.load_state_dict` is the only one of the pair that
+writes `param_groups['lr']`, so it writes it whichever order they run in, and
+the resumed run is bit-identical either way.
+
+So the comment in `train_smoke.train` claiming the order was load-bearing was
+**false**, and it was written by me earlier in this same session on the strength
+of reading torch's source rather than measuring. The comment is corrected, the
+mutation is deleted, and the deletion is itself documented in the runner.
+`_assert_schedule_agrees` survives with an honest scope: it catches a file whose
+two rate fields came from different steps, and it explicitly does **not** claim
+to catch v2, where both halves agreed at step 0 — that took the value check in
+`assert_state_fresh`. Two checks, two failure modes, neither oversold.
+
+The general shape, third time this session: **an uncaught mutation is usually a
+hole in the suite, and occasionally a hole in the hypothesis.** Telling those
+apart is the whole job, and the only way to tell is to go measure.
+
+`tools/mutate_checkpoints.py`: **16/16 caught for the right reason** (M14 is
+deleted, with the reason in the file).
+
+`npm run test:py` **477**, `npm test` **533**, 0 failures, `npm run build` clean.

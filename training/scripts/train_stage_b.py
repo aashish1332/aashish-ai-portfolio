@@ -55,8 +55,8 @@ from ai.data import sft  # noqa: E402
 from ai.model import plan  # noqa: E402
 from training.scripts import checkpoint as ckpt  # noqa: E402
 from training.scripts.train_smoke import (  # noqa: E402
-    cosine_with_warmup, have_torch, hyperparameters, loss_verdict, make_scaler,
-    resolve_config, schedule_span,
+    _assert_schedule_agrees, cosine_with_warmup, have_torch, hyperparameters,
+    loss_verdict, make_scaler, resolve_config, schedule_span,
 )
 
 DEFAULT_SCOPE = ("Stage B — instruction tuning on the §7.4 data: answer from the "
@@ -348,6 +348,11 @@ def train(args) -> int:
         model.load_state_dict(loaded["model"])
         optimizer.load_state_dict(loaded["optimizer"])
         scheduler.load_state_dict(loaded["scheduler"])
+        # See `_assert_schedule_agrees` in train_smoke.py: the load *order* is
+        # not what makes a resume correct (measured — swapping the two lines
+        # changes nothing), but a file whose two rate fields disagree is a file
+        # whose two halves came from different steps.
+        _assert_schedule_agrees(optimizer, scheduler)
         scaler.load_state_dict(loaded["scaler"])
         ckpt.restore_rng(loaded["rng"])
         stream.load_state(loaded["data_cursor"])

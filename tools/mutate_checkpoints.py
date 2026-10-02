@@ -196,6 +196,38 @@ MUTATIONS: list[tuple[str, Path, str, str, str, str]] = [
         "test_snapshot_refreshes_all_three_moving_fields",
         "does not refresh 'rng'",
     ),
+    (
+        "M13 the resume stops checking that the two rates agree",
+        SMOKE,
+        "        _assert_schedule_agrees(optimizer, scheduler)\n",
+        "",
+        "tests.py.test_train_scripts.ARealRunWritesAResumableCheckpoint."
+        "test_a_resume_from_a_file_whose_two_rates_disagree_is_refused",
+        "not raised",
+    ),
+    # A sixteenth mutation lived here and has been deleted on purpose.
+    #
+    # It swapped the optimizer and scheduler `load_state_dict` calls in the
+    # resume path, on the theory that the order was load-bearing. No test
+    # caught it, and the reason was not that the tests were thin: the order
+    # genuinely does not matter. `optimizer.load_state_dict` is the only one of
+    # the two that writes `param_groups['lr']`, so it writes it whichever order
+    # they run in, and a resumed run is bit-identical either way. The comment
+    # in `train_smoke.train` claiming otherwise was corrected rather than left
+    # standing with a mutation propping it up.
+    #
+    # Kept as a note because an uncaught mutation is usually a hole in the
+    # suite and occasionally a hole in the hypothesis, and telling those two
+    # apart is the whole job.
+    (
+        "M15 the save drops the loss history",
+        SMOKE,
+        '    state["loss_history"] = losses\n',
+        "",
+        "tests.py.test_checkpoint.ThereIsExactlyOneWayToWriteACheckpoint."
+        "test_snapshot_refreshes_all_three_moving_fields",
+        "does not refresh 'loss_history'",
+    ),
 ]
 
 

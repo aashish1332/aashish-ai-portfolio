@@ -256,6 +256,42 @@ def resolve_config(name: str, vocab_size: int):
     return replace(CONFIGS[name], vocab_size=vocab_size)
 
 
+def _assert_schedule_agrees(optimizer, scheduler) -> None:
+    """The optimizer's rate and the schedule's rate must be the same number.
+
+    They are restored by two `load_state_dict` calls from two different parts
+    of the file, and nothing in torch makes them consistent: the optimizer's
+    `param_groups['lr']` and the scheduler's `_last_lr` are separate values
+    that are only ever written together by `scheduler.step()`.
+
+    **What this does and does not buy, measured 2026-10-02.** It is not the
+    order of the two load calls that matters — swapping them changes nothing,
+    because the optimizer's state is the only one of the two that writes
+    `param_groups['lr']`, and it writes it either way. An earlier version of
+    this comment claimed the order was load-bearing; a mutation that swapped
+    the two lines left a bit-identical resumed run, so the claim was wrong and
+    is not repeated here.
+
+    What the check does catch is a file where the two halves disagree — one
+    refreshed and the other not, which is the failure mode of defect 11 in a
+    narrower form. It would *not* have caught v2, where both halves were
+    consistently step 0's; that needed the value check in
+    `checkpoint.assert_state_fresh`. Two checks for two failure modes, and
+    neither is claimed to cover the other.
+    """
+    groups = optimizer.param_groups
+    if not groups:
+        return
+    live = float(groups[0].get("lr", 0.0))
+    scheduled = float((scheduler.state_dict().get("_last_lr") or [live])[0])
+    if abs(live - scheduled) > 1e-12 * max(abs(scheduled), 1.0):
+        raise SystemExit(
+            f"the restored optimizer is at lr {live:.6e} but the restored "
+            f"schedule is at {scheduled:.6e}. The resume loaded them in the "
+            f"wrong order, or the checkpoint holds one without the other. "
+            f"Refusing to continue as a different run.")
+
+
 def _snapshot(state, losses, batcher, manager, step, is_best: bool = False) -> None:
     """The one place a checkpoint is written, so the three fields that move
     cannot be refreshed at two of the three call sites.
@@ -370,6 +406,7 @@ def train(args) -> int:
         model.load_state_dict(loaded["model"])
         optimizer.load_state_dict(loaded["optimizer"])
         scheduler.load_state_dict(loaded["scheduler"])
+        _assert_schedule_agrees(optimizer, scheduler)
         scaler.load_state_dict(loaded["scaler"])
         ckpt.restore_rng(loaded["rng"])
         batcher.load_state(loaded["data_cursor"])

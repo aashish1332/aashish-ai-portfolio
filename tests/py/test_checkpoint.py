@@ -30,6 +30,15 @@ from ai.data import dataset  # noqa: E402
 from training.scripts import checkpoint as ckpt  # noqa: E402
 
 
+def _have_torch() -> bool:
+    """Asked at decoration time, so it must not raise on a box without torch."""
+    try:
+        import torch  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
 def state(step: int, tokens: int = 0, extra_losses=None) -> dict:
     """A state dict shaped like the one a real trainer writes.
 
@@ -341,6 +350,214 @@ class HyperparameterRecord(unittest.TestCase):
                                   amp=False, device="cuda")
         record = hyperparameters(args)
         self.assertIn(record["device"], ("cpu", "cuda"))
+
+
+class ARealOptimizerResumesIdentically(unittest.TestCase):
+    """§7.5's "resume verified" for the thing v2 actually got wrong.
+
+    The pipeline-only path proves the *bookkeeping* — atomicity, pruning,
+    latest/best, the data cursor. None of it touches a torch optimizer, and
+    that gap is how a 20,000-step run shipped a checkpoint whose optimizer had
+    never been stepped. This runs the real objects.
+
+    The claim is bit-identity, not "close enough": save at step N, restore into
+    a fresh model/optimizer/scheduler/scaler, step N more, and require every
+    weight to equal the uninterrupted run's. Anything less and a resume is a
+    slightly different run, which is the defect in slow motion — `assertAlmostEqual`
+    would pass a halved learning rate at low loss.
+    """
+
+    @unittest.skipUnless(_have_torch(), "no torch on this machine")
+    def test_the_continuation_is_bit_identical_to_an_uninterrupted_run(self):
+        import torch
+
+        from training.scripts.checkpoint import (CheckpointManager,
+                                                 capture_rng, restore_rng)
+        from training.scripts.train_smoke import (cosine_with_warmup,
+                                                 schedule_span)
+
+        def build():
+            torch.manual_seed(1337)
+            model = torch.nn.Sequential(torch.nn.Linear(8, 8), torch.nn.Tanh(),
+                                        torch.nn.Linear(8, 4))
+            optimizer = torch.optim.AdamW(model.parameters(), lr=3e-3,
+                                          betas=(0.9, 0.95), weight_decay=0.1)
+            scheduler = cosine_with_warmup(optimizer, *schedule_span(24, 4, 2))
+            return model, optimizer, scheduler
+
+        def advance(model, optimizer, scheduler, start, count):
+            # The step index is passed in rather than seeded per call: a second
+            # `advance` that re-seeded would replay the *first* twelve steps'
+            # inputs, and the test would be measuring a model that saw the same
+            # batch twice rather than a resume.
+            for step in range(start, start + count):
+                inputs = torch.arange(step, step + 8, dtype=torch.float32).reshape(1, 8)
+                loss = model(inputs).pow(2).mean()
+                loss.backward()
+                if (step + 1) % 2 == 0:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                    optimizer.step()
+                    optimizer.zero_grad(set_to_none=True)
+                    scheduler.step()
+
+        # The uninterrupted reference: 24 optimizer steps, one schedule.
+        model, optimizer, scheduler = build()
+        advance(model, optimizer, scheduler, 0, 24)
+        reference = [p.detach().clone() for p in model.parameters()]
+
+        # The same run, cut in half at a save boundary.
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "run"
+            model, optimizer, scheduler = build()
+            manager = CheckpointManager(run_dir, keep_last=2,
+                                        live={"optimizer": optimizer,
+                                              "scheduler": scheduler})
+            advance(model, optimizer, scheduler, 0, 12)
+            state = {"model": model.state_dict(), "step": 12, "epoch": 0,
+                     "config": {"vocab_size": 8},
+                     "tokenizer_version": "test",
+                     "data_cursor": {"tokens_consumed": 0},
+                     "loss_history": [0.0] * 12,
+                     "scaler": {"scale": 1.0},
+                     "hyperparameters": {"grad_accum": 2, "steps": 24, "warmup": 4}}
+            state["rng"] = capture_rng()
+            # No optimizer/scheduler/scaler in the state dict: `live` supplies
+            # them, and requiring a snapshot as well is the check firing on
+            # correct code.
+            manager.save(state, step=12, is_best=True)
+            lr_at_save = optimizer.param_groups[0]["lr"]
+            epoch_at_save = scheduler.state_dict()["last_epoch"]
+
+            # A fresh process would build these from scratch and load — in the
+            # order `train_smoke` uses, which matters (see the comment there).
+            model2, optimizer2, scheduler2 = build()
+            manager2 = CheckpointManager(run_dir, keep_last=2)
+            loaded = manager2.load("latest")
+            model2.load_state_dict(loaded["model"])
+            optimizer2.load_state_dict(loaded["optimizer"])
+            scheduler2.load_state_dict(loaded["scheduler"])
+            restore_rng(loaded["rng"])
+            self.assertEqual(loaded["step"], 12)
+            self.assertEqual(scheduler2.state_dict()["last_epoch"], epoch_at_save)
+            self.assertAlmostEqual(optimizer2.param_groups[0]["lr"], lr_at_save,
+                                   places=15,
+                                   msg="the restored optimizer disagrees with the "
+                                       "restored schedule about the learning rate")
+
+            advance(model2, optimizer2, scheduler2, 12, 12)
+
+        for index, (want, got) in enumerate(zip(reference, model2.parameters())):
+            self.assertTrue(
+                torch.equal(want, got.detach()),
+                f"parameter {index} diverged after resume: max |diff| = "
+                f"{float((want - got.detach()).abs().max()):.3e}. A resume that "
+                f"is merely close is a different run.")
+
+    @unittest.skipUnless(_have_torch(), "no torch on this machine")
+    def test_the_resume_order_is_load_bearing_and_the_guard_says_so(self):
+        # Reproduce the reversed order on purpose: build a fresh optimizer, let
+        # a scheduler overwrite its rate, restore the scheduler's bookkeeping,
+        # and require the guard to name the disagreement. Without this, the
+        # two-line order in `train_smoke.train` is a convention; with it, a
+        # refactor that swaps them fails loudly instead of training the first
+        # window at the wrong rate.
+        import torch
+
+        from training.scripts.train_smoke import (_assert_schedule_agrees,
+                                                 cosine_with_warmup,
+                                                 schedule_span)
+
+        model = torch.nn.Linear(4, 4)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
+        scheduler = cosine_with_warmup(optimizer, *schedule_span(200, 20, 8))
+        for _ in range(30):
+            optimizer.step()
+            scheduler.step()
+        saved = scheduler.state_dict()
+        rate = float(saved["_last_lr"][0])
+
+        # The reversed order: a fresh optimizer, then a fresh scheduler built
+        # on it (which overwrites the rate), then the saved scheduler state.
+        fresh = torch.optim.AdamW(model.parameters(), lr=3e-4)
+        rebuilt = cosine_with_warmup(fresh, *schedule_span(200, 20, 8))
+        rebuilt.load_state_dict(saved)
+        self.assertNotAlmostEqual(fresh.param_groups[0]["lr"], rate, places=6,
+                                  msg="this test no longer reproduces the "
+                                      "disagreement it exists to catch")
+        with self.assertRaises(SystemExit) as ctx:
+            _assert_schedule_agrees(fresh, rebuilt)
+        self.assertIn("wrong order", str(ctx.exception))
+
+    @unittest.skipUnless(_have_torch(), "no torch on this machine")
+    def test_the_guard_is_silent_when_the_two_agree(self):
+        # A guard that always raises is not a guard.
+        import torch
+
+        from training.scripts.train_smoke import (_assert_schedule_agrees,
+                                                 cosine_with_warmup,
+                                                 schedule_span)
+
+        model = torch.nn.Linear(4, 4)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
+        scheduler = cosine_with_warmup(optimizer, *schedule_span(50, 5, 2))
+        for _ in range(6):
+            optimizer.step()
+            scheduler.step()
+        _assert_schedule_agrees(optimizer, scheduler)  # must not raise
+
+    @unittest.skipUnless(_have_torch(), "no torch on this machine")
+    def test_loading_a_scheduler_restores_its_position_but_not_the_optimizer_lr(self):
+        # torch's `LambdaLR.load_state_dict` restores `_last_lr` and
+        # `last_epoch` and leaves `optimizer.param_groups['lr']` alone. That is
+        # a trap for a resume, and the only thing standing between this
+        # project and it is the *order* of two lines in the resume path:
+        # `optimizer.load_state_dict` first (which restores `lr` from the file),
+        # then `scheduler.load_state_dict` (which does not touch it).
+        #
+        # Recorded here as a measured property of the dependency rather than a
+        # bug in this repository, because on v2 the file's `lr` was step 0's
+        # 1.5e-6 — so the ordering was carrying the whole resume. Reversing the
+        # two lines would train the first `grad_accum` window at the wrong rate
+        # with no error, and this test is what would notice.
+        import torch
+
+        from training.scripts.train_smoke import (cosine_with_warmup,
+                                                 schedule_span)
+
+        model = torch.nn.Linear(4, 4)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+        scheduler = cosine_with_warmup(optimizer, *schedule_span(100, 10, 2))
+        for _ in range(20):
+            optimizer.step()
+            scheduler.step()
+        saved = scheduler.state_dict()
+        # LambdaLR steps once in its constructor, so 20 explicit steps land on
+        # last_epoch 20.
+        self.assertEqual(saved["last_epoch"], 20)
+        rate_at_20 = float(saved["_last_lr"][0])
+
+        fresh = cosine_with_warmup(optimizer, *schedule_span(100, 10, 2))
+        self.assertEqual(fresh.state_dict()["last_epoch"], 0)
+        # Constructing it over the *same* optimizer reset the lr, which is the
+        # whole point: the schedule object owns the rate, and building a new
+        # one silently overwrites it.
+        self.assertNotAlmostEqual(optimizer.param_groups[0]["lr"], rate_at_20,
+                                  places=6)
+        fresh.load_state_dict(saved)
+        self.assertEqual(fresh.state_dict()["last_epoch"], 20,
+                         "the restored schedule restarted from the beginning")
+        self.assertAlmostEqual(fresh.state_dict()["_last_lr"][0], rate_at_20,
+                               places=15)
+        # ...and the optimizer is still at the construction value, untouched.
+        # Only an `optimizer.load_state_dict` puts it back.
+        self.assertNotAlmostEqual(optimizer.param_groups[0]["lr"], rate_at_20,
+                                  places=6)
+        optimizer.load_state_dict({"state": optimizer.state_dict()["state"],
+                                   "param_groups": [
+                                       dict(optimizer.param_groups[0],
+                                            lr=rate_at_20, initial_lr=1e-3)]})
+        self.assertAlmostEqual(optimizer.param_groups[0]["lr"], rate_at_20,
+                               places=15)
 
 
 class ThereIsExactlyOneWayToWriteACheckpoint(unittest.TestCase):
