@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT))
 
 from ai.model import plan  # noqa: E402
 from training.scripts import train_smoke, train_stage_a  # noqa: E402
+from tests.py import HAVE_SEED_SHARDS, SEED_SHARDS_MISSING  # noqa: E402
 
 
 class ResolveConfig(unittest.TestCase):
@@ -114,6 +115,7 @@ class PipelineOnly(unittest.TestCase):
     machine — a box with torch asks for it too, so the banner has to say what
     this pass skipped without inventing a missing dependency."""
 
+    @unittest.skipUnless(HAVE_SEED_SHARDS, SEED_SHARDS_MISSING)
     def test_runs_end_to_end_on_the_committed_fixture(self):
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):

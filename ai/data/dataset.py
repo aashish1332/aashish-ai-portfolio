@@ -103,7 +103,17 @@ class ShardSet:
     @classmethod
     def load(cls, root: Path | str, dtype: str = "uint16") -> "ShardSet":
         root = Path(root)
-        manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+        manifest_path = root / "manifest.json"
+        if not manifest_path.is_file():
+            raise FileNotFoundError(
+                f"{manifest_path}: no shard manifest. This directory has no "
+                f"shards in it — shard the corpus first (prepare_data), or point "
+                f"--shards at the directory that has them. Note that the default "
+                f"is data/processed/seed/shards, which is generated rather than "
+                f"shipped: data/processed/ is gitignored, so it is absent from "
+                f"an extracted archive or a Kaggle dataset."
+            ) from None
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         return cls(root=root, manifest=manifest, dtype=manifest.get("dtype", dtype))
 
 

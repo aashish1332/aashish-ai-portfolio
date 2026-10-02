@@ -935,6 +935,38 @@ class ManifestKeysExist(unittest.TestCase):
                         f"instead of failing.")
 
 
+class ScratchStaysOutOfGit(unittest.TestCase):
+    """The dataset tarball and the Kaggle working files are build outputs.
+
+    `git add -A` committed all 2,778 of them once and took `.git` from a few MB
+    to 167 MB. Nothing about the content was wrong -- which is why no test
+    complained. This asks git itself, so the rule is enforced rather than
+    remembered.
+    """
+
+    def test_no_kaggle_scratch_is_tracked(self):
+        out = subprocess.run(
+            ["git", "ls-files", "kaggle-push", "aashish-ai-portfolio.tgz",
+             "output.txt"],
+            capture_output=True, text=True, cwd=ROOT, encoding="utf-8",
+            errors="replace")
+        if out.returncode != 0:
+            self.skipTest(f"git ls-files failed: {out.stderr.strip()[:120]}")
+        tracked = [line for line in out.stdout.splitlines() if line.strip()]
+        self.assertEqual(
+            tracked, [],
+            f"{len(tracked)} build output(s) are tracked: {tracked[:5]}. "
+            f"The tarball is a `git archive` of HEAD and kaggle-push/ holds "
+            f"pulled logs, checkpoints and the shard tree -- none of it source.")
+
+    def test_the_ignore_rule_is_there_too(self):
+        """The guard above reads the index; this reads the rule that keeps it clean."""
+        text = (ROOT / ".gitignore").read_text(encoding="utf-8")
+        for pattern in ("/kaggle-push/", "/aashish-ai-portfolio.tgz"):
+            self.assertIn(pattern, text,
+                          f".gitignore does not list {pattern}")
+
+
 class Workspace(unittest.TestCase):
     def test_the_chosen_repository_is_writable(self):
         """`/kaggle/input` is a read-only mount, so a Dataset is not a workspace.

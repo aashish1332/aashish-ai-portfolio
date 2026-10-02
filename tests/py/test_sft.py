@@ -32,6 +32,7 @@ sys.path.insert(0, str(ROOT))
 from ai.data import instruction, sft  # noqa: E402
 from ai.tokenizer.train import load  # noqa: E402
 from training.scripts import train_stage_b  # noqa: E402
+from tests.py import HAVE_SEED_SHARDS, SEED_SHARDS_MISSING  # noqa: E402
 
 TOKENIZER_DIR = ROOT / "ai" / "tokenizer" / "artifacts" / "seed-1k"
 DATA = ROOT / "data" / "instruction" / "sft.jsonl"
@@ -263,6 +264,7 @@ class StageBEntryPoint(unittest.TestCase):
                 train_stage_b.load_init_weights(None, Path(tmp) / "latest.pt", wider)
             self.assertIn("vocab_size", str(ctx.exception))
 
+    @unittest.skipUnless(HAVE_SEED_SHARDS, SEED_SHARDS_MISSING)
     def test_pipeline_only_runs_without_torch(self):
         """Needs no torch, and says what it therefore did not verify.
 

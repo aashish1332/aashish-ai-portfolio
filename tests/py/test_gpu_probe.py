@@ -26,6 +26,7 @@ if str(ROOT) not in sys.path:
 
 from ai.model import plan  # noqa: E402
 from ai.model.config import CONFIG_A  # noqa: E402
+from tests.py import HAVE_SEED_SHARDS, SEED_SHARDS_MISSING  # noqa: E402
 from training.scripts import estimate_budget as eb  # noqa: E402
 from training.scripts import gpu_probe as gp  # noqa: E402
 from training.scripts.train_smoke import resolve_config  # noqa: E402
@@ -64,6 +65,7 @@ class CpuRun(unittest.TestCase):
         return code, buffer.getvalue()
 
     @unittest.skipUnless(_have_torch(), "torch is not installed")
+    @unittest.skipUnless(HAVE_SEED_SHARDS, SEED_SHARDS_MISSING)
     def test_it_measures_and_reports_a_config_it_ran(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "probe.json"
@@ -84,6 +86,7 @@ class CpuRun(unittest.TestCase):
         self.assertIn("throughput", text)
 
     @unittest.skipUnless(_have_torch(), "torch is not installed")
+    @unittest.skipUnless(HAVE_SEED_SHARDS, SEED_SHARDS_MISSING)
     def test_a_probe_json_is_accepted_by_the_budget_tool(self):
         """The two tools are a contract. If the probe stopped recording
         `params`, `estimate_budget` would refuse every real measurement — and
@@ -102,6 +105,7 @@ class CpuRun(unittest.TestCase):
         self.assertIn("smoke", measured_on)
 
     @unittest.skipUnless(_have_torch(), "torch is not installed")
+    @unittest.skipUnless(HAVE_SEED_SHARDS, SEED_SHARDS_MISSING)
     def test_step_reporting_is_bounded(self):
         """A probe is not a run, and its output lives in a notebook cell. Twenty
         steps must not become twenty lines."""
@@ -125,6 +129,7 @@ class OutOfMemory(unittest.TestCase):
     """
 
     @unittest.skipUnless(_have_torch(), "torch is not installed")
+    @unittest.skipUnless(HAVE_SEED_SHARDS, SEED_SHARDS_MISSING)
     def test_an_oom_is_a_result_not_a_traceback(self):
         import torch
 
@@ -153,6 +158,7 @@ class OutOfMemory(unittest.TestCase):
         self.assertNotIn("Traceback", text)
 
     @unittest.skipUnless(_have_torch(), "torch is not installed")
+    @unittest.skipUnless(HAVE_SEED_SHARDS, SEED_SHARDS_MISSING)
     def test_the_json_records_the_failure(self):
         import torch
 

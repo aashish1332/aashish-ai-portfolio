@@ -5122,4 +5122,37 @@ without re-deriving it. Nothing in this session had produced that number, and
 reading the manifest is what caught it. `docs/TRAINING.md` now says so, because
 the mistake is worth remembering: do not quote a token count from notes.
 
-`npm run test:py` **436**, `npm test` **533**, 0 failures.
+`npm run test:py` **438**, `npm test` **533**, 0 failures.
+
+### "The tests pass against the extracted archive" was not true — 2026-10-02
+
+Checking the dataset archive properly, rather than a hand-picked subset of the
+suite, turned up 7 errors. `data/processed/seed/shards` — the fixture the
+default `--shards` points at — is **generated** from `ai/tokenizer/artifacts/seed-1k`,
+and `.gitignore` excludes `data/processed/` outright as §17 data hygiene. So it
+is in the working tree and absent from `git archive`, and seven tests that
+depend on it pass locally while erroring on the artifact that actually ships.
+
+Un-ignoring it would be wrong: it is 6 MB of derived data and the ignore rule is
+a deliberate hygiene boundary. The defect is that the suite **errors** where it
+should say it is skipping, which makes any claim of the form "validated against
+the archive" quietly untrue.
+
+Both halves fixed:
+
+- `tests/py/__init__.py` exposes one `HAVE_SEED_SHARDS` / `SEED_SHARDS_MISSING`
+  pair, and the tests that need the fixture skip with that reason printed rather
+  than duplicating the check three times.
+- `ShardSet.load` no longer raises a bare `FileNotFoundError` for a directory
+  with no manifest. That default is a dev path absent from every shipped
+  artifact, so the message now says what to do and why the default is missing —
+  the same class of defect as `--dataset-tokens` reading a number as a filename.
+
+Measured both states rather than asserting either:
+
+| tree | result |
+|---|---|
+| working tree (fixture present) | **436 tests, 0 skipped** |
+| same tree with `data/processed/` removed | **436 tests, 8 skipped, 0 failures** |
+
+`npm run test:py` **438**, `npm test` **533**, 0 failures.

@@ -90,3 +90,11 @@ desktop.ini
 .DS_Store
 .vscode/
 .idea/
+# Kaggle scratch (P4). The dataset tarball is a `git archive` of HEAD -- a
+# build output, not source -- and kaggle-push/ holds the pushed notebook, the
+# pulled logs, checkpoints and shard tree. Committing any of it put 2,778 files
+# and 167 MB into .git; `git add -A` did it, so the rule is here rather than
+# relying on staging by hand each time.
+/kaggle-push/
+/aashish-ai-portfolio.tgz
+/output.txt
