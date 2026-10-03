@@ -502,6 +502,215 @@ TOPICS = [
     _topic_experience(),
 ]
 
+#: How many topics' facts a `factual` example's context carries. See the note
+#: on `TARGETS` for why this is not 1.
+_FACTUAL_TOPICS = 3
+
+#: `{fact id: {lang: (first-person frame, third-person frame)}}`, each frame
+#: taking the placeholder value as `{v}`.
+#:
+#: One entry per fact rather than one per topic, because the same fact is
+#: reachable through several different questions ("What is your name?" and
+#: "Who are you?") and those questions must agree on the answer. Getting that
+#: agreement right *is* the conditioning signal: a model that reads only the
+#: context would have to guess which framing was meant.
+_FRAMES: dict[str, dict[str, tuple[str, str]]] = {
+    "person.name": {
+        "en": ("My name is {v}.", "His name is {v}."),
+        "hi": ("मेरा नाम {v} है।", "उनका नाम {v} है।"),
+        "hinglish": ("Mera naam {v} hai.", "Unka naam {v} hai."),
+    },
+    "edu.lpu": {
+        "en": ("I study at {v}.", "He studies at {v}."),
+        "hi": ("मैं {v} में पढ़ता हूँ।", "वे {v} में पढ़ते हैं।"),
+        "hinglish": ("Main {v} se padhai karta hoon.", "Wo {v} se padhte hain."),
+    },
+    "ach.lpu-cgpa": {
+        "en": ("My CGPA is {v}.", "His CGPA is {v}."),
+        "hi": ("मेरा CGPA {v} है।", "उनका CGPA {v} है।"),
+        "hinglish": ("Mera CGPA {v} hai.", "Unka CGPA {v} hai."),
+    },
+    "skill.python": {
+        "en": ("I write Python.", "He writes Python."),
+        "hi": ("मैं Python लिखता हूँ।", "वे Python लिखते हैं।"),
+        "hinglish": ("Main Python likhta hoon.", "Wo Python likhte hain."),
+    },
+    "skill.react": {
+        "en": ("My frontend framework is React.", "His frontend framework is React."),
+        "hi": ("मेरा फ्रंटएंड फ्रेमवर्क React है।", "उनका फ्रंटएंड फ्रेमवर्क React है।"),
+        "hinglish": ("Mera frontend framework React hai.",
+                     "Unka frontend framework React hai."),
+    },
+    "skill.mysql": {
+        "en": ("I use MySQL for relational data.", "He uses MySQL for relational data."),
+        "hi": ("मैं रिलेशनल डेटा के लिए MySQL उपयोग करता हूँ।",
+               "वे रिलेशनल डेटा के लिए MySQL उपयोग करते हैं।"),
+        "hinglish": ("Main relational data ke liye MySQL use karta hoon.",
+                     "Wo relational data ke liye MySQL use karte hain."),
+    },
+    "project.volunteer": {
+        "en": ("My main project is {v}.", "His main project is {v}."),
+        "hi": ("मेरा मुख्य प्रोजेक्ट {v} है।", "उनका मुख्य प्रोजेक्ट {v} है।"),
+        "hinglish": ("Mera main project {v} hai.", "Unka main project {v} hai."),
+    },
+    "project.grocery": {
+        "en": ("I also built {v}.", "He also built {v}."),
+        "hi": ("मैंने {v} भी बनाया।", "उन्होंने {v} भी बनाया।"),
+        "hinglish": ("Maine {v} bhi banaya.", "Unhone {v} bhi banaya."),
+    },
+    "contact.email": {
+        "en": ("Email me at {v}.", "Email him at {v}."),
+        "hi": ("मुझे {v} पर ईमेल करें।", "उन्हें {v} पर ईमेल करें।"),
+        "hinglish": ("Mujhe {v} pe email karo.", "Unhe {v} pe email karo."),
+    },
+    "link.github": {
+        "en": ("My GitHub is {v}.", "His GitHub is {v}."),
+        "hi": ("मेरा GitHub {v} है।", "उनका GitHub {v} है।"),
+        "hinglish": ("Mera GitHub {v} hai.", "Unka GitHub {v} hai."),
+    },
+    "workflow.how-he-builds": {
+        "en": ("How I build: {v}", "How he builds: {v}"),
+        "hi": ("मेरा तरीका: {v}", "उनका तरीका: {v}"),
+        "hinglish": ("Mera tareeka: {v}", "Unka tareeka: {v}"),
+    },
+    "cert.dbms": {
+        "en": ("I hold the {v} certificate.", "He holds the {v} certificate."),
+        "hi": ("मेरे पास {v} सर्टिफिकेट है।", "उनके पास {v} सर्टिफिकेट है।"),
+        "hinglish": ("Mere paas {v} certificate hai.",
+                     "Unke paas {v} certificate hai."),
+    },
+    "exp.mern-bootcamp": {
+        "en": ("I completed {v}.", "He completed {v}."),
+        "hi": ("मैंने {v} पूरा किया है।", "उन्होंने {v} पूरा किया है।"),
+        "hinglish": ("Maine {v} complete kiya hai.",
+                     "Unhone {v} complete kiya hai."),
+    },
+}
+
+
+def _answer_about(fact_id: str, f: "Facts", lang: str, persona: str) -> str:
+    """The answer to a question about exactly one fact, in this language."""
+    frames = _FRAMES[fact_id]
+    first, third = frames.get(lang) or frames["en"]
+    return (first if persona == "first" else third).format(v=f.ref(fact_id))
+
+
+#: `{topic name: {lang: [(question, the fact it targets), ...]}}`
+#:
+#: **This table exists because of a measured failure.** Stage B v1 and v2 both
+#: fitted their data essentially perfectly - gate PASS, held-out loss 0.008 -
+#: and both answered hand-written questions with a paragraph unrelated to what
+#: was asked. v2 had 2,315 distinct questions, so "not enough questions" was
+#: already ruled out.
+#:
+#: The cause was in `make_example`, not in the data volume. Every `factual`
+#: example used to look like:
+#:
+#:     q = _pick(rng, t.questions[lang])   # any question about the topic
+#:     a = t.answer(f, lang, persona)      # the topic's one canned answer
+#:
+#: `a` never referenced `q`. Every question about the skills topic got the same
+#: list of all three skills; every question about projects got the same list of
+#: both projects. So **the context alone determined the answer and the question
+#: was redundant** - a model could reach the right answer by reading the context,
+#: pattern-matching which topic's facts are present, and never once looking at
+#: what was asked. Nine topics and a fixed frame per topic is a lookup table,
+#: and it fits in a few hundred steps.
+#:
+#: Two things fix that, and both are structural rather than volumetric:
+#:
+#: 1. **The context carries `_FACTUAL_TOPICS` topics' facts, not one.** Which
+#:    topic's answer is correct is no longer inferable from the context.
+#: 2. **Each question names the one fact it wants.** Within a topic the skills
+#:    questions now ask about Python, React and MySQL separately, so two
+#:    questions over one context have genuinely different correct answers.
+#:
+#: Together these mean the question is load-bearing: the same context yields
+#: different answers for different questions, and the only way to fit the data
+#: is to read it. `test_the_answer_depends_on_the_question_not_just_the_context`
+#: is what keeps it that way.
+TARGETS: dict[str, dict[str, list[tuple[str, str]]]] = {
+    "name": {
+        "en": [("What is your name?", "person.name"),
+               ("Who are you?", "person.name"),
+               ("Please introduce yourself.", "person.name")],
+        "hi": [("आपका नाम क्या है?", "person.name"),
+               ("आप कौन हैं?", "person.name")],
+        "hinglish": [("aapka naam kya hai?", "person.name"),
+                     ("tumhara naam batao", "person.name")],
+    },
+    "education": {
+        "en": [("Where did you study?", "edu.lpu"),
+               ("Which university are you at?", "edu.lpu")],
+        "hi": [("आपने कहाँ पढ़ाई की?", "edu.lpu"),
+               ("आप किस विश्वविद्यालय में हैं?", "edu.lpu")],
+        "hinglish": [("padhai kahan ki?", "edu.lpu"),
+                     ("kaun se university mein ho?", "edu.lpu")],
+    },
+    "cgpa": {
+        "en": [("What is your CGPA?", "ach.lpu-cgpa"),
+               ("How many marks did you get?", "ach.lpu-cgpa")],
+        "hi": [("आपका CGPA क्या है?", "ach.lpu-cgpa"),
+               ("आपके मार्क्स कितने हैं?", "ach.lpu-cgpa")],
+        "hinglish": [("cgpa kya hai?", "ach.lpu-cgpa"),
+                     ("marks kitne hain?", "ach.lpu-cgpa")],
+    },
+    "skills": {
+        "en": [("Which language do you write?", "skill.python"),
+               ("Which frontend framework do you use?", "skill.react"),
+               ("Which database do you use?", "skill.mysql")],
+        "hi": [("आप कौन सी भाषा लिखते हैं?", "skill.python"),
+               ("आपका फ्रंटएंड फ्रेमवर्क कौन सा है?", "skill.react"),
+               ("आप कौन सा डेटाबेस उपयोग करते हैं?", "skill.mysql")],
+        "hinglish": [("kaun si language likhte ho?", "skill.python"),
+                     ("frontend framework kaun sa hai?", "skill.react"),
+                     ("kaun sa database use karte ho?", "skill.mysql")],
+    },
+    "projects": {
+        "en": [("What is your main project?", "project.volunteer"),
+               ("What else have you built?", "project.grocery")],
+        "hi": [("आपका मुख्य प्रोजेक्ट क्या है?", "project.volunteer"),
+               ("और आपने क्या बनाया?", "project.grocery")],
+        "hinglish": [("main project kya hai?", "project.volunteer"),
+                     ("aur kya banaya?", "project.grocery")],
+    },
+    "contact": {
+        "en": [("What is your email?", "contact.email"),
+               ("What is your GitHub?", "link.github")],
+        "hi": [("आपका ईमेल क्या है?", "contact.email"),
+               ("आपका GitHub क्या है?", "link.github")],
+        "hinglish": [("email id kya hai?", "contact.email"),
+                     ("github link kya hai?", "link.github")],
+    },
+    "workflow": {
+        "en": [("How do you use AI in your work?", "workflow.how-he-builds"),
+               ("Walk me through your development process.",
+                "workflow.how-he-builds")],
+        "hi": [("आप अपने काम में AI का उपयोग कैसे करते हैं?",
+                "workflow.how-he-builds"),
+               ("अपनी विकास प्रक्रिया बताइए।", "workflow.how-he-builds")],
+        "hinglish": [("apne kaam mein AI kaise use karte ho?",
+                      "workflow.how-he-builds"),
+                     ("development process batao", "workflow.how-he-builds")],
+    },
+    "certs": {
+        "en": [("What certification do you hold?", "cert.dbms"),
+               ("Are you certified in databases?", "cert.dbms")],
+        "hi": [("आपके पास कौन सा सर्टिफिकेट है?", "cert.dbms"),
+               ("क्या आपके पास डेटाबेस सर्टिफिकेशन है?", "cert.dbms")],
+        "hinglish": [("kaun sa certificate hai?", "cert.dbms"),
+                     ("database certification hai?", "cert.dbms")],
+    },
+    "experience": {
+        "en": [("Which bootcamp did you complete?", "exp.mern-bootcamp"),
+               ("What training have you done?", "exp.mern-bootcamp")],
+        "hi": [("आपने कौन सा बूटकैंप पूरा किया?", "exp.mern-bootcamp"),
+               ("आपने क्या प्रशिक्षण किया है?", "exp.mern-bootcamp")],
+        "hinglish": [("kaun sa bootcamp kiya?", "exp.mern-bootcamp"),
+                     ("kya training ki hai?", "exp.mern-bootcamp")],
+    },
+}
+
 # Questions the portfolio must NOT answer (§8.4 / §14 bait + unknown)
 ABSTENTION_QUESTIONS = {
     "en": [
@@ -638,12 +847,23 @@ def make_example(kb: dict, category: str, rng: random.Random,
     persona = _pick(rng, PERSONAS)
 
     if category == "factual":
-        t = choose_topic(rng, counterfactual)
-        ids = list(t.context)
+        # The context carries several topics' facts and the question names the
+        # one it wants, so the answer follows from the question and not from
+        # the context. See the note on `TARGETS`: with one topic per context and
+        # one canned answer per topic, the question was redundant and Stage B
+        # v1 and v2 both fitted that mapping without ever reading it.
+        chosen = rng.sample(TOPICS, min(_FACTUAL_TOPICS, len(TOPICS)))
+        ids = list(dict.fromkeys(fid for t in chosen for fid in t.context))
         if counterfactual and "person.name" not in ids:
             ids.insert(0, "person.name")
-        q = _pick(rng, t.questions.get(lang) or t.questions["en"])
-        a = t.answer(f, lang, persona)
+        target = _pick(rng, chosen)
+        pairs = TARGETS[target.name].get(lang) or TARGETS[target.name]["en"]
+        q, fact_id = _pick(rng, pairs)
+        # Every targeted fact belongs to `target`, whose facts are in `ids`
+        # above, so the answer is always supported by the context it is asked
+        # against. `test_no_targeted_answer_asks_about_an_absent_fact` holds
+        # this.
+        a = _answer_about(fact_id, f, lang, persona)
         return {"category": category, "lang": lang, "persona": persona,
                 "counterfactual": counterfactual, "context": build_context(f, ids),
                 "turns": [(q, a)]}

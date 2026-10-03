@@ -1077,6 +1077,7 @@ overlapping *generations* are a real case in P5.
 | AI requests before the first click | **0** — including `ai/voice/index.mjs` |
 | AI assets on first open | 12 files, no worker, no wasm |
 | Tier on this machine | **T2 · STANDARD** → voice level `both` |
+| Tier on a phone (`MOBILE=1`, 390×844) | **T1 · LITE** → voice level `tap`, the mode the tap window rewrote. The phone run is the same three voice checks (the microphone refused here too), plus the scene pausing on open and resuming on close, and no overflow — **28/28** |
 | Voice button before the tap | present, `aria-pressed=false`, engine **not constructed** |
 | Tap, on a machine with no microphone | engine refused → voice **off**, `aria-pressed` back to `false`, `handsFree=false`, and the reason stated: *"The microphone is not available, so voice mode is off. Typing works."* |
 | After Escape (panel closed) | `enabled=false` — the microphone does not outlive the panel |
@@ -6719,3 +6720,116 @@ something.
 Whether answers that actually vary with the question would fix it. §7.4's
 `factual` category is the obvious suspect and the hypothesis above is not yet
 measured — it is the reading that fits both runs, not a finding.
+
+---
+
+## 2026-10-03 — The answer was never reading the question
+
+### The cause, in two lines
+
+v2 showed that 2,315 distinct questions had not helped. The reason is in
+`make_example`, and it is not about volume:
+
+```python
+q = _pick(rng, t.questions[lang])   # any question about the topic
+a = t.answer(f, lang, persona)      # the topic's ONE canned answer
+```
+
+**`a` never referenced `q`.** Every question about the skills topic got the same
+list of all three skills; every question about projects got the same list of both
+projects; every question about the name got "My name is X." So the **context
+alone determined the answer and the question was redundant**. A model could fit
+this perfectly by reading the context, pattern-matching which topic's facts are
+present, and never once looking at what it was asked. Nine topics with one fixed
+frame each is a lookup table, and 500 steps of a 37.8 M-parameter model is more
+than enough to learn one. That is why the gate passed and the val loss fell to
+0.008 while the model ignored its input.
+
+### The fix, and the number that measures it
+
+Two structural changes, both in `make_example`'s `factual` branch:
+
+1. **The context carries 3 topics' facts, not one** (`_FACTUAL_TOPICS`). Which
+   topic's answer is correct is no longer inferable from the context.
+2. **Each question names the one fact it wants** (`TARGETS`). Within a topic the
+   skills questions now ask about Python, React and MySQL separately.
+
+So one identical context now has several genuinely different correct answers,
+and the question is load-bearing. **MEASURED** by the new
+`tools/measure_answer_conditioning.py`, seed 1337, 8,000 examples, grounded
+(counterfactual) examples excluded because they carry a fabricated literal
+instead of a placeholder:
+
+| | distinct contexts | answers per identical context | question-ignoring contexts |
+|---|---|---|---|
+| before | 9 | **all 1** | **9/9 = 100.0%** |
+| after | 84 | 3, 4 or 5 | **0/84 = 0.0%** |
+
+### The cost, stated rather than buried
+
+The stream got longer because contexts are wider, and the supervised share fell:
+
+| | tokens | supervised | share |
+|---|---|---|---|
+| v2 data | 7,158,788 | 801,639 | 11.2% |
+| v3 data | **8,474,436** | **743,275** | **8.8%** |
+
+Fewer supervised tokens per example, so each optimizer step carries slightly less
+signal. One epoch is now **517** steps, so the notebook's `--steps 500` is ~0.97
+epochs — still the right budget, and the honest reason for it is unchanged.
+`distinct_questions` also rose to **2,774**.
+
+### What is NOT claimed
+
+That this fixes generalisation. The mechanism is now correct and measured — the
+question selects the answer — but whether the model learns to use it is a
+Stage B v3 question, and the same eight novel prompts will answer it. Six of the
+nine topics are single-fact and can only be asked about one way; the
+discrimination between facts comes from the three multi-fact topics and from the
+multi-topic context, and that is a limitation of the data, not something this
+change removes.
+
+### Also found while measuring it
+
+- `tools/measure_answer_conditioning.py` scored an **empty** measurement as a
+  clean pass (`single / contexts if contexts else 0.0`), so a filter that
+  matched nothing would have printed "the question selects the answer". It now
+  refuses, and says there is no evidence either way.
+- A mutation that includes counterfactual examples is **not observable** in the
+  verdict (0.0% → 1.4%, same pass), so the runner mutates the grounded filter
+  directly instead. Recorded here because the first attempt looked like a
+  working mutation and was silently testing nothing.
+- `AMBIGUITY_FLOOR` is imported by the test so the two cannot drift — which
+  means raising it makes the check *unfailable* rather than visibly wrong. It
+  has its own guard for that reason.
+
+### Counts
+
+`npm run test:py` **634** (was 618; +16), `npm test` **532 pass / 1 fail** — the
+failure is in `ai/ui/chat.mjs`, which is **not** part of this change; see below.
+`npm run build` clean. Mutation sweep, all **eleven** runners, **twice,
+identical both passes**: `mutate_answer_conditioning` **7/7** (new),
+`mutate_checkpoints` 22/22, `mutate_audit` 10/10, `mutate_audit_stage_b` 9/9,
+`mutate_question_variety` 9/9, `mutate_novel_comparison` 7/7,
+`mutate_sampler_tokenizer` 5/5, `mutate_stageb_tokenizer` 5/5, `mutate_watch`
+10/10, `mutate_watch_ref` 4/4, `mutate_publish` 4/4 — **92/92**.
+
+Stage B v2's checkpoint pulled before `/kaggle/working` could be reused:
+`latest.pt` + `best.pt`, 454.8 MB each, and `tools/verify_checkpoint.py` passes
+**11/11** on the real file (step 500, 92 tensors with optimizer moments,
+scheduler at `last_epoch` 250, final LR 0.0% of peak).
+
+### Unrelated work in the working tree — left alone, needs a decision
+
+`ai/ui/chat.mjs`, `dev-anchor-probe.js`, `docs/BENCHMARKS.md` and one line of
+this file are **modified but not mine**. They appeared at 16:17 with a single
+shared mtime, from a session other than this one, and they are coherent §12 work
+(measuring whether an answer is actually *on screen* after the page settles).
+
+They are uncommitted and **were deliberately not staged**, so nothing here
+commits or reverts them. One consequence is recorded rather than hidden:
+`chat.mjs` adds `el: lastAnchor.el` to the `lastAnchor` snapshot, and
+`tests/quick-answers.test.mjs` asserts that snapshot carries no raw DOM node
+("breaks every probe that reads it"). That is why `npm test` is **532 pass /
+1 fail** — a real guard, tripped by real in-flight work, needing whoever owns
+that change to either expose the element differently or narrow the probe.
