@@ -281,7 +281,25 @@ def _line_of(text: str, offset: int) -> int:
 STAGE_B_CLAIMS: list[Claim] = [
     Claim("instruction data", r"instruction data:\s*([\d,]+) examples",
           "the §7.4 set was built and its category mix computed"),
-    Claim("config", r"^(\w+): vocab=([\d,]+) d=(\d+) L=(\d+) heads=(\d+)/(\d+)",
+    Claim("config",
+          # The optional leading group is the decoded transcript's own
+          # decoration - `[0016m11.22s] stdout ` - which `load_text` leaves in
+          # place. Without it the `^` below could never match anything but
+          # line 1, so the claim reported MISSING on a transcript that printed
+          # the config line in plain sight. MEASURED 2026-10-03 against both
+          # the v1 and v2 Stage B transcripts: `A: vocab=16,384 d=512 L=10
+          # heads=8/4` is on line 147, prefixed.
+          #
+          # `[^\]]` and not `[^\]\n]`, and `\w+` rather than an alternation of
+          # `stdout|stderr`: the claim-phrase guard in
+          # `tests/py/test_audit_stage_b.py` reads every multi-word literal out
+          # of a pattern and requires the trainer to print it. `(?:stdout|
+          # stderr)` therefore became the required phrase "stdout stderr", which
+          # nothing prints, and the guard reported that rather than reporting
+          # that it could not parse the class. `\w+` matches the same text
+          # without naming it.
+          r"^(?:\[[^\]]*\]\s*(?:\w+\s+)?)?"
+          r"(\w+): vocab=([\d,]+) d=(\d+) L=(\d+) heads=(\d+)/(\d+)",
           "which model is being tuned - Stage B is config A on top of Stage A"
           "'s config A"),
     Claim("params", r"materialised:\s*([\d,]+) params",

@@ -6630,3 +6630,92 @@ clean. Mutation sweep, all nine runners: `mutate_question_variety` **9/9** (was
 Unchanged and still the point of the next run: whether varied questions make the
 model *condition* on the question. The data is better and the schedule is
 shorter, and neither of those is evidence about generalisation.
+
+---
+
+## 2026-10-03 — Stage B v2: more diverse questions, and no generalisation
+
+### The run
+
+Kernel `training-stage-b` **version 2**, on the regenerated §7.4 data at 500
+steps. MEASURED: 500/500 steps, gate **PASS** (first loss 8.8542), 455,536
+supervised of 4,096,000 seen (**11.1%**), final LR 0.000e+00 = 0.0000% of peak
+at 100.0% of the run, checkpoints at steps 300/400/500. Transcript audited with
+the Stage B auditor: **15/15**, 0 missing, 0 failed.
+
+### The answer: the diverse questions did not help
+
+The same eight hand-written prompts v1 was measured on, read with the same tool
+on both transcripts (`tools/compare_novel_answers.py`):
+
+| | distinct answers / 8 | raw `<|fact:…|>` leaks |
+|---|---|---|
+| v1 (3,000 steps, 106 questions) | **5** | 3 |
+| v2 (500 steps, 2,315 questions) | **4** | 2 |
+
+**No measured improvement.** The question set is 22× more diverse and the model
+answers *slightly less* distinctly than before. Both runs still answer
+"Which database does Aashish use?" — a question with a plain answer in the
+context — with a paragraph about being a portfolio assistant and not being
+Aashish.
+
+That is the honest result and it is worth more than a green gate. It says
+**question diversity was necessary but nowhere near sufficient**: with 2,315
+distinct questions the model still does not condition on *meaning*, so it is
+memorising answers that are keyed to something other than the question — most
+likely the topic/fact slots in the context, which the carrier forms do not
+vary. §7.4 varies the question and leaves the answer a fixed function of the
+category; the model can fit that perfectly by ignoring the question entirely,
+and 500 steps of a 37.8 M-parameter model is more than enough to do it.
+
+So the next change is not more of the same kind of diversity. It is answers
+that *depend on which question was asked* — the same fact index reached through
+several different questions whose correct answers differ.
+
+### Two measurement defects found while reading this run
+
+**The auditor's `config` claim could not match any transcript.** It is anchored
+with `^` so that `A: vocab=16,384 d=512 …` matches as a shape rather than inside
+an unrelated line — but the decoded transcript decorates every line with
+`[0016m11.22s] stdout `, so `^` matched nothing except line 1. MEASURED: the
+claim reported **MISSING on both v1 and v2**, each of which prints the config
+line in plain sight on line 147. It was added as a fix and has been reporting a
+false negative ever since. A claim that cannot match the artifact it audits is
+worse than no claim, because it reads as a finding.
+
+Fixing it exposed a second layer: the existing guard
+`test_every_claim_pattern_has_an_evidence_phrase_the_trainer_prints` reads every
+multi-word literal out of a pattern and requires the trainer to print it. My
+first repair spelled the prefix `(?:stdout|stderr)`, which became a required
+phrase "stdout stderr" that nothing prints — and the guard reported *that*
+rather than reporting that it could not parse `[^\]]`, because its first scrub
+`\.` eats the escaped bracket before any character-class scrub can run. Both
+fixed: the class scrub runs first, and the pattern uses `\w+` instead of naming
+the two words.
+
+**A mutation anchor was missing its newline.** N3 in the new runner replaced
+`ANSI = re.compile(r"\x1b\[[0-9;]*m")` without the trailing `\n`, so the
+replacement welded a backtick onto the following docstring line. The mutant
+still compiled, the guard still passed, and the runner printed NOT CAUGHT for a
+reason that had nothing to do with the guard. Worth naming because the
+diagnosis I reached first — "PREFIX must be absorbing real escapes" — was
+confident and wrong; a direct probe of the mutated module (exit 1, correct
+phrase) is what separated "the guard is weak" from "the mutation never landed".
+
+The same class of error, three times in one afternoon: a heredoc that ate
+backslashes made an earlier probe report a no-op as if it had measured
+something.
+
+### Counts
+
+`npm run test:py` **618** (was 605; +13). Mutation sweep, all **ten** runners:
+`mutate_novel_comparison` **7/7** (new), `mutate_question_variety` 9/9,
+`mutate_audit` 10/10, `mutate_audit_stage_b` 9/9, `mutate_checkpoints` 22/22,
+`mutate_publish` 4/4, `mutate_sampler_tokenizer` 5/5, `mutate_stageb_tokenizer`
+5/5, `mutate_watch` 10/10, `mutate_watch_ref` 4/4 — **85/85**.
+
+### Still NOT TESTED
+
+Whether answers that actually vary with the question would fix it. §7.4's
+`factual` category is the obvious suspect and the hypothesis above is not yet
+measured — it is the reading that fits both runs, not a finding.

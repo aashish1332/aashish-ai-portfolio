@@ -207,8 +207,18 @@ class TheStageChoiceIsReal(unittest.TestCase):
         self.assertNotIn("(None", short)
 
 
-_SCRUB = (r"\\.", r"\\s", r"\\w", r"\\S", r"\\d", r"\\D", r"\\b", r"\\n",
-          r"\\W", r"\(\?:", r"\(\?P<[^>]*>", r"\[[^\]]*\]", r"[+?*|^\$(){}.]")
+#: Patterns are scrubbed of their regex syntax so that what is left is the
+#: literal text a log has to contain. Order matters: a character class whose
+#: members are escaped - `[^\]]` - has to be consumed *before* the plain
+#: `\[[^\]]*\]`, or the scrub stops at the escaped `]`, leaves `\]\s*(?:stdout|`
+#: behind, and `stdout stderr` is then read as a phrase the trainer must print.
+#: MEASURED 2026-10-03: that happened when the `config` claim grew an optional
+#: prefix group to tolerate the decoded transcript's `[0016m11.22s] stdout `
+#: decoration, and the failure read as "the trainer prints nothing like this"
+#: rather than as "the scrubber cannot parse this regex".
+_SCRUB = (r"\[[^\]]*\\\][^\]]*\]", r"\[[^\]]*\]",
+          r"\\.", r"\\s", r"\\w", r"\\S", r"\\d", r"\\D", r"\\b", r"\\n",
+          r"\\W", r"\(\?:", r"\(\?P<[^>]*>", r"[+?*|^\$(){}.]")
 
 
 def _literal_phrases(pattern):
