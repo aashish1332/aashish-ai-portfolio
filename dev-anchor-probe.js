@@ -326,6 +326,50 @@ const VIS_QUESTIONS = QUESTIONS.slice(0, MAX_VIS);
       `kind=${turn.kind}, scrollY ${Math.round(y0)} → ${Math.round(turn.y)} (a refusal makes no claim to show)`);
   }
 
+  /* ── 2b. but can the visitor SEE it? ───────────────────────────────
+     "The page moved" and "you are looking at the thing you asked about"
+     are different claims, and only the first was measured. The move goes
+     through `Director.scrollTo` on the SECTION, so an element deep inside a
+     tall pinned scene can stay off-screen while `scrollY` rises and the
+     check above still passes. This is §12's own open item, so it is
+     measured per question instead of argued. */
+  const seen = [];
+  for (const [q] of QUESTIONS) {
+    await page.evaluate(() => { window.scrollTo(0, 0); });
+    await new Promise((r) => setTimeout(r, 350));
+    await page.evaluate((question) => {
+      window.PortfolioAI.setHandsFree(true);
+      window.PortfolioAI.ask(question);
+    }, q);
+    await new Promise((r) => setTimeout(r, 2600));
+    seen.push([q, await page.evaluate(() => {
+      const a = window.PortfolioAI.lastAnchor;
+      /* read INSIDE the page — a DOM node must never cross the snapshot's
+         returnByValue boundary, or every anchor here reads "nothing found" */
+      const el = window.PortfolioAI.anchorElement?.();
+      if (!el) return { found: false };
+      const r = el.getBoundingClientRect();
+      const h = window.innerHeight || 1;
+      const px = Math.max(0, Math.min(r.bottom, h) - Math.max(r.top, 0));
+      return {
+        found: true, target: a.target || '', tag: String(a.tag || ''),
+        top: Math.round(r.top), height: Math.round(r.height), px: Math.round(px),
+        ratio: r.height ? +(px / r.height).toFixed(2) : 0,
+        onScreen: r.top < h && r.bottom > 0,
+      };
+    })]);
+  }
+  console.log('\n── is the answer on screen once the page settles? ──────');
+  for (const [q, v] of seen) {
+    const what = ` <${String(v.tag).toLowerCase()}${v.target ? '#' + v.target : ''}>`;
+    console.log(`${(v.onScreen ? 'visible' : 'OFF SCREEN').padEnd(10)} ${String(v.ratio).padStart(5)}${what.padEnd(26)}`
+      + ` top=${v.top}px h=${v.height}px  ← "${q}"`);
+  }
+  for (const [q, v] of seen) {
+    say(`"${q}" is on screen after the move`, !!(v.found && v.onScreen),
+      v.found ? `${v.px}/${v.height} px in view` : 'nothing resolved');
+  }
+
   await page.evaluate(() => window.PortfolioAI.setHandsFree(false));
 
   /* ── 3. EDIT THE PAGE, then ask the same questions ─────────────── */
@@ -378,6 +422,50 @@ const VIS_QUESTIONS = QUESTIONS.slice(0, MAX_VIS);
 
   const after = await askAll();
   report(after);
+
+  /* ── 3b. on the EDITED page, is the thing still on screen? ────────
+     This is where the risk actually lives: with `data-ai-topics` stripped,
+     the resolver falls back to content, and content matches land on CARDS
+     rather than sections — while the page still scrolls to the SECTION. On
+     the shipped page every answer resolves to a section (h = one viewport),
+     so the shipped phase above cannot see this. Here it can. */
+  const seenAfter = [];
+  for (const [q] of QUESTIONS) {
+    await page.evaluate(() => { window.scrollTo(0, 0); });
+    await new Promise((r) => setTimeout(r, 350));
+    await page.evaluate((question) => {
+      window.PortfolioAI.setHandsFree(true);
+      window.PortfolioAI.ask(question);
+    }, q);
+    await new Promise((r) => setTimeout(r, 2600));
+    seenAfter.push([q, await page.evaluate(() => {
+      const a = window.PortfolioAI.lastAnchor;
+      /* read INSIDE the page — see the note in 2b above */
+      const el = window.PortfolioAI.anchorElement?.();
+      if (!el) return { found: false };
+      const r = el.getBoundingClientRect();
+      const h = window.innerHeight || 1;
+      const px = Math.max(0, Math.min(r.bottom, h) - Math.max(r.top, 0));
+      const target = (el.closest && el.closest('[data-scene]')) || el;
+      return {
+        found: true, target: target.id || '', tag: String(a.tag || ''),
+        top: Math.round(r.top), height: Math.round(r.height), px: Math.round(px),
+        ratio: r.height ? +(px / r.height).toFixed(2) : 0,
+        onScreen: r.top < h && r.bottom > 0,
+      };
+    })]);
+  }
+  await page.evaluate(() => window.PortfolioAI.setHandsFree(false));
+  console.log('\n── after the edit: on screen once the page settles? ────');
+  for (const [q, v] of seenAfter) {
+    const what = ` <${String(v.tag).toLowerCase()}> in #${v.target}`;
+    console.log(`${(v.onScreen ? 'visible' : 'OFF SCREEN').padEnd(10)} ${String(v.ratio).padStart(5)}${what.padEnd(34)}`
+      + ` top=${v.top}px h=${v.height}px  ← "${q}"`);
+  }
+  for (const [q, v] of seenAfter) {
+    say(`after the edit, "${q}" is on screen`, !!(v.found && v.onScreen),
+      v.found ? `${v.px}/${v.height} px in view, in #${v.target}` : 'nothing resolved');
+  }
 
   const stillFound = after.filter(([, a]) => a).length;
   say('every question still resolves after the edit', stillFound === after.length,
