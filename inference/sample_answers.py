@@ -124,6 +124,80 @@ def _echoes(answer: str, row: dict) -> bool:
     return overlap / len(words) > 0.8
 
 
+def resolve_tokenizer(checkpoints: list[str]) -> Path:
+    """The tokenizer the given checkpoint(s) were trained with.
+
+    Measured 2026-10-03, and this is the third time this default has been wrong.
+    `make_instruction_data --tokenizer` defaulted to the 1k dev fixture while
+    Stage B trains on the 16k one (the notebook now passes it), and this file
+    had no flag at all and hardcoded `seed-1k`. So the tool you would use to
+    judge whether the model learned anything fed a 37.9M-parameter 16k-vocab
+    model 1,024-token ids. The output was fluent-looking noise — every sample
+    began `brary` — and nothing in the output said so.
+
+    So the tokenizer is read from the checkpoint's own `RUN_MANIFEST.json`
+    rather than guessed, and the generation is *checked* against it: a model
+    tokenised with a different vocabulary produces ids that mean something else
+    entirely, which is the same silent corruption `--init` across vocabularies
+    causes and the one check this file most needed.
+    """
+    wanted = set()
+    for entry in checkpoints:
+        _, _, path = entry.partition("=")
+        run_dir = Path(path or entry)
+        manifest = run_dir / "RUN_MANIFEST.json"
+        if not manifest.is_file():
+            continue
+        version = json.loads(manifest.read_text(encoding="utf-8")).get(
+            "tokenizer_version")
+        if version:
+            wanted.add(version)
+
+    found = {}
+    for candidate in sorted((ROOT / "ai" / "tokenizer" / "artifacts").iterdir()):
+        meta_path = candidate / "meta.json"
+        if meta_path.is_file():
+            found[json.loads(meta_path.read_text(encoding="utf-8"))[
+                "tokenizer_version"]] = candidate
+
+    if wanted:
+        missing = wanted - set(found)
+        if missing:
+            raise SystemExit(
+                f"no tokenizer on disk for {sorted(missing)} — these checkpoints "
+                f"record the generation they were trained with, and guessing a "
+                f"different one silently produces meaningless ids. Looked in "
+                f"{ROOT / 'ai' / 'tokenizer' / 'artifacts'}.")
+        return found[wanted.pop()] if len(wanted) == 1 else found[sorted(wanted)[0]]
+
+    # No manifest to read (a raw .pt, say). Fall back to the largest artifact,
+    # and say so, because a silent default is what caused this.
+    candidates = sorted(found.values(), key=lambda p: p.name)
+    if not candidates:
+        raise SystemExit("no tokenizer artifacts found under "
+                         f"{ROOT / 'ai' / 'tokenizer' / 'artifacts'}")
+    print(f"no RUN_MANIFEST.json to read a tokenizer generation from; using "
+          f"{candidates[-1].name}. Pass --tokenizer to be explicit.")
+    return candidates[-1]
+
+
+def check_tokenizer_matches(checkpoint: Path, which: str, tokenizer,
+                            meta: dict) -> None:
+    """Refuse to sample a model with a tokenizer from another generation."""
+    manifest = checkpoint / "RUN_MANIFEST.json"
+    if not manifest.is_file():
+        return
+    recorded = json.loads(manifest.read_text(encoding="utf-8")).get(
+        "tokenizer_version")
+    if recorded and recorded != meta.get("tokenizer_version"):
+        raise SystemExit(
+            f"refusing to sample {checkpoint}/{which} with "
+            f"{meta.get('tokenizer_version')}: it was trained on {recorded}. "
+            f"A model fed another vocabulary's ids produces fluent-looking "
+            f"nonsense and nothing in the output says so — this is the same "
+            f"silent corruption an --init across vocabularies causes.")
+
+
 def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -138,21 +212,28 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--tokens", type=int, default=32)
     ap.add_argument("--category", default=None)
     ap.add_argument("--stop-on-abstain", action="store_true")
+    ap.add_argument("--tokenizer", default=None,
+                    help="tokenizer directory; default is the one recorded in the "
+                         "checkpoint's own RUN_MANIFEST.json, which is the only "
+                         "choice guaranteed to match the weights")
     ap.add_argument("--json", default=None)
     args = ap.parse_args(argv)
 
     from ai.tokenizer.train import load
 
-    tokenizer, meta = load(ROOT / "ai" / "tokenizer" / "artifacts" / "seed-1k")
+    tokenizer_dir = args.tokenizer or resolve_tokenizer(args.checkpoint)
+    tokenizer, meta = load(tokenizer_dir)
     prompts = read_prompts(Path(args.data), args.n, args.category)
     print(f"{len(prompts)} prompts from {Path(args.data).name} "
-          f"({meta['tokenizer_version']}), greedy, ≤{args.tokens} tokens\n")
+          f"({meta['tokenizer_version']} from {Path(tokenizer_dir).name}), "
+          f"greedy, ≤{args.tokens} tokens\n")
 
     results = {}
     for entry in args.checkpoint:
         name, _, path = entry.partition("=")
         if not path:
             name, path = Path(entry).name, entry
+        check_tokenizer_matches(Path(path), args.which, tokenizer, meta)
         rows = sample(path, args.which, prompts, tokenizer, args.tokens,
                       args.stop_on_abstain)
         results[name] = rows
