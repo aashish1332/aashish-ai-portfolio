@@ -67,6 +67,27 @@ def run_auditor(argv) -> tuple[int, str]:
 module = _load()
 module_main = module.main
 
+#: Regex constructs that are syntax, not evidence, stripped before hunting for
+#: the literal phrases a pattern is really asking the log to contain.
+_SCRUB = (r"\\.", r"\\s", r"\\w", r"\\S", r"\\d", r"\\D", r"\\b", r"\\n",
+          r"\\W", r"\(\?:", r"\(\?P<[^>]*>", r"\[[^\]]*\]", r"[+?*|^\$(){}.]")
+
+
+def _literal_phrases(pattern):
+    """The multi-word literal strings `pattern` requires a log to contain.
+
+    Escape sequences, character classes and quantifiers are syntax and are
+    removed first; what survives is the text a reader would recognise as a
+    phrase the training code prints. A single word is not used - `tokens/s`
+    and `checkpoint` are too generic to prove anything - so the floor is two
+    words separated by a space or an underscore.
+    """
+    text = pattern
+    for scrub in _SCRUB:
+        text = re.sub(scrub, " ", text)
+    text = text.replace("\\", " ")
+    return {q.strip() for q in re.findall(r"[a-z][a-z]*(?:[ _][a-z][a-z]*){1,}", text)}
+
 
 class ClaimListIsWellFormed(unittest.TestCase):
     def test_every_claim_compiles_and_says_why_it_matters(self):
@@ -81,6 +102,42 @@ class ClaimListIsWellFormed(unittest.TestCase):
     def test_claim_names_are_unique(self):
         names = [c.name for c in module.CLAIMS]
         self.assertEqual(len(names), len(set(names)))
+
+    def test_every_evidence_phrase_is_a_line_the_training_code_actually_prints(self):
+        # Measured 2026-10-03: auditing the first COMPLETE run (kernel v3) the
+        # "cache verified" claim came back MISSING on a corpus that *had* been
+        # verified. Two defects in one pattern, both invisible until a real
+        # transcript was read:
+        #   * `content sha` is column-aligned with FOUR spaces in corpus_cache.py
+        #     and the pattern asked for one, so it could not match a real line;
+        #   * `corpus cache verified`, the other half of the alternation, appears
+        #     NOWHERE in training/ - it was a phrase invented while writing the
+        #     claim, so it could never match anything either.
+        # The second is the generalisable failure: a claim written from an
+        # imagined transcript rather than from output, which reports the run as
+        # incomplete for a defect that is in the auditor, not the training. Every
+        # multi-word literal in every pattern is now pinned to the source, so an
+        # invented phrase fails here instead of surviving to a 4 a.m. audit.
+        sources = []
+        for pattern in ("training/scripts/*.py", "training/notebooks/*.ipynb"):
+            sources += [p.read_text(encoding="utf-8", errors="replace").lower()
+                        for p in sorted(ROOT.glob(pattern))]
+        corpus = "\n".join(sources)
+        self.assertTrue(corpus, "no training source found to check against")
+
+        phrases = {}
+        for claim in module.CLAIMS:
+            for pat in [claim.pattern] + [a for a, _ in claim.alternatives]:
+                for phrase in _literal_phrases(pat):
+                    phrases.setdefault(phrase, claim.name)
+
+        self.assertGreaterEqual(len(phrases), 10, "the extractor found too few "
+                               "phrases to be checking anything")
+        for phrase, claim_name in sorted(phrases.items()):
+            with self.subTest(phrase=phrase, claim=claim_name):
+                self.assertIn(phrase, corpus,
+                              "the auditor looks for this phrase, but nothing in "
+                              "training/ ever prints it")
 
 
 class TheProbeAndTheTrainerAreNotConfused(unittest.TestCase):

@@ -219,7 +219,12 @@ CLAIMS: list[Claim] = [
           "reads for its step/loss/token counts"),
     Claim("checkpoints saved", r"checkpoints:\s*([^\n]*)",
           "the checkpoint summary, including which files exist"),
-    Claim("cache verified", r"corpus cache verified[^\n]*|content sha ([\w]+)",
+    # `content sha` is column-aligned with four spaces in corpus_cache.py, and
+    # this pattern asked for one - so it could not match a line that exists.
+    # `corpus cache verified` was the other half of the alternation and appears
+    # NOWHERE in training/; it was a phrase invented while writing the claim.
+    # A test now pins every evidence string to a real line in the source.
+    Claim("cache verified", r"content sha\s+(\w+)",
           "the shards were re-hashed against the manifest; without it the "
           "cached corpus is assumed-good",
           alternatives=(

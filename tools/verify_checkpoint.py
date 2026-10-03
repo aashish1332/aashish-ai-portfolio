@@ -248,6 +248,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  info  {cursor['tokens_consumed']:,} tokens consumed by the batcher")
 
     # ── config parity ───────────────────────────────────────────────
+    # Measured 2026-10-03: `--config training/configs/seed_smoke.json` - the
+    # obvious reading, since that is how the value is spelled everywhere else -
+    # died in a bare `KeyError: 'training/configs/seed_smoke.json'` traceback.
+    # A tool whose job is to report a bad checkpoint should not be the thing
+    # that crashes when *it* is mis-invoked, and an unknown name here is a
+    # mistake worth naming rather than a stack trace worth reading.
+    if args.config not in CONFIGS:
+        raise SystemExit(
+            f"unknown config {args.config!r}; choose one of: "
+            + ", ".join(sorted(CONFIGS))
+            + "\n(this tool takes the config's NAME, not a path to a JSON file)"
+        )
     stored = state.get("config") or {}
     live_cfg = CONFIGS[args.config]
     drift = []
