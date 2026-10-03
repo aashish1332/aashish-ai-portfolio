@@ -497,7 +497,8 @@ the pre-click promise anything.
 |---|---|
 | AI requests before the first click | **0**, and the list is checked *including* `ai/voice/index.mjs` |
 | AI assets on first open | 12 files · no worker · no wasm · no model |
-| Tier chosen on this machine | **T2 · STANDARD** → voice level `both` (push-to-talk + spoken answers) |
+| Tier chosen on this machine | **T2 · STANDARD** → voice level `both` (press-to-talk + spoken answers) |
+| Tier chosen under phone emulation (`MOBILE=1`, 390×844) | **T1 · LITE** → voice level `tap` — §6.2's mid-phone row, and the one whose push-to-talk this section rewrote. 28/28 checks: the phone's refusal path is the same three checks, the scene pauses on open and resumes on close, and there is no horizontal overflow |
 | Engine object constructed before the tap | **no** — `createRecognizer` builds nothing until `start()` |
 | Tap, in a browser **with no microphone** | engine refused → voice off in < 1.5 s, `aria-pressed` back to `false`, `handsFree` back to `false`, the §15.3 ladder released, reason stated |
 | Tap, on **the same host in a later run** — engine starts | `enabled=true`, button `aria-pressed=true`, Proactive mode on, and the disclosure bubble shown **once**, badge `VOICE ON` (*"…your audio leaves this device"*). The probe itself took this branch once; `listening=true` was then read in a one-off run of the same page |
