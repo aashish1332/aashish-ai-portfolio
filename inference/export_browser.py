@@ -407,13 +407,22 @@ def checkpoint_provenance(run_dir: Path, which: str, payload: dict,
 
 
 def load_checkpoint(run_dir: Path, which: str) -> tuple[dict, ModelConfig, dict]:
-    """(weights, config, provenance) for `which` inside `run_dir`."""
+    """(weights, config, provenance) for `which` inside `run_dir`.
+
+    Reads through `load_for_inference`, not `load`. `load` is for *resuming* and
+    rightly refuses a file with no optimizer moments or no `hyperparameters`;
+    this function generates text from the weights and needs neither. Measured
+    2026-10-03 on kernel `training-stage-b` v1: the run finished all 3,000 steps
+    and wrote its checkpoint, and `inference/sample_answers.py` then died with
+    `MissingStateError` naming all six resumable keys — because it read the file
+    through the resume path.
+    """
     if str(ROOT) not in sys.path:
         sys.path.insert(0, str(ROOT))
     from training.scripts import checkpoint as ckpt
 
     manager = ckpt.CheckpointManager(run_dir)
-    payload = manager.load(which)
+    payload = manager.load_for_inference(which)
     state = payload["model"]
     if hasattr(state, "state_dict"):
         state = state.state_dict()

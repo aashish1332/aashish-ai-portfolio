@@ -20,6 +20,8 @@ Two rules this follows, both learned the hard way on this project:
 
 from __future__ import annotations
 
+import mutation_env
+
 import subprocess
 import sys
 from pathlib import Path
@@ -28,6 +30,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 CKPT = ROOT / "training" / "scripts" / "checkpoint.py"
 SMOKE = ROOT / "training" / "scripts" / "train_smoke.py"
+CHECKPOINT = ROOT / "training" / "scripts" / "checkpoint.py"
 STAGE_B = ROOT / "training" / "scripts" / "train_stage_b.py"
 VERIFIER = ROOT / "tools" / "verify_checkpoint.py"
 
@@ -274,20 +277,70 @@ MUTATIONS: list[tuple[str, Path, str, str, str, str]] = [
         "test_snapshot_refreshes_all_three_moving_fields",
         "does not refresh 'loss_history'",
     ),
+    (
+        # Measured 2026-10-03 on kernel `training-stage-b` v1: cell 17 died with
+        # MissingStateError naming all six resumable keys because
+        # `sample_answers.py` read a finished checkpoint through the *resume*
+        # path. Restoring the old call is the regression.
+        "M19 inference reads through the resume path again",
+        ROOT / "inference" / "export_browser.py",
+        "    payload = manager.load_for_inference(which)\n",
+        "    payload = manager.load(which)\n",
+        "tests.py.test_checkpoint_inference_read."
+        "TheCallerThatActuallyCrashedUsesTheWeightsReader."
+        "test_load_checkpoint_reads_a_weights_only_run_directory",
+        "MissingStateError",
+    ),
+    (
+        "M20 the inference reader stops requiring the model",
+        CHECKPOINT,
+        "        missing = [k for k in INFERENCE_STATE_KEYS if k not in state]\n",
+        "        missing = []\n",
+        "tests.py.test_checkpoint_inference_read.InferenceReadsWhatResumingRefuses."
+        "test_a_file_missing_the_weights_is_still_refused",
+        "not raised",
+    ),
+    (
+        # The split between the two readers is the whole design. If the
+        # inference keys ever stop being a strict subset of the resume keys,
+        # `load_for_inference` has silently become `load` (or worse, stricter),
+        # and neither reader's tests would notice on their own.
+        # The split between the two readers is the whole design: reading fewer
+        # keys must mean demanding fewer. `INFERENCE_STATE_KEYS =
+        # REQUIRED_STATE_KEYS` would be the direct attack on it, but that
+        # assignment sits *above* `REQUIRED_STATE_KEYS`, so the mutation broke
+        # the module's import and the runner saw `_FailedTest` — it could not
+        # tell a broken guard from a broken test. Demanding the optimizer
+        # reaches the same end state, `load_for_inference` refusing a
+        # weights-only file, which is the v1 bug exactly, without breaking
+        # anything on the way there.
+        "M21 the inference reader starts demanding the optimizer too",
+        CHECKPOINT,
+        'INFERENCE_STATE_KEYS = (\n    "model",\n    "config",\n)\n',
+        'INFERENCE_STATE_KEYS = (\n    "model",\n    "config",\n    "optimizer",\n)\n',
+        "tests.py.test_checkpoint_inference_read.InferenceReadsWhatResumingRefuses."
+        "test_a_weights_only_file_is_readable_for_inference",
+        # Not "not raised": with this mutation `load_for_inference` *does*
+        # raise, just from the line after the `assertRaises` block rather than
+        # inside it, so unittest records it as an ERROR. The evidence is the
+        # exception the v1 run saw.
+        "MissingStateError",
+    ),
 ]
 
 
 def run(target: str) -> tuple[int, str]:
-    proc = subprocess.run(
-        [sys.executable, "-m", "unittest", target, "-v"],
-        cwd=ROOT, capture_output=True, text=True, encoding="utf-8",
-        errors="replace", timeout=900,
-    )
-    return proc.returncode, (proc.stdout + proc.stderr)
+    """Routed through `mutation_env` so the bytecode cache cannot lie."""
+    return mutation_env.run_test(target, "-v", timeout=900)
+
+
 
 
 def main() -> int:
     baseline_code, baseline_out = run("tests.py.test_checkpoint")
+    # Once per run, before the first subprocess: a stale .pyc from an earlier
+    # write is what made these runners report caught mutations as survived.
+    mutation_env.clear_bytecode_caches()
     if baseline_code != 0:
         print("baseline test_checkpoint FAILS before any mutation — fix that first")
         print(baseline_out[-2000:])

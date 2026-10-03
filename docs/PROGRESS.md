@@ -6196,3 +6196,143 @@ reported number. Left to finish rather than restarted, and recorded here.
 
 `npm run test:py` **543** (was 542; +1), `npm test` **533**, 0 failures,
 `npm run build` clean.
+## 2026-10-03, 09:17 — Stage B v1 trained, then died in the cell that shows you the answers
+
+`training-stage-b` v1, 37 minutes, **the training itself succeeded**:
+
+| | |
+|---|---|
+| steps | 3,000 / 3,000 (no wall-clock stop) |
+| gate | **PASS (8.8227 → 0.0143)** |
+| throughput | 11,686 tok/s, 0.701 s/step |
+| supervised | 2,877,407 of 24,576,000 (**11.7%**) |
+| checkpoints | `latest.pt` 454,845,835 B, `best.pt`, steps [2800, 2900, 3000] |
+| init | `initialised from /kaggle/working/stage-a-dl/stage-a/latest.pt (step 42316)` |
+
+The supervised share is **11.7%**, which is what my local dry-run measured
+minutes earlier. The local prediction and the remote run agree, which is the
+point of having measured it locally first.
+
+And the whole Stage A → Stage B chain is now exercised **on a live session**,
+which was the thing every notebook test so far could only approximate: the
+published archive unpacked, `find_stage_a()` found it, the tokenizer was found
+and matched the manifest's generation, and `--init` loaded 37,890,560 weights.
+
+### Defect 4 — a finished checkpoint could not be sampled from
+
+Cell 17 then died:
+
+```
+training.scripts.checkpoint.MissingStateError: latest.pt is missing
+['optimizer', 'scheduler', 'scaler', 'data_cursor', 'loss_history',
+'hyperparameters'] — it was written by a different (or older) trainer and
+resuming from it would silently change the run
+```
+
+`inference/sample_answers.py` → `export_browser.load_checkpoint` → 
+`CheckpointManager.load()`. That strictness is *correct for resuming* — it is
+the guard that caught the v2 staleness defect — but inference wants the weights
+and none of those six keys. So the checkpoint 37 minutes of GPU had just
+produced could not be read for the one job it was written for, and the
+traceback blamed the file's age rather than the caller's choice of entry point.
+
+**Fixed** by adding `CheckpointManager.load_for_inference`, which requires
+`INFERENCE_STATE_KEYS = ("model", "config")` and nothing else, and by pointing
+`export_browser.load_checkpoint` at it. Deliberately does **not** call
+`assert_state_fresh`: staleness is a statement about whether a run can be
+*continued*, and a file that cannot be continued samples perfectly well. It
+still raises for a missing model or config, with a message that says the file
+cannot be sampled from rather than that it was written by an older trainer.
+
+**Verified end to end, not just by unit test**: extracted the real published
+`stage-a-checkpoint.tgz` and ran `sample_answers.py` against it — exit 0, three
+samples. That is the exact call that raised `MissingStateError` before.
+
+`tests/py/test_checkpoint_inference_read.py` (10) covers both halves — a
+weights-only file *is* readable, a file with no weights or no config is still
+refused — plus a test that drives the **real** `export_browser.load_checkpoint`
+against a real run directory. That last one matters: my first version of the
+fix passed 7/7 while leaving the only caller that needed it untouched, and the
+mutation runner reported the guard as UNCAUGHT rather than the test as wrong.
+`tools/mutate_checkpoints.py` **22/22**, with M19 (revert the caller), M20
+(stop requiring the model) and M21 (start demanding the optimizer).
+
+### The mutation scores I had been reporting were partly luck
+
+Worth recording plainly, because it undermines evidence already written down.
+Re-running the sweep after adding a fifth runner, four of them collapsed:
+`mutate_audit` 9/9 → **1/9**, `mutate_watch` 10/10 → **0/10**. The guards were
+untouched. Two independent causes, both found by measurement:
+
+1. **The bytecode cache.** Every runner writes a mutation, runs the named test
+   in a subprocess, and restores — two or three writes per iteration, inside
+   the same second. The test modules load their subject with
+   `spec_from_file_location`, so CPython validates `__pycache__/*.pyc` against
+   source **mtime and size** to one-second resolution. A `.pyc` from an earlier
+   write can satisfy the check for a file that no longer matches it, and the
+   subprocess then tests the *unmutated* code. So a mutation score was partly a
+   measurement of disk speed.
+
+2. **CRLF, caused by my own new runner.** `mutate_audit_stage_b.py` wrote the
+   auditor back with `Path.write_text(...)` and no `newline=""`, which on
+   Windows turns every `\n` into `\r\n`. That silently converted
+   `tools/audit_run_log.py` to CRLF — and `mutate_audit`, `mutate_watch` and
+   `mutate_publish` all read with `newline=""`, so their `\n` anchors stopped
+   matching a file that had not changed in any other way. Eight of nine
+   mutations reported "pattern not found".
+
+The second is the more interesting one: **one tool corrupted another's input,
+and the symptom appeared in a different file than the cause.** A cross-tool
+interference is invisible to any test that only runs one tool.
+
+Fixed by `tools/mutation_env.py`, shared by all seven runners: clear the caches
+once per run, and pass `PYTHONDONTWRITEBYTECODE=1` to every subprocess. Reads
+are now newline-agnostic, so a CRLF working copy can no longer change a score.
+
+**Re-verified twice, identical both passes**: 10/9/22/10/4/4/5 = **64 mutations,
+0 uncaught**. That is the first time a sweep here has been run twice and
+produced the same answer.
+
+### Two more runner defects found while fixing that
+
+- `tools/mutate_stageb_tokenizer.py`'s M1 did `git update-index --force-remove`
+  on the tokenizer and restored only `.gitignore`, so it **left the repository
+  with the tokenizer untracked** and the very next full-suite run failed on the
+  test the runner had just reported as caught. The guard caught it; the runner
+  broke the tree. Restore is now one Python mode that re-adds with `-f`.
+- That restore first used `git add -f … && git checkout …`. The runner splits
+  commands on whitespace rather than using a shell, so `&&` became a pathspec
+  and the whole thing silently did the wrong thing — the same class as the `||`
+  in M1's original setup command. Shell operators are now a documented no-go in
+  these runners.
+
+### C: filled up
+
+The suite then failed **7 failures + 76 errors**, all `OSError: [Errno 28] No
+space left on device`. Not a code defect: C: was at 99% with **1,427 orphaned
+temp directories holding 11 GB** — this project's own leaked test fixtures,
+which `TemporaryDirectory` failed to clean up precisely *because* the disk was
+full. My config-A probes (~9 GB on D:) were the proximate cause. Cleared with the
+user's permission; C: went 2.1 GB → 12 GB free and the suite returned to green.
+
+Worth noting the shape of it: a full disk turns a passing cleanup into a
+failing one, so the leak compounds exactly when it starts to matter.
+
+### The loss number is a warning, not a result
+
+Final loss **0.0143** at 3,000 steps. That is 3.66 epochs over the 6,709,429-
+token stream (2,877,407 supervised against 801,703 per epoch), and a loss
+that low on held-out-looking text is memorisation, not learning. The gate
+PASSes because loss genuinely fell — the gate cannot tell learning from
+memorisation, and nothing in §7.5's criteria asks it to.
+
+**NOT TESTED:** whether the tuned model answers novel questions correctly or
+just recites the SFT set. That needs cell 17 working (now fixed) and actually
+looking at the outputs. Flagged rather than concluded: Stage B's `--steps 3000`
+was chosen before the corpus size was measured with the right tokenizer, and
+this is what that number looks like.
+
+### Counts
+
+`npm run test:py` **566** (was 543; +23), `npm test` **533**, 0 failures,
+`npm run build` clean. Mutation sweep **64/64** across seven runners, twice.

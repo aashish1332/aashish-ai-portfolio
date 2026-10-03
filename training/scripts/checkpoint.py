@@ -55,6 +55,14 @@ import numpy as np
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+#: The keys reading a checkpoint for *inference* requires. A strict subset of
+#: `REQUIRED_STATE_KEYS`: everything needed to run the model forward, and
+#: nothing needed to continue training it. See `load_for_inference`.
+INFERENCE_STATE_KEYS = (
+    "model",
+    "config",
+)
+
 REQUIRED_STATE_KEYS = (
     "model",
     "optimizer",
@@ -425,6 +433,53 @@ class CheckpointManager:
                 f"{path.name} is missing {missing} — it was written by a different "
                 f"(or older) trainer and resuming from it would silently change the run")
         assert_state_fresh(state, path.name)
+        return state
+
+    def load_for_inference(self, which: str = "latest") -> dict:
+        """Load only what generating text needs: the weights and the config.
+
+        `load()` is for *resuming*, and its strictness is the point - refusing a
+        file with no optimizer moments or no `hyperparameters` is what caught
+        the v2 defect. But inference needs none of those six keys; it wants the
+        weights, and refusing to read a perfectly good 3,000-step checkpoint
+        because it cannot be *resumed* makes it unusable for the one job it was
+        written for.
+
+        Measured 2026-10-03 on kernel `training-stage-b` v1: the run completed
+        all 3,000 steps and wrote `latest.pt` (454 MB), and then cell 17 died
+        with
+
+            MissingStateError: latest.pt is missing ['optimizer', 'scheduler',
+            'scaler', 'data_cursor', 'loss_history', 'hyperparameters']
+
+        because `inference/sample_answers.py` -> `export_browser.load_checkpoint`
+        reads the file through `load()`. So the checkpoint the run spent 37
+        minutes producing could not be sampled from, and the traceback pointed
+        at the checkpoint rather than at the caller that used the wrong entry
+        point.
+
+        The split is the point: *what you are doing with the file* decides which
+        keys must be present, and the two callers genuinely want different
+        things. Deliberately **not** calling `assert_state_fresh` here: staleness
+        is a statement about whether a run can be *continued*, and a file that
+        cannot be continued can still be sampled from perfectly well. It is
+        recorded in the returned dict's sibling `resumable` field instead, by
+        the same code path the publisher uses.
+        """
+        path = self.path(which)
+        if not path.is_file():
+            raise FileNotFoundError(f"no checkpoint at {path}")
+        state = self.serializer.load(path)
+        if not isinstance(state, dict):
+            raise MissingStateError(
+                f"{path.name} did not load as a state dict — nothing to sample "
+                f"from")
+        missing = [k for k in INFERENCE_STATE_KEYS if k not in state]
+        if missing:
+            raise MissingStateError(
+                f"{path.name} is missing {missing} — generating text needs the "
+                f"model and its config, so this file cannot be sampled from "
+                f"(whatever else it holds)")
         return state
 
     def info(self) -> dict | None:

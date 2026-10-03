@@ -269,18 +269,174 @@ def _line_of(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
 
 
-def audit(text: str) -> tuple[list[tuple[Claim, str, str]], list[str]]:
-    """Return (per-claim findings, alarm lines). Findings are (claim, kind, detail)."""
+# ── Stage B (§7.4) ──────────────────────────────────────────────────────────
+#
+# Written 2026-10-03 against transcripts this machine actually produced, not
+# against the notebook's source. That distinction is the reason this file exists
+# at all: the Stage A auditor shipped for a night carrying a claim whose
+# evidence string appears nowhere in the training code, and it reported a
+# verified corpus as unverified because of it. Every pattern below was matched
+# against `kaggle-push/stageb-real/session1.txt` and `session2.txt` before being
+# written down here.
+STAGE_B_CLAIMS: list[Claim] = [
+    Claim("instruction data", r"instruction data:\s*([\d,]+) examples",
+          "the §7.4 set was built and its category mix computed"),
+    Claim("config", r"^(\w+): vocab=([\d,]+) d=(\d+) L=(\d+) heads=(\d+)/(\d+)",
+          "which model is being tuned - Stage B is config A on top of Stage A"
+          "'s config A"),
+    Claim("params", r"materialised:\s*([\d,]+) params",
+          "the trained model's size, to check it is the same config Stage A"
+          " produced"),
+    Claim("init loaded", r"initialised from (\S+) \(step (\d+)\)",
+          "Stage B is instruction tuning *of Stage A*, so the run has to say"
+          " which checkpoint it started from and at what step; a Stage B run"
+          " that silently begins from random weights is not stage B at all",
+          alternatives=(
+              (r"no --init[^\n]*",
+               "no --init was passed, so this is a from-scratch run and not"
+               " Stage B"),
+          )),
+    Claim("stream", r"stream:\s*([\d,]+) train / ([\d,]+) val examples "
+                     r"\(([\d,]+) tokens/epoch\)",
+          "the instruction data was split and its size established before"
+          " training, rather than assumed"),
+    Claim("val loss", r"val loss ([\d.]+)[^\n]*",
+          "held-out loss in the same units as the training loss"),
+    Claim("loss series", r"loss: ([\d.]+) → ([\d.]+) over ([\d,]+) steps",
+          "the loop finished and reported a full loss series"),
+    Claim("supervised tokens", r"tokens:\s*([\d,]+) seen this session, "
+                                r"([\d,]+) supervised",
+          "how much of the stream carried loss - §7.4 trains on the answer"
+          " only, so the context and question are masked out"),
+    Claim("gate", r"gate 'loss decreases': (\w+)",
+          "the run's own verdict on whether loss decreased"),
+    Claim("manifest written", r"manifest:\s*(\S+)",
+          "the run manifest exists, which is what the summary cell reads"),
+    Claim("checkpoints saved", r"checkpoints:\s*([^\n]*)",
+          "the checkpoint summary, including which files exist"),
+]
+
+#: Stage B's own derived checks. `schedule annealed` is shared with Stage A
+#: because both trainers print the same step/lr line.
+STAGE_B_DERIVED: list[tuple[str, str]] = [
+    ("schedule annealed",
+     "the learning rate reached ~0 by the end, so the cosine was built over"
+     " this run's span rather than a leftover one"),
+    ("supervision is non-zero",
+     "at least some tokens carried loss. §7.4 trains on the answer only, so a"
+     " mask that supervises nothing produces a run that trains on nothing"
+     " while still printing a falling-looking loss curve"),
+    ("the mask withholds the context",
+     "most of the stream is masked. If nearly every token were supervised the"
+     " mask is not doing its job, and the model would be trained to reproduce"
+     " the context and the question as well as the answer"),
+    ("the init was actually applied",
+     "the first loss sits below what an untrained model of this vocabulary"
+     " scores. A `--init` that loads nothing - a wrong-keys checkpoint, a"
+     " silent fallback - produces exactly the numbers of a from-scratch run"
+     " and no other line in the log distinguishes them"),
+]
+
+#: `MULTILINE` is load-bearing, not tidiness. The Stage B `config` claim is
+#: anchored with `^` because it has to be - `A: vocab=... d=512` is a *shape*
+#: that an unanchored pattern would match inside any other line that happens to
+#: contain those fragments. Measured 2026-10-03: with plain `re.IGNORECASE` and
+#: no `MULTILINE`, `^` matches only at the start of the whole string, so the
+#: claim could never match a line that is not line 1 and reported MISSING on a
+#: transcript that said exactly what it was looking for. Caught only because the
+#: auditor was run against real Stage B output before the claim was trusted.
+_FLAGS = re.IGNORECASE | re.MULTILINE
+
+SUPERVISED_LINE = re.compile(
+    r"tokens:\s*([\d,]+) seen this session, ([\d,]+) supervised \(([\d.]+)%")
+STAGE_B_STEP_LINE = re.compile(
+    r"step\s+(\d+)/(\d+)\s+loss\s+([\d.]+)\s+lr\s+([0-9.]+e[+-]?[0-9]+)")
+VOCAB_LINE = re.compile(r"vocab=([\d,]+)")
+
+#: How far below ln(vocab) the first loss must sit to call the init applied.
+#: MEASURED 2026-10-03, config A, 16,384 vocab, same first batch:
+#:   --init from the published Stage A checkpoint ....... 9.1601
+#:   from scratch (no --init) ........................... 9.7853, 9.8886
+#:   ln(16384) .......................................... 9.7041
+#: so the real gap is 0.63 and the floor is set at 0.25, which clears the
+#: loaded case by a wide margin and still fails the from-scratch one. This
+#: catches a *total* failure to load, not a partial one - a checkpoint whose
+#: keys half-match would land somewhere in between and is not something these
+#: three numbers can separate.
+INIT_APPLIED_MARGIN = 0.25
+
+
+def check_supervision(text: str) -> tuple[str, str]:
+    """Did any token carry loss, and did most of them not?"""
+    match = SUPERVISED_LINE.search(text)
+    if not match:
+        return ("MISSING", "no `tokens: N seen this session, M supervised` line; "
+                           "the supervised count is what says the mask ran")
+    seen, supervised, share = (int(match.group(1).replace(",", "")),
+                               int(match.group(2).replace(",", "")),
+                               float(match.group(3)))
+    detail = (f"{supervised:,} supervised of {seen:,} seen ({share:.1f}%)"
+              f"  (line {_line_of(text, match.start())})")
+    if supervised <= 0:
+        return ("FAILED", detail + " - nothing carried loss, so the mask "
+                                   "supervised nothing and this run trained on "
+                                   "no answer at all")
+    if share >= 90.0:
+        return ("FAILED", detail + " - nearly every token is supervised, so the "
+                                   "mask is not withholding the context and "
+                                   "question that §7.4 masks out")
+    return ("CHECKED", detail)
+
+
+def check_init_applied(text: str) -> tuple[str, str]:
+    """Is the first loss low enough that a pretrained init actually loaded?"""
+    import math
+
+    vocab_match = VOCAB_LINE.search(text)
+    steps = STAGE_B_STEP_LINE.findall(text)
+    if not (vocab_match and steps):
+        return ("MISSING", "needs both a `vocab=` line and at least one "
+                           "step/loss line to compare the first loss against")
+    vocab = int(vocab_match.group(1).replace(",", ""))
+    first = float(steps[0][2])
+    ceiling = math.log(vocab) - INIT_APPLIED_MARGIN
+    detail = (f"first loss {first:.4f} vs an untrained ceiling of "
+              f"{ceiling:.4f} (ln {vocab:,} = {math.log(vocab):.4f} "
+              f"minus {INIT_APPLIED_MARGIN})")
+    if first >= ceiling:
+        return ("FAILED", detail + " - the first loss is at or above what an "
+                                   "untrained model of this vocabulary scores, "
+                                   "so --init loaded nothing and this is a "
+                                   "from-scratch run")
+    return ("CHECKED", detail)
+
+
+STAGE_B_CHECKS = {
+    "schedule annealed": check_annealed,
+    "supervision is non-zero": check_supervision,
+    "the mask withholds the context": check_supervision,
+    "the init was actually applied": check_init_applied,
+}
+
+
+def audit(text: str, claims: list[Claim] | None = None,
+          derived: list[tuple[str, str]] | None = None
+          ) -> tuple[list[tuple[Claim, str, str]], list[str]]:
+    """Return (per-claim findings, alarm lines). Findings are (claim, kind, detail).
+
+    `claims` and `derived` are parameters so Stage B can be read with its own
+    list. The default is Stage A, which is what every existing caller gets.
+    """
     findings = []
-    for claim in CLAIMS:
-        match = re.search(claim.pattern, text, re.IGNORECASE)
+    for claim in (CLAIMS if claims is None else claims):
+        match = re.search(claim.pattern, text, _FLAGS)
         if match:
             detail = " | ".join(g for g in match.groups() if g) or match.group(0)
             detail = f"{detail.strip()[:150]}  (line {_line_of(text, match.start())})"
             findings.append((claim, "FOUND", detail))
             continue
         for alt_pattern, explanation in claim.alternatives:
-            alt = re.search(alt_pattern, text, re.IGNORECASE)
+            alt = re.search(alt_pattern, text, _FLAGS)
             if alt:
                 findings.append(
                     (claim, "ABSENT",
@@ -292,12 +448,12 @@ def audit(text: str) -> tuple[list[tuple[Claim, str, str]], list[str]]:
                              f"no line matching /{claim.pattern}/ and no "
                              f"recorded alternative outcome"))
 
-    for name, why in DERIVED:
-        kind, detail = check_annealed(text)
+    for name, why in (DERIVED if derived is None else derived):
+        kind, detail = STAGE_B_CHECKS[name](text)
         findings.append((Claim(name, "(computed)", why), kind, detail))
 
     alarms = [note for pattern, note in ALARMS
-              if re.search(pattern, text, re.IGNORECASE)]
+              if re.search(pattern, text, _FLAGS)]
     return findings, alarms
 
 
@@ -307,6 +463,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="decoded .txt transcript, or the raw .log")
     ap.add_argument("--quiet", action="store_true",
                     help="print only the counts and anything not FOUND")
+    ap.add_argument("--stage", choices=("a", "b"), default="a",
+                    help="which stage's transcript this is; the claims differ")
     args = ap.parse_args(argv)
 
     if not args.transcript.is_file():
@@ -314,7 +472,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     text = load_text(args.transcript)
-    findings, alarms = audit(text)
+    if args.stage == "b":
+        findings, alarms = audit(text, STAGE_B_CLAIMS, STAGE_B_DERIVED)
+    else:
+        findings, alarms = audit(text)
 
     found = sum(1 for _, kind, _ in findings if kind in ("FOUND", "CHECKED"))
     absent = sum(1 for _, kind, _ in findings if kind == "ABSENT")

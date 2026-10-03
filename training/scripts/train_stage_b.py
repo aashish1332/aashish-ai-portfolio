@@ -309,6 +309,18 @@ def train(args) -> int:
     if args.init:
         init = load_init_weights(model, Path(args.init), cfg)
         print(f"initialised from {init['checkpoint']} (step {init['step']})")
+    else:
+        # Printed, not silent, and for a concrete reason: Stage B *is*
+        # instruction tuning of Stage A, so a run with no --init is a different
+        # experiment wearing the same name, and nothing else in the transcript
+        # distinguishes its output from a real Stage B one. Measured
+        # 2026-10-03: the auditor's alternative outcome for "init loaded" named
+        # a `no --init` line that this trainer never printed, so a from-scratch
+        # run was reported MISSING - a claim looking for evidence that could
+        # not exist. The line now exists, which makes the alternative real
+        # rather than invented.
+        print("no --init passed: training from scratch, NOT instruction-tuned "
+              "from a Stage A checkpoint")
 
     stream = sft.SftStream(examples, tokenizer, block=args.block, batch=args.batch,
                            seed=args.seed)

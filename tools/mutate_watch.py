@@ -19,6 +19,8 @@ Same two rules as `tools/mutate_checkpoints.py`, learned the hard way here:
 
 from __future__ import annotations
 
+import mutation_env
+
 import subprocess
 import sys
 from pathlib import Path
@@ -131,19 +133,28 @@ MUTATIONS: list[tuple[str, Path, str, str, str, str]] = [
 
 
 def run(target: str) -> tuple[int, str]:
-    completed = subprocess.run(
-        [sys.executable, "-m", "unittest", target],
-        cwd=ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace",
-    )
-    return completed.returncode, completed.stdout + completed.stderr
+    """Routed through `mutation_env` so the bytecode cache cannot lie.
+
+    See that module for the measurement: four of these five runners started
+    reporting caught mutations as survived because a stale `__pycache__` entry
+    satisfied the (mtime, size) check for a file that had already been
+    restored. A mutation score taken before this change was partly a
+    measurement of disk speed.
+    """
+    return mutation_env.run_test(target)
+
+
 
 
 def main() -> int:
     caught = uncaught = 0
+    # Once per run, before the first subprocess: a stale .pyc from an earlier
+    # write is what made these runners report caught mutations as survived.
+    mutation_env.clear_bytecode_caches()
     print(f"{len(MUTATIONS)} mutations against {WATCH.name}\n" + "=" * 68)
 
     for label, path, find, replace, target, evidence in MUTATIONS:
-        original = path.read_text(encoding="utf-8", newline="")
+        original = path.read_text(encoding="utf-8")
         if find not in original:
             print(f"\nSKIP  {label}\n      pattern not found in {path.name} "
                   f"- the code moved; update the mutation")

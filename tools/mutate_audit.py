@@ -14,6 +14,8 @@ guard works.
 
 from __future__ import annotations
 
+import mutation_env
+
 import subprocess
 import sys
 from pathlib import Path
@@ -27,7 +29,7 @@ MUTATIONS: list[tuple[str, Path, str, str, str, str]] = [
         "A1 a recorded absence is no longer distinguished from no evidence",
         AUDIT,
         "        for alt_pattern, explanation in claim.alternatives:\n"
-        "            alt = re.search(alt_pattern, text, re.IGNORECASE)\n"
+        "            alt = re.search(alt_pattern, text, _FLAGS)\n"
         "            if alt:\n",
         "        for alt_pattern, explanation in claim.alternatives:\n"
         "            alt = None\n"
@@ -140,23 +142,57 @@ MUTATIONS: list[tuple[str, Path, str, str, str, str]] = [
         # invented rather than read.
         "a transcript with no rates passed the anneal check",
     ),
+    (
+        # The defect this whole suite's newest guard exists for, and the one
+        # that was only ever demonstrated by a throwaway script in the
+        # gitignored scratch directory. Measured 2026-08-03/10-03: the
+        # `cache verified` claim came back MISSING on kernel v3's transcript for
+        # a corpus that had been re-hashed, because its pattern contained
+        # `corpus cache verified` - a phrase that appears NOWHERE in training/,
+        # invented while the claim was being written. Reintroducing it must fail
+        # the source-pinning test, and *only* that test: the claim is otherwise
+        # well-formed, so a suite that cannot tell the two apart would report
+        # the wrong guard as the one doing the work.
+        "A10 an evidence phrase is invented rather than read from the trainer",
+        AUDIT,
+        'Claim("cache verified", r"content sha\\s+(\\w+)"',
+        'Claim("cache verified", r"corpus cache verified[^\\n]*'
+        '|content sha (\\w+)"',
+        "tests.py.test_audit_run_log.ClaimListIsWellFormed."
+        "test_every_evidence_phrase_is_a_line_the_training_code_actually_prints",
+        "the auditor looks for this phrase",
+    ),
 ]
 
 
 def run(target: str) -> tuple[int, str]:
-    completed = subprocess.run(
-        [sys.executable, "-m", "unittest", target],
-        cwd=ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace",
-    )
-    return completed.returncode, completed.stdout + completed.stderr
+    """Routed through `mutation_env` so the bytecode cache cannot lie.
+
+    See that module for the measurement: four of these five runners started
+    reporting caught mutations as survived because a stale `__pycache__` entry
+    satisfied the (mtime, size) check for a file that had already been
+    restored. A mutation score taken before this change was partly a
+    measurement of disk speed.
+    """
+    return mutation_env.run_test(target)
+
+
 
 
 def main() -> int:
     caught = uncaught = 0
+    # Once per run, before the first subprocess: a stale .pyc from an earlier
+    # write is what made these runners report caught mutations as survived.
+    mutation_env.clear_bytecode_caches()
+    # `AUDIT` is also the file the other auditor runner mutates, and that one
+    # rewrote it through `Path.write_text`, which on Windows turns every \n into
+    # \r\n. The anchors above are written with \n, so a CRLF working copy made
+    # eight of these ten report "pattern not found" while the guards were
+    # perfectly intact. Reads are now newline-agnostic on purpose.
     print(f"{len(MUTATIONS)} mutations against {AUDIT.name}\n" + "=" * 68)
 
     for label, path, find, replace, target, evidence in MUTATIONS:
-        original = path.read_text(encoding="utf-8", newline="")
+        original = path.read_text(encoding="utf-8")
         if find not in original:
             print(f"\nSKIP  {label}\n      pattern not found in {path.name} "
                   f"- the code moved; update the mutation")
