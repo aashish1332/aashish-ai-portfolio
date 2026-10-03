@@ -505,6 +505,26 @@ def evaluate(model, batches, device, use_amp) -> float:
     return total / max(1, len(batches))
 
 
+def _gate_detail(verdict: dict) -> str:
+    """What to print after a gate's verdict.
+
+    Measured 2026-10-03 on a short Stage B probe: the gate correctly returned
+    INCONCLUSIVE with a reason — "only 4 steps logged, need 10" — but the line
+    printed `INCONCLUSIVE (None → None)`, because only `first`/`last` were ever
+    formatted and neither exists when the run is too short to have them. That
+    reads like a gate that failed to compute anything, which is a different
+    claim from a gate that declined to rule, and the distinction is the whole
+    point of a gate. So the reason is printed when there is one.
+
+    Same shape as the watcher's "the server returned an empty log" versus "all
+    five fetches failed": two outcomes that look identical on the page and are
+    not the same thing must not share a message.
+    """
+    if verdict.get("reason"):
+        return verdict["reason"]
+    return f"{verdict.get('first')} → {verdict.get('last')}"
+
+
 def loss_verdict(losses: list[float], window: int = 5) -> dict:
     """§7.5's gate: "loss decreases". Compared over equal-size windows."""
     if len(losses) < window * 2:
@@ -530,7 +550,7 @@ def _finish(args, cfg, meta, counts, manager, batcher, losses, verdict, started)
     print(f"throughput: {tokens_per_second:,.0f} tokens/s "
           f"({args.block}x{args.batch} per step)")
     print(f"gate 'loss decreases': {verdict['verdict']} "
-          f"({verdict.get('first')} → {verdict.get('last')})")
+          f"({_gate_detail(verdict)})")
 
     import torch
     manifest = ckpt.write_run_manifest(manager.run_dir, {

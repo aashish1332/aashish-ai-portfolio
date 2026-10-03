@@ -274,6 +274,37 @@ class TheTokenizerTheNotebookNeedsIsCommitted(unittest.TestCase):
         (present / "tokenizer.json").write_text("{}", encoding="utf-8")
         self._run_guard(str(present))  # no SystemExit is the assertion
 
+    def test_the_instruction_data_is_measured_with_that_same_tokenizer(self):
+        # Measured 2026-10-03: cell 7 ran `make_instruction_data --count 40000`
+        # with no `--tokenizer`, and the flag defaults to
+        # `ai/tokenizer/artifacts/seed-1k` — the 1k dev fixture. So the cell
+        # whose comment says "the token count MEASURED with the shipping
+        # tokenizer" was reporting a count from a different vocabulary than the
+        # one Stage B trains with: 10,582,527 tokens against 6,846,206, a 55%
+        # overstatement, and 1,155,200 supervised against 801,703. The cell
+        # above it checks that the Stage A manifest and the tokenizer agree, and
+        # this cell then quietly measured with a third artifact.
+        #
+        # Asserting the variable rather than a literal path, because the point
+        # is that it is the same tokenizer cell 3 found and cell 5 checked.
+        # Per cell, not joined across the notebook: ipynb `source` is a list of
+        # newline-terminated lines, so concatenating the *cells* with "" welds
+        # each cell's last line onto the next cell's first. The first attempt at
+        # this test joined every cell and found no line starting with "!" at
+        # all, which looked like a missing command rather than a parsing
+        # mistake — so it looked for the command inside one cell, where the
+        # lines are what they appear to be.
+        commands = [ln.strip()
+                    for cell in json.loads(NOTEBOOK.read_text(encoding="utf-8"))["cells"]
+                    for ln in cell.get("source", [])
+                    if "make_instruction_data" in ln and ln.strip().startswith("!")]
+        self.assertEqual(len(commands), 1,
+                         "expected exactly one make_instruction_data invocation, "
+                         f"found {commands}")
+        self.assertIn("--tokenizer $TOKENIZER", commands[0],
+                      "cell 7 measures with the tokenizer default (the 1k dev "
+                      "fixture), not the one Stage B trains with")
+
     def test_the_old_cell_only_printed_a_boolean_and_carried_on(self):
         # The regression, pinned as a shape: cell 3 must not go back to
         # reporting the tokenizer's absence without stopping, because that is

@@ -55,8 +55,8 @@ from ai.data import sft  # noqa: E402
 from ai.model import plan  # noqa: E402
 from training.scripts import checkpoint as ckpt  # noqa: E402
 from training.scripts.train_smoke import (  # noqa: E402
-    _assert_schedule_agrees, cosine_with_warmup, have_torch, hyperparameters,
-    loss_verdict, make_scaler, resolve_config, schedule_span,
+    _assert_schedule_agrees, _gate_detail, cosine_with_warmup, have_torch,
+    hyperparameters, loss_verdict, make_scaler, resolve_config, schedule_span,
 )
 
 DEFAULT_SCOPE = ("Stage B — instruction tuning on the §7.4 data: answer from the "
@@ -442,7 +442,7 @@ def _finish(args, cfg, meta, summary, measured, init, manager, losses, verdict,
           f"({supervised_seen / max(1, tokens_seen):.1%} — the rest is context and "
           f"the question, which §7.4 does not train on)")
     print(f"gate 'loss decreases': {verdict['verdict']} "
-          f"({verdict.get('first')} → {verdict.get('last')})")
+          f"({_gate_detail(verdict)})")
 
     import torch
 
