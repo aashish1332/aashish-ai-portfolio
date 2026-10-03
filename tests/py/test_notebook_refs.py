@@ -1322,6 +1322,17 @@ taught us the previous cell was wrong:
         def plant_repo(base: Path) -> None:
             (base / "training" / "notebooks").mkdir(parents=True)
             (base / "package.json").write_text("{}", encoding="utf-8")
+            # The Stage A tokenizer, for the same reason `plant_stage_a` exists
+            # below: cell 3 now stops without it, which is correct, and which
+            # made this test error for a reason that has nothing to do with where
+            # the repository landed. It lives *in the repository* rather than on
+            # the mount — `ai/tokenizer/artifacts/stage-a-16k` was gitignored
+            # until 2026-10-03, which is precisely why no session had it — so it
+            # belongs to the repo fixture and to the archive, not to the mount.
+            tok = base / "ai" / "tokenizer" / "artifacts" / "stage-a-16k"
+            tok.mkdir(parents=True, exist_ok=True)
+            (tok / "tokenizer.json").write_text("{}", encoding="utf-8")
+            (tok / "meta.json").write_text("{}", encoding="utf-8")
 
         def plant_stage_a(mount: Path) -> None:
             """A Stage A checkpoint on the mount, so the cell can get past it.
@@ -1355,6 +1366,7 @@ taught us the previous cell was wrong:
                 with tarfile.open(base / "aashish-ai-portfolio.tgz", "w:gz") as tar:
                     tar.add(staging / "package.json", arcname="package.json")
                     tar.add(staging / "training", arcname="training")
+                    tar.add(staging / "ai", arcname="ai")
 
         started = 0
         for name, path in each_notebook():

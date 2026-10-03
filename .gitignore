@@ -19,10 +19,25 @@ experiments/**/*.safetensors
 # ── Trained tokenizer artifacts ──────────────────────────────────────
 # The small dev fixture artifact is committed on purpose: the Python test
 # suite and `train_smoke.py` read it, so a fresh clone can verify the
-# tokenizer contract without retraining. Real P4+ artifacts (12–16k vocab,
-# larger corpora) are build outputs and stay out.
+# tokenizer contract without retraining.
+#
+# The P4 16k artifact is committed for a different reason, and the earlier
+# reason recorded here was wrong. It said "real P4+ artifacts (12–16k vocab,
+# larger corpora) are build outputs and stay out" — but Stage B initialises
+# from a Stage A checkpoint whose vocabulary *is* this tokenizer, and
+# `train_stage_b.ipynb` read it from `ai/tokenizer/artifacts/stage-a-16k`.
+# Nothing that reaches a Kaggle session carried it: the repository dataset
+# ships `git archive` output, and this path was excluded, so the notebook's
+# cell 3 printed `tokenizer: False`, carried on, and cell 5 died two cells
+# later on a missing `meta.json` — a Stage B fault caused by a missing
+# Stage A artifact. Measured 2026-10-03.
+#
+# So it is a deliverable, not a build output: 1.2 MB, and the exported
+# browser model needs the same file. Regenerating it means rebuilding the
+# whole corpus, which is exactly what a later session cannot do.
 ai/tokenizer/artifacts/*
 !ai/tokenizer/artifacts/seed-1k/
+!ai/tokenizer/artifacts/stage-a-16k/
 
 # ── The exported browser model (§9.3) ────────────────────────────────
 # Build output: `inference/export_browser.py --out ai/model-export/<version>`

@@ -1,0 +1,36 @@
+{
+  "tokenizer_version": "portfolio-bpe-16k-45395d2ebc83",
+  "name": "portfolio-bpe",
+  "vocab_size": 16384,
+  "model_type": "byte-level BPE (our own, trained from scratch)",
+  "normalizer": "NFC",
+  "byte_fallback": true,
+  "unknown_token": null,
+  "special_tokens": [
+    "<|sys|>",
+    "<|ctx|>",
+    "<|user|>",
+    "<|asst|>",
+    "<|end|>",
+    "<|abstain|>"
+  ],
+  "placeholder_count": 63,
+  "spec_hash": "45395d2ebc83",
+  "min_frequency": 2,
+  "corpus": {
+    "files": [
+      "data/processed/stage_a/corpus.txt"
+    ],
+    "bytes": 671243801,
+    "sha256": {
+      "corpus.txt": "5ab13f15a4400b18a70668c0ba27288768d8ec3f41021aa0b3f35075a8fdb3fc"
+    }
+  },
+  "artifact": {
+    "file": "tokenizer.json",
+    "sha256": "a6668f7f5b2f863dd681e9d37d15c62b7df28513f836cda78082c843573076da"
+  },
+  "built_at": "2026-10-01T17:08:36+00:00",
+  "git_commit": null,
+  "python": "3.12.13"
+}

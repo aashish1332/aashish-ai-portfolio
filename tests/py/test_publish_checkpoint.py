@@ -195,5 +195,98 @@ def _tempdir():
     return tempfile.TemporaryDirectory()
 
 
+class TheTokenizerTheNotebookNeedsIsCommitted(unittest.TestCase):
+    """Stage B's other required Stage A input, which was not being shipped.
+
+    Measured 2026-10-03. The repository dataset is a `git archive` of HEAD, and
+    `.gitignore` excluded `ai/tokenizer/artifacts/*` on the stated grounds that
+    "real P4+ artifacts are build outputs and stay out". So no dataset a Kaggle
+    session can see carried `stage-a-16k`, while `train_stage_b.ipynb` read its
+    tokenizer from exactly that path. Cell 3 *printed* `tokenizer: False` and
+    carried on; cell 5 then failed opening a `meta.json` that was never there,
+    two cells later and in a different section, which is what made it read as a
+    Stage B fault.
+
+    Two things are pinned here, because either alone would have let it recur:
+    the artifact is committed, and the notebook now refuses to continue without
+    it rather than printing a boolean.
+    """
+
+    TOKENIZER = "ai/tokenizer/artifacts/stage-a-16k"
+
+    def test_the_artifact_is_in_the_tracked_tree_not_just_on_this_disk(self):
+        # `git archive HEAD` is what ships, so a file that is present in the
+        # working tree but untracked or ignored is a file no session will see.
+        # That distinction is the whole defect, so it is read from git rather
+        # than from the filesystem.
+        import subprocess
+        tracked = subprocess.run(
+            ["git", "ls-files", "ai/tokenizer/artifacts/stage-a-16k"],
+            cwd=ROOT, capture_output=True, text=True, encoding="utf-8").stdout
+        names = {n for n in tracked.split() if n}
+        self.assertEqual(
+            names,
+            {f"ai/tokenizer/artifacts/stage-a-16k/{n}"
+             for n in ("meta.json", "tokenizer.json")},
+            "the Stage A tokenizer is not committed, so `git archive` cannot "
+            "carry it to a Kaggle session and Stage B cannot tokenise")
+
+    def test_the_committed_tokenizer_is_the_one_the_checkpoint_was_trained_with(self):
+        # Cell 5 compares these two and prints the verdict; if they ever drift,
+        # `--init` loads the overlapping keys and trains the rest at random with
+        # no error to notice, so the comparison has to be against the real
+        # artifact rather than a constant in the test.
+        meta = json.loads((ROOT / self.TOKENIZER / "meta.json")
+                          .read_text(encoding="utf-8"))
+        self.assertTrue(meta["tokenizer_version"].startswith("portfolio-bpe-16k"),
+                        "the committed artifact is not the 16k Stage A tokenizer")
+
+    def _run_guard(self, tokenizer_dir):
+        source = "".join(
+            "".join(cell.get("source", []))
+            for cell in json.loads(NOTEBOOK.read_text(encoding="utf-8"))["cells"])
+        start = source.find("if not pathlib.Path(TOKENIZER")
+        end = source.find("print('tokenizer:', True)")
+        self.assertGreater(start, 0, "the notebook no longer checks the tokenizer")
+        self.assertGreater(end, start, "the tokenizer check lost its success line")
+        block = source[start:end + len("print('tokenizer:', True)")]
+        namespace = {"TOKENIZER": tokenizer_dir, "pathlib": pathlib}
+        # The block ends in a print, which is the point of the assertion on its
+        # presence; running it should not scribble `tokenizer: True` over the
+        # test runner's own output.
+        import contextlib
+        import io
+        with contextlib.redirect_stdout(io.StringIO()):
+            exec(compile(block, "train_stage_b cell 3", "exec"), namespace)
+
+    def test_the_notebook_stops_when_the_tokenizer_is_missing(self):
+        empty = Path(self.enterContext(_tempdir()))
+        with self.assertRaises(SystemExit) as caught:
+            self._run_guard(str(empty / "stage-a-16k"))
+        self.assertIn("No tokenizer at", str(caught.exception))
+        self.assertIn("different one loads some keys", str(caught.exception),
+                      "the message must say why a mismatched vocabulary is "
+                      "silent, or a reader treats it as a path typo")
+
+    def test_the_notebook_continues_when_the_tokenizer_is_present(self):
+        present = Path(self.enterContext(_tempdir())) / "stage-a-16k"
+        present.mkdir()
+        (present / "tokenizer.json").write_text("{}", encoding="utf-8")
+        self._run_guard(str(present))  # no SystemExit is the assertion
+
+    def test_the_old_cell_only_printed_a_boolean_and_carried_on(self):
+        # The regression, pinned as a shape: cell 3 must not go back to
+        # reporting the tokenizer's absence without stopping, because that is
+        # exactly how a missing Stage A artifact became a Stage B failure two
+        # cells later.
+        source = "".join(
+            "".join(cell.get("source", []))
+            for cell in json.loads(NOTEBOOK.read_text(encoding="utf-8"))["cells"])
+        self.assertNotIn("print('tokenizer:', pathlib.Path(TOKENIZER", source,
+                         "cell 3 prints the tokenizer check instead of enforcing it")
+        self.assertNotIn("print('tokenizer:', False)", source)
+
+
+
 if __name__ == "__main__":
     unittest.main()
