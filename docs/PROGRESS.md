@@ -6561,3 +6561,72 @@ produces 22× more distinct questions, but nothing measured here shows the model
 *conditions* on the question as a result. That needs Stage B v2 on the
 regenerated set, sampled against the same eight novel prompts for a
 like-for-like comparison against v1's 5 distinct answers.
+
+---
+
+## 2026-10-03 — A mutation runner that was eating my work
+
+### The defect
+
+`tools/mutate_stageb_tokenizer.py` restores the notebook and `.gitignore` with
+`git checkout -- <path>`. That restores to **HEAD**, not to what was on disk when
+the run started, so it discards uncommitted work.
+
+**MEASURED:** a `--steps 500` edit to notebook cell 13, made minutes earlier and
+never committed, was gone after one run of this file. `git status` afterwards
+reported a clean tree. The runner printed **5/5**.
+
+That is the worst shape this can take. Every other runner defect today made a
+mutation score untrustworthy; this one silently deleted work and then reported
+success. Nothing in the output said a byte was lost, and the loss is invisible
+afterwards precisely because the tree looks *cleaner* than it should.
+
+git was used there for a real reason — M1 and M2 are *index* mutations
+(`git update-index --force-remove`) that no file write can undo — but that
+justifies git for the **index**, not for the file. The file half now restores
+from a snapshot taken before the first mutation and handed to the restore
+subprocess through `MUTATE_STAGEB_SNAPSHOT`. Verified end to end: with the
+uncommitted edit in place, `git diff --stat` on the notebook is **identical
+before and after** the run, and 5/5 still holds.
+
+**MEASURED, the fix catching the fix:** Q9 puts `git checkout` back and the new
+guard fails. `tests/py/test_stageb_tokenizer_mutation_runner.py` (9 tests) scans
+*executable* strings via `ast` rather than the raw source — the first version
+failed on the runner's own docstring, which has to name `git checkout` because
+it is the record of why it is banned. A guard that trips on its own explanation
+is a guard nobody will keep.
+
+Also fixed while writing that guard: Q9's evidence phrase was taken from the test
+*name* rather than the assertion's `msg`, so the mutation exited 1 with the
+phrase absent and printed as NOT CAUGHT — "caught for the wrong reason" wearing
+the same clothes as "not caught".
+
+### The Stage B schedule
+
+`--steps 3000 → 500` in cell 13. MEASURED on v1: val loss 0.0182 at step 500
+(0.7 epochs), 0.0151 at step 900, 0.0083 at step 3000. About one epoch was worth
+having; the other six bought under 0.01 of val loss and produced the
+template-reciting behaviour. On the current measured stream of 7,158,788 tokens
+one epoch is ~437 steps, so 500 is ~1.14 epochs. The stale "10.9% carry loss"
+in that cell was also wrong — the measured supervised share is **11.2%**.
+
+### Regenerated §7.4 data
+
+MEASURED with the shipping tokenizer: 7,158,788 tokens (was 6,846,206; the
+carrier text costs ~4.6%), **801,639 supervised (11.2%)**, `distinct_questions`
+**2315** in the manifest, 32,210,147 B. Greeting questions verified still literal
+in the written file — 8 distinct strings, all in `GREETINGS`, none wrapped.
+
+### Counts
+
+`npm run test:py` **605** (was 596; +9), `npm test` **533**, `npm run build`
+clean. Mutation sweep, all nine runners: `mutate_question_variety` **9/9** (was
+8/8), `mutate_stageb_tokenizer` 5/5, `mutate_audit` 10/10, `mutate_audit_stage_b`
+9/9, `mutate_checkpoints` 22/22, `mutate_publish` 4/4, `mutate_sampler_tokenizer`
+5/5, `mutate_watch` 10/10, `mutate_watch_ref` 4/4 — **78/78**.
+
+### Still NOT TESTED
+
+Unchanged and still the point of the next run: whether varied questions make the
+model *condition* on the question. The data is better and the schedule is
+shorter, and neither of those is evidence about generalisation.

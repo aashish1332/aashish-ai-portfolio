@@ -35,6 +35,8 @@ import mutation_env
 ROOT = Path(__file__).resolve().parents[1]
 INSTRUCTION = ROOT / "ai" / "data" / "instruction.py"
 MUTATION_ENV = ROOT / "tools" / "mutation_env.py"
+STAGEB_RUNNER = ROOT / "tools" / "mutate_stageb_tokenizer.py"
+MUTATION_ENV_STAGEB = ROOT / "tools" / "mutate_stageb_tokenizer.py"
 SUITE = "tests.py.test_instruction_question_variety."
 
 #: (label, target file, find, replace, test target, evidence phrase)
@@ -129,6 +131,29 @@ MUTATIONS = [
         "tests.py.test_mutation_env.CheckParsesRejectsTheQ5Shape."
         "test_a_repeated_continuation_line_is_reported",
         "doubled continuation line was accepted",
+    ),
+    (
+        # The 2026-10-03 data-loss defect: `--restore-guard` used
+        # `git checkout -- <notebook>`, which restores to HEAD and so silently
+        # discarded uncommitted work. MEASURED: a `--steps 500` notebook edit
+        # made minutes earlier was gone after one run of the Stage B runner,
+        # with `git status` reporting a clean tree and the runner still printing
+        # 5/5. Putting `git checkout` back must fail the guard, or the fix is
+        # only a habit someone can undo by accident.
+        "Q9 the Stage B runner restores from git again, discarding work",
+        STAGEB_RUNNER,
+        '        target.write_text((snap / which_file).read_text(encoding="utf-8"),\n'
+        '                          encoding="utf-8", newline="")\n'
+        '        if which == "--restore-gitignore":',
+        '        run(["git", "checkout", "--", str(target)])\n'
+        '        if which == "--restore-gitignore":',
+        "tests.py.test_stageb_tokenizer_mutation_runner."
+        "RunnerDoesNotUseGitCheckoutForRestore."
+        "test_no_executable_string_names_checkout",
+        # From the assertion's own `msg`, not the test name: an earlier version
+        # used the name here and this mutation exited 1 without the phrase,
+        # which reads as "not caught" rather than "caught for the wrong reason".
+        "silently discards uncommitted work",
     ),
 ]
 
