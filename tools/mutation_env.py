@@ -51,6 +51,26 @@ def clear_bytecode_caches() -> None:
         shutil.rmtree(directory, ignore_errors=True)
 
 
+def check_parses(source: str, path: Path) -> str | None:
+    """Return the syntax error in `source`, or None if it compiles.
+
+    Added after Q5 in `mutate_question_variety` was reported NOT CAUGHT and
+    four different wrong causes were guessed at — stale bytecode, CRLF, a wrong
+    evidence phrase — before the real one was measured: the replacement text
+    repeated the statement's continuation line, so the mutated module raised
+    IndentationError on import and the guard under test never ran at all.
+
+    A mutation that does not parse still exits non-zero, so a runner keying on
+    the exit code alone scores it as caught. Compiling first is what tells a
+    malformed mutation apart from a guard that genuinely failed to notice one.
+    """
+    try:
+        compile(source, str(path), "exec")
+    except SyntaxError as exc:
+        return f"{type(exc).__name__}: {exc}"
+    return None
+
+
 def run_test(target: str, *extra: str, timeout: int | None = None
              ) -> tuple[int, str]:
     """Run `python -m unittest <target>` and return (exit code, combined output).

@@ -69,6 +69,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tokenizer", type=Path,
                    default=inst.REPO_ROOT / "ai" / "tokenizer" / "artifacts" / "seed-1k",
                    help="tokenizer to measure the real token count with")
+    p.add_argument("--no-vary-questions", action="store_true",
+                   help="keep every question string literal, exactly as the "
+                        "v1 data was (106 distinct strings for 40,000 examples). "
+                        "Off by default; the flag exists so the effect can be "
+                        "measured rather than assumed.")
     p.add_argument("--no-measure", action="store_true",
                    help="skip the measured count (the ESTIMATED figure is then all there is)")
     return p
@@ -101,6 +106,13 @@ def summarise(examples: list[dict], requested: dict) -> dict:
         # number is labelled so it cannot be mistaken for one.
         "tokens_estimated": int(chars / 3.4),
         "token_estimate_method": "ESTIMATED — characters / 3.4; real count needs the P4 tokenizer",
+        # How many *different* questions the set contains, which is not the
+        # same as how many examples it has. Measured 2026-10-03: the v1 set was
+        # 40,000 examples drawn from 106 distinct question strings, about 472
+        # repetitions each, and the model it produced answered three unrelated
+        # questions with one byte-identical reply. This number predicts that;
+        # `examples` does not.
+        "distinct_questions": inst.distinct_questions(examples),
     }
 
 
@@ -214,7 +226,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"refusing: counterfactual share {args.share} is below §7.4's 0.30 minimum")
         return 2
     kb = inst.load_kb(args.kb)
-    examples = inst.generate(kb, args.count, seed=args.seed, counterfactual_share=args.share)
+    examples = inst.generate(kb, args.count, seed=args.seed,
+                             counterfactual_share=args.share,
+                             vary_questions=not args.no_vary_questions)
     summary = summarise(examples, inst.CATEGORY_MIX)
 
     print(f"Stage B instruction data — {summary['examples']} examples, seed {args.seed}")

@@ -6457,3 +6457,107 @@ either.
 
 `npm run test:py` **574** (was 566; +8), `npm test` **533**, `npm run build`
 clean. Mutation sweep now eight runners; `mutate_sampler_tokenizer` **5/5**.
+---
+
+## 2026-10-03 — Question diversity, and a mutation runner that was measuring nothing
+
+### The change
+
+§7.4 drew 40,000 examples from **106 distinct question strings**, mean 472
+repeats each. `ASK_FORMS` (15 English / 10 Hindi / 10 Hinglish carrier phrases)
+and `vary_question()` now wrap each chosen question in a carrier drawn from its
+own language's forms, applied *after* the category logic has picked it, so
+answers, facts, category counts, personas and the counterfactual share are
+untouched. `greeting` stays in `_UNVARYED`: "Last thing, hi:" is not a greeting,
+and a greeting category whose questions read like small talk teaches the wrong
+thing.
+
+**MEASURED** (4,000 examples, seed 1337): distinct questions **106 → 2,315**,
+mean repetitions **471.7 → 21.6**. The most-repeated remaining questions are
+greetings, which is a closed set by design. `--no-vary-questions` reproduces v1's
+data exactly, and `distinct_questions` is recorded in the generated manifest.
+
+### The guard that matters is the second one
+
+Not "does the variety work" — **does the variety change anything it must not**.
+If a future edit moved the wrapping earlier, or into `make_example`, the answers
+would start depending on which carrier phrase was drawn, and the model would be
+taught several different "correct" answers to the same question. Nothing else in
+the suite would notice: the category mix would still add up, the gate would
+still pass, and the manifest would look normal. Q4 and Q5 attack exactly that.
+
+### Q5 was not a failing guard — it was a mutation that did not compile
+
+Q5 sat at 6/7 with `exit 1, phrase 'different context depending' absent`, even
+though applying the same edit by hand produced that exact message. The obvious
+explanations were all wrong, and each was worth ruling out by measurement
+because the runner infrastructure had already lied twice today:
+
+| Guess | Verdict |
+|---|---|
+| stale `.pyc` | already handled by `clear_bytecode_caches()` + `PYTHONDONTWRITEBYTECODE` |
+| CRLF from `write_text` | already handled — this runner passes `newline=""` |
+| wrong evidence phrase | the phrase is in the `assertEqual` `msg`, verbatim |
+
+**Measured cause:** Q5 anchored on the *first* line of a two-line statement and
+supplied a continuation of its own. The original continuation stayed in place
+underneath, so the mutated module raised `IndentationError` on import. The guard
+under test never ran at all — and the mutation still exited non-zero.
+
+That is the dangerous shape: **a runner keying on the exit code alone scores a
+malformed mutation as caught.** Fixed at the source (anchor the whole statement)
+and at the class of bug (`mutation_env.check_parses()` compiles the candidate
+text first and reports the syntax error with its line number, so a malformed
+mutation is never confused with a surviving guard).
+
+The third version of that guess list is the point. The two earlier
+infrastructure defects both looked like broken guards, and this one did too;
+none of them was a broken guard. A runner that reports "NOT CAUGHT" without
+saying *why the mutation produced no evidence* is asking the reader to guess,
+and guessing is what this project keeps paying for.
+
+### New: the check for the check
+
+`check_parses` is infrastructure, and infrastructure that no mutation can reach
+is infrastructure nobody has tested. Q8 mutates it to `return None` for every
+input; the test that reproduces Q5's exact bug shape fails. 8/8.
+
+Found while writing those tests, both by measurement:
+
+- My first reproduction of Q5 duplicated the statement's *first* line, which
+  yields `'[' was never closed`, not `IndentationError` — a test of the wrong
+  bug. The faithful reproduction pins the line number too, because without it a
+  malformed mutation and a moved anchor are the same mystery, which is exactly
+  how Q5 stayed unexplained.
+- `run_test` tests pointed at their own test ids, so each subprocess re-ran the
+  test that spawned it. Unbounded recursion: a 180 s timeout that read as "slow
+  suite". Real targets now come from other modules.
+- `DeliberateFailure` was collected by the module's own discovery and failed it
+  on purpose. Fixtures must be importable at module level (`run_test` takes a
+  dotted *name* and re-resolves it in a fresh subprocess) yet invisible to
+  discovery; `load_tests` is the way, and it is consulted only for module-level
+  loads, so naming a class from another test still works.
+
+`tools/mutate_question_variety.py` now takes a per-mutation target file, because
+Q8 mutates `tools/mutation_env.py` rather than `ai/data/instruction.py`. Its
+originals are cached per file and restored in a `finally` per iteration —
+**MEASURED** after a sweep was killed by the 600 s tool cap mid-restore and left
+`train_stage_b.ipynb` holding the `if True:` mutant: `git status` is the check
+that the tree came back, and a sweep killed partway is not a sweep that passed.
+
+### Counts
+
+`npm run test:py` **596** (was 574; +12 from `tests/py/test_mutation_env.py`),
+`npm test` **533**, `npm run build` clean. Mutation sweep, all nine runners,
+**twice, identical both passes**: `mutate_audit` 10/10, `mutate_audit_stage_b`
+9/9, `mutate_checkpoints` 22/22, `mutate_publish` 4/4, `mutate_question_variety`
+8/8, `mutate_sampler_tokenizer` 5/5, `mutate_stageb_tokenizer` 5/5,
+`mutate_watch` 10/10, `mutate_watch_ref` 4/4 — **77/77**.
+
+### Still NOT TESTED
+
+Whether varied questions actually improve generalisation. The generator now
+produces 22× more distinct questions, but nothing measured here shows the model
+*conditions* on the question as a result. That needs Stage B v2 on the
+regenerated set, sampled against the same eight novel prompts for a
+like-for-like comparison against v1's 5 distinct answers.

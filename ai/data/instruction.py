@@ -743,13 +743,90 @@ def category_plan(count: int) -> list[str]:
     return plan
 
 
+#: Surface forms a question can be wrapped in.
+#:
+#: Measured 2026-10-03 on kernel `training-stage-b` v1, which is why this
+#: exists. The 40,000 §7.4 examples were drawn from **106 distinct question
+#: strings** (MEASURED, seed 1337) — nine abstention questions in English, five
+#: injection attempts, three greetings, three meta questions, and two or three
+#: per topic. Each string therefore appeared about 472 times, and the model
+#: duly learned the mapping from those 106 strings to their answers and nothing
+#: else. On eight hand-written questions it had never seen, it produced **five
+#: distinct answers**, the commonest of them byte-identical across three
+#: unrelated questions. Held-out loss fell to 0.0083, because the held-out
+#: examples share the same templates: the gate passed and the model had
+#: memorised.
+#:
+#: So the *answer* must stay a function of the facts, while the *surface form*
+#: of the question varies. The carrier forms below multiply the question set
+#: without touching a single answer, category, fact or counterfactual rule, and
+#: they are what forces the model to condition on meaning rather than on a
+#: memorised string.
+ASK_FORMS: dict[str, list[str]] = {
+    "en": [
+        "{q}", "Can you tell me: {q}", "Quick question — {q}",
+        "I was reading your site. {q}", "One more thing: {q}",
+        "Could you answer this? {q}", "Out of curiosity, {q}",
+        "Someone asked me: {q}", "Sorry to bother you, but {q}",
+        "From a visitor: {q}", "Just checking — {q}",
+        "A friend wants to know: {q}", "Hypothetically, {q}",
+        "For my notes: {q}", "Last thing, {q}",
+    ],
+    "hi": [
+        "{q}", "क्या आप बता सकते हैं — {q}", "एक छोटा सवाल: {q}",
+        "आपकी साइट पढ़ते हुए: {q}", "बस एक बात पूछनी थी: {q}",
+        "क्या आप इसका जवाब दे सकते हैं? {q}",
+        "एक दोस्त ने पूछा: {q}", "जिज्ञासा हुई: {q}",
+        "मेरे नोट्स के लिए: {q}",
+    ],
+    "hinglish": [
+        "{q}", " bata sakte ho — {q}", "ek chhota sawaal: {q}",
+        "aapki site padhte hue: {q}", "bas ek baat poochni thi: {q}",
+        "kya aap iska jawab de sakte ho? {q}",
+        "ek dost ne pucha: {q}", "jigwasa hui: {q}",
+        "mere notes ke liye: {q}",
+    ],
+}
+
+#: Categories whose question *is* the payload, so wrapping it in a carrier form
+#: would either contradict the category (a greeting inside "last thing, hello:")
+#: or defeat it (an injection attempt buried in a polite preamble stops being
+#: one). These keep their literal strings.
+_UNVARYED = frozenset({"greeting"})
+
+
+def vary_question(question: str, lang: str, rng: random.Random) -> str:
+    """Put a question into one of its language's carrier forms."""
+    forms = ASK_FORMS.get(lang) or ASK_FORMS["en"]
+    form = _pick(rng, forms)
+    return form.format(q=question)
+
+
+def distinct_questions(examples: list[dict]) -> int:
+    """How many different question strings the set actually contains.
+
+    Printed by `make_instruction_data` and recorded in the manifest, because
+    the number that predicts whether a run can generalise is not the example
+    count — it is this one, and until 2026-10-03 nothing reported it. A set of
+    40,000 examples drawn from 106 questions is not 40,000 examples of
+    anything.
+    """
+    return len({q for ex in examples for q, _ in ex.get("turns", [])})
+
+
 def generate(kb: dict, count: int, seed: int = 1337,
-             counterfactual_share: float = 0.35) -> list[dict]:
+             counterfactual_share: float = 0.35,
+             vary_questions: bool = True) -> list[dict]:
     """Build `count` examples with §7.4's mix and counterfactual share.
 
     `counterfactual_share` is ≥0.30 by requirement; the default is 0.35 so
     that the weighted round-robin below cannot drop under 30% after
     rounding.
+
+    `vary_questions` wraps each question in a carrier form (see `ASK_FORMS`).
+    It is a flag so the effect can be turned off and *compared* rather than
+    assumed — which is the only honest way to hold a claim like "this is what
+    makes the model condition on the question".
     """
     if not 0.0 <= counterfactual_share <= 1.0:
         raise ValueError("counterfactual_share must be a fraction")
@@ -758,10 +835,21 @@ def generate(kb: dict, count: int, seed: int = 1337,
     rng.shuffle(plan)
     cf_slots = int(round(count * counterfactual_share))
     cf_set = set(rng.sample(range(count), cf_slots))
-    return [
+    examples = [
         make_example(kb, plan[i], rng, counterfactual=(i in cf_set))
         for i in range(count)
     ]
+    if vary_questions:
+        # One site, after the category logic has chosen the question, so no
+        # answer, fact, category count or counterfactual rule is touched. The
+        # `rng` is shared with `make_example`, so a given seed still reproduces
+        # the whole set exactly.
+        for ex in examples:
+            if ex.get("category") in _UNVARYED:
+                continue
+            ex["turns"] = [(vary_question(q, ex.get("lang", "en"), rng), a)
+                           for q, a in ex["turns"]]
+    return examples
 
 
 def serialise(examples: list[dict]) -> list[str]:
