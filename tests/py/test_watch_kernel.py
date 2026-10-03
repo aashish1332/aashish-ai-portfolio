@@ -332,5 +332,75 @@ class AFailedFetchIsNotAnEmptyLog(WatchKernelCase):
         self.assertIn("EMPTY log", out)
 
 
+class TheWatcherCanWatchAnyKernel(WatchKernelCase):
+    """`--ref` has to reach the API calls, not just the argparse namespace.
+
+    Measured 2026-10-03: Stage B is a different kernel
+    (`aashishkumarrajput/training-stage-b`), and this file named the Stage A one
+    in a module constant used at four separate call sites. That is the same
+    defect as the hardcoded log filename recorded at the top of this file, one
+    layer up: there a wrong constant silently overwrote an irreplaceable log;
+    here it means the new run is never watched at all, and nothing says so.
+
+    Adding the flag is the easy half. The half that actually needed testing is
+    that all four sites moved together — a `--ref` that reached
+    `kernels_status` but not `kernels_logs` would poll one kernel and fetch
+    another, which looks like a working watch right up until the log it saves
+    is the wrong run's. So the fake records the ref it is handed and both calls
+    are asserted on, rather than trusting that four edits were made.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.seen_status = []
+        self.seen_logs = []
+        outer = self
+
+        class FakeApi:
+            def authenticate(self):
+                return None
+
+            def kernels_status(self, ref):
+                outer.seen_status.append(ref)
+                return "COMPLETE"
+
+            def kernels_logs(self, ref):
+                outer.seen_logs.append(ref)
+                return "[]"
+
+        fake = types.ModuleType("kaggle.api.kaggle_api_extended")
+        fake.KaggleApi = FakeApi
+        self._saved = sys.modules.get("kaggle.api.kaggle_api_extended", "<absent>")
+        sys.modules["kaggle.api.kaggle_api_extended"] = fake
+        self.addCleanup(self._restore_kaggle)
+
+    def test_both_api_calls_receive_the_requested_ref(self):
+        ref = "aashishkumarrajput/training-stage-b"
+        code, out = self.run_main("--ref", ref, "--tag", "v1",
+                                  *self.one_poll_window())
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.seen_status, [ref],
+                         "kernels_status polled a different kernel than asked for")
+        self.assertEqual(self.seen_logs, [ref],
+                         "kernels_logs fetched a different kernel's log than the "
+                         "one that was watched, which would save the wrong run")
+
+    def test_the_default_is_still_the_stage_a_kernel(self):
+        # The flag must be optional and must not have quietly changed what an
+        # unadorned invocation watches.
+        code, out = self.run_main("--tag", "v9", *self.one_poll_window())
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.seen_status, [self.wk.REF])
+        self.assertEqual(self.wk.REF, "aashishkumarrajput/training-stage-a-v2")
+
+    def test_the_ref_is_named_in_the_header(self):
+        # The header exists so a stopped watch is distinguishable from a running
+        # one. A watcher pointed at the wrong kernel would defeat that purpose
+        # entirely, so the ref has to be in the first thing it prints.
+        ref = "aashishkumarrajput/training-stage-b"
+        _, out = self.run_main("--ref", ref, "--tag", "v1", *self.one_poll_window())
+        self.assertIn(f"watch {ref}", out)
+
+
 if __name__ == "__main__":
     unittest.main()

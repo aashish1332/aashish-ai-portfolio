@@ -106,14 +106,21 @@ def _free_path(path: Path) -> Path:
     raise RuntimeError(f"no free path beside {path} after 998 tries")
 
 
-def status(api) -> str:
+def status(api, ref: str = REF) -> str:
     """The status as a bare word.
 
     `kernels_status` returns an `ApiGetKernelSessionStatusResponse` in this CLI
     version, whose repr is the whole object — so read its field, and fall back
     to the repr rather than calling `.strip()` on something that has no `strip`.
+
+    `ref` is a parameter rather than the module constant because Stage B is a
+    different kernel (`training-stage-b`), and a watcher welded to one kernel
+    cannot watch the other without editing the file it is meant to keep. Same
+    defect as the hardcoded log filename, one layer up: there, a wrong constant
+    overwrote an irreplaceable log; here, a wrong constant means the new run is
+    never watched at all.
     """
-    raw = api.kernels_status(REF)
+    raw = api.kernels_status(ref)
     for attribute in ("status", "session_status", "kernel_session_status"):
         value = getattr(raw, attribute, None)
         if isinstance(value, str) and value:
@@ -172,6 +179,8 @@ def decode(raw: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--ref", default=REF,
+                    help="kernel to watch, owner/slug - defaults to the Stage A kernel")
     ap.add_argument("--every", type=int, default=120, help="seconds between polls")
     ap.add_argument("--max-minutes", type=float, default=180.0)
     ap.add_argument("--tag", default=None,
@@ -193,14 +202,14 @@ def main(argv: list[str] | None = None) -> int:
     # Resolved once, here, and then *held*. Asking again at write time would
     # let a timestamped name change name mid-watch, so the header would promise
     # one file and the run would deliver another.
-    raw_target, text_target = log_paths(REF, args.tag, args.out)
+    raw_target, text_target = log_paths(args.ref, args.tag, args.out)
 
     deadline = time.time() + args.max_minutes * 60
     # A header, because its absence made a stopped watcher indistinguishable
     # from a running one: the log simply stopped growing, with nothing to say
     # whether the deadline was reached, the process was killed, or the kernel
     # was still going. Every one of those happened on 2026-10-02.
-    print(f"watch {REF}", flush=True)
+    print(f"watch {args.ref}", flush=True)
     print(f"  started   {time.strftime('%Y-%m-%d %H:%M:%S')}", flush=True)
     print(f"  pid       {os.getpid()}", flush=True)
     print(f"  tag       {args.tag or '<timestamp>'}", flush=True)
@@ -224,7 +233,7 @@ def main(argv: list[str] | None = None) -> int:
         # watcher is the only thing standing between a finished kernel and a log
         # that can no longer be fetched. Ride out blips, print them, keep going.
         try:
-            state = status(api)
+            state = status(api, args.ref)
         except Exception as exc:  # noqa: BLE001 - any failure is transient here
             failures += 1
             print(f"[{time.strftime('%H:%M:%S')}] poll {polls}: "
@@ -242,7 +251,7 @@ def main(argv: list[str] | None = None) -> int:
             fetch_failed = ""
             for attempt in range(1, 6):
                 try:
-                    raw = api.kernels_logs(REF)
+                    raw = api.kernels_logs(args.ref)
                     break
                 except Exception as exc:  # noqa: BLE001
                     fetch_failed = f"{exc.__class__.__name__}: {exc}"

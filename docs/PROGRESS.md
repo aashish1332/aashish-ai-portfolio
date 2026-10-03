@@ -5923,3 +5923,172 @@ checks I had around it all passed.
 
 So the standing rule, now paid for four times: **before writing down what a defect
 would look like, run the thing.**
+
+## 2026-10-03, 07:40 — v3 is COMPLETE, and reading its transcript found two defects
+
+Resumed with the watcher dead again (killed at a turn boundary, as its own
+docstring predicts). Queried `kernels_status` directly: **COMPLETE**. Restarted
+the watcher with a 3-minute foreground window, which is the usage its docstring
+recommends, and it pulled the log on poll 1.
+
+### v3, MEASURED
+
+| | |
+|---|---|
+| steps | 42,316 / 42,316 (no wall-clock stop) |
+| wall clock | 27,599.4 s (7.67 h), 0.65 s/step |
+| throughput | 12,560 tok/s (1024x8 per step) |
+| loss | 9.8819 → 2.1772 |
+| gate | PASS (9.8859 → 2.9719, delta −6.9139) |
+| trained tokens | 2,773,221,376 = **73.2 tokens/param** |
+| final LR | 1.07e-10 at step 42,300/42,316 — **100.0% of the run, 0.0000% of peak** |
+| params | 37,890,560 · tokenizer `portfolio-bpe-16k-45395d2ebc83` |
+| corpus | cache verified, content sha `9916a530a6766a59` |
+
+The anneal is the thing v2 got wrong and v3 got right, and it is now measured
+rather than assumed: 1,710 step lines, the last at 100.0% of the run, at
+0.0000% of peak, which is where a cosine built over 42,316 steps actually lands.
+
+The one alarm is `"a warning was emitted"` — all 18 stderr lines are
+nbformat `MissingIDFieldWarning`, pydev frozen-module notices and two nbconvert
+`SyntaxWarning`s from mistune. None are training. **NOT TESTED:** whether any of
+them matters on a rerun.
+
+### Defect 1 — the auditor reported a verified corpus as unverified
+
+`tools/audit_run_log.py` came back **19/20, 1 MISSING** on `cache verified`, on a
+corpus that had plainly been re-hashed. Two defects in one pattern:
+
+1. `content sha` is column-aligned with **four** spaces in `corpus_cache.py`
+   (measured: line 47 of the transcript) and the pattern asked for one.
+2. `corpus cache verified` — the other half of the alternation — **appears
+   nowhere in `training/`**. It was invented while writing the claim.
+
+The second is the generalisable failure and it is the same shape as the
+`throughput\s+` defect found the previous night: a claim written against an
+imagined transcript rather than against output. It survived because every test
+here ran the auditor over a *local smoke* transcript, which has no cache, no
+probe and no STEPS cell — the six claims a local run can establish were tested,
+and the fourteen only a Kaggle session can establish were not.
+
+**Fixed** by pinning every multi-word literal in every claim to a line the
+training code actually prints
+(`test_every_evidence_phrase_is_a_line_the_training_code_actually_prints`).
+The extractor scrubs regex syntax first, then requires each phrase to appear in
+`training/scripts/*.py` or `training/notebooks/*.ipynb`. 12 distinct phrases, 0
+unseen. **Mutation-checked**: reverting the pattern makes it report
+`GONE cache verified | 'corpus cache verified'` and fail, so the guard bites for
+its own reason and not incidentally.
+
+After the fix, v3 audits **20/20, 0 MISSING, 0 FAILED, exit 0.**
+
+### Defect 2 — Stage B could not have tokenised at all
+
+Pulling v3's checkpoint and reading the Stage B notebook found a blocker that
+no test was looking for. `train_stage_b.ipynb` sets
+`TOKENIZER = 'ai/tokenizer/artifacts/stage-a-16k'`, and `.gitignore` excluded
+`ai/tokenizer/artifacts/*` on the stated grounds that *"real P4+ artifacts
+(12-16k vocab, larger corpora) are build outputs and stay out"*.
+
+Nothing that reaches a Kaggle session carried it. The repository dataset is a
+`git archive` of HEAD; the artifact was excluded, so it was in no mount. Cell 3
+**printed** `tokenizer: False` and carried on, and cell 5 then died opening a
+`meta.json` that was never there — two cells later, in a section that does not
+own the fault, so it would have read as a Stage B bug.
+
+The recorded reasoning was wrong in a specific way: it assumed the artifact
+could be regenerated. Regenerating it means rebuilding the whole corpus, which is
+the one thing a later session cannot do. It is a **deliverable** — 1.2 MB, and
+`ai/model-export/` needs the same file.
+
+Verified before committing: the artifact's generation is
+`portfolio-bpe-16k-45395d2ebc83`, **identical** to v3's `RUN_MANIFEST.json`, so
+`--init` and the tokenizer agree. That equality is the check cell 5 performs,
+and it is the one that matters — an `--init` across vocabularies loads the
+overlapping keys and trains the rest at random with no error to notice.
+
+**Fixed** by committing the artifact and making cell 3 **stop** rather than
+print. `tests/py/test_publish_checkpoint.py` 7 → **12**; the new tests read
+`git ls-files` rather than the filesystem, because "present in the working tree"
+and "present in `git archive HEAD`" are different facts and only the second one
+is the defect. `kaggle-push/mutate_stageb_tokenizer.py`: **5/5 caught for the
+right reason**, including a revert of the `.gitignore` rule itself (M1) and a
+guard that raises unconditionally (M5).
+
+`tests/py/test_notebook_refs.py`'s `plant_repo` fixture grew the tokenizer, for
+the same reason `plant_stage_a` already existed: a correct new guard made a test
+error for a reason unrelated to its subject.
+
+### v3's checkpoint is stale, and that is not evidence the fix failed
+
+`verify_checkpoint` on the pulled `latest.pt`: **4 of 11 FAIL** — `keys` missing
+`hyperparameters`, `fresh` (0 optimizer tensors, `last_epoch 0`), `loadable`
+(`StaleStateError`), `schedule` (inferred `grad_accum=2` against a run that
+passed 8). The *identical* defect v2 shipped.
+
+**It is not a failed fix, and the timeline says so.** The watcher recorded v3
+still `RUNNING` at **23:01:39**; the tarball carrying the fix was built at
+**23:01:28** and uploaded after. v3 started before the fix existed, and its
+checkpoint has no `hyperparameters` key at all — the signature of code that
+predates `assert_state_fresh`, since that guard would have *refused to save* the
+file. Proof rather than inference: **the checkpoint's `git_commit` is `None`.**
+
+**The fix was verified the only way that counts** — by running the trainer that
+v3 never ran. A 12-step `train_smoke` run, then `verify_checkpoint` on its
+output with `--config smoke --expect-vocab 1024 --expect-params 1820352`:
+**all 11 checks passed**, with `fresh` reporting *optimizer holds moments for 38
+tensors; scheduler at last_epoch 12*.
+
+Decision taken with the user: **skip the v4 re-run (7.7 h GPU) and start Stage B.**
+Stage B initialises with `--init`, which is weights-only, so the weights are
+sound — only the optimizer state is not, and nothing needs it. The cost is that
+Stage A cannot be *resumed*; the benefit is 7.7 h of weekly quota (~30 h).
+
+### The dataset download-back check, resolved
+
+The check left unfinished last night failed because it looked for
+`aashish-ai-portfolio.tgz` where Kaggle puts **`aashish-ai-portfolio.zip`**. With
+that corrected it passes: remote sha256 `e95cd2d0723e6b2f` = local, 1,376,678 B,
+and `assert_state_fresh`, `REFRESHABLE_STATE` and the 12-key
+`REQUIRED_STATE_KEYS` were confirmed present **inside the remote tarball**, not
+merely in the local one.
+
+Re-uploaded twice after that, each verified by the same download-back:
+`08640b2c543a3c53` (264 members, both fixes) and `2e67b685a3b90460`
+(267 members, **plus the tokenizer**, generation confirmed from the remote copy).
+
+New Kaggle landmine, measured: `dataset_create_version` builds its upload-info
+temp filename by flattening the folder name, so a folder containing `/` raises
+`FileNotFoundError` on `uploads/kaggle-push/dataset-stage_....json`. Pass a
+separator-free path. `publish_checkpoint.py` is unaffected — it shells out to
+the `kaggle` CLI with `-p .` and a `cwd`.
+
+### Stage B launched
+
+`aashishkumarrajput/training-stage-b` **v1**, RUNNING, watcher started at 08:41
+writing `kaggle-push/out/kaggle-training-stage-b-v1.log`.
+
+`tools/watch_kernel.py` had the Stage A ref in a module constant used at **four**
+call sites, so it could not watch Stage B at all without editing the file it
+exists to keep — the same defect as the hardcoded log filename, one layer up.
+Added `--ref`; the half that needed testing was that all four sites moved
+together, because a `--ref` reaching `kernels_status` but not `kernels_logs`
+polls one kernel and saves another's log, which looks like a working watch right
+up until it is not. `tests/py/test_watch_kernel.py` 14 → **17**, asserting on
+the refs the fake API actually receives. `kaggle-push/mutate_watch_ref.py`:
+**4/4 caught for the right reason**.
+
+### Counts
+
+`npm run test:py` **542** (was 533; +9), `npm test` **533**, 0 failures,
+`npm run build` clean. `mutate_audit` **9/9**, `mutate_checkpoints` **19/19**,
+`mutate_watch` **10/10**, `mutate_stageb_tokenizer` **5/5**,
+`mutate_watch_ref` **4/4**.
+
+### Still NOT TESTED
+
+Any notebook on a live Kaggle session — including all of Stage B. The tokenizer
+commit and the cell-3 guard are verified by executing the notebook's own code
+against synthetic mounts, which is the strongest check available offline, and it
+is still not the real thing. `training-stage-b` v1 is the first run that will
+actually exercise it.
