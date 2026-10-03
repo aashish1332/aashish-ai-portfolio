@@ -6092,3 +6092,107 @@ commit and the cell-3 guard are verified by executing the notebook's own code
 against synthetic mounts, which is the strongest check available offline, and it
 is still not the real thing. `training-stage-b` v1 is the first run that will
 actually exercise it.
+## 2026-10-03, 08:50 — Stage B dry-run locally: a third defect, and two claims now measured
+
+Stage B v1 was RUNNING and due to take hours, so the waiting time went on the
+two things that would otherwise only surface *after* the GPU hours: whether the
+instruction data is right, and whether Stage B resumes.
+
+### Defect 3 — the data was measured with the wrong tokenizer
+
+`--pipeline-only` works and cell 7 runs clean, but the run reported
+`measured tokens 10,582,527 (portfolio-bpe-1k-…)`. Cell 7 invokes
+`make_instruction_data --count 40000` with **no `--tokenizer`**, and the flag
+defaults to `ai/tokenizer/artifacts/seed-1k` — the 1k dev fixture.
+
+So the cell whose own comment reads *"the token count MEASURED with the shipping
+tokenizer"* was reporting a count from a **different vocabulary** than the one
+Stage B initialises and trains with. Measured both, same 40k set:
+
+| | 1k (what the cell did) | 16k (shipping) |
+|---|---|---|
+| total tokens | 10,582,527 | **6,846,206** |
+| supervised tokens | 1,155,200 | **801,703** |
+| supervised share | 10.9% | **11.7%** |
+| longest example | 538 | **346** |
+
+A **55% overstatement** of the corpus and 44% of the supervised figure. The note
+in the cell quoted the 1k numbers as the shipping tokenizer's *and drew a
+conclusion from them* — "7,263,195 against a measured 10,582,527, i.e. 31% low".
+Against the real tokenizer the estimate is 7,263,142 vs 6,846,206: **6% HIGH**.
+The sign of the error inverts. So the cell carried a conclusion that was not
+merely imprecise but backwards, and it pointed at a cause ("Hindi and Hinglish
+tokenize near 2.3 characters per token") that the real tokenizer does not
+support.
+
+This is the third instance this week of a claim written against the wrong
+artifact: the `throughput` regex, the invented `corpus cache verified` string,
+and now a tokenizer default that nobody had changed on purpose.
+
+**Fixed** — cell 7 now passes `--tokenizer $TOKENIZER`, the same variable cell 3
+finds and cell 5 checks, and the note is rewritten with the real figures. The
+committed `data/instruction/manifest.json` was regenerated, so the file that
+ships now says `tokens_measured: 6846206` and `supervised_tokens_measured:
+801703`, and its `token_measure_method` string — "MEASURED — encoded with the
+shipping tokenizer" — is finally true rather than aspirational.
+`test_the_instruction_data_is_measured_with_that_same_tokenizer` pins the flag,
+mutation-checked by deleting it.
+
+`sft.jsonl` (31 MB) stayed gitignored; only the two small tracked files changed.
+
+### Two claims the pipeline pass refused to verify, now measured
+
+`--pipeline-only` ends by naming what it did **not** check: *"NOT VERIFIED BY
+THIS PASS: 'the masked loss decreases' and 'the loop resumes'"*, and notes torch
+is installed here so they can be run. They can, so they were:
+
+- **the masked loss decreases** — PASS (9.7046 → 9.3866 over 20 steps), with
+  `tokens: 12,288 seen this session, 1,482 supervised (12.1%)`.
+- **the loop resumes** — session 2 printed `resumed latest.pt at step 12
+  (6,144 tokens, 744 supervised)`, carried the loss history across sessions
+  (`9.7508 → 9.2634 over 20 steps`, spanning both), and **rescaled the cosine to
+  the new span** — lr 2.34e-05 at step 16 of 20, not a restart from peak.
+
+Both are now MEASURED rather than listed as unverified. **NOT TESTED:** either on
+a live session.
+
+Also measured from the pipeline pass, and worth recording because it shapes any
+future scheduling decision: **only 11.7% of the stream is loss-bearing**, and
+*"0/32 rows are all-context windows (they contribute no loss — the 11.7% of the
+stream that is loss-bearing is not spread evenly)"*. One epoch is 6,709,429
+tokens, while cell 13's `3000 × 8 × 1024 × 2` asks for 49,152,000 — about
+**7.3 epochs**. Whether §7.4 intends that many passes over 801,703 supervised
+tokens is a question for the spec, not something to assume; **NOT TESTED**
+whether it overfits.
+
+### An INCONCLUSIVE gate that read as a broken one
+
+A short probe printed `gate 'loss decreases': INCONCLUSIVE (None → None)`. The
+gate was correct — it returns `{"verdict": "INCONCLUSIVE", "reason": "only 8
+steps logged, need 10"}` — but only `first`/`last` were ever formatted, and
+neither exists on a run too short to have them. The `reason` was carried and
+never shown.
+
+That reads as *a gate that failed to compute anything*, which is a different
+claim from *a gate that declined to rule*, and the distinction is the point of a
+gate. `_gate_detail()` now prints the reason when there is one; both trainers
+use it. Verified both ways: 8 steps → `INCONCLUSIVE (only 8 steps logged, need
+10)`, 24 steps → `PASS (9.7046 → 9.2677)`.
+
+Same shape as the watcher's "the server returned an empty log" vs "all five
+fetches failed": two outcomes that look identical on the page must not share a
+message.
+
+### One thing to carry forward
+
+Stage B **v1 was launched at 08:37, before the cell-7 fix.** It has the tokenizer
+commit and the cell-3 guard, so it should reach training; but its
+`RUN_MANIFEST.json` will report the 1k-tokenizer counts. The *training* is
+unaffected — cell 13 passes `--tokenizer $TOKENIZER`, so tokenisation and
+`--init` both use the 16k — so v1's weights are valid and the defect is in a
+reported number. Left to finish rather than restarted, and recorded here.
+
+### Counts
+
+`npm run test:py` **543** (was 542; +1), `npm test` **533**, 0 failures,
+`npm run build` clean.
