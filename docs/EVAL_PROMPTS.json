@@ -4,7 +4,7 @@
   "routedToModel": 41,
   "routedDeterministically": 19,
   "maxNewTokens": 96,
-  "stopIds": {},
+  "stopIds": [4, 3],
   "abstainId": 5,
   "note": "prompts are byte-identical to the client's: quickAnswer → search → contextLines → fitToBudget → frame",
   "prompts": [
