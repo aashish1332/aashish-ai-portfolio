@@ -873,13 +873,27 @@ def make_example(kb: dict, category: str, rng: random.Random,
         ids = list(t.context)
         if counterfactual and "person.name" not in ids:
             ids.insert(0, "person.name")
+        # ONE fact per turn, drawn from this topic. `t.answer()` returned the
+        # topic's WHOLE fact list, and those two-fact answers are the second most
+        # repeated pattern in the corpus after the recruiter frame — 204 of
+        # 4,600 generated answers were exactly `project.volunteer,
+        # project.grocery`. A 37.9M-parameter model fit for 500 steps learns the
+        # most repeated shape fastest, and then emits it on questions it was
+        # never given the facts for: on the §14 suite, 30 of 41 answers named a
+        # fact the retrieved context did not contain, and 11 of 41 stayed inside
+        # it — of those 11, the guard passed 11.
+        pool = [fid for fid in ids if f.value(fid)]
+        if not pool:
+            return make_example(kb, "factual", rng, counterfactual)
+        first, second = (rng.sample(pool, 2) if len(pool) >= 2
+                         else (pool[0], pool[0]))
         q1 = _pick(rng, t.questions.get("en", t.questions["en"]))
-        a1 = t.answer(f, "en", persona)
+        a1 = _answer_about(first, f, "en", persona)
         follow = _pick(rng, ["And where was that again?", "Tell me more about that.",
                              "And which technologies?", "Is there anything else about it?"])
         # the second answer stays within the same context — a follow-up must
         # not silently widen what the model is allowed to say
-        a2 = t.answer(f, "en", persona)
+        a2 = _answer_about(second, f, "en", persona)
         return {"category": category, "lang": "en", "persona": persona,
                 "counterfactual": counterfactual, "context": build_context(f, ids),
                 "turns": [(q1, a1), (follow, a2)]}
@@ -898,8 +912,13 @@ def make_example(kb: dict, category: str, rng: random.Random,
         l1, l2 = rng.sample(["en", "hi", "hinglish"], 2)
         q1 = _pick(rng, t.questions.get(l1) or t.questions["en"])
         q2 = _pick(rng, t2.questions.get(l2) or t2.questions["en"])
-        a1 = t.answer(f, l1, persona)
-        a2 = t2.answer(f, l2, persona)
+        # one fact each, for the same reason as `multi_turn` above
+        p1 = [fid for fid in t.context if f.value(fid)]
+        p2 = [fid for fid in t2.context if f.value(fid)]
+        if not p1 or not p2:
+            return make_example(kb, "factual", rng, counterfactual)
+        a1 = _answer_about(_pick(rng, p1), f, l1, persona)
+        a2 = _answer_about(_pick(rng, p2), f, l2, persona)
         ids = list(dict.fromkeys(t.context + t2.context))
         if counterfactual and "person.name" not in ids:
             ids.insert(0, "person.name")

@@ -269,5 +269,91 @@ class TargetedTableCoversEveryTopic(unittest.TestCase):
             "generation time")
 
 
+class OnlyTheSummaryQuestionGetsAMultiFactAnswer(unittest.TestCase):
+    """**Multi-fact answers teach a shape the model cannot scope.**
+
+    A 37.9M-parameter model fit for 500 steps learns the most repeated pattern
+    fastest, and then emits it on questions it was never given the facts for.
+    Measured on the v3 checkpoint against the §14 suite: 30 of 41 answers named
+    a fact the retrieved context did not contain, and of the 11 that stayed
+    inside it the guard passed **11**. Grounding, not guard strictness, is the
+    whole of the gap.
+
+    So the corpus is measured for how much of it teaches an answer wider than
+    one fact. `recruiter` is the exception and stays: a summary question
+    genuinely wants several facts, and an earlier change that varied it broke
+    the model's termination outright (Stage B v4: 97.6% -> 4.9%). *Varied
+    answer shape* and *learned to stop* are not the same property, so this
+    narrows the wide answers elsewhere rather than reshaping the summary.
+    """
+
+    #: 4,000 generated examples buy ~1,200 multi-turn and ~800 switch answers
+    GENERATE = 4000
+
+    @classmethod
+    def setUpClass(cls):
+        kb = inst.load_kb(None)
+        cls.by_cat = collections.defaultdict(list)
+        for e in inst.generate(kb, cls.GENERATE, seed=1234):
+            cls.by_cat[e["category"]].append(e)
+
+    def _answers(self, category):
+        for e in self.by_cat.get(category, []):
+            for _q, a in e["turns"]:
+                yield a
+
+    def test_multi_turn_answers_name_one_fact(self):
+        answers = list(self._answers("multi_turn"))
+        self.assertGreater(len(answers), 100, "too few examples to judge")
+        wide = [a for a in answers
+                if len(re.findall(r"<\|fact:([^|]+)\|>", a)) > 1]
+        self.assertEqual(
+            wide, [],
+            f"{len(wide)} of {len(answers)} multi-turn answers name more than "
+            f"one fact, e.g. {(wide[0][:70] if wide else '-')!r}. A follow-up "
+            "must stay inside the context it was given")
+
+    def test_language_switch_answers_name_one_fact(self):
+        answers = list(self._answers("language_switch"))
+        self.assertGreater(len(answers), 100, "too few examples to judge")
+        wide = [a for a in answers
+                if len(re.findall(r"<\|fact:([^|]+)\|>", a)) > 1]
+        self.assertEqual(
+            wide, [],
+            f"{len(wide)} of {len(answers)} language-switch answers name more "
+            f"than one fact, e.g. {(wide[0][:70] if wide else '-')!r}")
+
+    def test_the_summary_question_is_still_multi_fact(self):
+        """The counterweight: if this ever empties, the change went too far.
+
+        A summary question is the one place a wider answer is correct, and it is
+        also where the model learned to stop. Removing it wholesale is what broke
+        v4, so its presence is asserted rather than assumed.
+        """
+        answers = list(self._answers("recruiter"))
+        self.assertGreater(len(answers), 100, "too few examples to judge")
+        wide = [a for a in answers
+                if len(re.findall(r"<\|fact:([^|]+)\|>", a)) > 1]
+        self.assertGreater(
+            len(wide), len(answers) // 2,
+            "recruiter summaries have stopped being multi-fact; if that is "
+            "deliberate, say so here rather than losing the stop signal by "
+            "accident")
+
+    def test_no_answer_names_a_fact_its_context_lacks(self):
+        checked = 0
+        for category, examples in self.by_cat.items():
+            for e in examples:
+                context = set(re.findall(r"\[([a-z0-9_.\-]+)\]", e["context"]))
+                for _q, a in e["turns"]:
+                    for fid in re.findall(r"<\|fact:([^|]+)\|>", a):
+                        checked += 1
+                        self.assertIn(
+                            fid, context,
+                            f"{category}: {a[:70]!r} cites {fid} but the "
+                            f"context carries only {sorted(context)}")
+        self.assertGreater(checked, 1000, "the invariant checked almost nothing")
+
+
 if __name__ == "__main__":
     unittest.main()
