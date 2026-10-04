@@ -588,6 +588,16 @@ _FRAMES: dict[str, dict[str, tuple[str, str]]] = {
 }
 
 
+#: How each fact is introduced in a `recruiter` summary. Labels, not a fixed
+#: frame: which facts appear, and in what order, is sampled per example.
+_SUMMARY_LABEL = {
+    "person.name": "Name",
+    "edu.lpu": "Education",
+    "project.volunteer": "Flagship project",
+    "workflow.how-he-builds": "How he builds",
+}
+
+
 def _answer_about(fact_id: str, f: "Facts", lang: str, persona: str) -> str:
     """The answer to a question about exactly one fact, in this language."""
     frames = _FRAMES[fact_id]
@@ -908,15 +918,41 @@ def make_example(kb: dict, category: str, rng: random.Random,
                 "turns": [(q1, a1), (q2, a2)]}
 
     if category == "recruiter":
-        ids = ["person.name", "edu.lpu", "project.volunteer", "workflow.how-he-builds"]
+        pool = ["person.name", "edu.lpu", "project.volunteer",
+                "workflow.how-he-builds"]
+        # **The summary is a random subset, and that is the point.**
+        #
+        # This branch used to emit one fixed four-fact frame, and over 400
+        # examples there were only TWO distinct fact-shapes: the full frame and
+        # `workflow.how-he-builds` alone. A model trained on that memorises the
+        # frame as a shape rather than learning "summarise what you were given",
+        # and then transplants it onto single-fact questions. Measured on the
+        # v3 checkpoint against the 60-case §14 suite: 34 of 41 model answers
+        # named a fact the retrieved context never supplied, and the ones it
+        # reached for were precisely these — `workflow.how-he-builds` in 30,
+        # `edu.lpu` in 21, `project.volunteer` in 19. The guard rejected every
+        # answer of two facts or more (0/26) and passed 12 of 15 single-fact
+        # ones, which is why factual accuracy sat at 11.8% while fact-slot
+        # accuracy on held-out data was 90.8%.
+        #
+        # Sampling the subset, and varying the lead-in, keeps the category doing
+        # its job — a multi-fact answer IS correct when the question asks for a
+        # summary — while denying the model a shape to recite. `build_context`
+        # drops a fact whose value is empty, so the pool is filtered first:
+        # sampling a fact that then vanished from the context would manufacture
+        # exactly the ungrounded answer this change is meant to remove.
+        pool = [fid for fid in pool if f.value(fid)]
         q = _pick(rng, [
             "Give me a quick summary of Aashish.",
             "What kind of developer is he?",
             "Why should we consider him for a full-stack role?",
         ])
-        a = (f"Here is a short summary. Name: {f.ref('person.name')}. "
-             f"Education: {f.ref('edu.lpu')}. Flagship project: {f.ref('project.volunteer')}. "
-             f"{f.ref('workflow.how-he-builds')}")
+        ids = rng.sample(pool, min(len(pool), rng.randint(2, len(pool))))
+        lead = _pick(rng, ["Here is a short summary.", "Quick summary:",
+                           "In brief:", "A summary of his background:",
+                           "Short version:"])
+        a = lead + " " + " ".join(
+            f"{_SUMMARY_LABEL.get(fid, fid)}: {f.ref(fid)}" for fid in ids)
         return {"category": category, "lang": "en", "persona": persona,
                 "counterfactual": counterfactual, "context": build_context(f, ids),
                 "turns": [(q, a)]}
