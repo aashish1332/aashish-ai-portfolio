@@ -437,7 +437,17 @@ function emitPrompts(args) {
        new tokens, so decoding the same prompt with a different budget would
        mean the engine composes a different prompt than the file records. */
     maxNewTokens: args.maxNewTokens,
-    stopIds: defaultStopIds(tokenizer),
+    // `defaultStopIds` returns a **Set**, and `JSON.stringify` writes a Set as
+    // `{}`. The emitted file therefore carried `"stopIds": {}`, and
+    // `grade_answers.py` read it back with `set(payload['stopIds'] or [])` —
+    // an empty stop set. So the offline decoder never stopped at `<|end|>` and
+    // only stopped on the abstain id: answers ran on past their own end token,
+    // repeating uncited facts until the 96-token cap. That put
+    // "unsupported post-guard" at 0% and "factual accuracy" at 2.9% for the
+    // wrong reason — 40 guard failures that a correctly-stopped decode does not
+    // produce. The browser engine was never affected: `ai/engine/index.mjs`
+    // calls `defaultStopIds` directly and keeps a real Set.
+    stopIds: [...defaultStopIds(tokenizer)],
     abstainId: abstainId(tokenizer),
     note: 'prompts are byte-identical to the client\'s: quickAnswer → search → contextLines → fitToBudget → frame',
     prompts,
