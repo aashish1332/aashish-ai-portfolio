@@ -353,8 +353,24 @@ function planFor(kb, det, ctx) {
         sources: list.map((s) => s.id) };
     }
     case 'education': {
+      /* A CGPA/marks question is about the score, not the degree: it cites the
+         achievement fact that carries the metric. The education regex in
+         intent/rules.mjs matches 'cgpa', so without this split every "what is
+         his CGPA?" was answered — and graded (§14 d03/d13/s01, which used to
+         expect `edu.lpu`) — from the institution entry whose *rendered text*
+         happens to contain the score. Right value, wrong fact id, and the
+         model answers one slot for it: `<|fact:ach.lpu-cgpa|>`. The ids stay
+         in one plan so `say` renders them together (answer-text.mjs looks
+         each id up by its own kind and skips what it does not know). */
+      const q = String(ctx.question || '');
+      const scoreQ = /\b(cgpa|gpa|marks?|percentage|grades?|sgpa|सीजीपीए|अंक)\b/i.test(q);
       const ids = (kb.education || []).filter((e) => e.public !== false).map((e) => e.id);
-      return { plan: { kind: 'education', ids }, sources: ids };
+      const cgpa = (kb.achievements || []).find((a) => a.public !== false
+        && (a.metric?.type || '').toLowerCase() === 'cgpa');
+      return {
+        plan: { kind: 'education', ids: scoreQ && cgpa ? [...ids, cgpa.id] : ids },
+        sources: scoreQ && cgpa ? [...ids, cgpa.id] : ids,
+      };
     }
     case 'certifications': {
       const ids = (kb.certifications || []).filter((c) => c.public !== false).map((c) => c.id);

@@ -30,7 +30,7 @@
     "type": "direct",
     "language": "en",
     "question": "What is his CGPA?",
-    "expected_facts": ["edu.lpu"],
+    "expected_facts": ["ach.lpu-cgpa"],
     "forbidden": ["9.5", "3.9", "perfect score"]
   },
   {
@@ -110,7 +110,7 @@
     "type": "direct",
     "language": "hi",
     "question": "उनका CGPA कितना है?",
-    "expected_facts": ["edu.lpu"],
+    "expected_facts": ["ach.lpu-cgpa"],
     "forbidden": ["9.5"]
   },
   {
@@ -341,7 +341,7 @@
     "language": "hi",
     "follows": "What is his CGPA?",
     "question": "उनका CGPA कितना है?",
-    "expected_facts": ["edu.lpu"],
+    "expected_facts": ["ach.lpu-cgpa"],
     "forbidden": []
   },
   {
