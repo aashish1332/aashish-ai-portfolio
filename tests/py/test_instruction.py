@@ -77,15 +77,25 @@ class EvalPromptsAreNotTrainingData(unittest.TestCase):
             "the accuracy number would then measure memorisation of the "
             "eval set, not the skill")
 
-    def test_the_generator_still_emits_third_person_hindi(self):
-        """The fix the leak test is protecting must stay in place."""
-        hi = {q for q, _fid in inst.TARGETS["cgpa"]["hi"]}
-        self.assertTrue(
-            any(q.startswith("उन") for q in hi),
-            f"no third-person Hindi CGPA question left: {sorted(hi)}")
-        # ...and the second-person voice must survive alongside it.
-        self.assertTrue(any(q.startswith("आप") for q in hi),
-                        "the second-person Hindi voice was dropped")
+    def test_the_guard_itself_is_actually_checking_something(self):
+        """A leak test that cannot fail is worse than none.
+
+        This exists because the guard above was written to protect a change
+        that v9's probe then MEASURED as a regression (d13/s01 drifted
+        further, 45 and 36 tokens against v8's ~25), so that change was
+        reverted. The guard stays - it is still right - but it must be shown
+        to catch a planted leak, or it is only decoration.
+        """
+        # Plant an actual §14 question into a training table, and require the
+        # guard to notice.
+        eval_q = next(q for _c, q in self._eval_questions())
+        original = inst.ABSTENTION_QUESTIONS["en"]
+        inst.ABSTENTION_QUESTIONS["en"] = original + [eval_q]
+        try:
+            with self.assertRaises(AssertionError):
+                self.test_no_eval_question_is_in_the_training_tables()
+        finally:
+            inst.ABSTENTION_QUESTIONS["en"] = original
 
 
 class Mix(unittest.TestCase):
