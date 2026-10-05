@@ -839,6 +839,145 @@ def choose_topic(rng: random.Random, counterfactual: bool) -> Topic:
     return _pick(rng, TOPICS)
 
 
+#: The fact kinds a list-style question draws from. d05 and d06 on the §14
+#: suite ask for exactly these kinds ("Which databases does he know?", "List
+#: his technical skills") and expect 3–5 ids each, but no pre-v7 example ever
+#: taught a list-shaped answer — and the topics only target `skill.python`,
+#: `skill.react` and `skill.mysql` individually, so the other 30 skill facts
+#: never appeared in any training answer at all. A kind with fewer than two
+#: public facts cannot form a list and is filtered at use; `exp` has one fact
+#: today and joins in automatically if the portfolio ever adds another.
+_LIST_KINDS = ["skill", "cert", "ach", "exp", "project"]
+
+#: `{fact kind: {lang: (first-person frame, third-person frame)}}` for the
+#: joined-list answer, `{v}` taking the `_conj`-joined placeholder list. One
+#: sentence per list, in the shape `_topic_skills` has always trained — a
+#: per-fact sentence chain would need frames for all 33 skills (most have
+#: none) and would make the list end depend on which sentence came last.
+_LIST_FRAMES: dict[str, dict[str, tuple[str, str]]] = {
+    "skill": {
+        "en": ("I work with {v}.", "He works with {v}."),
+        "hi": ("मैं {v} जैसी तकनीकों पर काम करता हूँ।", "वे {v} जैसी तकनीकों पर काम करते हैं।"),
+        "hinglish": ("Main {v} jaise technologies pe kaam karta hoon.",
+                     "Wo {v} jaise technologies pe kaam karte hain."),
+    },
+    "cert": {
+        "en": ("My certifications: {v}.", "His certifications: {v}."),
+        "hi": ("मेरे पास {v} सर्टिफिकेट हैं।", "उनके पास {v} सर्टिफिकेट हैं।"),
+        "hinglish": ("Mere paas {v} certificates hai.",
+                     "Unke paas {v} certificates hai."),
+    },
+    "ach": {
+        "en": ("My academic record: {v}.", "His academic record: {v}."),
+        "hi": ("मेरा शैक्षणिक रिकॉर्ड: {v}।", "उनका शैक्षणिक रिकॉर्ड: {v}।"),
+        "hinglish": ("Mera academic record: {v}.", "Unka academic record: {v}."),
+    },
+    "exp": {
+        "en": ("My training: {v}.", "His training: {v}."),
+        "hi": ("मेरी प्रशिक्षण: {v}।", "उनकी प्रशिक्षण: {v}।"),
+        "hinglish": ("Meri training: {v}.", "Unki training: {v}."),
+    },
+    "project": {
+        "en": ("My projects: {v}.", "His projects: {v}."),
+        "hi": ("मेरे प्रोजेक्ट्स: {v}।", "उनके प्रोजेक्ट्स: {v}।"),
+        "hinglish": ("Mere projects: {v}.", "Unke projects: {v}."),
+    },
+}
+
+
+def _list_questions(kind: str) -> dict[str, list[str]]:
+    """Questions that ask for *every* fact of one kind — one pool per kind.
+
+    This is a **placeholder for a measured defect, not a variety claim**: the
+    question strings are "/(db|database|skill|tech|certif|project)/i" regex
+    bait hand-copied from how the §14 cases ask for lists ("What databases
+        does he know?", "uske technical skills kya hai?"), and nothing here
+    measures whether they cover the real phrasings visitors type. `make_
+    seed_corpus` has the same gap and it was only found because v6's answers
+    missed a list question — treat this pool as the smallest fix that makes
+    list answers *trainable at all*, not as coverage evidence.
+    """
+    return {
+        "skill": {
+            "en": ["Which technologies does he use?", "List his technical skills.",
+                   "What skills does he have?"],
+            "hi": ["उनके टेक्निकल स्किल्स क्या हैं?", "वे कौन सी तकनीकें उपयोग करते हैं?"],
+            "hinglish": ["uske technical skills kya hai?", "kaun si technologies use karta hai?",
+                         "skills list karo"],
+        },
+        "cert": {
+            "en": ["Which certifications does he hold?", "List his certificates."],
+            "hi": ["उनके पास कौन से सर्टिफिकेट हैं?"],
+            "hinglish": ["uske certifications kya hai?", "certificates batao"],
+        },
+        "ach": {
+            "en": ["What are his academic achievements?", "List his achievements."],
+            "hi": ["उनकी शैक्षणिक उपलब्धियाँ क्या हैं?"],
+            "hinglish": ["uske achievements kya hai?", "marks aur grades batao"],
+        },
+        "exp": {
+            "en": ["What training has he done?", "List his training programs."],
+            "hi": ["उन्होंने कौन से प्रशिक्षण पूरे किए हैं?"],
+            "hinglish": ["uski training kya hai?", "bootcamp batao"],
+        },
+        "project": {
+            "en": ["Which projects has he built?", "List his projects."],
+            "hi": ["उन्होंने कौन से प्रोजेक्ट बनाए हैं?"],
+            "hinglish": ["uske projects kya hai?", "projects batao"],
+        },
+    }[kind]
+
+
+def _example_list_answer(kb: dict, f: "Facts", lang: str, persona: str,
+                         counterfactual: bool, rng: random.Random) -> dict:
+    """A question whose correct answer is EVERY fact of one kind in the
+    context — the d05/d06 shape.
+
+    The most-cited reason a visitor asks this is a recruiter scanning for a
+    stack, so the answer must be complete relative to the context: exactly
+    the facts the context carries of the one kind, no fewer, no extras. The
+    narrowing to a single kind is the scoping signal — the model has to read
+    the question to know *which* kind to enumerate, just as `_answer_about`
+    makes it read the question to know *which* fact.
+
+    List order is **deterministic** (`sorted(ids)`), the items are joined
+    with `_conj` in the sentence's own language, and the whole list rides in
+    one `_LIST_FRAMES` sentence — the shape the skills topic has trained
+    since v1 without a termination incident. A subset is sampled rather than
+    emitting all 33 skills: the §14 cases expect 3–5 item lists, and a
+    context-plus-answer carrying every skill would approach the 1,024-token
+    training block and risk the window split that cuts `<|end|>` off the
+    supervision — the mechanism that broke v4's termination.
+
+    Counterfactual examples deliberately fall through to the factual shape:
+    a list whose values were swapped would repeat each fake value in the
+    same slot as the truth — more literal-text exposure of exactly the
+    filler ("Northfield University") the v6 checkpoint recited on questions
+    whose context named no university.
+    """
+    if counterfactual:
+        return make_example(kb, "factual", rng, counterfactual)
+    facts = index_facts(kb)
+    by_kind: dict[str, list[str]] = {}
+    for fid, e in facts.items():
+        if e["kind"] in _LIST_KINDS and f.value(fid):
+            by_kind.setdefault(e["kind"], []).append(fid)
+    listable = [k for k in _LIST_KINDS if len(by_kind.get(k, [])) >= 2]
+    if not listable:
+        return make_example(kb, "factual", rng, counterfactual)
+    kind = _pick(rng, listable)
+    pool = sorted(by_kind[kind])
+    ids = sorted(rng.sample(pool, min(len(pool), rng.randint(4, 8))))
+    q = _pick(rng, _list_questions(kind).get(lang) or _list_questions(kind)["en"])
+    first, third = _LIST_FRAMES[kind].get(lang) or _LIST_FRAMES[kind]["en"]
+    frame = first if persona == "first" else third
+    a = frame.format(v=_conj([f.ref(fid) for fid in ids], lang))
+    return {"category": "other", "lang": lang, "persona": persona,
+            "counterfactual": counterfactual,
+            "context": build_context(f, ids),
+            "turns": [(q, a)]}
+
+
 def make_example(kb: dict, category: str, rng: random.Random,
                  counterfactual: bool = False) -> dict:
     fake = counterfactual_values(kb, rng) if counterfactual else {}
@@ -952,19 +1091,21 @@ def make_example(kb: dict, category: str, rng: random.Random,
                 "counterfactual": counterfactual, "context": build_context(f, ["person.name"]),
                 "turns": [(q, SAFE_REPLY.get(lang) or SAFE_REPLY["en"])]}
 
-    # "other": meta / identity / comparison
-    if rng.random() < 0.5:
+    # "other": meta / identity / comparison / multi-fact lists
+    if rng.random() < 1 / 3:
         q = _pick(rng, META_QUESTIONS.get(lang) or META_QUESTIONS["en"])
         return {"category": "other", "lang": lang, "persona": persona,
                 "counterfactual": counterfactual, "context": build_context(f, ["person.name"]),
                 "turns": [(q, META_ANSWER)]}
-    q = _pick(rng, ["Which project should I look at first?", "Compare the projects."])
-    a = (f"Start with {f.ref('project.volunteer')}; it is the most complete, and "
-         f"{f.ref('project.grocery')} is the second.")
-    return {"category": "other", "lang": "en", "persona": persona,
-            "counterfactual": counterfactual,
-            "context": build_context(f, ["project.volunteer", "project.grocery"]),
-            "turns": [(q, a)]}
+    if rng.random() < 0.5:
+        q = _pick(rng, ["Which project should I look at first?", "Compare the projects."])
+        a = (f"Start with {f.ref('project.volunteer')}; it is the most complete, and "
+             f"{f.ref('project.grocery')} is the second.")
+        return {"category": "other", "lang": "en", "persona": persona,
+                "counterfactual": counterfactual,
+                "context": build_context(f, ["project.volunteer", "project.grocery"]),
+                "turns": [(q, a)]}
+    return _example_list_answer(kb, f, lang, persona, counterfactual, rng)
 
 
 def category_plan(count: int) -> list[str]:
