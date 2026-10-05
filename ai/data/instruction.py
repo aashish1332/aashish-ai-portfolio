@@ -556,19 +556,19 @@ _FACTUAL_TOPICS = 3
 #: context would have to guess which framing was meant.
 _FRAMES: dict[str, dict[str, tuple[str, str]]] = {
     "person.name": {
-        "en": ("My name is {v}.", "His name is {v}."),
-        "hi": ("मेरा नाम {v} है।", "उनका नाम {v} है।"),
-        "hinglish": ("Mera naam {v} hai.", "Unka naam {v} hai."),
+        "en": ("My name is {v}", "His name is {v}"),
+        "hi": ("मेरा नाम {v} है", "उनका नाम {v} है"),
+        "hinglish": ("Mera naam {v} hai", "Unka naam {v} hai"),
     },
     "edu.lpu": {
-        "en": ("I study at {v}.", "He studies at {v}."),
-        "hi": ("मैं {v} में पढ़ता हूँ।", "वे {v} में पढ़ते हैं।"),
-        "hinglish": ("Main {v} se padhai karta hoon.", "Wo {v} se padhte hain."),
+        "en": ("I study at {v}", "He studies at {v}"),
+        "hi": ("मैं {v} में पढ़ता हूँ", "वे {v} में पढ़ते हैं"),
+        "hinglish": ("Main {v} se padhai karta hoon", "Wo {v} se padhte hain"),
     },
     "ach.lpu-cgpa": {
-        "en": ("My CGPA is {v}.", "His CGPA is {v}."),
-        "hi": ("मेरा CGPA {v} है।", "उनका CGPA {v} है।"),
-        "hinglish": ("Mera CGPA {v} hai.", "Unka CGPA {v} hai."),
+        "en": ("My CGPA is {v}", "His CGPA is {v}"),
+        "hi": ("मेरा CGPA {v} है", "उनका CGPA {v} है"),
+        "hinglish": ("Mera CGPA {v} hai", "Unka CGPA {v} hai"),
     },
     "skill.python": {
         "en": ("I write Python.", "He writes Python."),
@@ -589,24 +589,24 @@ _FRAMES: dict[str, dict[str, tuple[str, str]]] = {
                      "Wo relational data ke liye MySQL use karte hain."),
     },
     "project.volunteer": {
-        "en": ("My main project is {v}.", "His main project is {v}."),
-        "hi": ("मेरा मुख्य प्रोजेक्ट {v} है।", "उनका मुख्य प्रोजेक्ट {v} है।"),
-        "hinglish": ("Mera main project {v} hai.", "Unka main project {v} hai."),
+        "en": ("My main project is {v}", "His main project is {v}"),
+        "hi": ("मेरा मुख्य प्रोजेक्ट {v} है", "उनका मुख्य प्रोजेक्ट {v} है"),
+        "hinglish": ("Mera main project {v} hai", "Unka main project {v} hai"),
     },
     "project.grocery": {
-        "en": ("I also built {v}.", "He also built {v}."),
-        "hi": ("मैंने {v} भी बनाया।", "उन्होंने {v} भी बनाया।"),
-        "hinglish": ("Maine {v} bhi banaya.", "Unhone {v} bhi banaya."),
+        "en": ("I also built {v}", "He also built {v}"),
+        "hi": ("मैंने {v} भी बनाया", "उन्होंने {v} भी बनाया"),
+        "hinglish": ("Maine {v} bhi banaya", "Unhone {v} bhi banaya"),
     },
     "contact.email": {
-        "en": ("Email me at {v}.", "Email him at {v}."),
-        "hi": ("मुझे {v} पर ईमेल करें।", "उन्हें {v} पर ईमेल करें।"),
-        "hinglish": ("Mujhe {v} pe email karo.", "Unhe {v} pe email karo."),
+        "en": ("Email me at {v}", "Email him at {v}"),
+        "hi": ("मुझे {v} पर ईमेल करें", "उन्हें {v} पर ईमेल करें"),
+        "hinglish": ("Mujhe {v} pe email karo", "Unhe {v} pe email karo"),
     },
     "link.github": {
-        "en": ("My GitHub is {v}.", "His GitHub is {v}."),
-        "hi": ("मेरा GitHub {v} है।", "उनका GitHub {v} है।"),
-        "hinglish": ("Mera GitHub {v} hai.", "Unka GitHub {v} hai."),
+        "en": ("My GitHub is {v}", "His GitHub is {v}"),
+        "hi": ("मेरा GitHub {v} है", "उनका GitHub {v} है"),
+        "hinglish": ("Mera GitHub {v} hai", "Unka GitHub {v} hai"),
     },
     "workflow.how-he-builds": {
         "en": ("How I build: {v}", "How he builds: {v}"),
@@ -614,16 +614,16 @@ _FRAMES: dict[str, dict[str, tuple[str, str]]] = {
         "hinglish": ("Mera tareeka: {v}", "Unka tareeka: {v}"),
     },
     "cert.dbms": {
-        "en": ("I hold the {v} certificate.", "He holds the {v} certificate."),
-        "hi": ("मेरे पास {v} सर्टिफिकेट है।", "उनके पास {v} सर्टिफिकेट है।"),
-        "hinglish": ("Mere paas {v} certificate hai.",
-                     "Unke paas {v} certificate hai."),
+        "en": ("I hold the {v} certificate", "He holds the {v} certificate"),
+        "hi": ("मेरे पास {v} सर्टिफिकेट है", "उनके पास {v} सर्टिफिकेट है"),
+        "hinglish": ("Mere paas {v} certificate hai",
+                     "Unke paas {v} certificate hai"),
     },
     "exp.mern-bootcamp": {
-        "en": ("I completed {v}.", "He completed {v}."),
-        "hi": ("मैंने {v} पूरा किया है।", "उन्होंने {v} पूरा किया है।"),
-        "hinglish": ("Maine {v} complete kiya hai.",
-                     "Unhone {v} complete kiya hai."),
+        "en": ("I completed {v}", "He completed {v}"),
+        "hi": ("मैंने {v} पूरा किया है", "उन्होंने {v} पूरा किया है"),
+        "hinglish": ("Maine {v} complete kiya hai",
+                     "Unhone {v} complete kiya hai"),
     },
 }
 
