@@ -29,6 +29,65 @@ from training.scripts import make_instruction_data as cli  # noqa: E402
 KB = inst.load_kb()
 
 
+class EvalPromptsAreNotTrainingData(unittest.TestCase):
+    """No §14 eval question may appear verbatim in the training corpus.
+
+    **Why this test exists.** Adding third-person Hindi questions to
+    `TARGETS` is the right fix for the v8 HI regression (§14's d13/s01 ask
+    "उनका CGPA कितना है?" while every Hindi entry was second-person), and it
+    is also the easiest way to cheat: typing that one exact question into the
+    training table would make the model answer it, and the §14 accuracy
+    number would go up without the model having learned anything it could
+    not already do. Nothing else in the repo would catch that - there is no
+    leak test - so this one does.
+
+    Short questions are exempt because a 2-word Hindi question like "नाम
+    बताओ" is ordinary phrasing that a visitor would type anyway, and a
+    substring match on those would be noise rather than signal.
+    """
+
+    #: Below this many characters a question is common phrasing, not a case.
+    MIN_LEN = 12
+
+    def _eval_questions(self):
+        ev = json.loads(
+            (ROOT / "evaluation" / "portfolio_tests.json").read_text(encoding="utf-8"))
+        for case in ev:
+            q = (case.get("question") or "").strip()
+            if len(q) >= self.MIN_LEN:
+                yield case.get("id"), q
+
+    def test_no_eval_question_is_in_the_training_tables(self):
+        questions = set()
+        for topic in inst.TARGETS.values():
+            for qs in topic.values():
+                questions.update(q for q, _fid in qs)
+        for qs in inst.ABSTENTION_QUESTIONS.values():
+            questions.update(qs)
+        questions.update(inst.INJECTION_QUESTIONS)
+        for kind in inst._LIST_FRAMES:
+            for lang in ("en", "hi", "hinglish"):
+                questions.update(inst._list_questions(kind).get(lang) or [])
+
+        offenders = [(cid, q) for cid, q in self._eval_questions()
+                     if q in questions]
+        self.assertEqual(
+            offenders, [],
+            f"§14 question(s) {[q for _c, q in offenders]} are training data; "
+            "the accuracy number would then measure memorisation of the "
+            "eval set, not the skill")
+
+    def test_the_generator_still_emits_third_person_hindi(self):
+        """The fix the leak test is protecting must stay in place."""
+        hi = {q for q, _fid in inst.TARGETS["cgpa"]["hi"]}
+        self.assertTrue(
+            any(q.startswith("उन") for q in hi),
+            f"no third-person Hindi CGPA question left: {sorted(hi)}")
+        # ...and the second-person voice must survive alongside it.
+        self.assertTrue(any(q.startswith("आप") for q in hi),
+                        "the second-person Hindi voice was dropped")
+
+
 class Mix(unittest.TestCase):
     def test_plan_matches_the_spec_percentages_exactly(self):
         plan = inst.category_plan(1000)
