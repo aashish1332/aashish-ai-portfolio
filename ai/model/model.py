@@ -296,7 +296,7 @@ class LlamaForCausalLM(nn.Module):
         self.model.embed_tokens = value
 
     def forward(self, input_ids, labels=None, cache=None, position_offset: int = 0,
-                attention_mask=None):
+                attention_mask=None, class_weights=None):
         hidden = self.model(input_ids, cache=cache, position_offset=position_offset,
                             attention_mask=attention_mask)
         logits = self.lm_head(hidden)
@@ -306,10 +306,24 @@ class LlamaForCausalLM(nn.Module):
             # ignore_index=-100 is what §7.4's assistant-only loss masking uses.
             # float32 cross-entropy only here: upcasting *all* logits would
             # double the LM head's memory (16384 vocab × T × B) for nothing.
+            #
+            # `class_weights` is an optional per-vocab-entry weight, passed
+            # straight to cross_entropy's `weight`. MEASURED reason it exists:
+            # on the v8 checkpoint, p(<|end|>) one position past a finished,
+            # correct answer is 0.000-0.014, and three corpus levers (v9 Hindi
+            # coverage, v10 stop-at-slot, v11 varied summary continuations)
+            # all failed to lift it. <|end|> IS in the supervised mask on
+            # 300/300 examples, so this is not a masking bug - it is the
+            # usual imbalance problem, where the cheapest way to cut loss is
+            # to keep predicting the frequent content tokens. A weight on the
+            # stop class is the standard remedy (weighted cross-entropy; see
+            # also arXiv 2609.11029 on token-importance rebalancing). It is
+            # None by default so every existing objective is byte-identical.
             loss = F.cross_entropy(
                 logits[:, :-1].float().reshape(-1, logits.shape[-1]),
                 labels[:, 1:].reshape(-1),
                 ignore_index=-100,
+                weight=class_weights,
             )
         return {"logits": logits, "loss": loss, "hidden": hidden}
 

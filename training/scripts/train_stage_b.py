@@ -53,6 +53,7 @@ if __package__ in (None, ""):
 
 from ai.data import sft  # noqa: E402
 from ai.model import plan  # noqa: E402
+from ai.tokenizer import spec  # noqa: E402
 from training.scripts import checkpoint as ckpt  # noqa: E402
 from training.scripts.train_smoke import (  # noqa: E402
     _assert_schedule_agrees, _gate_detail, cosine_with_warmup, have_torch,
@@ -299,6 +300,19 @@ def train(args) -> int:
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     device = torch.device(args.device)
+
+    # Per-class cross-entropy weights. Only the stop class is weighted, and
+    # only when asked: a weight of 1.0 leaves the objective byte-identical,
+    # which is what every earlier checkpoint and test relied on.
+    class_weights = None
+    if args.stop_weight != 1.0:
+        end_id = tokenizer.encode(spec.END_TOKEN).ids[0]
+        class_weights = torch.ones(cfg.vocab_size, device=device,
+                                   dtype=torch.float32)
+        class_weights[end_id] = float(args.stop_weight)
+        print(f"  stop weight {args.stop_weight} on <|end|> (id {end_id}); "
+              f"all other classes 1.0")
+
     model = build(cfg, device)
     actual = model.param_count()
     if actual != counts["total"]:
@@ -400,7 +414,7 @@ def train(args) -> int:
         stream.supervised_consumed += int((y != sft.IGNORE_INDEX).sum())
 
         with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=use_amp):
-            out = model(x, labels=y)
+            out = model(x, labels=y, class_weights=class_weights)
             loss = out["loss"] / args.grad_accum
         scaler.scale(loss).backward()
         if (step + 1) % args.grad_accum == 0:
@@ -522,6 +536,13 @@ def build_parser() -> argparse.ArgumentParser:
                     help="lower than Stage A's 3e-4 on purpose: see the module docstring")
     ap.add_argument("--warmup", type=int, default=10)
     ap.add_argument("--weight-decay", type=float, default=0.1)
+    ap.add_argument("--stop-weight", type=float, default=1.0,
+                    help="extra cross-entropy weight on the <|end|> class. "
+                         "MEASURED reason it exists: on v8, p(<|end|>) one "
+                         "position past a finished, correct answer is "
+                         "0.000-0.014 and three corpus levers (v9/v10/v11) "
+                         "failed to lift it. 1.0 leaves the objective "
+                         "unchanged.")
     ap.add_argument("--clip", type=float, default=1.0)
     ap.add_argument("--seed", type=int, default=1337)
     ap.add_argument("--device", default="cuda" if _cuda() else "cpu")
