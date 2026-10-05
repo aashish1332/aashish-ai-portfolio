@@ -635,6 +635,65 @@ def _answer_about(fact_id: str, f: "Facts", lang: str, persona: str) -> str:
     return (first if persona == "first" else third).format(v=f.ref(fact_id))
 
 
+#: The recruiter summary, as an ORDERED list of (connective, fact id) pairs.
+#:
+#: WHY THIS IS DATA AND NOT A CONSTANT. v8 emitted a byte-identical summary on
+#: every one of its 400 recruiter turns, so the text following the `edu.lpu`
+#: slot was `" Flagship project:"` in 400/400 cases. Measured on the v8
+#: checkpoint, one position past a finished and correct gold answer,
+#: `p(<|end|>)` is **0.000** on d04 while `" Flagship"` holds 0.658; across six
+#: cases it never exceeded 0.014. Asked "Where does he study?" the model
+#: answers correctly and then faithfully continues with the summary — which is
+#: what 8 of v8's 23 failures literally are. The model learned the bigram
+#: correctly; the corpus taught it that an answer is followed by more answer.
+#:
+#: So the summary is still MULTI-FACT — a summary question genuinely wants
+#: several facts, and `test_the_summary_question_is_still_multi_fact` holds it
+#: to that. What changes is that no single continuation follows any given
+#: slot: the fact order, the connective wording and the preamble are all
+#: drawn per example, so `<|end|>` after a slot is no longer the minority
+#: outcome. This is deliberately NOT the change that broke v4 (see the note
+#: on `MixAnswersAreOneFact`): v4 varied the summary's answer SHAPE, and
+#: termination collapsed 97.6% -> 4.9%. Varying which words join the slots,
+#: while keeping the shape a summary, is the narrower claim this evidence
+#: supports — and it is falsifiable the same way, by `p(<|end|>)`.
+_RECRUITER_FACTS = ["person.name", "edu.lpu", "project.volunteer",
+                    "workflow.how-he-builds"]
+
+#: `{(fact id, its position in `_RECRUITER_FACTS`): [connective, ...]}`. The
+#: connective PRECEDES its own fact, so what follows any given slot is a
+#: different draw every time rather than one fixed string.
+_RECRUITER_LEADS: dict[tuple[str, int], list[str]] = {
+    ("person.name", 0): ["Name:", "He's", "This is", "The name is"],
+    ("edu.lpu", 1): ["Education:", "He studied", "His degree is",
+                     "He went to"],
+    ("project.volunteer", 2): ["Flagship project:", "His main build is",
+                               "He shipped", "The centrepiece is"],
+    ("workflow.how-he-builds", 3): ["How he works:", "His workflow:",
+                                    "On process:", "He builds by"],
+}
+
+_RECRUITER_PREAMBLES = [
+    "Here is a short summary.",
+    "Quick summary.",
+    "In brief:",
+    "The short version:",
+    "Summary:",
+    "",
+]
+
+
+def _recruiter_summary(f: "Facts", rng: random.Random) -> str:
+    """One multi-fact recruiter summary, varied in order and connective."""
+    order = list(range(len(_RECRUITER_FACTS)))
+    rng.shuffle(order)
+    parts = [_pick(rng, _RECRUITER_PREAMBLES)]
+    for pos in order:
+        fid = _RECRUITER_FACTS[pos]
+        parts.append(f"{_pick(rng, _RECRUITER_LEADS[(fid, pos)])} {f.ref(fid)}.")
+    return " ".join(p for p in parts if p)
+
+
 #: `{topic name: {lang: [(question, the fact it targets), ...]}}`
 #:
 #: **This table exists because of a measured failure.** Stage B v1 and v2 both
@@ -1112,9 +1171,7 @@ def make_example(kb: dict, category: str, rng: random.Random,
             "What kind of developer is he?",
             "Why should we consider him for a full-stack role?",
         ])
-        a = (f"Here is a short summary. Name: {f.ref('person.name')}. "
-             f"Education: {f.ref('edu.lpu')}. Flagship project: {f.ref('project.volunteer')}. "
-             f"{f.ref('workflow.how-he-builds')}")
+        a = _recruiter_summary(f, rng)
         return {"category": category, "lang": "en", "persona": persona,
                 "counterfactual": counterfactual, "context": build_context(f, ids),
                 "turns": [(q, a)]}

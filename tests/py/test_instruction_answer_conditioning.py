@@ -355,5 +355,90 @@ class OnlyTheSummaryQuestionGetsAMultiFactAnswer(unittest.TestCase):
         self.assertGreater(checked, 1000, "the invariant checked almost nothing")
 
 
+class NoFactSlotHasOneDominantContinuation(unittest.TestCase):
+    """What follows a slot must not be a single learnable string.
+
+    MEASURED on the v8 checkpoint (2026-10-05). v8's recruiter frame was
+    byte-identical on all 400 of its turns, so in **400/400** of them the text
+    after the `edu.lpu` slot was `" Flagship project:"`. Teacher-forcing a
+    finished, correct gold answer and reading the next position:
+
+        d04  p(<|end|>) = 0.000   top-1 " Flagship"  p = 0.658
+        d11  p = 0.001   i03  p = 0.001   d07  p = 0.002
+        d13  p = 0.004   d19  p = 0.014
+
+    The model had learned the bigram correctly; the corpus had taught it that
+    an answer is followed by more answer. 8 of v8's 23 graded failures are that
+    continuation verbatim ("Flagship project: ..." emitted after a correct
+    education answer).
+
+    So the invariant is about the CONTINUATION, not the answer's shape. A
+    summary is still multi-fact (`test_the_summary_question_is_still_multi_fact`
+    holds that); what must not hold is one fact slot always being followed by
+    the same words. That is the claim v11 makes and this is what would catch it
+    regressing.
+    """
+
+    GENERATE = 4000
+
+    @classmethod
+    def setUpClass(cls):
+        kb = inst.load_kb(None)
+        cls.examples = [
+            e for e in inst.generate(kb, cls.GENERATE, seed=1234)
+            if e["category"] == "recruiter"
+        ]
+        cls.summaries = [a for e in cls.examples for _q, a in e["turns"]]
+        # A counterfactual summary replaces some slots with LITERAL fabricated
+        # values (§7.2 reserves placeholders so the model never types a fake
+        # URL), so it carries fewer `<|fact:...>` tokens by design and that is
+        # true of v8 as well. The shape guarantee is about the real-fact ones.
+        cls.real_summaries = [
+            a for e in cls.examples if not e["counterfactual"]
+            for _q, a in e["turns"]
+        ]
+
+    def _continuations(self):
+        """`fact id -> Counter(text that follows that slot)`."""
+        by_fact = collections.defaultdict(collections.Counter)
+        for answer in self.summaries:
+            for m in re.finditer(r"<\|fact:([^|]+)\|>", answer):
+                tail = answer[m.end():].lstrip()
+                by_fact[m.group(1)][tail[:40]] += 1
+        return by_fact
+
+    def test_no_slot_has_one_continuation_above_the_others(self):
+        by_fact = self._continuations()
+        self.assertGreater(
+            len(self.summaries), 100, "too few summaries to judge")
+        for fid, counter in sorted(by_fact.items()):
+            total = sum(counter.values())
+            top_text, top_n = counter.most_common(1)[0]
+            share = top_n / total
+            self.assertLess(
+                share, 0.60,
+                f"{share:.1%} of the {total} summaries continue {fid} with "
+                f"{top_text!r}. One dominant continuation is what left "
+                f"p(<|end|>) at 0.000 on v8 — vary the connective instead")
+
+    def test_the_summaries_are_still_all_multi_fact(self):
+        """Varying the continuation must not quietly shrink the summary."""
+        self.assertGreater(len(self.real_summaries), 100,
+                           "too few real-fact summaries to judge")
+        for answer in self.real_summaries:
+            self.assertGreaterEqual(
+                len(re.findall(r"<\|fact:([^|]+)\|>", answer)), 2,
+                f"a recruiter summary dropped to one fact: {answer[:70]!r}")
+
+    def test_the_summaries_are_not_all_identical(self):
+        """The v8 shape, asserted directly so it cannot come back."""
+        distinct = len(set(self.summaries))
+        self.assertGreater(
+            distinct, len(self.summaries) // 4,
+            f"only {distinct} distinct summaries out of "
+            f"{len(self.summaries)}; the byte-identical frame is what "
+            f"taught the model that answers continue")
+
+
 if __name__ == "__main__":
     unittest.main()
