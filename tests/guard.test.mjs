@@ -25,6 +25,7 @@ import {
   GUARD_CODES, guard, guardedAnswer, languageMatches, numberKey, numbersIn,
   extractClaims, urlKey, normalizeClaim, containsTerm, contextText,
   buildVocabulary, defaultAllowlist, shortenContext, isoMonthNumbers,
+  clipToGroundedSentences,
 } from '../ai/guard/index.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -342,4 +343,65 @@ test('GUARD-32: an empty vocabulary is a blind spot, and the suite names it', ()
   const sighted = guard('He is strong in Python and Communication.', { context: CONTEXT, kb: KB });
   assert.equal(blind.ok, true, 'without a vocabulary the entity check is inert');
   assert.equal(sighted.ok, false, 'with the real vocabulary it fires');
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   CLIP — the trailing-content clip (§8.4 companion, added 2026-10-06)
+
+   v8's commonest failing shape is the CORRECT answer followed by run-on
+   template content (three of 23 failing rows; probe-selection-v8.txt).
+   The clip returns the longest sentence-prefix that passes the FULL guard
+   so a trailing fabrication costs the tail, not the whole answer. The
+   rules being pinned: clean answers are untouched, a mid-answer
+   fabrication is untouched (no clean prefix exists), and decimals are
+   never sentence boundaries — the naive split produced `8.` + `28.` and
+   was caught by smoke test, not by reading.
+   ═══════════════════════════════════════════════════════════════ */
+
+const CLIP_CTX = '[ach.lpu-cgpa] CGPA 8.28 at the university [skill.python] Python';
+const clipOpts = { kb: REAL_KB, lang: 'en' };
+
+test('CLIP-1 a fully grounded answer comes back unchanged and unflagged', () => {
+  const answer = 'His CGPA is 8.28. He works in Python.';
+  const out = clipToGroundedSentences(answer, CLIP_CTX, clipOpts);
+  assert.deepEqual(out, { text: answer, clipped: false, dropped: null });
+});
+
+test('CLIP-2 the ungrounded tail is dropped; the kept prefix passes the guard whole', () => {
+  const answer = 'His CGPA is 8.28. He also scored 99.7 percentile in JEE and worked at Google.';
+  const out = clipToGroundedSentences(answer, CLIP_CTX, clipOpts);
+  assert.equal(out.clipped, true);
+  assert.equal(out.text, 'His CGPA is 8.28.');
+  assert.equal(out.dropped, 'He also scored 99.7 percentile in JEE and worked at Google.');
+  assert.equal(guard(out.text, { context: CLIP_CTX, kb: REAL_KB, lang: 'en' }).ok,
+    true, 'the kept text must stand on its own under the full guard');
+});
+
+test('CLIP-3 a decimal is not a sentence boundary', () => {
+  /* the bug the first regex had: `8.` + `28.` made the first "sentence"
+     fail its own number check, so nothing ever clipped */
+  const out = clipToGroundedSentences(
+    'His CGPA is 8.28. He also scored 99.7 percentile.', CLIP_CTX, clipOpts);
+  assert.equal(out.clipped, true);
+  assert.equal(out.text, 'His CGPA is 8.28.');
+});
+
+test('CLIP-4 a mid-answer fabrication is untouched (no clean prefix)', () => {
+  const answer = 'He built 47 apps. His CGPA is 8.28. He also speaks French.';
+  const out = clipToGroundedSentences(answer, CLIP_CTX, clipOpts);
+  assert.deepEqual(out, { text: answer, clipped: false, dropped: null });
+});
+
+test('CLIP-5 the danda ends a Hindi sentence and the language check holds', () => {
+  const answer = 'उनका CGPA 8.28 है। उन्होंने 99.7 पर्सेंटाइल हासिल किया।';
+  const out = clipToGroundedSentences(answer, CLIP_CTX, { kb: REAL_KB, lang: 'hi' });
+  assert.equal(out.clipped, true);
+  assert.equal(out.text, 'उनका CGPA 8.28 है।');
+  assert.equal(guard(out.text, { context: CLIP_CTX, kb: REAL_KB, lang: 'hi' }).ok,
+    true, 'the kept Hindi sentence must pass the guard in Hindi');
+});
+
+test('CLIP-6 a single-sentence answer is never clipped', () => {
+  const out = clipToGroundedSentences('He scored 99.7 percentile.', CLIP_CTX, clipOpts);
+  assert.deepEqual(out, { text: 'He scored 99.7 percentile.', clipped: false, dropped: null });
 });

@@ -31,6 +31,7 @@ import {
   MAX_INTENT_FACTS, partialAnswer,
 } from '../ai/answers/model.mjs';
 import { quickAnswer, renderFact } from '../evaluation/answer-text.mjs';
+import { languageMatches } from '../ai/guard/index.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const KB = JSON.parse(readFileSync(join(HERE, '..', 'knowledge', 'knowledge.json'), 'utf8'));
@@ -289,8 +290,20 @@ test('MODEL-9 every refusal exists in three languages and states no fact', () =>
     /* `partial` is the one thing that is neither: it is the model's own words,
        unfinished, and unguarded — the guard runs when generation ends — so it
        may not claim the verification the model badge claims. */
-    if (key === 'partial') assert.ok(!/NO ANSWER/.test(badge), 'a partial is not a refusal');
-    else assert.match(badge, /NO ANSWER/, key);
+    if (key === 'partial') {
+      assert.ok(!/NO ANSWER/.test(badge), 'a partial is not a refusal');
+      /* `planner` is the other: a deterministic list answer (§5.1, measured
+         2026-10-06). It IS an answer, but the model did not produce the
+         words, so its badge must say where the words came from instead of
+         claiming either an AI answer or a refusal. */
+    } else if (key === 'planner') {
+      assert.match(badge, /ANSWER/, key);
+      assert.match(badge, /PORTFOLIO/, key);
+      assert.ok(!/AI ANSWER|ON-DEVICE|NO ANSWER/.test(badge),
+        'the planner badge must claim neither the model nor a refusal');
+    } else {
+      assert.match(badge, /NO ANSWER/, key);
+    }
   }
 });
 
@@ -523,3 +536,112 @@ test('MODEL-14 a prompt that overflows the window is impossible, not an error th
     const renders = src.match(/renderFact\(kb, id/g) || [];
     assert.ok(renders.length >= 1, 'the intent fallback stopped filtering ids');
   });
+
+/* ═══════════════════════════════════════════════════════════════
+   PLANNER — deterministic list answers (added 2026-10-06)
+
+   The multi-fact eval rows (d05/d06/d07/d08/d16/d18/i02/i05) score ZERO
+   passes at v8 and four training levers are measured falsifications
+   (v9–v12, notebook cell 13). The probes (probe-selection-v8.txt) show
+   the composition was never learned at 37.9M. So the answerer now
+   answers LIST intents deterministically, worded over placeholder
+   tokens and resolved through `resolveFacts` — the same rendering path
+   as the model's text. These tests pin the honesty rules that make
+   that a floor and not a regression to the retired Quick Answers:
+   only list intents, only enumerable plans, the model's session never
+   asked, the model badge never claimed, and one vocabulary round-trip
+   through the shipped corpus frames.
+   ═══════════════════════════════════════════════════════════════ */
+
+test('PLANNER-1 a skills question is answered deterministically without the model', async () => {
+  const session = stubSession({ text: 'THE MODEL MUST NOT BE ASKED' });
+  const answerer = answererWith(session);
+  const out = await answerer.ask({
+    question: 'What are his skills?', lang: 'en',
+    intentIds: ['skill.python'], plan: { kind: 'skills', ids: ['skill.python', 'skill.react'] },
+  });
+  assert.equal(out.kind, 'planner');
+  assert.equal(session.calls.length, 0, 'the session was asked for a list answer');
+  assert.match(out.text, /He works with /);
+  assert.ok(out.text.includes('Python') && out.text.includes('React'), out.text);
+  assert.ok(!/HTML|<\|fact:/.test(out.text), 'every placeholder must resolve');
+  assert.equal(out.abstained, false);
+  assert.deepEqual(out.sources, ['skill.python', 'skill.react']);
+});
+
+test('PLANNER-2 a project list answers in Hindi: Devanagari frame, fully resolved text', async () => {
+  /* The corpus's list answers name values by PLACEHOLDER and the shipped
+     pipeline resolves them after the guard (the same shape v8's graded
+     single-project answers took), so the language check that matters is on
+     the pre-resolution frame — which is what `deterministicListAnswer`
+     builds, with the corpus's own Hindi list frame and `और`. */
+  const { deterministicListAnswer } = await import('../ai/answers/model.mjs');
+  const frame = deterministicListAnswer(KB, 'list_projects',
+    { kind: 'list_projects',
+      ids: ['project.volunteer', 'project.grocery', 'project.goaltracker'] }, 'hi');
+  assert.match(frame, /उनके प्रोजेक्ट्स: .*।/);
+  assert.ok(frame.includes('और'), 'the conjunction is Hindi, not "and"');
+  assert.equal(languageMatches(frame, 'hi'), true,
+    'the Hindi frame must carry Devanagari (§8.3)');
+
+  const answerer = answererWith(stubSession({ text: 'NO' }));
+  const out = await answerer.ask({
+    question: 'उन्होंने कौन से प्रोजेक्ट बनाए हैं?', lang: 'hi',
+    plan: { kind: 'list_projects',
+      ids: ['project.volunteer', 'project.grocery', 'project.goaltracker'] },
+  });
+  assert.equal(out.kind, 'planner');
+  assert.ok(!/<\|fact:/.test(out.text), 'every placeholder resolved for display');
+  assert.deepEqual(out.sources,
+    ['project.volunteer', 'project.grocery', 'project.goaltracker']);
+});
+
+test('PLANNER-3 the experience list includes the availability fact (§ enum completeness)', async () => {
+  const answerer = answererWith(stubSession({ text: 'NO' }));
+  const out = await answerer.ask({
+    question: 'What has his experience been?', lang: 'en',
+    plan: { kind: 'experience', ids: ['exp.mern-bootcamp'],
+      availabilityId: 'contact.availability' },
+  });
+  assert.equal(out.kind, 'planner');
+  assert.ok(out.text.includes('Open to internships'), out.text);
+  assert.ok(out.text.includes('MERN'), out.text);
+});
+
+test('PLANNER-4 a non-list plan falls through to the model unchanged', async () => {
+  const session = stubSession({ text: ' CGPA 8.28 <|end|>' });
+  const answerer = answererWith(session);
+  const out = await answerer.ask({
+    question: ANSWERABLE, lang: 'en',
+    intentIds: ['ach.lpu-cgpa'],
+    plan: { kind: 'education', ids: ['ach.lpu-cgpa'] },
+  });
+  assert.equal(out.kind, 'model', 'a non-list plan must reach the model');
+  assert.equal(session.calls.length, 1);
+});
+
+test('PLANNER-5 a withheld fact in the plan refuses instead of answering', async () => {
+  const withheld = JSON.parse(JSON.stringify(KB));
+  (withheld.skills || []).forEach((s) => { if (s.id === 'skill.python') s.public = false; });
+  const session = stubSession({ text: 'NO' });
+  const answerer = createModelAnswerer({ kb: withheld, session, maxNewTokens: 48 });
+  const out = await answerer.ask({
+    question: 'What are his skills?', lang: 'en',
+    plan: { kind: 'skills', ids: ['skill.python', 'skill.react'] },
+  });
+  assert.notEqual(out.kind, 'planner', 'a withheld item must not be enumerated');
+});
+
+test('PLANNER-6 the deterministic text survives the shipped guard unchanged', async () => {
+  const { guard, contextText } = await import('../ai/guard/index.mjs');
+  const answerer = answererWith(stubSession({ text: 'NO' }));
+  const out = await answerer.ask({
+    question: 'Which certifications does he hold?', lang: 'en',
+    plan: { kind: 'certifications',
+      ids: (KB.certifications || []).filter((c) => c.public !== false).map((c) => c.id) },
+  });
+  assert.equal(out.kind, 'planner');
+  const ctx = contextText(out.sources.map((id) => ({ id, text: renderFact(KB, id, 'en') })));
+  const verdict = guard(out.text, { context: ctx, kb: KB, lang: 'en' });
+  assert.equal(verdict.ok, true, JSON.stringify(verdict.violations));
+});

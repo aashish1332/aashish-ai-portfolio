@@ -393,15 +393,18 @@ full §8.4 check. Rules that keep it honest:
   for the caller to log — the panel shows the model's own grounded prefix,
   which is more truthful than either an essay or a refusal. */
 
-/** Sentence boundaries for en/hi/hinglish: `.`, `!`, `?` and `।`, keeping
- *  the punctuation on the sentence. */
-const CLIP_SENTENCE_RE = /[^.!?\u0964]+[.!?\u0964]+\s*|[^.!?\u0964]+$/g;
+/** Sentence boundaries for en/hi/hinglish: a `.`, `!`, `?` or `।` followed
+ *  by whitespace. The whitespace lookbehind matters: a decimal point inside
+ *  `8.28` is followed by a digit, not a space, so numbers survive whole —
+ *  a naive per-character split produced `8.` + `28.`, and the first
+ *  "sentence" then failed its own number check (found by smoke test). */
+const CLIP_SENTENCE_SPLIT = /(?<=[.!?\u0964])\s+/;
 
 export function clipToGroundedSentences(text, context, opts = {}) {
   const raw = String(text ?? '');
   if (!raw.trim()) return { text: raw, clipped: false, dropped: null };
 
-  const sentences = raw.match(CLIP_SENTENCE_RE) || [raw];
+  const sentences = raw.split(CLIP_SENTENCE_SPLIT).filter((s) => s.trim());
   if (sentences.length <= 1) return { text: raw, clipped: false, dropped: null };
 
   const guardOpts = {
@@ -414,7 +417,7 @@ export function clipToGroundedSentences(text, context, opts = {}) {
 
   let best = -1; // index of the last sentence of the longest clean prefix
   for (let k = 0; k < sentences.length; k++) {
-    const prefix = sentences.slice(0, k + 1).join('');
+    const prefix = sentences.slice(0, k + 1).join(' ');
     if (guard(prefix, guardOpts).ok) best = k;
     else break; // prefixes only grow; once broken, always broken
   }
@@ -426,11 +429,11 @@ export function clipToGroundedSentences(text, context, opts = {}) {
     return { text: raw, clipped: false, dropped: null }; // nothing clean to keep
   }
 
-  const kept = sentences.slice(0, best + 1).join('');
+  const kept = sentences.slice(0, best + 1).join(' ');
   return {
     text: kept,
     clipped: true,
-    dropped: sentences.slice(best + 1).join('').trim(),
+    dropped: sentences.slice(best + 1).join(' ').trim(),
   };
 }
 

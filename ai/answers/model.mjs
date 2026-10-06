@@ -37,6 +37,7 @@ import { clipToGroundedSentences, guardedAnswer } from '../guard/index.mjs';
 import { buildIndex, search, MIN_TOP_SCORE } from '../retrieval/index.mjs';
 import { abstainFor } from '../intent/rules.mjs';
 import { contextSizer, DEFAULT_PERSONA, resolveFacts, renderFact } from './quick.mjs';
+import { placeholderToken } from '../knowledge/placeholders.mjs';
 
 /* ── how many facts the intent fallback may paste ────────────────
    §8.2's budget is "top-k ≤ 3 chunks, ≤ ~300 tokens", and retrieval keeps it.
@@ -63,8 +64,91 @@ export function idsInContext(context) {
   return out;
 }
 
+/* ── list answers, deterministic (§5.1, measured 2026-10-06) ────
+
+The multi-fact eval rows (d05/d06/d07/d08/d16/d18/i02/i05) scored ZERO
+passes at v8, and the probes settled why: skill-list items sit at p≈0.01
+(rank 9-57) at every slot — the copy-from-context circuit was never
+formed at 37.9M — while project lists compose near-perfectly under
+teacher-forcing yet still decode into the wrong frame. Four training
+levers (v9-v12) are measured falsifications; this shape of question has
+to be answered deterministically until a bigger checkpoint exists.
+
+The wording uses the corpus's own list frames (`ai/data/instruction.py`
+_LIST_FRAMES) and its conjunction rule, but builds the list over
+PLACEHOLDER tokens and resolves them through `resolveFacts` — the same
+rendering path the model's answers take, so values can never drift from
+what the guard/KB allow. The context stays the retrieved/intent lines
+exactly as `ask()` assembled them, so the answer still only claims what
+was read. */
+
+const LIST_FRAMES_JS = Object.freeze({
+  skill: {
+    en: 'He works with {v}.',
+    hi: 'वे {v} जैसी तकनीकों पर काम करते हैं।',
+    hinglish: 'Wo {v} jaise technologies pe kaam karte hain.',
+  },
+  cert: {
+    en: 'His certifications: {v}.',
+    hi: 'उनके पास {v} सर्टिफिकेट हैं।',
+    hinglish: 'Unke paas {v} certificates hai.',
+  },
+  ach: {
+    en: 'His academic record: {v}.',
+    hi: 'उनका शैक्षणिक रिकॉर्ड: {v}।',
+    hinglish: 'Unka academic record: {v}.',
+  },
+  exp: {
+    en: 'His training: {v}.',
+    hi: 'उनकी प्रशिक्षण: {v}।',
+    hinglish: 'Unki training: {v}.',
+  },
+  project: {
+    en: 'His projects: {v}.',
+    hi: 'उनके प्रोजेक्ट्स: {v}।',
+    hinglish: 'Unke projects: {v}.',
+  },
+});
+
+const LIST_KIND_OF_INTENT = Object.freeze({
+  list_projects: 'project',
+  skills: 'skill',
+  certifications: 'cert',
+  achievements: 'ach',
+  experience: 'exp',
+});
+
+function conjIn(names, lang) {
+  const word = lang === 'hi' ? 'और' : (lang === 'hinglish' ? 'aur' : 'and');
+  if (names.length === 1) return names[0];
+  return `${names.slice(0, -1).join(', ')} ${word} ${names[names.length - 1]}`;
+}
+
+/** The deterministic list answer for an intent whose plan enumerates one
+ *  kind, or null when the question is not that shape (caller falls through
+ *  to the model unchanged). Mirrors `_example_list_answer`'s frame choice. */
+export function deterministicListAnswer(kb, intent, plan, lang = 'en') {
+  const kind = LIST_KIND_OF_INTENT[intent];
+  if (!kind || !plan?.ids?.length) return null;
+  const phs = [];
+  const ids = plan.ids.slice();
+  /* the experience plan carries its availability fact beside the list — a
+     "what has he done?" answer that omits it is an incomplete enumeration */
+  if (plan.availabilityId) ids.push(plan.availabilityId);
+  for (const id of ids) {
+    /* `renderFact` is the same public-fact filter `ask()` applies to intent
+       ids: unknown or `public:false` facts render to nothing, so a withheld
+       value cannot reach a deterministic answer through this door (§8.1). */
+    if (!renderFact(kb, id, lang)) return null;
+    phs.push(placeholderToken(id));
+  }
+  const frame = LIST_FRAMES_JS[kind][lang] || LIST_FRAMES_JS[kind].en;
+  return frame.replace('{v}', conjIn(phs, lang));
+}
+
 export const MODEL_BADGES = Object.freeze({
   model: 'AI ANSWER · ON-DEVICE MODEL',
+  planner: 'ANSWER · FROM THE PORTFOLIO DATA',
   notFound: 'NO ANSWER · NOT IN THE PORTFOLIO',
   unverified: 'NO ANSWER · COULD NOT VERIFY IT',
   withheld: 'NO ANSWER · NOT PUBLISHED',
@@ -308,17 +392,58 @@ export function createModelAnswerer(opts = {}) {
     /**
      * Every return has a `text` the caller may render: the model's own when it
      * produced a verified answer, and a localized refusal when it could not.
-     * There is no third case where a template stands in for the model.
+     * One exception, measured into existence 2026-10-06: a LIST question
+     * whose plan the shell already computed is answered deterministically
+     * (`kind: 'planner'`) — the multi-fact rows score zero at v8 and the
+     * probes show the composition was never learned at this size.
      *
-     * @returns {Promise<{kind:'model'|'notFound'|'unverified', text:string,
-     *   sources:string[], context:string, attempts:number, guardFailed:boolean,
-     *   abstained:boolean, reason?:string, ms:number}>}
+     * @returns {Promise<{kind:'model'|'notFound'|'unverified'|'planner',
+     *   text:string, sources:string[], context:string, attempts:number,
+     *   guardFailed:boolean, abstained:boolean, reason?:string, ms:number}>}
      */
     async ask({
       question, lang = 'en', focus = null, intentIds = null, contextless = false,
-      onToken = null, onReplace = null, signal = null,
+      plan = null, onToken = null, onReplace = null, signal = null,
     }) {
       const started = Date.now();
+
+      /* ── deterministic list answers (§5.1, measured 2026-10-06) ──
+         d05/d06/d07/d08/d16/d18/i02/i05: ZERO passes at v8, four training
+         levers falsified (v9-v12), and probe-selection-v8.txt shows why:
+         skill-list slots sit at p≈0.01 under teacher-forcing — the copy
+         circuit was never formed at 37.9M — while project lists compose
+         near-perfectly and still decode into the wrong frame. Until a
+         bigger checkpoint answers these, the planner's enumeration IS the
+         answer: worded over placeholder tokens and resolved through the
+         same `resolveFacts` the model's text goes through, so it can only
+         ever claim ids the caller's retrieval/intent pass selected, every
+         one of them renderable (§8.1 holds by construction — that is why
+         no guard run is needed here, the same guarantee factPlan uses). */
+      if (plan?.ids?.length && LIST_KIND_OF_INTENT[plan.kind]) {
+        const listText = deterministicListAnswer(kb, plan.kind, plan, lang);
+        if (listText) {
+          const resolvedList = resolveFacts(kb, listText, lang);
+          /* Unreachable while every id passed `renderFact` — but a guard and
+             a resolver that ever disagree must say so, not paint brackets. */
+          if (resolvedList.unresolved.length) {
+            return {
+              kind: 'unverified', text: noAnswerLine('unverified', lang),
+              sources: [], context: '', attempts: 0, guardFailed: true,
+              abstained: true,
+              reason: 'the deterministic list answer produced an unresolved placeholder',
+              ms: Date.now() - started,
+            };
+          }
+          return {
+            kind: 'planner', text: resolvedList.text,
+            sources: plan.ids.slice(), context: '', contextFrom: 'planner',
+            attempts: 0, guardFailed: false, abstained: false,
+            reason: 'list question answered deterministically (§5.1)',
+            ms: Date.now() - started,
+          };
+        }
+      }
+
       const found = this.retrieve(question, focus);
 
       /* §8.2's retrieval can find NOTHING for a question whose topic the intent

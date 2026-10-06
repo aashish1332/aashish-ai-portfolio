@@ -850,7 +850,10 @@ let working = 0;
   function syncControls() {
     if (stopBtn) stopBtn.hidden = !activeAbort;
     if (retryBtn) {
-      retryBtn.hidden = !lastQuestion || !!activeAbort || lastAnswer?.kind === 'model';
+      /* A deterministic answer has nothing to re-roll: retry is for another
+         sample from the model, and a planner answer would come back identical. */
+      retryBtn.hidden = !lastQuestion || !!activeAbort
+        || lastAnswer?.kind === 'model' || lastAnswer?.kind === 'planner';
     }
   }
 
@@ -972,6 +975,12 @@ let working = 0;
            RULES answer it. */
         intentIds: res.sources,
         contextless: res.intent === 'greeting',
+        /* The planner's enumeration for list questions: the answerer answers
+           these deterministically (§5.1, measured 2026-10-06) — the multi-fact
+           eval rows score zero at v8 and four training levers are measured
+           falsifications. `plan` is null for every non-list question, so this
+           changes nothing except that shape. */
+        plan: res.plan || null,
         signal: controller?.signal || null,
         onToken: (chunk) => line.push(chunk),
         onReplace: (text_) => line.set(text_),
@@ -996,6 +1005,28 @@ let working = 0;
          answer. The ladder is disarmed separately, by `whileWorking`. */
       activeAbort = null;
       syncControls();
+    }
+
+    if (out.kind === 'planner') {
+      /* A deterministic list answer: the same rendering path the model's
+         text takes (resolveFacts over the KB's public view), but authored by
+         the planner instead of the model. It carries its own badge — never
+         the AI-ANSWER one, per the §0 rule a label must not claim a model
+         that did not produce the words — and its sources/anchor come from
+         the plan's ids, exactly as a model answer's would. */
+      line.finish(out.text);
+      setBadge(line, MODEL_BADGES.planner);
+      if (out.sources?.length) {
+        const src = el('div', 'ai__sources');
+        for (const id of out.sources) src.appendChild(el('span', 'ai__source', id));
+        line.node.appendChild(src);
+      }
+      lastAnchor = resolveAnchor(doc, { kb, ids: out.sources }) || lastAnchor;
+      return finish({
+        ...res, text: out.text, sources: out.sources, model: false, kind: 'planner',
+        badge: MODEL_BADGES.planner, context: '',
+        guard: { attempts: 0, failed: false },
+      }, lang, lastAnchor, { badge: MODEL_BADGES.planner, badgeClass: 'is-ai' });
     }
 
     if (out.kind !== 'model') {
