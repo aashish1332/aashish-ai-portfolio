@@ -146,6 +146,12 @@ def target_verdict(cfg: ModelConfig, total: int, stream=None) -> dict:
         lo, hi = TARGET_MIN, TARGET_MAX
         note = (f"§7.1 target {TARGET_MIN / 1e6:.0f}–{TARGET_MAX / 1e6:.0f}M "
                 f"(~{TARGET_PREFERRED / 1e6:.0f}M preferred)")
+    elif cfg.name == "B":
+        # Same §7.1 band as A: B is the band's ceiling variant, added after
+        # the v9-v12 falsifications, not a new spec category.
+        lo, hi = TARGET_MIN, TARGET_MAX
+        note = (f"§7.1 target {TARGET_MIN / 1e6:.0f}–{TARGET_MAX / 1e6:.0f}M "
+                f"(B: the band's ceiling variant)")
     elif cfg.name == "lite":
         lo, hi = LITE_MIN, LITE_MAX
         note = f"§7.1 lite contingency ~{LITE_MIN / 1e6:.0f}–{LITE_MAX / 1e6:.0f}M"

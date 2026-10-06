@@ -33,7 +33,7 @@
    them safe to fix as constants. `NO_ANSWER_KINDS` below is the whole list.
    ═══════════════════════════════════════════════════════════════ */
 
-import { guardedAnswer } from '../guard/index.mjs';
+import { clipToGroundedSentences, guardedAnswer } from '../guard/index.mjs';
 import { buildIndex, search, MIN_TOP_SCORE } from '../retrieval/index.mjs';
 import { abstainFor } from '../intent/rules.mjs';
 import { contextSizer, DEFAULT_PERSONA, resolveFacts, renderFact } from './quick.mjs';
@@ -426,11 +426,23 @@ export function createModelAnswerer(opts = {}) {
         };
       }
 
+      /* §8.4 companion (measured 2026-10-06, probe-selection-v8.txt): the
+         model's commonest failing shape is the CORRECT answer followed by
+         run-on template content. The guard rejects that whole text, but the
+         failure is trailing — the longest sentence-prefix that grounds is
+         the answer the model actually produced. Clip the tail when, and
+         only when, the tail is what fails; a mid-answer fabrication yields
+         no clean prefix and reaches the refusal path untrimmed. */
+      const clip = clipToGroundedSentences(guarded.text, context, { kb, lang });
+      if (clip.clipped) {
+        onNotice?.('answer trimmed to its grounded part; the tail did not ground');
+      }
+
       // Placeholders → allowlisted values. `unresolved` is a guard failure by
       // construction (guard checks it first), so a non-empty list here would
       // mean the guard and this resolver disagree — say so rather than paint
       // an angle bracket at a visitor.
-      const resolved = resolveFacts(kb, guarded.text, lang);
+      const resolved = resolveFacts(kb, clip.clipped ? clip.text : guarded.text, lang);
       if (resolved.unresolved.length) {
         /* The guard checks placeholders first, so reaching here means the
            guard and this resolver disagree. Say so, and refuse — an angle

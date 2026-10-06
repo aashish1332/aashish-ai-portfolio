@@ -367,6 +367,73 @@ export function guard(text, opts = {}) {
   return { ok: violations.length === 0, violations };
 }
 
+/* ── trailing-content clip (§8.4 companion, measured 2026-10-06) ──
+
+v8's most common failure shape is NOT a wrong fact: teacher-forcing shows the
+model emits the correct answer first and then keeps going with the dominant
+template (three of 23 failing rows were exactly this — probe-selection-v8.txt,
+Part A). The guard rightly rejects such an answer whole. But the failure is
+*trailing*: a prefix of the answer is fully grounded, and only the run-on
+sentences after it invent numbers, entities or dates. Rejecting the whole
+text discards a correct answer the model actually produced.
+
+`clipToGroundedSentences` returns the longest sentence-prefix that passes the
+full §8.4 check. Rules that keep it honest:
+
+- It never *creates* an answer. If the full text is already clean, it returns
+  it unchanged (good answers are untouched — this is not a rewriter). If NO
+  prefix is clean, it returns the text unchanged too: a mid-answer fabrication
+  is a real guard failure and must reach the retry/refusal path with its
+  violations, not be silently trimmed into something that looks verified.
+- It only removes content AFTER the last clean sentence. A violation inside
+  sentence 1 means no prefix qualifies, which is the previous rule.
+- Sentence splitting carries the Devanagari danda, because half of the eval
+  set is Hindi and `।` ends sentences there.
+- A clipped answer is flagged (`clipped: true`) with the rejected tail kept
+  for the caller to log — the panel shows the model's own grounded prefix,
+  which is more truthful than either an essay or a refusal. */
+
+/** Sentence boundaries for en/hi/hinglish: `.`, `!`, `?` and `।`, keeping
+ *  the punctuation on the sentence. */
+const CLIP_SENTENCE_RE = /[^.!?\u0964]+[.!?\u0964]+\s*|[^.!?\u0964]+$/g;
+
+export function clipToGroundedSentences(text, context, opts = {}) {
+  const raw = String(text ?? '');
+  if (!raw.trim()) return { text: raw, clipped: false, dropped: null };
+
+  const sentences = raw.match(CLIP_SENTENCE_RE) || [raw];
+  if (sentences.length <= 1) return { text: raw, clipped: false, dropped: null };
+
+  const guardOpts = {
+    context,
+    kb: opts.kb,
+    lang: opts.lang,
+    vocabulary: opts.vocabulary,
+    allow: opts.allow,
+  };
+
+  let best = -1; // index of the last sentence of the longest clean prefix
+  for (let k = 0; k < sentences.length; k++) {
+    const prefix = sentences.slice(0, k + 1).join('');
+    if (guard(prefix, guardOpts).ok) best = k;
+    else break; // prefixes only grow; once broken, always broken
+  }
+
+  if (best === sentences.length - 1) {
+    return { text: raw, clipped: false, dropped: null }; // already clean
+  }
+  if (best < 0) {
+    return { text: raw, clipped: false, dropped: null }; // nothing clean to keep
+  }
+
+  const kept = sentences.slice(0, best + 1).join('');
+  return {
+    text: kept,
+    clipped: true,
+    dropped: sentences.slice(best + 1).join('').trim(),
+  };
+}
+
 /* ── the §5.1 step-5 orchestration ────────────────────────────── */
 
 /** Drop the weakest tails of a context so a retry sees less to over-fit.

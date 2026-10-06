@@ -10,6 +10,12 @@ export path consumes exactly these keys.
 The configs:
 
 * **A**     — the §7.1 starting config (~37.9M params by arithmetic).
+* **B**     — the §7.1-band ceiling variant (49,595,328 params, still 30–50M),
+  added 2026-10-06 after four measured falsifications (v9–v12, notebook
+  cell 13) showed 37.9M cannot separate question-conditioned continuations
+  from the dominant template it shares its depth with. Deeper (L=11) and
+  wider (d=576) attacks exactly that; the export must go INT4-groupwise to
+  hold §4's 40MB hard download cap (q8 alone is ~50MB).
 * **lite**  — the §7.1 contingency (~17M), only if T1 budgets fail.
 * **smoke** — the §7.5 local smoke config (1–3M), CPU, ~50 steps. It is
   a *pipeline test*, never a quality result.
@@ -164,6 +170,17 @@ CONFIG_A = ModelConfig(
           "inference/count_parameters.py.",
 )
 
+CONFIG_B = ModelConfig(
+    name="B",
+    vocab_size=16384, hidden_size=576, num_hidden_layers=11,
+    num_attention_heads=8, num_key_value_heads=4,
+    intermediate_size=1536, max_position_embeddings=1024,
+    tie_word_embeddings=True,
+    notes="§7.1-band ceiling (49,595,328 params). Same tokenizer as A. Added "
+          "2026-10-06: template dominance at 37.9M measured (cell 13), four "
+          "levers falsified. Export needs INT4-groupwise for §4's 40MB cap.",
+)
+
 CONFIG_LITE = ModelConfig(
     name="lite",
     vocab_size=12288, hidden_size=384, num_hidden_layers=8,
@@ -198,7 +215,7 @@ CONFIG_LOCAL = ModelConfig(
           "config A on a GPU (§16 P4-P5).",
 )
 
-CONFIGS = {"A": CONFIG_A, "lite": CONFIG_LITE, "smoke": CONFIG_SMOKE,
+CONFIGS = {"A": CONFIG_A, "B": CONFIG_B, "lite": CONFIG_LITE, "smoke": CONFIG_SMOKE,
            "local": CONFIG_LOCAL}
 
 
