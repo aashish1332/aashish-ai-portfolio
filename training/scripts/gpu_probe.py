@@ -199,7 +199,7 @@ def build_parser() -> argparse.ArgumentParser:
     probe of a run that is not happening.
     """
     ap = argparse.ArgumentParser(description="Does this config fit, and how fast is it?")
-    ap.add_argument("--config", default="A", choices=["smoke", "A", "lite", "local"])
+    ap.add_argument("--config", default="A", choices=["smoke", "A", "B", "lite", "local"])
     ap.add_argument("--tokenizer", default="ai/tokenizer/artifacts/stage-a-16k")
     ap.add_argument("--shards", default="data/processed/stage_a/shards")
     # 8 x 1024 x 8 — the micro-batch halved to fit the T4, grad-accum raised to

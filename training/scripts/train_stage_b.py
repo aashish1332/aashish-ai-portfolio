@@ -523,7 +523,7 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--data", default=str(sft.DEFAULT_SFT_PATH),
                     help="the sft.jsonl written by `npm run sft`")
     ap.add_argument("--tokenizer", default="ai/tokenizer/artifacts/seed-1k")
-    ap.add_argument("--config", default="local", choices=["smoke", "A", "lite", "local"])
+    ap.add_argument("--config", default="local", choices=["smoke", "A", "B", "lite", "local"])
     ap.add_argument("--init", default=None,
                     help="Stage A checkpoint to continue (model weights only)")
     ap.add_argument("--run-dir", default="training/checkpoints/stage-b")
