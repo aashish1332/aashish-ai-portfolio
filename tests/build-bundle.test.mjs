@@ -449,39 +449,27 @@ test('§2 N8: the AI layer draws nothing and starts no loop of its own', () => {
   });
 });
 
-test('§4: the retired deterministic ANSWERS are not in the bundle at all', () => {
-  /* The owner retired Quick Answers as answers, so the wording is dead weight
-     on every visitor's device: it was built on every question and discarded by
-     the chat shell. It now lives in `evaluation/answer-text.mjs`, which
-     `SHIP_PATHS` does not copy — and this asserts that twice: the phrases are
-     absent from every shipped text file, and the shipped planner really does
-     come back empty. */
+test('§4: the data-file wording ships; the evaluation copy does not', () => {
+  /* 2026-10-08, owner decision: the data file answers first, so the wording
+     module ships again — as `ai/answers/wording.mjs` (inside the existing
+     `ai/answers` allow-list entry). What must STILL hold: the evaluation
+     copy is only a shim (the real code is not duplicated), no hardcoded fact
+     values ship (the leak scan in `tests/quick-answers.test.mjs` covers the
+     wording), and the shipped planner decision-half still words nothing but
+     the two fixed assistant replies — asserted below. */
   temp((out) => {
     const summary = buildBundle({ out, quiet: true });
 
-    /* distinctive phrases from the moved templates. A hit means either a
-       template found its way back into a shipped module, or a new one was
-       written there — both are the budget leak this exists to stop. */
-    const WRITINGS = ['shipped projects', "Here's how to reach", "Here's how to reach me",
-      'Certifications and programmes', 'Expected graduation', 'is on my list',
-      'Highlights:', 'Evidence: this portfolio', 'That contact detail isn\'t published'];
-    const textish = summary.files.filter((rel) => /\.(mjs|js|json|html|css)$/.test(rel));
-    assert.ok(textish.length > 10, 'the bundle reported suspiciously few text files');
+    assert.ok(summary.files.includes('ai/answers/wording.mjs'),
+      'the data-file wording module did not ship');
     assert.ok(!summary.files.some((rel) => rel.startsWith('evaluation/')),
       'the evaluation directory shipped');
-    for (const rel of textish) {
-      const src = readFileSync(join(out, rel), 'utf8');
-      for (const phrase of WRITINGS) {
-        assert.ok(!src.includes(phrase),
-          `${rel} ships the retired Quick Answers wording ("${phrase}") — §4 pays ` +
-          'for it on every device and the shell throws it away');
-      }
-    }
 
-    /* And the mechanism, not just the strings: with no `say` supplied the
+    /* And the decision-half mechanism, unchanged: with no `say` supplied the
        shipped planner fills `text` only for the two replies that are fixed
        statements about the ASSISTANT (the §9 injection refusal and the
-       identity disclosure). Everything else is decided and left unwritten. */
+       identity disclosure). Everything else is decided and left unwritten —
+       the ANSWERER words it now, not the planner. */
     const planner = (q) => plan(KB, q);
     for (const q of ['what are his skills', 'how can I contact him', 'hi',
       'what projects has he built', 'what is his favourite pizza',

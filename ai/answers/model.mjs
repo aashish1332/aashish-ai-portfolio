@@ -1,6 +1,11 @@
 /* ═══════════════════════════════════════════════════════════════
-   ai/answers/model.mjs — the answer path. There is only one.
+   ai/answers/model.mjs — the answer path. Two tiers, one decision.
 
+   0. **The data file answers first** (owner decision, 2026-10-08). A
+      question whose plan `quickAnswer()` selected is worded straight from
+      `knowledge/knowledge.json`'s public view (`ai/answers/wording.mjs`) —
+      edit that file, push, and the answers change with no retraining. The
+      on-device model answers only what the file cannot.
    1. **Retrieve** (§8.2). Below the calibrated gate there is nothing to
       ground on, so the model is never asked and the panel says so. That is
       the §8.4 layer-1 decision — the honest answer is "I don't have that" —
@@ -14,15 +19,33 @@
    4. **Resolve placeholders** to allowlisted values (`<|fact:x|>`), which
       is the only way a URL or an email ever reaches the screen (§7.2).
 
-   ### Why there is no extractive fallback any more
+   ### What the owner's 2026-10-08 decision changed, and what it did not
+
+   The deterministic wording (`ai/answers/wording.mjs`) is once again an
+   ANSWER source — for the plans the data file selected by construction:
+   contact fields, links, skills, education, certifications, achievements,
+   experience, workflow, project detail and single facts. Every value it
+   renders comes from the knowledge base's public view, so it is grounded
+   the same way `deterministicListAnswer` is and no guard run is needed
+   (`tests/model-answers.test.mjs` PLANNER-6 holds that in).
+
+   What did NOT change: a MODEL answer that fails the guard is still a
+   refusal, never repaired or replaced by wording (the rule below that a
+   template must not stand in for a rejected model answer stands); the
+   refusals keep their own paths and their "NO ANSWER" badges — the data
+   file never answers a question the file itself abstains on; and a plan
+   kind with no wording falls through to the model unchanged.
 
    §5.1 step 5 used to end at a Quick Answer: a template built from
-   `knowledge.json`, grounded by construction. The owner retired it. A
-   canned sentence presented in the same bubble as a generated one teaches a
-   visitor nothing about which they are reading, and the whole point of the
-   panel is that the answer is the model's own. So every string this module
-   returns is one of exactly three things:
+   `knowledge.json`, grounded by construction. The owner retired it on
+   2026-10-06; on 2026-10-08, with the §7.4 levers measured falsified and
+   the model's fact selection still below the §14 gate, the owner chose the
+   data-file-first product and the wording became the FIRST tier again —
+   for the plans the file itself selected. So every string this module
+   returns is one of exactly four things:
 
+     * the portfolio data file's own answer for a plan it selected,
+       guard-exempt by construction (`kind: 'planner'`),
      * the model's text, guard-checked (`kind: 'model'`),
      * the localized sentence that says the model could not verify its own
        answer (`kind: 'unverified'`),
@@ -36,7 +59,8 @@
 import { clipToGroundedSentences, guardedAnswer } from '../guard/index.mjs';
 import { buildIndex, search, MIN_TOP_SCORE } from '../retrieval/index.mjs';
 import { abstainFor } from '../intent/rules.mjs';
-import { contextSizer, DEFAULT_PERSONA, resolveFacts, renderFact } from './quick.mjs';
+import { contextSizer, DEFAULT_PERSONA, rawFact, resolveFacts, renderFact } from './quick.mjs';
+import { say } from './wording.mjs';
 import { placeholderToken } from '../knowledge/placeholders.mjs';
 
 /* ── how many facts the intent fallback may paste ────────────────
@@ -131,6 +155,10 @@ export function deterministicListAnswer(kb, intent, plan, lang = 'en') {
   const kind = LIST_KIND_OF_INTENT[intent];
   if (!kind || !plan?.ids?.length) return null;
   const phs = [];
+  /* The FULL enumerable list: a data-file answer's evidence is the whole
+     public bucket, and a skills list that stops at a prompt-window cap would
+     silently drop true facts from a true answer (2026-10-08: the trim was
+     tried and measured worse — d06/d18 lost facts the cases expect). */
   const ids = plan.ids.slice();
   /* the experience plan carries its availability fact beside the list — a
      "what has he done?" answer that omits it is an incomplete enumeration */
@@ -140,7 +168,11 @@ export function deterministicListAnswer(kb, intent, plan, lang = 'en') {
        ids: unknown or `public:false` facts render to nothing, so a withheld
        value cannot reach a deterministic answer through this door (§8.1). */
     if (!renderFact(kb, id, lang)) return null;
-    phs.push(placeholderToken(id));
+    /* a project item names itself: the codename is the discriminator a
+       recruiter scans for, and the summary alone cannot carry it (a fictional
+       portfolio's literal name is exactly what §14's synthetic rows check) */
+    const name = kind === 'project' ? rawFact(kb, id)?.name : null;
+    phs.push(name ? `${name}: ${placeholderToken(id)}` : placeholderToken(id));
   }
   const frame = LIST_FRAMES_JS[kind][lang] || LIST_FRAMES_JS[kind].en;
   return frame.replace('{v}', conjIn(phs, lang));
@@ -344,6 +376,79 @@ export function routeQuestion({
  * @param {number} [opts.maxNewTokens]  §6.2's per-tier cap
  * @param {number} [opts.minScore]  the calibrated layer-1 gate
  */
+/* ── the data file's own answers (§5.1, owner decision 2026-10-08) ──
+   The plan is worded by `ai/answers/wording.mjs`, whose every value comes
+   from the public view — the same guarantee `deterministicListAnswer`
+   rests on, so no guard run is needed here either (PLANNER-6 pins that).
+   Rules that keep this a floor and not a regression to the retired Quick
+   Answers:
+
+   · a plan whose ids do not all render (a `public:false` fact slipped in)
+     is refused, never half-answered (PLANNER-5);
+   · a plan kind with no wording falls through to the model unchanged;
+   · the refusals (`abstain`, hallucination_bait) and the two fixed
+     assistant-voice replies (`meta`, `greeting`) are NOT worded here —
+     they keep their own paths and badges, so a refusal can never wear the
+     "FROM THE PORTFOLIO DATA" badge and a greeting stays MODEL-11's; */
+const WORDABLE_PLANS = Object.freeze(new Set([
+  'contact_withheld', 'contact_field', 'contact_links', 'contact_all',
+  'skills', 'education', 'certifications', 'achievements', 'experience',
+  'workflow', 'project_detail', 'fact',
+]));
+
+/* A question asking for a SCORE (§14's d03/d13/s01 shape) or for AVAILABILITY
+   (d10). A category plan carries every fact in its bucket; a specific question
+   is answered by the fact the question named — citing the whole bucket is how
+   an answer claims things the question never asked about. */
+const SCORE_Q = /\b(cgpa|gpa|marks?|percentage|grades?|sgpa|सीजीपीए|अंक)\b/i;
+const AVAIL_Q = /\b(available|availability|hiring|open to|internships?)\b/i;
+
+/** Word one plan from the data file, or null to fall through to the model. */
+function dataFileAnswer(kb, plan, lang, intentIds, question, started) {
+  /* an enumerable plan with an empty id list has nothing to say */
+  if (Array.isArray(plan.ids) && !plan.ids.length) return null;
+  /* an id that does not render is a withheld value trying the side door */
+  if (plan.ids?.length && !plan.ids.every((id) => renderFact(kb, id, lang))) return null;
+  if ((plan.kind === 'project_detail' || plan.kind === 'fact')
+    && !renderFact(kb, plan.id, lang)) return null;
+
+  /* Question-scoped plans: the bucket stays the bucket, but a question that
+     names ONE thing is answered with that thing. A CGPA question answers with
+     the score-bearing fact(s), not the whole education list; an availability
+     question answers with the availability fact, not the training list. */
+  let p = plan;
+  if (plan.kind === 'education' && SCORE_Q.test(question)) {
+    /* the corpus's own convention (the CGPA rows are graded against the CGPA
+       fact): the metric achievement is the score answer; an education entry's
+       score only stands in when no metric fact exists */
+    const facts = (plan.ids || []).map((id) => [id, rawFact(kb, id)]);
+    const metric = facts.find(([, f]) => (f?.metric?.type || '').toLowerCase() === 'cgpa');
+    const scored = facts.filter(([, f]) => f && (f.score?.type || f.metric?.type));
+    const pick = metric || scored[0];
+    if (pick) p = { ...plan, kind: 'fact', id: pick[0], ids: undefined };
+  }
+  if (plan.kind === 'experience' && plan.availabilityId && AVAIL_Q.test(question)) {
+    p = { ...plan, kind: 'fact', id: plan.availabilityId, ids: undefined };
+  }
+
+  const raw = say(p, { kb, lang, persona: 'third', plan: p });
+  if (!raw || raw.startsWith('[no wording')) return null;
+  const resolved = resolveFacts(kb, raw, lang);
+  /* Unreachable while every id rendered — but a wording layer and a
+     resolver that ever disagree must say so, not paint brackets. */
+  if (resolved.unresolved.length) return null;
+  const sources = p.ids?.length
+    ? p.ids.slice()
+    : (p.id ? [p.id] : (intentIds || []).filter(Boolean));
+  return {
+    kind: 'planner', text: resolved.text, sources,
+    context: '', contextFrom: 'planner',
+    attempts: 0, guardFailed: false, abstained: false,
+    reason: 'answered from the portfolio data file (knowledge.json)',
+    ms: Date.now() - started,
+  };
+}
+
 export function createModelAnswerer(opts = {}) {
   const {
     kb, session, persona = DEFAULT_PERSONA, history = [],
@@ -436,12 +541,26 @@ export function createModelAnswerer(opts = {}) {
           }
           return {
             kind: 'planner', text: resolvedList.text,
-            sources: plan.ids.slice(), context: '', contextFrom: 'planner',
+            /* the enumerated ids — the full list — plus the experience
+               plan's availability fact (PLANNER-3) */
+            sources: [...plan.ids.slice(),
+              ...(plan.availabilityId ? [plan.availabilityId] : [])],
+            context: '', contextFrom: 'planner',
             attempts: 0, guardFailed: false, abstained: false,
             reason: 'list question answered deterministically (§5.1)',
             ms: Date.now() - started,
           };
         }
+      }
+
+      /* ── the data file answers first (owner decision, 2026-10-08) ──
+         A plan the file itself selected is worded straight from
+         `knowledge.json`; the model is asked only what the file cannot
+         answer. `null` falls through — same contract as the list block
+         above. */
+      if (plan && WORDABLE_PLANS.has(plan.kind)) {
+        const dataAnswer = dataFileAnswer(kb, plan, lang, intentIds, question, started);
+        if (dataAnswer) return dataAnswer;
       }
 
       const found = this.retrieve(question, focus);

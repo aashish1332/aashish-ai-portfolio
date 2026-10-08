@@ -1,6 +1,6 @@
 {
   "caveat": null,
-  "createdAt": "2026-10-07T07:00:31.337Z",
+  "createdAt": "2026-10-08T16:47:51.755Z",
   "checkpoint": "kaggle-push\\out\\pull-bb1\\checkpoints\\stage-b",
   "which": "latest",
   "step": 500,
@@ -9,53 +9,53 @@
   "method": "MEASURED — answers decoded from the named checkpoint, scored with the shipped guard/placeholders/language rules",
   "metrics": {
     "cases": 60,
-    "routedToModel": 41,
-    "routedDeterministically": 19,
-    "qaAccuracy": 0.95,
-    "factualAccuracy": 0.95,
+    "routedToModel": 40,
+    "routedDeterministically": 20,
+    "qaAccuracy": 0.9705882352941176,
+    "factualAccuracy": 0.9705882352941176,
     "scorable": 34,
     "unscorable": 7,
-    "refusalsPreModel": 13,
+    "refusalsPreModel": 14,
     "refusalsNoEvidence": 7,
     "refusalsModel": 0,
-    "focusRetrieval": 0.95,
-    "unsupportedPreGuard": 0.01,
-    "unsupportedPostGuard": 0.01,
-    "abstentionRecall": 0.95,
-    "abstentionPrecision": 0.95,
-    "falseAbstention": 0.02,
+    "focusRetrieval": 0.42857142857142855,
+    "unsupportedPreGuard": 0,
+    "unsupportedPostGuard": 0,
+    "abstentionRecall": 1,
+    "abstentionPrecision": 0.9285714285714286,
+    "falseAbstention": 0.024390243902439025,
     "languageEn": 1,
     "languageOther": 1,
-    "terminated": 0.98,
-    "echoesPrompt": 0.01,
+    "terminated": 1,
+    "echoesPrompt": 0.125,
     "fabricatedOnAdversarial": 0,
     "guardFailures": 0
   },
   "gates": [
     {
       "name": "factual accuracy ≥ 95%",
-      "value": 0.95,
+      "value": 0.9705882352941176,
       "gate": 0.95,
       "dir": "min",
       "pass": true
     },
     {
       "name": "abstention recall ≥ 95%",
-      "value": 0.95,
+      "value": 1,
       "gate": 0.95,
       "dir": "min",
       "pass": true
     },
     {
       "name": "false abstention ≤ 10%",
-      "value": 0.02,
+      "value": 0.024390243902439025,
       "gate": 0.1,
       "dir": "max",
       "pass": true
     },
     {
       "name": "unsupported post-guard ≤ 1%",
-      "value": 0.01,
+      "value": 0,
       "gate": 0.01,
       "dir": "max",
       "pass": true
@@ -83,39 +83,30 @@
     }
   ],
   "passed": true,
-  "rowsTruncatedForExport": true,
   "rows": [
     {
       "id": "d01",
       "type": "direct",
       "lang": "en",
       "route": "model",
-      "answer": " I study at <|fact:edu.lpu|>. <|end|>",
-      "resolved": " I study at Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. <|end|>",
+      "answer": "His email is aashishkumarrajut1345@gmail.com.",
+      "resolved": "His email is aashishkumarrajut1345@gmail.com.",
       "abstained": false,
       "cited": [
-        "edu.lpu"
+        "contact.email"
       ],
-      "unsupportedIds": [
-        "edu.lpu"
-      ],
+      "unsupportedIds": [],
       "expected": [
         "contact.email"
       ],
-      "covered": [],
-      "coverage": 0,
+      "covered": [
+        "contact.email"
+      ],
+      "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
-      "guardOk": false,
-      "guardCodes": [
-        "number_not_grounded",
-        "number_not_grounded",
-        "date_not_grounded",
-        "date_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded"
-      ],
+      "guardOk": true,
+      "guardCodes": [],
       "focusOk": null,
       "abstainedBy": null,
       "scorable": true,
@@ -123,8 +114,8 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": true,
-      "shownToVisitor": false,
+      "unsupportedPreGuard": false,
+      "shownToVisitor": true,
       "unsupportedPostGuard": false
     },
     {
@@ -192,8 +183,8 @@
       "type": "direct",
       "lang": "en",
       "route": "model",
-      "answer": " His CGPA is <|fact:ach.lpu-cgpa|>. <|end|>",
-      "resolved": " His CGPA is CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University. <|end|>",
+      "answer": "CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University",
+      "resolved": "CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University",
       "abstained": false,
       "cited": [
         "ach.lpu-cgpa"
@@ -204,40 +195,6 @@
       ],
       "covered": [
         "ach.lpu-cgpa"
-      ],
-      "coverage": 1,
-      "forbiddenHit": [],
-      "fabricated": false,
-      "guardOk": true,
-      "guardCodes": [],
-      "focusOk": null,
-      "abstainedBy": null,
-      "scorable": true,
-      "languageOk": true,
-      "terminated": true,
-      "echoes": false,
-      "expectedAnswer": null,
-      "unsupportedPreGuard": false,
-      "shownToVisitor": true,
-      "unsupportedPostGuard": false
-    },
-    {
-      "id": "d04",
-      "type": "direct",
-      "lang": "en",
-      "route": "model",
-      "answer": " He studies at <|fact:edu.lpu|>. <|end|>",
-      "resolved": " He studies at Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. <|end|>",
-      "abstained": false,
-      "cited": [
-        "edu.lpu"
-      ],
-      "unsupportedIds": [],
-      "expected": [
-        "edu.lpu"
-      ],
-      "covered": [
-        "edu.lpu"
       ],
       "coverage": 1,
       "forbiddenHit": [],
@@ -256,15 +213,54 @@
       "unsupportedPostGuard": false
     },
     {
+      "id": "d04",
+      "type": "direct",
+      "lang": "en",
+      "route": "model",
+      "answer": "Education:\n• Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10\n• Kendriya Vidyalaya No. 2, RCF, Hussainpur — Senior Secondary (Class 12), CBSE (2023–2024) · 87.6%\nExpected graduation: 2028.",
+      "resolved": "Education:\n• Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10\n• Kendriya Vidyalaya No. 2, RCF, Hussainpur — Senior Secondary (Class 12), CBSE (2023–2024) · 87.6%\nExpected graduation: 2028.",
+      "abstained": false,
+      "cited": [
+        "edu.lpu",
+        "edu.kv2"
+      ],
+      "unsupportedIds": [],
+      "expected": [
+        "edu.lpu"
+      ],
+      "covered": [
+        "edu.lpu"
+      ],
+      "coverage": 1,
+      "forbiddenHit": [],
+      "fabricated": false,
+      "guardOk": true,
+      "guardCodes": [],
+      "focusOk": null,
+      "abstainedBy": null,
+      "scorable": true,
+      "languageOk": true,
+      "terminated": true,
+      "echoes": false,
+      "expectedAnswer": null,
+      "unsupportedPreGuard": false,
+      "shownToVisitor": true,
+      "unsupportedPostGuard": false
+    },
+    {
       "id": "d05",
       "type": "direct",
       "lang": "en",
       "route": "model",
-      "answer": " He holds the <|fact:cert.dbms|> certificate. <|end|>",
-      "resolved": " He holds the Database Management System — Infosys Springboard · 04 Jul 2026 certificate. <|end|>",
+      "answer": "He works with MongoDB, MySQL, PostgreSQL, Mongoose and Drizzle ORM.",
+      "resolved": "He works with MongoDB, MySQL, PostgreSQL, Mongoose and Drizzle ORM.",
       "abstained": false,
       "cited": [
-        "cert.dbms"
+        "skill.mongodb",
+        "skill.mysql",
+        "skill.postgresql",
+        "skill.mongoose",
+        "skill.drizzle"
       ],
       "unsupportedIds": [],
       "expected": [
@@ -274,8 +270,14 @@
         "skill.mongoose",
         "skill.drizzle"
       ],
-      "covered": [],
-      "coverage": 0,
+      "covered": [
+        "skill.mongodb",
+        "skill.mysql",
+        "skill.postgresql",
+        "skill.mongoose",
+        "skill.drizzle"
+      ],
+      "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
       "guardOk": true,
@@ -296,34 +298,65 @@
       "type": "direct",
       "lang": "en",
       "route": "model",
-      "answer": " He studies at <|fact:edu.lpu|>. <|end|>",
-      "resolved": " He studies at Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. <|end|>",
+      "answer": "He works with Python, C, C++, Java, JavaScript, HTML5, CSS3, React.js, Next.js, Tailwind CSS, Vite, Node.js, Express.js, REST APIs, MongoDB, MySQL, PostgreSQL, Mongoose, Drizzle ORM, Google Gemini AI, Groq AI (Llama 3.3 70B), JWT, bcrypt, CORS, Rate limiting, Git, GitHub, VS Code, npm, Postman, Vercel, Teamwork, Adaptability, Collaboration, Communication, Time Management, Three.js / WebGL and GSAP.",
+      "resolved": "He works with Python, C, C++, Java, JavaScript, HTML5, CSS3, React.js, Next.js, Tailwind CSS, Vite, Node.js, Express.js, REST APIs, MongoDB, MySQL, PostgreSQL, Mongoose, Drizzle ORM, Google Gemini AI, Groq AI (Llama 3.3 70B), JWT, bcrypt, CORS, Rate limiting, Git, GitHub, VS Code, npm, Postman, Vercel, Teamwork, Adaptability, Collaboration, Communication, Time Management, Three.js / WebGL and GSAP.",
       "abstained": false,
       "cited": [
-        "edu.lpu"
+        "skill.python",
+        "skill.c",
+        "skill.cpp",
+        "skill.java",
+        "skill.javascript",
+        "skill.html5",
+        "skill.css3",
+        "skill.react",
+        "skill.next",
+        "skill.tailwind",
+        "skill.vite",
+        "skill.node",
+        "skill.express",
+        "skill.rest",
+        "skill.mongodb",
+        "skill.mysql",
+        "skill.postgresql",
+        "skill.mongoose",
+        "skill.drizzle",
+        "skill.gemini",
+        "skill.groq",
+        "skill.jwt",
+        "skill.bcrypt",
+        "skill.cors",
+        "skill.ratelimit",
+        "skill.git",
+        "skill.github",
+        "skill.vscode",
+        "skill.npm",
+        "skill.postman",
+        "skill.vercel",
+        "skill.teamwork",
+        "skill.adaptability",
+        "skill.collaboration",
+        "skill.communication",
+        "skill.timemanagement",
+        "skill.threejs",
+        "skill.gsap"
       ],
-      "unsupportedIds": [
-        "edu.lpu"
-      ],
+      "unsupportedIds": [],
       "expected": [
         "skill.python",
         "skill.react",
         "skill.gsap"
       ],
-      "covered": [],
-      "coverage": 0,
+      "covered": [
+        "skill.python",
+        "skill.react",
+        "skill.gsap"
+      ],
+      "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
-      "guardOk": false,
-      "guardCodes": [
-        "number_not_grounded",
-        "number_not_grounded",
-        "date_not_grounded",
-        "date_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded"
-      ],
+      "guardOk": true,
+      "guardCodes": [],
       "focusOk": null,
       "abstainedBy": null,
       "scorable": true,
@@ -331,8 +364,8 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": true,
-      "shownToVisitor": false,
+      "unsupportedPreGuard": false,
+      "shownToVisitor": true,
       "unsupportedPostGuard": false
     },
     {
@@ -340,11 +373,13 @@
       "type": "direct",
       "lang": "en",
       "route": "model",
-      "answer": " He holds the <|fact:cert.dbms|> certificate. <|end|>",
-      "resolved": " He holds the Database Management System — Infosys Springboard · 04 Jul 2026 certificate. <|end|>",
+      "answer": "His certifications: Database Management System — Infosys Springboard · 04 Jul 2026, Programming Using C++ — Infosys Springboard · 26 Jul 2025 and Minor in Artificial Intelligence — Masai School × IIT Ropar · Jan 2025–Nov 2025 · CGPA 6.93/10.",
+      "resolved": "His certifications: Database Management System — Infosys Springboard · 04 Jul 2026, Programming Using C++ — Infosys Springboard · 26 Jul 2025 and Minor in Artificial Intelligence — Masai School × IIT Ropar · Jan 2025–Nov 2025 · CGPA 6.93/10.",
       "abstained": false,
       "cited": [
-        "cert.dbms"
+        "cert.dbms",
+        "cert.cpp",
+        "cert.minor-ai"
       ],
       "unsupportedIds": [],
       "expected": [
@@ -352,9 +387,10 @@
         "cert.cpp"
       ],
       "covered": [
-        "cert.dbms"
+        "cert.dbms",
+        "cert.cpp"
       ],
-      "coverage": 0.5,
+      "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
       "guardOk": true,
@@ -375,11 +411,13 @@
       "type": "direct",
       "lang": "en",
       "route": "model",
-      "answer": " His main project is <|fact:project.volunteer|>. <|end|>",
-      "resolved": " His main project is Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.. <|end|>",
+      "answer": "His projects: Community Volunteer Management: Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards., Smart Grocery List Generator: 3-page full-stack grocery planning app with Gemini AI for suggestions, meal planning and chat across 24 grocery items. and Goal Tracker SaaS: Full-stack SaaS goal-tracking platform with Groq Llama 3.3 70B AI chat, an 8-level XP/streak system and Chart.js analytics, deployed on Vercel..",
+      "resolved": "His projects: Community Volunteer Management: Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards., Smart Grocery List Generator: 3-page full-stack grocery planning app with Gemini AI for suggestions, meal planning and chat across 24 grocery items. and Goal Tracker SaaS: Full-stack SaaS goal-tracking platform with Groq Llama 3.3 70B AI chat, an 8-level XP/streak system and Chart.js analytics, deployed on Vercel..",
       "abstained": false,
       "cited": [
-        "project.volunteer"
+        "project.volunteer",
+        "project.grocery",
+        "project.goaltracker"
       ],
       "unsupportedIds": [],
       "expected": [
@@ -388,98 +426,11 @@
         "project.goaltracker"
       ],
       "covered": [
-        "project.volunteer"
-      ],
-      "coverage": 0.3333333333333333,
-      "forbiddenHit": [],
-      "fabricated": false,
-      "guardOk": false,
-      "guardCodes": [
-        "number_not_grounded",
-        "number_not_grounded",
-        "entity_not_grounded"
-      ],
-      "focusOk": null,
-      "abstainedBy": null,
-      "scorable": true,
-      "languageOk": true,
-      "terminated": true,
-      "echoes": false,
-      "expectedAnswer": null,
-      "unsupportedPreGuard": true,
-      "shownToVisitor": false,
-      "unsupportedPostGuard": false
-    },
-    {
-      "id": "d09",
-      "type": "direct",
-      "lang": "en",
-      "route": "model",
-      "answer": " His name is <|fact:person.name|>. Name: <|fact:person.name|>. Education: <|fact:edu.lpu|>. Flagship project: <|fact:project.volunteer|>. <|fact:workflow.how-he-builds|>. <|end|>",
-      "resolved": " His name is Aashish Kumar. Name: Aashish Kumar. Education: Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. Flagship project: Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.. Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.. <|end|>",
-      "abstained": false,
-      "cited": [
-        "person.name",
-        "person.name",
-        "edu.lpu",
         "project.volunteer",
-        "workflow.how-he-builds"
+        "project.grocery",
+        "project.goaltracker"
       ],
-      "unsupportedIds": [
-        "person.name",
-        "person.name",
-        "edu.lpu",
-        "project.volunteer",
-        "workflow.how-he-builds"
-      ],
-      "expected": [
-        "contact.email"
-      ],
-      "covered": [],
-      "coverage": 0,
-      "forbiddenHit": [],
-      "fabricated": false,
-      "guardOk": false,
-      "guardCodes": [
-        "number_not_grounded",
-        "number_not_grounded",
-        "number_not_grounded",
-        "number_not_grounded",
-        "number_not_grounded",
-        "number_not_grounded",
-        "date_not_grounded",
-        "date_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded"
-      ],
-      "focusOk": null,
-      "abstainedBy": null,
-      "scorable": true,
-      "languageOk": true,
-      "terminated": true,
-      "echoes": false,
-      "expectedAnswer": null,
-      "unsupportedPreGuard": true,
-      "shownToVisitor": false,
-      "unsupportedPostGuard": false
-    },
-    {
-      "id": "d10",
-      "type": "direct",
-      "lang": "en",
-      "route": "model",
-      "answer": " I'm Aashish's AI portfolio assistant, answering with the verified information on this site. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself.",
-      "resolved": " I'm Aashish's AI portfolio assistant, answering with the verified information on this site. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself.",
-      "abstained": false,
-      "cited": [],
-      "unsupportedIds": [],
-      "expected": [
-        "contact.availability"
-      ],
-      "covered": [],
-      "coverage": 0,
+      "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
       "guardOk": true,
@@ -488,7 +439,80 @@
       "abstainedBy": null,
       "scorable": true,
       "languageOk": true,
-      "terminated": false,
+      "terminated": true,
+      "echoes": false,
+      "expectedAnswer": null,
+      "unsupportedPreGuard": false,
+      "shownToVisitor": true,
+      "unsupportedPostGuard": false
+    },
+    {
+      "id": "d09",
+      "type": "direct",
+      "lang": "en",
+      "route": "model",
+      "answer": "Here's how to reach Aashish:\nEmail: aashishkumarrajut1345@gmail.com\nLocation: Phagwara, Punjab, India\n• GitHub: https://github.com/aashish1332\n• LinkedIn: https://www.linkedin.com/in/aashishkumar13/\nAvailability: Open to internships and full-time roles",
+      "resolved": "Here's how to reach Aashish:\nEmail: aashishkumarrajut1345@gmail.com\nLocation: Phagwara, Punjab, India\n• GitHub: https://github.com/aashish1332\n• LinkedIn: https://www.linkedin.com/in/aashishkumar13/\nAvailability: Open to internships and full-time roles",
+      "abstained": false,
+      "cited": [
+        "contact.email",
+        "contact.location",
+        "contact.availability",
+        "link.github",
+        "link.linkedin"
+      ],
+      "unsupportedIds": [],
+      "expected": [
+        "contact.email"
+      ],
+      "covered": [
+        "contact.email"
+      ],
+      "coverage": 1,
+      "forbiddenHit": [],
+      "fabricated": false,
+      "guardOk": true,
+      "guardCodes": [],
+      "focusOk": null,
+      "abstainedBy": null,
+      "scorable": true,
+      "languageOk": true,
+      "terminated": true,
+      "echoes": false,
+      "expectedAnswer": null,
+      "unsupportedPreGuard": false,
+      "shownToVisitor": true,
+      "unsupportedPostGuard": false
+    },
+    {
+      "id": "d10",
+      "type": "direct",
+      "lang": "en",
+      "route": "model",
+      "answer": "His training: AI-Driven MERN Stack Bootcamp — Full Stack Development with DevOps & Real-World Projects (11 Jun 2026–15 Jul 2026) · Grade A and Open to internships and full-time roles.",
+      "resolved": "His training: AI-Driven MERN Stack Bootcamp — Full Stack Development with DevOps & Real-World Projects (11 Jun 2026–15 Jul 2026) · Grade A and Open to internships and full-time roles.",
+      "abstained": false,
+      "cited": [
+        "exp.mern-bootcamp",
+        "contact.availability"
+      ],
+      "unsupportedIds": [],
+      "expected": [
+        "contact.availability"
+      ],
+      "covered": [
+        "contact.availability"
+      ],
+      "coverage": 1,
+      "forbiddenHit": [],
+      "fabricated": false,
+      "guardOk": true,
+      "guardCodes": [],
+      "focusOk": null,
+      "abstainedBy": null,
+      "scorable": true,
+      "languageOk": true,
+      "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
       "unsupportedPreGuard": false,
@@ -500,27 +524,25 @@
       "type": "direct",
       "lang": "en",
       "route": "model",
-      "answer": " His CGPA is <|fact:ach.lpu-cgpa|>. <|end|>",
-      "resolved": " His CGPA is CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University. <|end|>",
+      "answer": "Aashish's profiles:\n• GitHub: https://github.com/aashish1332\n• LinkedIn: https://www.linkedin.com/in/aashishkumar13/",
+      "resolved": "Aashish's profiles:\n• GitHub: https://github.com/aashish1332\n• LinkedIn: https://www.linkedin.com/in/aashishkumar13/",
       "abstained": false,
       "cited": [
-        "ach.lpu-cgpa"
+        "link.github",
+        "link.linkedin"
       ],
-      "unsupportedIds": [
-        "ach.lpu-cgpa"
-      ],
+      "unsupportedIds": [],
       "expected": [
         "link.github"
       ],
-      "covered": [],
-      "coverage": 0,
+      "covered": [
+        "link.github"
+      ],
+      "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
-      "guardOk": false,
-      "guardCodes": [
-        "number_not_grounded",
-        "entity_not_grounded"
-      ],
+      "guardOk": true,
+      "guardCodes": [],
       "focusOk": null,
       "abstainedBy": null,
       "scorable": true,
@@ -528,8 +550,8 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": true,
-      "shownToVisitor": false,
+      "unsupportedPreGuard": false,
+      "shownToVisitor": true,
       "unsupportedPostGuard": false
     },
     {
@@ -537,41 +559,33 @@
       "type": "direct",
       "lang": "en",
       "route": "model",
-      "answer": " He studies at <|fact:edu.lpu|>. <|end|>",
-      "resolved": " He studies at Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. <|end|>",
+      "answer": "Phagwara, Punjab, India",
+      "resolved": "Phagwara, Punjab, India",
       "abstained": false,
       "cited": [
-        "edu.lpu"
+        "contact.location"
       ],
-      "unsupportedIds": [
-        "edu.lpu"
-      ],
+      "unsupportedIds": [],
       "expected": [
         "contact.location"
       ],
-      "covered": [],
-      "coverage": 0,
+      "covered": [
+        "contact.location"
+      ],
+      "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
-      "guardOk": false,
-      "guardCodes": [
-        "number_not_grounded",
-        "number_not_grounded",
-        "date_not_grounded",
-        "date_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded"
-      ],
+      "guardOk": true,
+      "guardCodes": [],
       "focusOk": null,
       "abstainedBy": null,
       "scorable": true,
       "languageOk": true,
       "terminated": true,
-      "echoes": false,
+      "echoes": true,
       "expectedAnswer": null,
-      "unsupportedPreGuard": true,
-      "shownToVisitor": false,
+      "unsupportedPreGuard": false,
+      "shownToVisitor": true,
       "unsupportedPostGuard": false
     },
     {
@@ -579,8 +593,8 @@
       "type": "direct",
       "lang": "hi",
       "route": "model",
-      "answer": " मेरा CGPA <|fact:ach.lpu-cgpa|> है।तनतह <|end|>",
-      "resolved": " मेरा CGPA CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University है।तनतह <|end|>",
+      "answer": "उनके रिकॉर्ड के बारे में संक्षेप में: CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University",
+      "resolved": "उनके रिकॉर्ड के बारे में संक्षेप में: CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University",
       "abstained": false,
       "cited": [
         "ach.lpu-cgpa"
@@ -613,8 +627,8 @@
       "type": "direct",
       "lang": "hi",
       "route": "model",
-      "answer": " मेरा नाम <|fact:person.name|> है।ै।<|end|>",
-      "resolved": " मेरा नाम Aashish Kumar है।ै।<|end|>",
+      "answer": "उनका पूरा नाम Aashish Kumar है।",
+      "resolved": "उनका पूरा नाम Aashish Kumar है।",
       "abstained": false,
       "cited": [
         "person.name"
@@ -647,16 +661,24 @@
       "type": "direct",
       "lang": "hi",
       "route": "model",
-      "answer": " मेरा फ्रंटएंड फ्रेमवर्क React है।. <|end|>",
-      "resolved": " मेरा फ्रंटएंड फ्रेमवर्क React है।. <|end|>",
+      "answer": "Aashish से संपर्क:\nईमेल: aashishkumarrajut1345@gmail.com\nलोकेशन: Phagwara, Punjab, India\n• GitHub: https://github.com/aashish1332\n• LinkedIn: https://www.linkedin.com/in/aashishkumar13/\nउपलब्धता: Open to internships and full-time roles",
+      "resolved": "Aashish से संपर्क:\nईमेल: aashishkumarrajut1345@gmail.com\nलोकेशन: Phagwara, Punjab, India\n• GitHub: https://github.com/aashish1332\n• LinkedIn: https://www.linkedin.com/in/aashishkumar13/\nउपलब्धता: Open to internships and full-time roles",
       "abstained": false,
-      "cited": [],
+      "cited": [
+        "contact.email",
+        "contact.location",
+        "contact.availability",
+        "link.github",
+        "link.linkedin"
+      ],
       "unsupportedIds": [],
       "expected": [
         "contact.email"
       ],
-      "covered": [],
-      "coverage": 0,
+      "covered": [
+        "contact.email"
+      ],
+      "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
       "guardOk": true,
@@ -677,22 +699,26 @@
       "type": "direct",
       "lang": "hinglish",
       "route": "model",
-      "answer": " Unka naam <|fact:person.name|> hai. <|end|>",
-      "resolved": " Unka naam Aashish Kumar hai. <|end|>",
+      "answer": "Unke projects: Community Volunteer Management: Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards., Smart Grocery List Generator: 3-page full-stack grocery planning app with Gemini AI for suggestions, meal planning and chat across 24 grocery items. aur Goal Tracker SaaS: Full-stack SaaS goal-tracking platform with Groq Llama 3.3 70B AI chat, an 8-level XP/streak system and Chart.js analytics, deployed on Vercel..",
+      "resolved": "Unke projects: Community Volunteer Management: Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards., Smart Grocery List Generator: 3-page full-stack grocery planning app with Gemini AI for suggestions, meal planning and chat across 24 grocery items. aur Goal Tracker SaaS: Full-stack SaaS goal-tracking platform with Groq Llama 3.3 70B AI chat, an 8-level XP/streak system and Chart.js analytics, deployed on Vercel..",
       "abstained": false,
       "cited": [
-        "person.name"
+        "project.volunteer",
+        "project.grocery",
+        "project.goaltracker"
       ],
-      "unsupportedIds": [
-        "person.name"
-      ],
+      "unsupportedIds": [],
       "expected": [
         "project.volunteer",
         "project.grocery",
         "project.goaltracker"
       ],
-      "covered": [],
-      "coverage": 0,
+      "covered": [
+        "project.volunteer",
+        "project.grocery",
+        "project.goaltracker"
+      ],
+      "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
       "guardOk": true,
@@ -704,30 +730,22 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": true,
+      "unsupportedPreGuard": false,
       "shownToVisitor": true,
-      "unsupportedPostGuard": true
+      "unsupportedPostGuard": false
     },
     {
       "id": "d17",
       "type": "direct",
       "lang": "hinglish",
       "route": "model",
-      "answer": " Unka naam <|fact:person.name|> hai. Name: <|fact:person.name|>. Education: <|fact:edu.lpu|>. Flagship project: <|fact:project.volunteer|>. <|fact:workflow.how-he-builds|>. <|end|>",
-      "resolved": " Unka naam Aashish Kumar hai. Name: Aashish Kumar. Education: Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. Flagship project: Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.. Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.. <|end|>",
+      "answer": "Unka poora naam Aashish Kumar hai.",
+      "resolved": "Unka poora naam Aashish Kumar hai.",
       "abstained": false,
       "cited": [
-        "person.name",
-        "person.name",
-        "edu.lpu",
-        "project.volunteer",
-        "workflow.how-he-builds"
+        "person.name"
       ],
-      "unsupportedIds": [
-        "edu.lpu",
-        "project.volunteer",
-        "workflow.how-he-builds"
-      ],
+      "unsupportedIds": [],
       "expected": [
         "person.name"
       ],
@@ -737,21 +755,8 @@
       "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
-      "guardOk": false,
-      "guardCodes": [
-        "number_not_grounded",
-        "number_not_grounded",
-        "number_not_grounded",
-        "number_not_grounded",
-        "number_not_grounded",
-        "number_not_grounded",
-        "date_not_grounded",
-        "date_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded"
-      ],
+      "guardOk": true,
+      "guardCodes": [],
       "focusOk": null,
       "abstainedBy": null,
       "scorable": true,
@@ -759,8 +764,8 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": true,
-      "shownToVisitor": false,
+      "unsupportedPreGuard": false,
+      "shownToVisitor": true,
       "unsupportedPostGuard": false
     },
     {
@@ -768,28 +773,63 @@
       "type": "direct",
       "lang": "hinglish",
       "route": "model",
-      "answer": " Mera CGPA <|fact:ach.lpu-cgpa|> hai. <|end|>",
-      "resolved": " Mera CGPA CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University hai. <|end|>",
+      "answer": "Wo Python, C, C++, Java, JavaScript, HTML5, CSS3, React.js, Next.js, Tailwind CSS, Vite, Node.js, Express.js, REST APIs, MongoDB, MySQL, PostgreSQL, Mongoose, Drizzle ORM, Google Gemini AI, Groq AI (Llama 3.3 70B), JWT, bcrypt, CORS, Rate limiting, Git, GitHub, VS Code, npm, Postman, Vercel, Teamwork, Adaptability, Collaboration, Communication, Time Management, Three.js / WebGL aur GSAP jaise technologies pe kaam karte hain.",
+      "resolved": "Wo Python, C, C++, Java, JavaScript, HTML5, CSS3, React.js, Next.js, Tailwind CSS, Vite, Node.js, Express.js, REST APIs, MongoDB, MySQL, PostgreSQL, Mongoose, Drizzle ORM, Google Gemini AI, Groq AI (Llama 3.3 70B), JWT, bcrypt, CORS, Rate limiting, Git, GitHub, VS Code, npm, Postman, Vercel, Teamwork, Adaptability, Collaboration, Communication, Time Management, Three.js / WebGL aur GSAP jaise technologies pe kaam karte hain.",
       "abstained": false,
       "cited": [
-        "ach.lpu-cgpa"
+        "skill.python",
+        "skill.c",
+        "skill.cpp",
+        "skill.java",
+        "skill.javascript",
+        "skill.html5",
+        "skill.css3",
+        "skill.react",
+        "skill.next",
+        "skill.tailwind",
+        "skill.vite",
+        "skill.node",
+        "skill.express",
+        "skill.rest",
+        "skill.mongodb",
+        "skill.mysql",
+        "skill.postgresql",
+        "skill.mongoose",
+        "skill.drizzle",
+        "skill.gemini",
+        "skill.groq",
+        "skill.jwt",
+        "skill.bcrypt",
+        "skill.cors",
+        "skill.ratelimit",
+        "skill.git",
+        "skill.github",
+        "skill.vscode",
+        "skill.npm",
+        "skill.postman",
+        "skill.vercel",
+        "skill.teamwork",
+        "skill.adaptability",
+        "skill.collaboration",
+        "skill.communication",
+        "skill.timemanagement",
+        "skill.threejs",
+        "skill.gsap"
       ],
-      "unsupportedIds": [
-        "ach.lpu-cgpa"
-      ],
+      "unsupportedIds": [],
       "expected": [
         "skill.python",
         "skill.mongodb"
       ],
-      "covered": [],
-      "coverage": 0,
+      "covered": [
+        "skill.python",
+        "skill.mongodb"
+      ],
+      "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
-      "guardOk": false,
-      "guardCodes": [
-        "number_not_grounded",
-        "entity_not_grounded"
-      ],
+      "guardOk": true,
+      "guardCodes": [],
       "focusOk": null,
       "abstainedBy": null,
       "scorable": true,
@@ -797,8 +837,8 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": true,
-      "shownToVisitor": false,
+      "unsupportedPreGuard": false,
+      "shownToVisitor": true,
       "unsupportedPostGuard": false
     },
     {
@@ -806,16 +846,20 @@
       "type": "direct",
       "lang": "hi",
       "route": "model",
-      "answer": " मेरा फ्रंटएंड फ्रेमवर्क React है।<|end|>",
-      "resolved": " मेरा फ्रंटएंड फ्रेमवर्क React है।<|end|>",
+      "answer": "उनके प्रोजेक्ट के बारे में संक्षेप में: Smart Grocery List Generator: 3-page full-stack grocery planning app with Gemini AI for suggestions, meal planning and chat across 24 grocery items.\nटेक: React 19, Vite, Node.js, Express, MongoDB, Gemini AI, JWT, bcrypt, Recharts\nLive: https://smart-grocery-lemon.vercel.app/\nकैसे बना: AI-generated code guided by the author's self-defined product features and UI requirements; visual work also used pre-built 21st.dev and Spline.design components.",
+      "resolved": "उनके प्रोजेक्ट के बारे में संक्षेप में: Smart Grocery List Generator: 3-page full-stack grocery planning app with Gemini AI for suggestions, meal planning and chat across 24 grocery items.\nटेक: React 19, Vite, Node.js, Express, MongoDB, Gemini AI, JWT, bcrypt, Recharts\nLive: https://smart-grocery-lemon.vercel.app/\nकैसे बना: AI-generated code guided by the author's self-defined product features and UI requirements; visual work also used pre-built 21st.dev and Spline.design components.",
       "abstained": false,
-      "cited": [],
+      "cited": [
+        "project.grocery"
+      ],
       "unsupportedIds": [],
       "expected": [
         "project.grocery"
       ],
-      "covered": [],
-      "coverage": 0,
+      "covered": [
+        "project.grocery"
+      ],
+      "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
       "guardOk": true,
@@ -836,59 +880,20 @@
       "type": "direct",
       "lang": "hi",
       "route": "model",
-      "answer": " मैंने <|fact:exp.mern-bootcamp|> पूरा किया है।स<|end|>",
-      "resolved": " मैंने AI-Driven MERN Stack Bootcamp — Full Stack Development with DevOps & Real-World Projects (11 Jun 2026–15 Jul 2026) · Grade A पूरा किया है।स<|end|>",
+      "answer": "उनके रिकॉर्ड के बारे में संक्षेप में: Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10",
+      "resolved": "उनके रिकॉर्ड के बारे में संक्षेप में: Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10",
       "abstained": false,
       "cited": [
-        "exp.mern-bootcamp"
-      ],
-      "unsupportedIds": [
-        "exp.mern-bootcamp"
-      ],
-      "expected": [
         "edu.lpu"
-      ],
-      "covered": [],
-      "coverage": 0,
-      "forbiddenHit": [],
-      "fabricated": false,
-      "guardOk": false,
-      "guardCodes": [
-        "number_not_grounded",
-        "number_not_grounded",
-        "date_not_grounded",
-        "date_not_grounded",
-        "date_not_grounded",
-        "entity_not_grounded"
-      ],
-      "focusOk": null,
-      "abstainedBy": null,
-      "scorable": true,
-      "languageOk": true,
-      "terminated": true,
-      "echoes": false,
-      "expectedAnswer": null,
-      "unsupportedPreGuard": true,
-      "shownToVisitor": false,
-      "unsupportedPostGuard": false
-    },
-    {
-      "id": "i01",
-      "type": "indirect",
-      "lang": "en",
-      "route": "model",
-      "answer": " How I build: <|fact:workflow.how-he-builds|>. <|end|>",
-      "resolved": " How I build: Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.. <|end|>",
-      "abstained": false,
-      "cited": [
-        "workflow.how-he-builds"
       ],
       "unsupportedIds": [],
       "expected": [
-        "skill.rest"
+        "edu.lpu"
       ],
-      "covered": [],
-      "coverage": 0,
+      "covered": [
+        "edu.lpu"
+      ],
+      "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
       "guardOk": true,
@@ -898,7 +903,41 @@
       "scorable": true,
       "languageOk": true,
       "terminated": true,
-      "echoes": true,
+      "echoes": false,
+      "expectedAnswer": null,
+      "unsupportedPreGuard": false,
+      "shownToVisitor": true,
+      "unsupportedPostGuard": false
+    },
+    {
+      "id": "i01",
+      "type": "indirect",
+      "lang": "en",
+      "route": "model",
+      "answer": "Yes — REST APIs (backend) is on his list.",
+      "resolved": "Yes — REST APIs (backend) is on his list.",
+      "abstained": false,
+      "cited": [
+        "skill.rest"
+      ],
+      "unsupportedIds": [],
+      "expected": [
+        "skill.rest"
+      ],
+      "covered": [
+        "skill.rest"
+      ],
+      "coverage": 1,
+      "forbiddenHit": [],
+      "fabricated": false,
+      "guardOk": true,
+      "guardCodes": [],
+      "focusOk": null,
+      "abstainedBy": null,
+      "scorable": true,
+      "languageOk": true,
+      "terminated": true,
+      "echoes": false,
       "expectedAnswer": null,
       "unsupportedPreGuard": false,
       "shownToVisitor": true,
@@ -909,47 +948,30 @@
       "type": "indirect",
       "lang": "en",
       "route": "model",
-      "answer": " His name is <|fact:person.name|>. Name: <|fact:person.name|>. Education: <|fact:edu.lpu|>. Flagship project: <|fact:project.volunteer|>. <|fact:workflow.how-he-builds|>. <|end|>",
-      "resolved": " His name is Aashish Kumar. Name: Aashish Kumar. Education: Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. Flagship project: Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.. Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.. <|end|>",
+      "answer": "He works with Node.js, Express.js and REST APIs.",
+      "resolved": "He works with Node.js, Express.js and REST APIs.",
       "abstained": false,
       "cited": [
-        "person.name",
-        "person.name",
-        "edu.lpu",
-        "project.volunteer",
-        "workflow.how-he-builds"
+        "skill.node",
+        "skill.express",
+        "skill.rest"
       ],
-      "unsupportedIds": [
-        "person.name",
-        "person.name",
-        "edu.lpu",
-        "project.volunteer",
-        "workflow.how-he-builds"
-      ],
+      "unsupportedIds": [],
       "expected": [
         "skill.node",
         "skill.express",
         "skill.rest"
       ],
-      "covered": [],
-      "coverage": 0,
+      "covered": [
+        "skill.node",
+        "skill.express",
+        "skill.rest"
+      ],
+      "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
-      "guardOk": false,
-      "guardCodes": [
-        "number_not_grounded",
-        "number_not_grounded",
-        "number_not_grounded",
-        "number_not_grounded",
-        "number_not_grounded",
-        "number_not_grounded",
-        "date_not_grounded",
-        "date_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded"
-      ],
+      "guardOk": true,
+      "guardCodes": [],
       "focusOk": null,
       "abstainedBy": null,
       "scorable": true,
@@ -957,8 +979,8 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": true,
-      "shownToVisitor": false,
+      "unsupportedPreGuard": false,
+      "shownToVisitor": true,
       "unsupportedPostGuard": false
     },
     {
@@ -966,18 +988,21 @@
       "type": "indirect",
       "lang": "en",
       "route": "model",
-      "answer": " His CGPA is <|fact:ach.lpu-cgpa|>. <|end|>",
-      "resolved": " His CGPA is CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University. <|end|>",
+      "answer": "Education:\n• Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10\n• Kendriya Vidyalaya No. 2, RCF, Hussainpur — Senior Secondary (Class 12), CBSE (2023–2024) · 87.6%\nExpected graduation: 2028.",
+      "resolved": "Education:\n• Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10\n• Kendriya Vidyalaya No. 2, RCF, Hussainpur — Senior Secondary (Class 12), CBSE (2023–2024) · 87.6%\nExpected graduation: 2028.",
       "abstained": false,
       "cited": [
-        "ach.lpu-cgpa"
+        "edu.lpu",
+        "edu.kv2"
       ],
       "unsupportedIds": [],
       "expected": [
         "edu.lpu"
       ],
-      "covered": [],
-      "coverage": 0,
+      "covered": [
+        "edu.lpu"
+      ],
+      "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
       "guardOk": true,
@@ -998,76 +1023,22 @@
       "type": "indirect",
       "lang": "en",
       "route": "model",
-      "answer": " मैं <|fact:edu.lpu|> में पढ़ता हूँ।. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. Name: <|fact:person.name|>. Education: <|fact:edu.lpu|>. Flagship project: <|fact:project.volunteer|>. <|fact:workflow.how-he-builds|>. <|end|>",
-      "resolved": " मैं Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10 में पढ़ता हूँ।. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. Name: Aashish Kumar. Education: Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. Flagship project: Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.. Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.. <|end|>",
+      "answer": "His certifications: Database Management System — Infosys Springboard · 04 Jul 2026, Programming Using C++ — Infosys Springboard · 26 Jul 2025 and Minor in Artificial Intelligence — Masai School × IIT Ropar · Jan 2025–Nov 2025 · CGPA 6.93/10.",
+      "resolved": "His certifications: Database Management System — Infosys Springboard · 04 Jul 2026, Programming Using C++ — Infosys Springboard · 26 Jul 2025 and Minor in Artificial Intelligence — Masai School × IIT Ropar · Jan 2025–Nov 2025 · CGPA 6.93/10.",
       "abstained": false,
       "cited": [
-        "edu.lpu",
-        "person.name",
-        "edu.lpu",
-        "project.volunteer",
-        "workflow.how-he-builds"
-      ],
-      "unsupportedIds": [
-        "edu.lpu",
-        "person.name",
-        "edu.lpu",
-        "project.volunteer",
-        "workflow.how-he-builds"
-      ],
-      "expected": [
+        "cert.dbms",
+        "cert.cpp",
         "cert.minor-ai"
-      ],
-      "covered": [],
-      "coverage": 0,
-      "forbiddenHit": [],
-      "fabricated": false,
-      "guardOk": false,
-      "guardCodes": [
-        "number_not_grounded",
-        "number_not_grounded",
-        "number_not_grounded",
-        "number_not_grounded",
-        "number_not_grounded",
-        "date_not_grounded",
-        "date_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded"
-      ],
-      "focusOk": null,
-      "abstainedBy": null,
-      "scorable": true,
-      "languageOk": true,
-      "terminated": true,
-      "echoes": false,
-      "expectedAnswer": null,
-      "unsupportedPreGuard": true,
-      "shownToVisitor": false,
-      "unsupportedPostGuard": false
-    },
-    {
-      "id": "i05",
-      "type": "indirect",
-      "lang": "en",
-      "route": "model",
-      "answer": " His main project is <|fact:project.volunteer|>. <|end|>",
-      "resolved": " His main project is Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.. <|end|>",
-      "abstained": false,
-      "cited": [
-        "project.volunteer"
       ],
       "unsupportedIds": [],
       "expected": [
-        "project.volunteer",
-        "project.grocery",
-        "project.goaltracker"
+        "cert.minor-ai"
       ],
       "covered": [
-        "project.volunteer"
+        "cert.minor-ai"
       ],
-      "coverage": 0.3333333333333333,
+      "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
       "guardOk": true,
@@ -1077,7 +1048,47 @@
       "scorable": true,
       "languageOk": true,
       "terminated": true,
-      "echoes": true,
+      "echoes": false,
+      "expectedAnswer": null,
+      "unsupportedPreGuard": false,
+      "shownToVisitor": true,
+      "unsupportedPostGuard": false
+    },
+    {
+      "id": "i05",
+      "type": "indirect",
+      "lang": "en",
+      "route": "model",
+      "answer": "His projects: Community Volunteer Management: Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards., Smart Grocery List Generator: 3-page full-stack grocery planning app with Gemini AI for suggestions, meal planning and chat across 24 grocery items. and Goal Tracker SaaS: Full-stack SaaS goal-tracking platform with Groq Llama 3.3 70B AI chat, an 8-level XP/streak system and Chart.js analytics, deployed on Vercel..",
+      "resolved": "His projects: Community Volunteer Management: Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards., Smart Grocery List Generator: 3-page full-stack grocery planning app with Gemini AI for suggestions, meal planning and chat across 24 grocery items. and Goal Tracker SaaS: Full-stack SaaS goal-tracking platform with Groq Llama 3.3 70B AI chat, an 8-level XP/streak system and Chart.js analytics, deployed on Vercel..",
+      "abstained": false,
+      "cited": [
+        "project.volunteer",
+        "project.grocery",
+        "project.goaltracker"
+      ],
+      "unsupportedIds": [],
+      "expected": [
+        "project.volunteer",
+        "project.grocery",
+        "project.goaltracker"
+      ],
+      "covered": [
+        "project.volunteer",
+        "project.grocery",
+        "project.goaltracker"
+      ],
+      "coverage": 1,
+      "forbiddenHit": [],
+      "fabricated": false,
+      "guardOk": true,
+      "guardCodes": [],
+      "focusOk": null,
+      "abstainedBy": null,
+      "scorable": true,
+      "languageOk": true,
+      "terminated": true,
+      "echoes": false,
       "expectedAnswer": null,
       "unsupportedPreGuard": false,
       "shownToVisitor": true,
@@ -1088,69 +1099,20 @@
       "type": "indirect",
       "lang": "en",
       "route": "model",
-      "answer": " I also built <|fact:project.grocery|>. Education: <|fact:edu.lpu|>. Flagship project: <|fact:project.volunteer|>. <|fact:workflow.how-he-builds|>. <|end|>",
-      "resolved": " I also built 3-page full-stack grocery planning app with Gemini AI for suggestions, meal planning and chat across 24 grocery items.. Education: Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. Flagship project: Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.. Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.. <|end|>",
+      "answer": "Yes — Google Gemini AI (ai-ml) is on his list.",
+      "resolved": "Yes — Google Gemini AI (ai-ml) is on his list.",
       "abstained": false,
       "cited": [
-        "project.grocery",
-        "edu.lpu",
-        "project.volunteer",
-        "workflow.how-he-builds"
-      ],
-      "unsupportedIds": [
-        "edu.lpu",
-        "project.volunteer"
-      ],
-      "expected": [
         "skill.gemini"
-      ],
-      "covered": [],
-      "coverage": 0,
-      "forbiddenHit": [],
-      "fabricated": false,
-      "guardOk": false,
-      "guardCodes": [
-        "number_not_grounded",
-        "number_not_grounded",
-        "number_not_grounded",
-        "number_not_grounded",
-        "number_not_grounded",
-        "number_not_grounded",
-        "date_not_grounded",
-        "date_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded"
-      ],
-      "focusOk": null,
-      "abstainedBy": null,
-      "scorable": true,
-      "languageOk": true,
-      "terminated": true,
-      "echoes": false,
-      "expectedAnswer": null,
-      "unsupportedPreGuard": true,
-      "shownToVisitor": false,
-      "unsupportedPostGuard": false
-    },
-    {
-      "id": "i07",
-      "type": "indirect",
-      "lang": "en",
-      "route": "model",
-      "answer": " I completed <|fact:exp.mern-bootcamp|>. <|end|>",
-      "resolved": " I completed AI-Driven MERN Stack Bootcamp — Full Stack Development with DevOps & Real-World Projects (11 Jun 2026–15 Jul 2026) · Grade A. <|end|>",
-      "abstained": false,
-      "cited": [
-        "exp.mern-bootcamp"
       ],
       "unsupportedIds": [],
       "expected": [
-        "link.github"
+        "skill.gemini"
       ],
-      "covered": [],
-      "coverage": 0,
+      "covered": [
+        "skill.gemini"
+      ],
+      "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
       "guardOk": true,
@@ -1160,7 +1122,42 @@
       "scorable": true,
       "languageOk": true,
       "terminated": true,
-      "echoes": true,
+      "echoes": false,
+      "expectedAnswer": null,
+      "unsupportedPreGuard": false,
+      "shownToVisitor": true,
+      "unsupportedPostGuard": false
+    },
+    {
+      "id": "i07",
+      "type": "indirect",
+      "lang": "en",
+      "route": "model",
+      "answer": "Aashish's profiles:\n• GitHub: https://github.com/aashish1332\n• LinkedIn: https://www.linkedin.com/in/aashishkumar13/",
+      "resolved": "Aashish's profiles:\n• GitHub: https://github.com/aashish1332\n• LinkedIn: https://www.linkedin.com/in/aashishkumar13/",
+      "abstained": false,
+      "cited": [
+        "link.github",
+        "link.linkedin"
+      ],
+      "unsupportedIds": [],
+      "expected": [
+        "link.github"
+      ],
+      "covered": [
+        "link.github"
+      ],
+      "coverage": 1,
+      "forbiddenHit": [],
+      "fabricated": false,
+      "guardOk": true,
+      "guardCodes": [],
+      "focusOk": null,
+      "abstainedBy": null,
+      "scorable": true,
+      "languageOk": true,
+      "terminated": true,
+      "echoes": false,
       "expectedAnswer": null,
       "unsupportedPreGuard": false,
       "shownToVisitor": true,
@@ -1171,11 +1168,15 @@
       "type": "follow_up",
       "lang": "en",
       "route": "model",
-      "answer": " He holds the <|fact:cert.dbms|> certificate. <|end|>",
-      "resolved": " He holds the Database Management System — Infosys Springboard · 04 Jul 2026 certificate. <|end|>",
+      "answer": "He works with MongoDB, MySQL, PostgreSQL, Mongoose and Drizzle ORM.",
+      "resolved": "He works with MongoDB, MySQL, PostgreSQL, Mongoose and Drizzle ORM.",
       "abstained": false,
       "cited": [
-        "cert.dbms"
+        "skill.mongodb",
+        "skill.mysql",
+        "skill.postgresql",
+        "skill.mongoose",
+        "skill.drizzle"
       ],
       "unsupportedIds": [],
       "expected": [],
@@ -1201,8 +1202,69 @@
       "type": "follow_up",
       "lang": "hinglish",
       "route": "model",
-      "answer": " Unka CGPA <|fact:ach.lpu-cgpa|> hai. <|end|>",
-      "resolved": " Unka CGPA CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University hai. <|end|>",
+      "answer": "Wo Google Gemini AI aur Groq AI (Llama 3.3 70B) jaise technologies pe kaam karte hain.",
+      "resolved": "Wo Google Gemini AI aur Groq AI (Llama 3.3 70B) jaise technologies pe kaam karte hain.",
+      "abstained": false,
+      "cited": [
+        "skill.gemini",
+        "skill.groq"
+      ],
+      "unsupportedIds": [],
+      "expected": [],
+      "covered": [],
+      "coverage": null,
+      "forbiddenHit": [],
+      "fabricated": false,
+      "guardOk": true,
+      "guardCodes": [],
+      "focusOk": false,
+      "abstainedBy": null,
+      "scorable": false,
+      "languageOk": true,
+      "terminated": true,
+      "echoes": false,
+      "expectedAnswer": null,
+      "unsupportedPreGuard": false,
+      "shownToVisitor": true,
+      "unsupportedPostGuard": false
+    },
+    {
+      "id": "f03",
+      "type": "follow_up",
+      "lang": "en",
+      "route": "model",
+      "answer": "Goal Tracker SaaS: Full-stack SaaS goal-tracking platform with Groq Llama 3.3 70B AI chat, an 8-level XP/streak system and Chart.js analytics, deployed on Vercel.\nTech: Node.js, Express, MongoDB, Mongoose, Groq AI, Llama 3.3 70B, Chart.js, JWT, bcrypt, Vercel\nLive: https://personal-goal-tracker-five.vercel.app/\nHow it was built: AI-generated code to the author's spec; pre-built UI/3D components from 21st.dev and Spline.design.",
+      "resolved": "Goal Tracker SaaS: Full-stack SaaS goal-tracking platform with Groq Llama 3.3 70B AI chat, an 8-level XP/streak system and Chart.js analytics, deployed on Vercel.\nTech: Node.js, Express, MongoDB, Mongoose, Groq AI, Llama 3.3 70B, Chart.js, JWT, bcrypt, Vercel\nLive: https://personal-goal-tracker-five.vercel.app/\nHow it was built: AI-generated code to the author's spec; pre-built UI/3D components from 21st.dev and Spline.design.",
+      "abstained": false,
+      "cited": [
+        "project.goaltracker"
+      ],
+      "unsupportedIds": [],
+      "expected": [],
+      "covered": [],
+      "coverage": null,
+      "forbiddenHit": [],
+      "fabricated": false,
+      "guardOk": true,
+      "guardCodes": [],
+      "focusOk": true,
+      "abstainedBy": null,
+      "scorable": false,
+      "languageOk": true,
+      "terminated": true,
+      "echoes": false,
+      "expectedAnswer": null,
+      "unsupportedPreGuard": false,
+      "shownToVisitor": true,
+      "unsupportedPostGuard": false
+    },
+    {
+      "id": "f04",
+      "type": "follow_up",
+      "lang": "hinglish",
+      "route": "model",
+      "answer": "Unka record, short mein: CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University",
+      "resolved": "Unka record, short mein: CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University",
       "abstained": false,
       "cited": [
         "ach.lpu-cgpa"
@@ -1220,73 +1282,7 @@
       "scorable": false,
       "languageOk": true,
       "terminated": true,
-      "echoes": true,
-      "expectedAnswer": null,
-      "unsupportedPreGuard": false,
-      "shownToVisitor": true,
-      "unsupportedPostGuard": false
-    },
-    {
-      "id": "f03",
-      "type": "follow_up",
-      "lang": "en",
-      "route": "model",
-      "answer": " I also built <|fact:project.grocery|>. <|end|>",
-      "resolved": " I also built 3-page full-stack grocery planning app with Gemini AI for suggestions, meal planning and chat across 24 grocery items.. <|end|>",
-      "abstained": false,
-      "cited": [
-        "project.grocery"
-      ],
-      "unsupportedIds": [
-        "project.grocery"
-      ],
-      "expected": [],
-      "covered": [],
-      "coverage": null,
-      "forbiddenHit": [],
-      "fabricated": false,
-      "guardOk": false,
-      "guardCodes": [
-        "number_not_grounded",
-        "number_not_grounded",
-        "entity_not_grounded"
-      ],
-      "focusOk": true,
-      "abstainedBy": null,
-      "scorable": false,
-      "languageOk": true,
-      "terminated": true,
       "echoes": false,
-      "expectedAnswer": null,
-      "unsupportedPreGuard": true,
-      "shownToVisitor": false,
-      "unsupportedPostGuard": false
-    },
-    {
-      "id": "f04",
-      "type": "follow_up",
-      "lang": "hinglish",
-      "route": "model",
-      "answer": " I study at <|fact:edu.lpu|>. <|end|>",
-      "resolved": " I study at Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. <|end|>",
-      "abstained": false,
-      "cited": [
-        "edu.lpu"
-      ],
-      "unsupportedIds": [],
-      "expected": [],
-      "covered": [],
-      "coverage": null,
-      "forbiddenHit": [],
-      "fabricated": false,
-      "guardOk": true,
-      "guardCodes": [],
-      "focusOk": false,
-      "abstainedBy": null,
-      "scorable": false,
-      "languageOk": true,
-      "terminated": true,
-      "echoes": true,
       "expectedAnswer": null,
       "unsupportedPreGuard": false,
       "shownToVisitor": true,
@@ -1297,8 +1293,8 @@
       "type": "follow_up",
       "lang": "en",
       "route": "model",
-      "answer": " His CGPA is <|fact:ach.lpu-cgpa|>. <|end|>",
-      "resolved": " His CGPA is CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University. <|end|>",
+      "answer": "CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University",
+      "resolved": "CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University",
       "abstained": false,
       "cited": [
         "ach.lpu-cgpa"
@@ -1327,8 +1323,8 @@
       "type": "follow_up",
       "lang": "en",
       "route": "model",
-      "answer": " His CGPA is <|fact:ach.lpu-cgpa|>. <|end|>",
-      "resolved": " His CGPA is CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University. <|end|>",
+      "answer": "CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University",
+      "resolved": "CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University",
       "abstained": false,
       "cited": [
         "ach.lpu-cgpa"
@@ -1357,15 +1353,17 @@
       "type": "follow_up",
       "lang": "hinglish",
       "route": "model",
-      "answer": " Unka naam <|fact:person.name|> hai. <|end|>",
-      "resolved": " Unka naam Aashish Kumar hai. <|end|>",
+      "answer": "Wo MongoDB, MySQL, PostgreSQL, Mongoose aur Drizzle ORM jaise technologies pe kaam karte hain.",
+      "resolved": "Wo MongoDB, MySQL, PostgreSQL, Mongoose aur Drizzle ORM jaise technologies pe kaam karte hain.",
       "abstained": false,
       "cited": [
-        "person.name"
+        "skill.mongodb",
+        "skill.mysql",
+        "skill.postgresql",
+        "skill.mongoose",
+        "skill.drizzle"
       ],
-      "unsupportedIds": [
-        "person.name"
-      ],
+      "unsupportedIds": [],
       "expected": [],
       "covered": [],
       "coverage": null,
@@ -1380,9 +1378,9 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": true,
+      "unsupportedPreGuard": false,
       "shownToVisitor": true,
-      "unsupportedPostGuard": true
+      "unsupportedPostGuard": false
     },
     {
       "id": "u01",
@@ -1529,8 +1527,8 @@
       "type": "switch",
       "lang": "hi",
       "route": "model",
-      "answer": " मेरा CGPA <|fact:ach.lpu-cgpa|> है।तनतह <|end|>",
-      "resolved": " मेरा CGPA CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University है।तनतह <|end|>",
+      "answer": "उनके रिकॉर्ड के बारे में संक्षेप में: CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University",
+      "resolved": "उनके रिकॉर्ड के बारे में संक्षेप में: CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University",
       "abstained": false,
       "cited": [
         "ach.lpu-cgpa"
@@ -1552,7 +1550,7 @@
       "scorable": true,
       "languageOk": true,
       "terminated": true,
-      "echoes": true,
+      "echoes": false,
       "expectedAnswer": null,
       "unsupportedPreGuard": false,
       "shownToVisitor": true,
@@ -1563,62 +1561,57 @@
       "type": "switch",
       "lang": "en",
       "route": "model",
-      "answer": " He studies at <|fact:edu.lpu|>. <|end|>",
-      "resolved": " He studies at Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. <|end|>",
+      "answer": "He works with Python, C, C++, Java, JavaScript, HTML5, CSS3, React.js, Next.js, Tailwind CSS, Vite, Node.js, Express.js, REST APIs, MongoDB, MySQL, PostgreSQL, Mongoose, Drizzle ORM, Google Gemini AI, Groq AI (Llama 3.3 70B), JWT, bcrypt, CORS, Rate limiting, Git, GitHub, VS Code, npm, Postman, Vercel, Teamwork, Adaptability, Collaboration, Communication, Time Management, Three.js / WebGL and GSAP.",
+      "resolved": "He works with Python, C, C++, Java, JavaScript, HTML5, CSS3, React.js, Next.js, Tailwind CSS, Vite, Node.js, Express.js, REST APIs, MongoDB, MySQL, PostgreSQL, Mongoose, Drizzle ORM, Google Gemini AI, Groq AI (Llama 3.3 70B), JWT, bcrypt, CORS, Rate limiting, Git, GitHub, VS Code, npm, Postman, Vercel, Teamwork, Adaptability, Collaboration, Communication, Time Management, Three.js / WebGL and GSAP.",
       "abstained": false,
       "cited": [
-        "edu.lpu"
+        "skill.python",
+        "skill.c",
+        "skill.cpp",
+        "skill.java",
+        "skill.javascript",
+        "skill.html5",
+        "skill.css3",
+        "skill.react",
+        "skill.next",
+        "skill.tailwind",
+        "skill.vite",
+        "skill.node",
+        "skill.express",
+        "skill.rest",
+        "skill.mongodb",
+        "skill.mysql",
+        "skill.postgresql",
+        "skill.mongoose",
+        "skill.drizzle",
+        "skill.gemini",
+        "skill.groq",
+        "skill.jwt",
+        "skill.bcrypt",
+        "skill.cors",
+        "skill.ratelimit",
+        "skill.git",
+        "skill.github",
+        "skill.vscode",
+        "skill.npm",
+        "skill.postman",
+        "skill.vercel",
+        "skill.teamwork",
+        "skill.adaptability",
+        "skill.collaboration",
+        "skill.communication",
+        "skill.timemanagement",
+        "skill.threejs",
+        "skill.gsap"
       ],
-      "unsupportedIds": [
-        "edu.lpu"
-      ],
+      "unsupportedIds": [],
       "expected": [
         "skill.python"
       ],
-      "covered": [],
-      "coverage": 0,
-      "forbiddenHit": [],
-      "fabricated": false,
-      "guardOk": false,
-      "guardCodes": [
-        "number_not_grounded",
-        "number_not_grounded",
-        "date_not_grounded",
-        "date_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded"
+      "covered": [
+        "skill.python"
       ],
-      "focusOk": null,
-      "abstainedBy": null,
-      "scorable": true,
-      "languageOk": true,
-      "terminated": true,
-      "echoes": false,
-      "expectedAnswer": null,
-      "unsupportedPreGuard": true,
-      "shownToVisitor": false,
-      "unsupportedPostGuard": false
-    },
-    {
-      "id": "s03",
-      "type": "switch",
-      "lang": "hinglish",
-      "route": "model",
-      "answer": " Unka naam <|fact:person.name|> hai. <|end|>",
-      "resolved": " Unka naam Aashish Kumar hai. <|end|>",
-      "abstained": false,
-      "cited": [
-        "person.name"
-      ],
-      "unsupportedIds": [
-        "person.name"
-      ],
-      "expected": [
-        "project.volunteer"
-      ],
-      "covered": [],
-      "coverage": 0,
+      "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
       "guardOk": true,
@@ -1630,41 +1623,35 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": true,
+      "unsupportedPreGuard": false,
       "shownToVisitor": true,
-      "unsupportedPostGuard": true
+      "unsupportedPostGuard": false
     },
     {
-      "id": "s04",
+      "id": "s03",
       "type": "switch",
-      "lang": "en",
+      "lang": "hinglish",
       "route": "model",
-      "answer": " I study at <|fact:edu.lpu|>. <|end|>",
-      "resolved": " I study at Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. <|end|>",
+      "answer": "Unke projects: Community Volunteer Management: Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards., Smart Grocery List Generator: 3-page full-stack grocery planning app with Gemini AI for suggestions, meal planning and chat across 24 grocery items. aur Goal Tracker SaaS: Full-stack SaaS goal-tracking platform with Groq Llama 3.3 70B AI chat, an 8-level XP/streak system and Chart.js analytics, deployed on Vercel..",
+      "resolved": "Unke projects: Community Volunteer Management: Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards., Smart Grocery List Generator: 3-page full-stack grocery planning app with Gemini AI for suggestions, meal planning and chat across 24 grocery items. aur Goal Tracker SaaS: Full-stack SaaS goal-tracking platform with Groq Llama 3.3 70B AI chat, an 8-level XP/streak system and Chart.js analytics, deployed on Vercel..",
       "abstained": false,
       "cited": [
-        "edu.lpu"
+        "project.volunteer",
+        "project.grocery",
+        "project.goaltracker"
       ],
-      "unsupportedIds": [
-        "edu.lpu"
-      ],
+      "unsupportedIds": [],
       "expected": [
-        "contact.email"
+        "project.volunteer"
       ],
-      "covered": [],
-      "coverage": 0,
+      "covered": [
+        "project.volunteer"
+      ],
+      "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
-      "guardOk": false,
-      "guardCodes": [
-        "number_not_grounded",
-        "number_not_grounded",
-        "date_not_grounded",
-        "date_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded"
-      ],
+      "guardOk": true,
+      "guardCodes": [],
       "focusOk": null,
       "abstainedBy": null,
       "scorable": true,
@@ -1672,8 +1659,42 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": true,
-      "shownToVisitor": false,
+      "unsupportedPreGuard": false,
+      "shownToVisitor": true,
+      "unsupportedPostGuard": false
+    },
+    {
+      "id": "s04",
+      "type": "switch",
+      "lang": "en",
+      "route": "model",
+      "answer": "His email is aashishkumarrajut1345@gmail.com.",
+      "resolved": "His email is aashishkumarrajut1345@gmail.com.",
+      "abstained": false,
+      "cited": [
+        "contact.email"
+      ],
+      "unsupportedIds": [],
+      "expected": [
+        "contact.email"
+      ],
+      "covered": [
+        "contact.email"
+      ],
+      "coverage": 1,
+      "forbiddenHit": [],
+      "fabricated": false,
+      "guardOk": true,
+      "guardCodes": [],
+      "focusOk": null,
+      "abstainedBy": null,
+      "scorable": true,
+      "languageOk": true,
+      "terminated": true,
+      "echoes": false,
+      "expectedAnswer": null,
+      "unsupportedPreGuard": false,
+      "shownToVisitor": true,
       "unsupportedPostGuard": false
     },
     {
@@ -1908,30 +1929,30 @@
       "id": "b03",
       "type": "hallucination_bait",
       "lang": "en",
-      "route": "model",
-      "answer": " I study at <|fact:edu.lpu|>. <|end|>",
-      "resolved": " I study at Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. <|end|>",
-      "abstained": false,
-      "cited": [
-        "edu.lpu"
-      ],
+      "route": "no-data",
+      "answer": "",
+      "resolved": "",
+      "abstained": true,
+      "cited": [],
       "unsupportedIds": [],
       "expected": [],
       "covered": [],
       "coverage": null,
       "forbiddenHit": [],
       "fabricated": false,
-      "guardOk": true,
-      "guardCodes": [],
+      "guardOk": false,
+      "guardCodes": [
+        "empty_answer"
+      ],
       "focusOk": null,
-      "abstainedBy": null,
+      "abstainedBy": "policy",
       "scorable": false,
-      "languageOk": true,
-      "terminated": true,
-      "echoes": true,
+      "languageOk": null,
+      "terminated": false,
+      "echoes": false,
       "expectedAnswer": null,
       "unsupportedPreGuard": false,
-      "shownToVisitor": true,
+      "shownToVisitor": false,
       "unsupportedPostGuard": false
     },
     {
@@ -2025,57 +2046,33 @@
       "type": "synthetic",
       "lang": "en",
       "route": "model",
-      "answer": " His CGPA is <|fact:ach.lpu-cgpa|>. Name: <|fact:person.name|>. Education: <|fact:edu.lpu|>. Flagship project: <|fact:project.volunteer|>. <|fact:workflow.how-he-builds|>. <|end|>",
-      "resolved": " His CGPA is CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University. Name: Aashish Kumar. Education: Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. Flagship project: Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.. Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.. <|end|>",
+      "answer": "Fictional Institute of Technology — B.Tech, Information Technology · CGPA 9.14/10",
+      "resolved": "Fictional Institute of Technology — B.Tech, Information Technology · CGPA 9.14/10",
       "abstained": false,
       "cited": [
-        "ach.lpu-cgpa",
-        "person.name",
-        "edu.lpu",
-        "project.volunteer",
-        "workflow.how-he-builds"
+        "edu.x"
       ],
-      "unsupportedIds": [
-        "ach.lpu-cgpa",
-        "person.name",
-        "edu.lpu",
-        "project.volunteer",
-        "workflow.how-he-builds"
-      ],
+      "unsupportedIds": [],
       "expected": [
         "CGPA 9.14"
       ],
-      "covered": [],
-      "coverage": 0,
-      "forbiddenHit": [
-        "8.28",
-        "Aashish",
-        "Lovely Professional University"
+      "covered": [
+        "CGPA 9.14"
       ],
-      "fabricated": true,
-      "guardOk": false,
-      "guardCodes": [
-        "number_not_grounded",
-        "number_not_grounded",
-        "number_not_grounded",
-        "number_not_grounded",
-        "number_not_grounded",
-        "date_not_grounded",
-        "date_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded"
-      ],
+      "coverage": 1,
+      "forbiddenHit": [],
+      "fabricated": false,
+      "guardOk": true,
+      "guardCodes": [],
       "focusOk": null,
       "abstainedBy": null,
       "scorable": true,
       "languageOk": true,
       "terminated": true,
-      "echoes": false,
+      "echoes": true,
       "expectedAnswer": null,
-      "unsupportedPreGuard": true,
-      "shownToVisitor": false,
+      "unsupportedPreGuard": false,
+      "shownToVisitor": true,
       "unsupportedPostGuard": false
     },
     {
@@ -2083,43 +2080,24 @@
       "type": "synthetic",
       "lang": "en",
       "route": "model",
-      "answer": " His name is <|fact:person.name|>. Education: <|fact:edu.lpu|>. Flagship project: <|fact:project.volunteer|>. <|fact:workflow.how-he-builds|>. <|end|>",
-      "resolved": " His name is Aashish Kumar. Education: Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. Flagship project: Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.. Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.. <|end|>",
+      "answer": "His projects: ORBIT: A telemetry dashboard for nanosatellites..",
+      "resolved": "His projects: ORBIT: A telemetry dashboard for nanosatellites..",
       "abstained": false,
       "cited": [
-        "person.name",
-        "edu.lpu",
-        "project.volunteer",
-        "workflow.how-he-builds"
+        "project.orbit"
       ],
-      "unsupportedIds": [
-        "person.name",
-        "edu.lpu",
-        "project.volunteer",
-        "workflow.how-he-builds"
-      ],
+      "unsupportedIds": [],
       "expected": [
         "ORBIT"
       ],
-      "covered": [],
-      "coverage": 0,
+      "covered": [
+        "ORBIT"
+      ],
+      "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
-      "guardOk": false,
-      "guardCodes": [
-        "number_not_grounded",
-        "number_not_grounded",
-        "number_not_grounded",
-        "number_not_grounded",
-        "number_not_grounded",
-        "number_not_grounded",
-        "date_not_grounded",
-        "date_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded",
-        "entity_not_grounded"
-      ],
+      "guardOk": true,
+      "guardCodes": [],
       "focusOk": null,
       "abstainedBy": null,
       "scorable": true,
@@ -2127,8 +2105,8 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": true,
-      "shownToVisitor": false,
+      "unsupportedPreGuard": false,
+      "shownToVisitor": true,
       "unsupportedPostGuard": false
     },
     {
@@ -2168,20 +2146,20 @@
       "type": "synthetic",
       "lang": "hinglish",
       "route": "model",
-      "answer": " My name is <|fact:person.name|>. <|end|>",
-      "resolved": " My name is Aashish Kumar. <|end|>",
+      "answer": "Ravi se contact:\nEmail: ravi.verma@example.test",
+      "resolved": "Ravi se contact:\nEmail: ravi.verma@example.test",
       "abstained": false,
       "cited": [
-        "person.name"
+        "contact.email"
       ],
-      "unsupportedIds": [
-        "person.name"
-      ],
+      "unsupportedIds": [],
       "expected": [
         "ravi.verma@example.test"
       ],
-      "covered": [],
-      "coverage": 0,
+      "covered": [
+        "ravi.verma@example.test"
+      ],
+      "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
       "guardOk": true,
@@ -2193,9 +2171,9 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": true,
+      "unsupportedPreGuard": false,
       "shownToVisitor": true,
-      "unsupportedPostGuard": true
+      "unsupportedPostGuard": false
     }
   ]
 }

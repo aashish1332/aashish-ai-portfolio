@@ -9,11 +9,13 @@
    one unreachable one, and the reason the most common question a recruiter asks
    was about to be answered with "I don't have that".
 
-   The property being pinned is a decision the owner made: **the model is the
-   only thing that answers.** Where it cannot, the panel refuses and says which
-   refusal it is. Every template that used to stand in — the exact-fact Quick
-   Answer, the extractive prose fallback behind the guard — is gone, and these
-   tests are what stop one creeping back in.
+   The property being pinned is a decision the owner updated on 2026-10-08:
+   **the portfolio data file answers first, and the model answers what the
+   file cannot.** The wording (`ai/answers/wording.mjs`) renders a plan the
+   file itself selected; the model is never asked for those. Where the file
+   has no plan, or the plan kind has no wording, the model answers — and
+   where a MODEL answer fails the guard, the panel still refuses and says
+   which refusal it is: a wording never repairs a rejected model answer.
 
    The session is a stub, so "the model was never asked" is a fact about the
    test rather than a claim about the code, and no checkpoint is needed.
@@ -608,16 +610,33 @@ test('PLANNER-3 the experience list includes the availability fact (§ enum comp
   assert.ok(out.text.includes('MERN'), out.text);
 });
 
-test('PLANNER-4 a non-list plan falls through to the model unchanged', async () => {
+test('PLANNER-4 an education plan answers from the data file; an unknown kind falls through', async () => {
+  /* 2026-10-08, owner decision: the data file answers first. An education
+     plan is worded from knowledge.json and the session is never asked; a
+     plan kind with no wording still reaches the model unchanged. The plan
+     here is the one the shell actually passes for a CGPA question: the
+     institution id plus the achievement that carries the metric. */
   const session = stubSession({ text: ' CGPA 8.28 <|end|>' });
   const answerer = answererWith(session);
   const out = await answerer.ask({
     question: ANSWERABLE, lang: 'en',
     intentIds: ['ach.lpu-cgpa'],
-    plan: { kind: 'education', ids: ['ach.lpu-cgpa'] },
+    plan: { kind: 'education', ids: ['edu.lpu', 'ach.lpu-cgpa'] },
   });
-  assert.equal(out.kind, 'model', 'a non-list plan must reach the model');
-  assert.equal(session.calls.length, 1);
+  assert.equal(out.kind, 'planner', 'the data file answers an education plan');
+  assert.equal(session.calls.length, 0, 'the model was never asked');
+  assert.ok(out.text.includes('CGPA 8.28'), out.text);
+  /* the score-scoped answer cites the score fact, not the whole bucket */
+  assert.deepEqual(out.sources, ['ach.lpu-cgpa']);
+
+  /* the fall-through half of the rule, kept: no wording → the model */
+  const fall = await answererWith(stubSession({ text: ' CGPA 8.28 <|end|>' })).ask({
+    question: ANSWERABLE, lang: 'en',
+    intentIds: ['ach.lpu-cgpa'],
+    plan: { kind: 'no_such_plan', ids: ['ach.lpu-cgpa'] },
+  });
+  assert.equal(fall.kind, 'model', 'a plan kind with no wording falls through');
+  assert.equal(fall.ms === undefined, false);
 });
 
 test('PLANNER-5 a withheld fact in the plan refuses instead of answering', async () => {

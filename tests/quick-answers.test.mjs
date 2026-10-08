@@ -46,11 +46,11 @@ test('facts are never hardcoded: every value is read from knowledge.json', () =>
      knowledge.json stopped being the single source of truth. The wording half
      is checked even though it never reaches a visitor: it is what the
      evaluation set grades, so a baked value there would fake a pass. */
-  const WORDING = readFileSync(join(HERE, '..', 'evaluation', 'answer-text.mjs'), 'utf8');
+  const WORDING = readFileSync(join(HERE, '..', 'ai', 'answers', 'wording.mjs'), 'utf8');
   for (const leak of [KB.contact.email.value, KB.contact.phone.value,
     KB.links[0].url, KB.links[1].url, KB.projects[0].links[0].url, '8.28', '87.6']) {
     assert.ok(!SRC.includes(leak), `quick.mjs hardcodes the value "${leak}"`);
-    assert.ok(!WORDING.includes(leak), `answer-text.mjs hardcodes the value "${leak}"`);
+    assert.ok(!WORDING.includes(leak), `wording.mjs hardcodes the value "${leak}"`);
   }
   /* …and the answers really do carry the approved ones.
      (contact.phone is public:false by the owner's decision — see QA-9 — so it
@@ -63,11 +63,11 @@ test('facts are never hardcoded: every value is read from knowledge.json', () =>
 });
 
 test('§5.1: no model, no network, no dynamic import anywhere in the engine', () => {
-  const WORDING = readFileSync(join(HERE, '..', 'evaluation', 'answer-text.mjs'), 'utf8');
+  const WORDING = readFileSync(join(HERE, '..', 'ai', 'answers', 'wording.mjs'), 'utf8');
   /* The wording module is not shipped, but it is held to the same rule: it is
      the module `docs/PRIVACY.md` names, and a wording layer that could reach
      the network would be a privacy hole in whichever half of §5.1 read it. */
-  for (const [name, src] of [['quick.mjs', SRC], ['answer-text.mjs', WORDING]]) {
+  for (const [name, src] of [['quick.mjs', SRC], ['wording.mjs', WORDING]]) {
     assert.ok(!/\bfetch\s*\(|XMLHttpRequest|WebSocket|navigator\./.test(src), `network access in ${name}`);
     assert.ok(!/import\s*\(/.test(src), `dynamic import in ${name}`);
     assert.ok(!/https?:\/\//.test(src), `a URL is hardcoded in ${name}`);
@@ -181,8 +181,15 @@ test('QA-1: extraneous intents cannot reach the project prose', () => {
 });
 
 test('QA-2: an unrenderable hit must not fall through to a project list', () => {
+  /* 2026-10-08: this question is §14's b03 — a hallucination_bait case (C7:
+     no employment history exists, so "experience … at Google" presumes an
+     employer). It must ABSTAIN, which is a stronger guarantee than the
+     experience intent it used to reach: still no project list, and still no
+     employer name echoed — now by refusal rather than by the attributed
+     experience answer. */
   const r = ask('How many years of experience does he have at Google?');
-  assert.equal(r.intent, 'experience');
+  assert.equal(r.intent, 'hallucination_bait');
+  assert.equal(r.abstained, true);
   assert.ok(!/shipped projects/.test(r.text), 'experience question answered with the project list');
   assert.ok(!/Google/i.test(r.text), 'employer name echoed');
 });

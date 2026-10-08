@@ -55,6 +55,11 @@ const EXPERIENCE_BAIT = [
   /\bclients?\b/i,
   /\b(salary|ctc|package|compensation|expected pay)\b/i,
   /\b(referr?al|refer)\b/i,
+  /* "how many years of experience does he have AT X?" presumes an employer
+     the CV does not have (C7) even without an employer-shaped verb. A bare
+     "how many years of experience" question is NOT bait — it is answered
+     with the attributed no-employment-history training answer. */
+  /\bexperience\b[^\n]{0,30}\bat\b/i,
 ];
 /* ...unless the question is about the one thing we DO know — his MERN
    bootcamp (experience type "training") or his stated availability. */

@@ -5,11 +5,16 @@
    the initial page load. It carries: the panel, the §6 governor wiring, the
    on-device model session and the §8.3 language tracker.
 
-   **There is exactly one answer path: the on-device model.** The
-   deterministic Quick Answers were retired as answers by the owner, so when
-   the model cannot answer, the panel refuses and says which refusal it is —
-   it never substitutes a built sentence. The visitor is told which kind of
-   answer they got, always (§3).
+   **The data file answers first; the on-device model answers what it
+   cannot.** The owner's 2026-10-08 decision: a question whose plan the
+   knowledge file itself selected is worded straight from
+   `knowledge/knowledge.json` (`ai/answers/wording.mjs`, via the answerer's
+   `planner` path) — edit that file, push, and the answers change with no
+   retraining. The model handles the rest, and when IT cannot answer, the
+   panel refuses and says which refusal it is — a refusal is never repaired
+   by wording. The visitor is told which kind of answer they got, always
+   (§3): the badge says whether the words came from the portfolio data or
+   from the model.
 
    Rendering is text-only (`textContent`, never innerHTML). Answers are whole
    messages, so `aria-live` announces them once, completed — no per-token
@@ -145,6 +150,11 @@ export const ABOUT_SECTIONS = Object.freeze([
     detail: 'Written and trained from scratch for this portfolio: our own '
       + 'tokenizer, architecture, training loop and instruction tuning. No '
       + 'pretrained language model is used anywhere in it.' },
+  { term: 'Where answers come from',
+    detail: 'A data file, read first: questions it can answer are answered '
+      + 'straight from it, so updating that file updates the answers without '
+      + 'retraining anything. The on-device model answers only what the file '
+      + 'cannot, and every message is labelled with which of the two made it.' },
   { term: 'Voice input',
     detail: 'Your browser\u2019s own speech recognition, not ours. It is asked to '
       + 'run on this device, and when the browser says it cannot, what you say '

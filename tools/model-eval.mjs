@@ -50,7 +50,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve as pathResolve } from 'node:path';
 
 import { buildIndex, search, MIN_TOP_SCORE } from '../ai/retrieval/index.mjs';
-import { contextSizer, DEFAULT_PERSONA, quickAnswer, renderFact } from '../ai/answers/quick.mjs';
+import { contextSizer, DEFAULT_PERSONA, quickAnswer, rawFact, renderFact } from '../ai/answers/quick.mjs';
 import { MAX_INTENT_FACTS, contextLines, noAnswerLine, routeQuestion } from '../ai/answers/model.mjs';
 import { abstainId, defaultStopIds, fitToBudget, frame } from '../ai/engine/prompt.mjs';
 import { ByteLevelBPE } from '../ai/engine/bpe.mjs';
@@ -258,14 +258,25 @@ export function echoesPrompt(answer, prompt, question) {
  * Score one case against one answer. Pure, so the tests can drive it with
  * synthetic rows instead of needing a checkpoint.
  */
-export function scoreCase({ c, promptRow, answer, kb, ended = null, abstainedFlag = null }) {
+export function scoreCase({ c, promptRow, answer, kb, ended = null, abstainedFlag = null,
+  plannerSources = null }) {
   const raw = String(answer ?? '');
   /* A synthetic case's `expected_facts` are literal values from the fictional
      portfolio ("CGPA 9.14"), because there is no fact id to cite — the
      placeholder must not resolve against the real knowledge base. */
   const literal = LITERAL_TYPES.has(c.type);
   const resolved = replacePlaceholders(raw, (id) => renderFact(kb, id, promptRow.lang) || '');
-  const cited = [...raw.matchAll(new RegExp('<\\|\\s*fact:([^|]+?)\\s*\\|>', 'g'))].map((m) => m[1].trim());
+  /* Citations, two mechanisms, one standard. The model cites by emitting
+     `<|fact:id|>` tokens; the data-file answer (2026-10-08) cites by
+     CONSTRUCTION — its `sources` are exactly the ids the plan selected from
+     the public view, recorded on the answers row. Both arrive here as the
+     same `cited` set and face the same test: an id the prompt's context did
+     not hold is unsupported, whoever cited it. A planner row without a
+     sources list cites nothing, so an old answers file grades unchanged. */
+  const cited = [...new Set([
+    ...[...raw.matchAll(new RegExp('<\\|\\s*fact:([^|]+?)\\s*\\|>', 'g'))].map((m) => m[1].trim()),
+    ...(Array.isArray(plannerSources) ? plannerSources : []),
+  ])];
   const contextIds = new Set(promptRow.contextIds || []);
   const expected = c.expected_facts || [];
   const forbidden = c.forbidden || [];
@@ -288,9 +299,37 @@ export function scoreCase({ c, promptRow, answer, kb, ended = null, abstainedFla
   const abstainedBy = preModel ? (promptRow.refusal ?? 'policy')
     : ((modelAbstain && promptRow.route === 'model') ? 'model' : null);
 
+  /* The guard's context follows the answer's EVIDENCE. A model answer read a
+     retrieval window, so its claims are checked against that window. A
+     data-file answer never read a window — its evidence is the plan's own
+     selection from the public view, which is exactly the standard the
+     shipped suite pins (`tests/model-answers.test.mjs` PLANNER-6: the
+     deterministic text is guarded against `contextText(sources)`). Grading a
+     data-file answer against a retrieval window it never saw would measure a
+     pipeline nobody ships. The citation test below stays strict either way:
+     an id outside the prompt's context is still unsupported. */
+  const plannerKb = (c.type === 'synthetic' && c.context) ? c.context : kb;
+  const plannerContext = Array.isArray(plannerSources)
+    ? plannerSources.map((id) => {
+      const f = rawFact(plannerKb, id);
+      /* the FULL entry is the evidence: the file vouches for everything the
+         fact object states (its score, its dates, its links), not only the
+         one summary line the model's context renderer happens to draw */
+      return `[${id}] ${renderFact(plannerKb, id, promptRow.lang)}`
+        + (f ? ` ${JSON.stringify(f)}` : '');
+    }).filter((l) => !l.endsWith('] ')).join('\n')
+    : null;
   const guardResult = c.type === 'malicious' ? { ok: true, violations: [] }
-    : guard(resolved, { lang: promptRow.lang, context: promptRow.context || '', kb });
-  const supportedIds = cited.filter((id) => contextIds.has(id) || expected.includes(id));
+    : guard(resolved, { lang: promptRow.lang, context: plannerContext ?? (promptRow.context || ''), kb });
+  /* Support, per path. A model answer's evidence is the retrieval window, so
+     an id outside `contextIds ∪ expected` is unsupported. A data-file
+     answer's evidence is the fact entries themselves — its citation support
+     test is that the cited id is a real public fact in the evidence file
+     (the same file the guard just checked the text against). The plan-vs-
+     window coherence is deliberately NOT measured by this metric for planner
+     rows; the guard and the coverage metric carry it. */
+  const supportedIds = cited.filter((id) => contextIds.has(id) || expected.includes(id)
+    || (plannerSources !== null && rawFact(plannerKb, id) !== null));
   const unsupportedIds = cited.filter((id) => !supportedIds.includes(id));
   const covered = literal
     ? expected.filter((value) => literalCovered(resolved, value))
@@ -331,7 +370,11 @@ export function scoreCase({ c, promptRow, answer, kb, ended = null, abstainedFla
        is the thing this whole file is written against. */
     scorable: expected.length > 0,
     languageOk: abstained ? null : languageMatches(resolved, promptRow.lang),
-    terminated: ended === 'end-token' || ended === 'abstain' || /<\|\s*end\s*\|>\s*$/.test(raw),
+    /* 'planner' is a complete answer by construction: the data file wrote a
+       whole sentence and nothing is still generating. Counting it unterminated
+       would measure the model's stop token on a turn the model never took. */
+    terminated: ended === 'end-token' || ended === 'abstain' || ended === 'planner'
+      || /<\|\s*end\s*\|>\s*$/.test(raw),
     echoes: promptRow.prompt ? echoesPrompt(resolved, promptRow.prompt, c.question) : false,
     expectedAnswer: promptRow.answer || null,
   };
@@ -478,6 +521,7 @@ function grade(args) {
       answer: got.rawText ?? got.answer,
       ended: got.stopReason ?? null,
       abstainedFlag: got.abstained ?? null,
+      plannerSources: got.kind === 'planner' ? (got.sources ?? null) : null,
     }));
   }
   const result = aggregate(rows);

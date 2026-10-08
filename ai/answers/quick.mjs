@@ -112,6 +112,18 @@ function scoreText(score) {
 }
 
 /**
+ * The RAW public fact object for an id, or null — the whole entry a plan
+ * selected, not just its rendered value. The data-file answer path scopes
+ * plans against it (a score question keeps only score-bearing facts) and
+ * the §14 grader grounds a data-file answer against the FULL entry, because
+ * the entry — not one rendered summary line — is what the file vouches for.
+ * `public:false` facts are null here, same gate renderFact applies.
+ */
+export function rawFact(kb, id) {
+  return indexFacts(viewOf(kb)).get(id)?.fact ?? null;
+}
+
+/**
  * The verbatim value of one public fact (§5.1 step 6).
  * Returns '' for an unknown or non-public id — callers treat that as
  * "unresolved", never as an empty fact.
