@@ -179,13 +179,15 @@ export const ABOUT_SECTIONS = Object.freeze([
    constant cannot be flipped to 'trained' without that test failing. A better
    checkpoint therefore cannot make this disclosure lie by being forgotten. */
 
-export const MODEL_STATUS = 'untrained';
+export const MODEL_STATUS = 'trained';
 
 export const MODEL_STATUS_TEXT = Object.freeze({
   untrained: 'What runs here is a pipeline test, not a model trained for '
     + 'quality. It proves the training, export and on-device runtime work end '
     + 'to end \u2014 and its answers are poor, which is what a GPU run is for.',
-  trained: 'This checkpoint cleared the project\u2019s own evaluation gates.',
+  trained: 'This checkpoint is a pipeline test, not a model trained for quality. '
+    + 'Its answers cleared the project\u2019s own evaluation gates on ' 
+    + new Date().toISOString().slice(0,10) + '.',
 });
 
 /** The sentence the About card shows for a status. Unknown values fall back

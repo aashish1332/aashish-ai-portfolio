@@ -140,6 +140,12 @@ test('§0 rule 4: the status cannot claim quality while the §14 gates fail', ()
     assert.match(modelStatusText(), /not a model trained for quality/i,
       'with the gates failing, the text shown must be the cautious one');
   }
+  if (EVALUATION.passed === true) {
+    assert.equal(MODEL_STATUS, 'trained',
+      'a passed evaluation file with MODEL_STATUS != trained is a disclosure that would hide it');
+    assert.match(modelStatusText(), /cleared.*gates/i,
+      'the "trained" sentence must name what would have to be true');
+  }
   /* and the claim itself has to exist, or the branch above proves nothing */
   assert.match(MODEL_STATUS_TEXT.trained, /cleared.*gates/i,
     'the "trained" sentence does not name what would have to be true');

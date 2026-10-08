@@ -44,6 +44,10 @@ from pathlib import Path
 
 DATASET_ID = "aashishkumarrajput/aashish-ai-stage-a-checkpoint"
 ARCHIVE_NAME = "stage-a-checkpoint.tgz"
+#: The title pattern. For any slug other than the default the title is derived
+#: from it, so a config-B (or config-lite) publish names itself rather than
+#: claiming to be the config-A dataset it is not.
+TITLE = "aashish-ai-stage-a-checkpoint"
 RECORD_NAME = "CHECKPOINT.json"
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -161,9 +165,17 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--new", action="store_true",
                     help="create the dataset instead of adding a version")
     ap.add_argument("--weights-only", action="store_true",
-                    help="publish the model weights alone, for a checkpoint "
-                         "whose optimizer/scheduler state is stale. The result "
-                         "cannot be resumed; it can only be --init'd.")
+                    help="publish the model weights alone. The result cannot be "
+                         "resumed; it can only be --init'd. Needed for a "
+                         "checkpoint whose optimizer/scheduler state is stale, "
+                         "and requested to keep a publish small when the "
+                         "Stage B session will only --init from it.")
+    ap.add_argument("--dataset-id", default=DATASET_ID,
+                    help=f"Kaggle dataset slug to publish under (default "
+                         f"{DATASET_ID}); pass --new the first time a new "
+                         f"slug is used.")
+    ap.add_argument("--title", default=None,
+                    help="dataset title; defaults to the slug's last component")
     ap.add_argument("--dry-run", action="store_true", help="build, upload nothing")
     args = ap.parse_args(argv)
 
@@ -171,6 +183,15 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
     ok, detail = verify(args.run)
+    # `--weights-only` is an instruction, not only a fallback. The flag used to
+    # be read *after* the resume check, so passing it for a checkpoint that
+    # happened to be resumable published the 595 MB of optimiser state anyway —
+    # and a Stage B session only ever --init's from these weights, so that was
+    # 1.2 GB of archive uploaded for state nothing reads. Measured on the
+    # config-B Stage A checkpoint, 2026-10-07.
+    resumable = ok and not args.weights_only
+    if ok and args.weights_only:
+        detail = f"weights only by request — {detail}"
     print(f"\ncheckpoint: {'RESUMABLE' if ok else 'NOT RESUMABLE'} — {detail}")
     if not ok and not args.weights_only:
         print(
@@ -195,14 +216,19 @@ def main(argv: list[str] | None = None) -> int:
     # first version stripped the weights into `stage/stripped` and reset the
     # stage afterwards, which deleted the files it had just made and then failed
     # with a FileNotFoundError pointing at a path that no longer existed.
+    # `shutil` is imported at module scope and must stay that way. It used to be
+    # re-imported inside this block, which made it a *local* name for the whole
+    # function: the first publish into a directory that did not already exist
+    # skipped the import and died at the `shutil.copy2` below with
+    # UnboundLocalError. It only ever worked because the one stage directory in
+    # use was created by an earlier run. Found 2026-10-07 publishing the
+    # config-B checkpoint into a fresh `kaggle-push/checkpoint-stage-b`.
     if args.stage.exists():
-        import shutil
-
         shutil.rmtree(args.stage)
     args.stage.mkdir(parents=True)
 
     publish_dir = args.run
-    if not ok:
+    if not resumable:
         publish_dir = args.stage / "stripped"
         publish_dir.mkdir(parents=True, exist_ok=True)
         # `latest.pt` only, of the two weight files. A weights-only copy cannot
@@ -235,12 +261,12 @@ def main(argv: list[str] | None = None) -> int:
         "params": manifest.get("params"),
         "tokenizer_version": manifest.get("tokenizer_version"),
         "loss_verdict": manifest.get("loss", {}).get("verdict"),
-        "resumable": ok,
+        "resumable": resumable,
         "verification": detail,
         "files": {path.name: {"bytes": path.stat().st_size,
                               "sha256": sha256_file(path)} for path in files},
     }
-    if not ok:
+    if not resumable:
         record["weights_only_note"] = WEIGHTS_NOTE
 
     archive_path = args.stage / ARCHIVE_NAME
@@ -261,17 +287,16 @@ def main(argv: list[str] | None = None) -> int:
 
         tar.addfile(info, io.BytesIO(data))
 
-    if not ok:
+    if not resumable:
         # The stripped copies are working files, not payload: `datasets create
         # -p .` uploads the whole directory, and leaving them there would ship
         # two extra 150 MB copies of weights the archive already contains.
-        import shutil
-
         shutil.rmtree(publish_dir)
 
     (args.stage / "dataset-metadata.json").write_text(json.dumps({
-        "title": "aashish-ai-stage-a-checkpoint",
-        "id": DATASET_ID,
+        "title": args.title or (TITLE if args.dataset_id == DATASET_ID
+                                else args.dataset_id.split("/")[-1]),
+        "id": args.dataset_id,
         "licenses": [{"name": "CC0-1.0"}],
         "description": (
             "stage-a-checkpoint.tgz: the Stage A base-model checkpoint "
@@ -284,7 +309,7 @@ def main(argv: list[str] | None = None) -> int:
             "against the tokenizer it trains with, because an --init from a "
             "different vocabulary loads some keys and trains the rest at "
             "random with no error to notice."
-            + ("" if ok else " THIS COPY IS WEIGHTS ONLY: its optimizer and "
+            + ("" if resumable else " THIS COPY IS WEIGHTS ONLY: its optimizer and "
                               "scheduler state was never captured, so it "
                               "cannot be resumed. Use it with --init.")
         ),

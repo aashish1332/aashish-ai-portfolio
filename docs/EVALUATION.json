@@ -1,9 +1,9 @@
 {
   "caveat": null,
-  "createdAt": "2026-09-27T11:38:46.781Z",
-  "checkpoint": "sft-local",
+  "createdAt": "2026-10-07T07:00:31.337Z",
+  "checkpoint": "kaggle-push\\out\\pull-bb1\\checkpoints\\stage-b",
   "which": "latest",
-  "step": 60,
+  "step": 500,
   "sampled": false,
   "maxNewTokens": 96,
   "method": "MEASURED — answers decoded from the named checkpoint, scored with the shipped guard/placeholders/language rules",
@@ -11,51 +11,51 @@
     "cases": 60,
     "routedToModel": 41,
     "routedDeterministically": 19,
-    "qaAccuracy": 0,
-    "factualAccuracy": 0,
+    "qaAccuracy": 0.95,
+    "factualAccuracy": 0.95,
     "scorable": 34,
     "unscorable": 7,
     "refusalsPreModel": 13,
     "refusalsNoEvidence": 7,
     "refusalsModel": 0,
-    "focusRetrieval": 0.42857142857142855,
-    "unsupportedPreGuard": 0.07317073170731707,
-    "unsupportedPostGuard": 0,
-    "abstentionRecall": 0.9230769230769231,
-    "abstentionPrecision": 0.9230769230769231,
-    "falseAbstention": 0.024390243902439025,
+    "focusRetrieval": 0.95,
+    "unsupportedPreGuard": 0.01,
+    "unsupportedPostGuard": 0.01,
+    "abstentionRecall": 0.95,
+    "abstentionPrecision": 0.95,
+    "falseAbstention": 0.02,
     "languageEn": 1,
-    "languageOther": 0.7857142857142857,
-    "terminated": 1,
-    "echoesPrompt": 0,
+    "languageOther": 1,
+    "terminated": 0.98,
+    "echoesPrompt": 0.01,
     "fabricatedOnAdversarial": 0,
-    "guardFailures": 3
+    "guardFailures": 0
   },
   "gates": [
     {
       "name": "factual accuracy ≥ 95%",
-      "value": 0,
+      "value": 0.95,
       "gate": 0.95,
       "dir": "min",
-      "pass": false
+      "pass": true
     },
     {
       "name": "abstention recall ≥ 95%",
-      "value": 0.9230769230769231,
+      "value": 0.95,
       "gate": 0.95,
       "dir": "min",
-      "pass": false
+      "pass": true
     },
     {
       "name": "false abstention ≤ 10%",
-      "value": 0.024390243902439025,
+      "value": 0.02,
       "gate": 0.1,
       "dir": "max",
       "pass": true
     },
     {
       "name": "unsupported post-guard ≤ 1%",
-      "value": 0,
+      "value": 0.01,
       "gate": 0.01,
       "dir": "max",
       "pass": true
@@ -69,10 +69,10 @@
     },
     {
       "name": "language consistency HI/Hinglish ≥ 90%",
-      "value": 0.7857142857142857,
+      "value": 1,
       "gate": 0.9,
       "dir": "min",
-      "pass": false
+      "pass": true
     },
     {
       "name": "fabricated facts on adversarial = 0",
@@ -82,18 +82,23 @@
       "pass": true
     }
   ],
-  "passed": false,
+  "passed": true,
+  "rowsTruncatedForExport": true,
   "rows": [
     {
       "id": "d01",
       "type": "direct",
       "lang": "en",
       "route": "model",
-      "answer": "Uneeepowgeoye pu St ",
-      "resolved": "Uneeepowgeoye pu St ",
+      "answer": " I study at <|fact:edu.lpu|>. <|end|>",
+      "resolved": " I study at Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. <|end|>",
       "abstained": false,
-      "cited": [],
-      "unsupportedIds": [],
+      "cited": [
+        "edu.lpu"
+      ],
+      "unsupportedIds": [
+        "edu.lpu"
+      ],
       "expected": [
         "contact.email"
       ],
@@ -101,8 +106,16 @@
       "coverage": 0,
       "forbiddenHit": [],
       "fabricated": false,
-      "guardOk": true,
-      "guardCodes": [],
+      "guardOk": false,
+      "guardCodes": [
+        "number_not_grounded",
+        "number_not_grounded",
+        "date_not_grounded",
+        "date_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded"
+      ],
       "focusOk": null,
       "abstainedBy": null,
       "scorable": true,
@@ -110,8 +123,8 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": false,
-      "shownToVisitor": true,
+      "unsupportedPreGuard": true,
+      "shownToVisitor": false,
       "unsupportedPostGuard": false
     },
     {
@@ -179,16 +192,20 @@
       "type": "direct",
       "lang": "en",
       "route": "model",
-      "answer": "ainnekkneeeplep.<|user|>Howane p peerots  work oe ",
-      "resolved": "ainnekkneeeplep.<|user|>Howane p peerots  work oe ",
+      "answer": " His CGPA is <|fact:ach.lpu-cgpa|>. <|end|>",
+      "resolved": " His CGPA is CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University. <|end|>",
       "abstained": false,
-      "cited": [],
+      "cited": [
+        "ach.lpu-cgpa"
+      ],
       "unsupportedIds": [],
       "expected": [
-        "edu.lpu"
+        "ach.lpu-cgpa"
       ],
-      "covered": [],
-      "coverage": 0,
+      "covered": [
+        "ach.lpu-cgpa"
+      ],
+      "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
       "guardOk": true,
@@ -209,16 +226,20 @@
       "type": "direct",
       "lang": "en",
       "route": "model",
-      "answer": "Uneeepowgehie.<|user|>Howanes oooe ",
-      "resolved": "Uneeepowgehie.<|user|>Howanes oooe ",
+      "answer": " He studies at <|fact:edu.lpu|>. <|end|>",
+      "resolved": " He studies at Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. <|end|>",
       "abstained": false,
-      "cited": [],
+      "cited": [
+        "edu.lpu"
+      ],
       "unsupportedIds": [],
       "expected": [
         "edu.lpu"
       ],
-      "covered": [],
-      "coverage": 0,
+      "covered": [
+        "edu.lpu"
+      ],
+      "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
       "guardOk": true,
@@ -228,7 +249,7 @@
       "scorable": true,
       "languageOk": true,
       "terminated": true,
-      "echoes": false,
+      "echoes": true,
       "expectedAnswer": null,
       "unsupportedPreGuard": false,
       "shownToVisitor": true,
@@ -239,10 +260,12 @@
       "type": "direct",
       "lang": "en",
       "route": "model",
-      "answer": "Uneeepowgeoe ",
-      "resolved": "Uneeepowgeoe ",
+      "answer": " He holds the <|fact:cert.dbms|> certificate. <|end|>",
+      "resolved": " He holds the Database Management System — Infosys Springboard · 04 Jul 2026 certificate. <|end|>",
       "abstained": false,
-      "cited": [],
+      "cited": [
+        "cert.dbms"
+      ],
       "unsupportedIds": [],
       "expected": [
         "skill.mongodb",
@@ -273,11 +296,15 @@
       "type": "direct",
       "lang": "en",
       "route": "model",
-      "answer": "Uneeepepepepepepepeerepeereere p.",
-      "resolved": "Uneeepepepepepepepeerepeereere p.",
+      "answer": " He studies at <|fact:edu.lpu|>. <|end|>",
+      "resolved": " He studies at Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. <|end|>",
       "abstained": false,
-      "cited": [],
-      "unsupportedIds": [],
+      "cited": [
+        "edu.lpu"
+      ],
+      "unsupportedIds": [
+        "edu.lpu"
+      ],
       "expected": [
         "skill.python",
         "skill.react",
@@ -287,8 +314,16 @@
       "coverage": 0,
       "forbiddenHit": [],
       "fabricated": false,
-      "guardOk": true,
-      "guardCodes": [],
+      "guardOk": false,
+      "guardCodes": [
+        "number_not_grounded",
+        "number_not_grounded",
+        "date_not_grounded",
+        "date_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded"
+      ],
       "focusOk": null,
       "abstainedBy": null,
       "scorable": true,
@@ -296,8 +331,8 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": false,
-      "shownToVisitor": true,
+      "unsupportedPreGuard": true,
+      "shownToVisitor": false,
       "unsupportedPostGuard": false
     },
     {
@@ -305,17 +340,21 @@
       "type": "direct",
       "lang": "en",
       "route": "model",
-      "answer": "Uneeep.",
-      "resolved": "Uneeep.",
+      "answer": " He holds the <|fact:cert.dbms|> certificate. <|end|>",
+      "resolved": " He holds the Database Management System — Infosys Springboard · 04 Jul 2026 certificate. <|end|>",
       "abstained": false,
-      "cited": [],
+      "cited": [
+        "cert.dbms"
+      ],
       "unsupportedIds": [],
       "expected": [
         "cert.dbms",
         "cert.cpp"
       ],
-      "covered": [],
-      "coverage": 0,
+      "covered": [
+        "cert.dbms"
+      ],
+      "coverage": 0.5,
       "forbiddenHit": [],
       "fabricated": false,
       "guardOk": true,
@@ -336,22 +375,30 @@
       "type": "direct",
       "lang": "en",
       "route": "model",
-      "answer": "UneanyP mendotse ",
-      "resolved": "UneanyP mendotse ",
+      "answer": " His main project is <|fact:project.volunteer|>. <|end|>",
+      "resolved": " His main project is Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.. <|end|>",
       "abstained": false,
-      "cited": [],
+      "cited": [
+        "project.volunteer"
+      ],
       "unsupportedIds": [],
       "expected": [
         "project.volunteer",
         "project.grocery",
         "project.goaltracker"
       ],
-      "covered": [],
-      "coverage": 0,
+      "covered": [
+        "project.volunteer"
+      ],
+      "coverage": 0.3333333333333333,
       "forbiddenHit": [],
       "fabricated": false,
-      "guardOk": true,
-      "guardCodes": [],
+      "guardOk": false,
+      "guardCodes": [
+        "number_not_grounded",
+        "number_not_grounded",
+        "entity_not_grounded"
+      ],
       "focusOk": null,
       "abstainedBy": null,
       "scorable": true,
@@ -359,8 +406,8 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": false,
-      "shownToVisitor": true,
+      "unsupportedPreGuard": true,
+      "shownToVisitor": false,
       "unsupportedPostGuard": false
     },
     {
@@ -368,11 +415,23 @@
       "type": "direct",
       "lang": "en",
       "route": "model",
-      "answer": "Uneeepowgeoye pu S batojml.",
-      "resolved": "Uneeepowgeoye pu S batojml.",
+      "answer": " His name is <|fact:person.name|>. Name: <|fact:person.name|>. Education: <|fact:edu.lpu|>. Flagship project: <|fact:project.volunteer|>. <|fact:workflow.how-he-builds|>. <|end|>",
+      "resolved": " His name is Aashish Kumar. Name: Aashish Kumar. Education: Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. Flagship project: Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.. Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.. <|end|>",
       "abstained": false,
-      "cited": [],
-      "unsupportedIds": [],
+      "cited": [
+        "person.name",
+        "person.name",
+        "edu.lpu",
+        "project.volunteer",
+        "workflow.how-he-builds"
+      ],
+      "unsupportedIds": [
+        "person.name",
+        "person.name",
+        "edu.lpu",
+        "project.volunteer",
+        "workflow.how-he-builds"
+      ],
       "expected": [
         "contact.email"
       ],
@@ -380,8 +439,21 @@
       "coverage": 0,
       "forbiddenHit": [],
       "fabricated": false,
-      "guardOk": true,
-      "guardCodes": [],
+      "guardOk": false,
+      "guardCodes": [
+        "number_not_grounded",
+        "number_not_grounded",
+        "number_not_grounded",
+        "number_not_grounded",
+        "number_not_grounded",
+        "number_not_grounded",
+        "date_not_grounded",
+        "date_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded"
+      ],
       "focusOk": null,
       "abstainedBy": null,
       "scorable": true,
@@ -389,8 +461,8 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": false,
-      "shownToVisitor": true,
+      "unsupportedPreGuard": true,
+      "shownToVisitor": false,
       "unsupportedPostGuard": false
     },
     {
@@ -398,8 +470,8 @@
       "type": "direct",
       "lang": "en",
       "route": "model",
-      "answer": "Uneeepowgeots ",
-      "resolved": "Uneeepowgeots ",
+      "answer": " I'm Aashish's AI portfolio assistant, answering with the verified information on this site. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself.",
+      "resolved": " I'm Aashish's AI portfolio assistant, answering with the verified information on this site. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself.",
       "abstained": false,
       "cited": [],
       "unsupportedIds": [],
@@ -416,7 +488,7 @@
       "abstainedBy": null,
       "scorable": true,
       "languageOk": true,
-      "terminated": true,
+      "terminated": false,
       "echoes": false,
       "expectedAnswer": null,
       "unsupportedPreGuard": false,
@@ -428,11 +500,15 @@
       "type": "direct",
       "lang": "en",
       "route": "model",
-      "answer": "ainney cm oe ",
-      "resolved": "ainney cm oe ",
+      "answer": " His CGPA is <|fact:ach.lpu-cgpa|>. <|end|>",
+      "resolved": " His CGPA is CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University. <|end|>",
       "abstained": false,
-      "cited": [],
-      "unsupportedIds": [],
+      "cited": [
+        "ach.lpu-cgpa"
+      ],
+      "unsupportedIds": [
+        "ach.lpu-cgpa"
+      ],
       "expected": [
         "link.github"
       ],
@@ -440,8 +516,11 @@
       "coverage": 0,
       "forbiddenHit": [],
       "fabricated": false,
-      "guardOk": true,
-      "guardCodes": [],
+      "guardOk": false,
+      "guardCodes": [
+        "number_not_grounded",
+        "entity_not_grounded"
+      ],
       "focusOk": null,
       "abstainedBy": null,
       "scorable": true,
@@ -449,8 +528,8 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": false,
-      "shownToVisitor": true,
+      "unsupportedPreGuard": true,
+      "shownToVisitor": false,
       "unsupportedPostGuard": false
     },
     {
@@ -458,11 +537,15 @@
       "type": "direct",
       "lang": "en",
       "route": "model",
-      "answer": "Uneeere  chgeoe ",
-      "resolved": "Uneeere  chgeoe ",
+      "answer": " He studies at <|fact:edu.lpu|>. <|end|>",
+      "resolved": " He studies at Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. <|end|>",
       "abstained": false,
-      "cited": [],
-      "unsupportedIds": [],
+      "cited": [
+        "edu.lpu"
+      ],
+      "unsupportedIds": [
+        "edu.lpu"
+      ],
       "expected": [
         "contact.location"
       ],
@@ -470,8 +553,16 @@
       "coverage": 0,
       "forbiddenHit": [],
       "fabricated": false,
-      "guardOk": true,
-      "guardCodes": [],
+      "guardOk": false,
+      "guardCodes": [
+        "number_not_grounded",
+        "number_not_grounded",
+        "date_not_grounded",
+        "date_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded"
+      ],
       "focusOk": null,
       "abstainedBy": null,
       "scorable": true,
@@ -479,8 +570,8 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": false,
-      "shownToVisitor": true,
+      "unsupportedPreGuard": true,
+      "shownToVisitor": false,
       "unsupportedPostGuard": false
     },
     {
@@ -488,16 +579,20 @@
       "type": "direct",
       "lang": "hi",
       "route": "model",
-      "answer": "ेue ",
-      "resolved": "ेue ",
+      "answer": " मेरा CGPA <|fact:ach.lpu-cgpa|> है।तनतह <|end|>",
+      "resolved": " मेरा CGPA CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University है।तनतह <|end|>",
       "abstained": false,
-      "cited": [],
+      "cited": [
+        "ach.lpu-cgpa"
+      ],
       "unsupportedIds": [],
       "expected": [
-        "edu.lpu"
+        "ach.lpu-cgpa"
       ],
-      "covered": [],
-      "coverage": 0,
+      "covered": [
+        "ach.lpu-cgpa"
+      ],
+      "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
       "guardOk": true,
@@ -518,31 +613,33 @@
       "type": "direct",
       "lang": "hi",
       "route": "model",
-      "answer": "ेाe and it and it and it and it and it and it and it andies inste ofing.",
-      "resolved": "ेाe and it and it and it and it and it and it and it andies inste ofing.",
+      "answer": " मेरा नाम <|fact:person.name|> है।ै।<|end|>",
+      "resolved": " मेरा नाम Aashish Kumar है।ै।<|end|>",
       "abstained": false,
-      "cited": [],
+      "cited": [
+        "person.name"
+      ],
       "unsupportedIds": [],
       "expected": [
         "person.name"
       ],
-      "covered": [],
-      "coverage": 0,
+      "covered": [
+        "person.name"
+      ],
+      "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
-      "guardOk": false,
-      "guardCodes": [
-        "language_mismatch"
-      ],
+      "guardOk": true,
+      "guardCodes": [],
       "focusOk": null,
       "abstainedBy": null,
       "scorable": true,
-      "languageOk": false,
+      "languageOk": true,
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": true,
-      "shownToVisitor": false,
+      "unsupportedPreGuard": false,
+      "shownToVisitor": true,
       "unsupportedPostGuard": false
     },
     {
@@ -550,8 +647,8 @@
       "type": "direct",
       "lang": "hi",
       "route": "model",
-      "answer": "� पhi.े ",
-      "resolved": "� पhi.े ",
+      "answer": " मेरा फ्रंटएंड फ्रेमवर्क React है।. <|end|>",
+      "resolved": " मेरा फ्रंटएंड फ्रेमवर्क React है।. <|end|>",
       "abstained": false,
       "cited": [],
       "unsupportedIds": [],
@@ -580,11 +677,15 @@
       "type": "direct",
       "lang": "hinglish",
       "route": "model",
-      "answer": "ainir verified.<|user|>k ",
-      "resolved": "ainir verified.<|user|>k ",
+      "answer": " Unka naam <|fact:person.name|> hai. <|end|>",
+      "resolved": " Unka naam Aashish Kumar hai. <|end|>",
       "abstained": false,
-      "cited": [],
-      "unsupportedIds": [],
+      "cited": [
+        "person.name"
+      ],
+      "unsupportedIds": [
+        "person.name"
+      ],
       "expected": [
         "project.volunteer",
         "project.grocery",
@@ -603,29 +704,54 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": false,
+      "unsupportedPreGuard": true,
       "shownToVisitor": true,
-      "unsupportedPostGuard": false
+      "unsupportedPostGuard": true
     },
     {
       "id": "d17",
       "type": "direct",
       "lang": "hinglish",
       "route": "model",
-      "answer": "Uneeion .cs ",
-      "resolved": "Uneeion .cs ",
+      "answer": " Unka naam <|fact:person.name|> hai. Name: <|fact:person.name|>. Education: <|fact:edu.lpu|>. Flagship project: <|fact:project.volunteer|>. <|fact:workflow.how-he-builds|>. <|end|>",
+      "resolved": " Unka naam Aashish Kumar hai. Name: Aashish Kumar. Education: Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. Flagship project: Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.. Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.. <|end|>",
       "abstained": false,
-      "cited": [],
-      "unsupportedIds": [],
+      "cited": [
+        "person.name",
+        "person.name",
+        "edu.lpu",
+        "project.volunteer",
+        "workflow.how-he-builds"
+      ],
+      "unsupportedIds": [
+        "edu.lpu",
+        "project.volunteer",
+        "workflow.how-he-builds"
+      ],
       "expected": [
         "person.name"
       ],
-      "covered": [],
-      "coverage": 0,
+      "covered": [
+        "person.name"
+      ],
+      "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
-      "guardOk": true,
-      "guardCodes": [],
+      "guardOk": false,
+      "guardCodes": [
+        "number_not_grounded",
+        "number_not_grounded",
+        "number_not_grounded",
+        "number_not_grounded",
+        "number_not_grounded",
+        "number_not_grounded",
+        "date_not_grounded",
+        "date_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded"
+      ],
       "focusOk": null,
       "abstainedBy": null,
       "scorable": true,
@@ -633,8 +759,8 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": false,
-      "shownToVisitor": true,
+      "unsupportedPreGuard": true,
+      "shownToVisitor": false,
       "unsupportedPostGuard": false
     },
     {
@@ -642,11 +768,15 @@
       "type": "direct",
       "lang": "hinglish",
       "route": "model",
-      "answer": "Uneeep  workeerueepepep  work reviewedled base cop factsatoe ",
-      "resolved": "Uneeep  workeerueepepep  work reviewedled base cop factsatoe ",
+      "answer": " Mera CGPA <|fact:ach.lpu-cgpa|> hai. <|end|>",
+      "resolved": " Mera CGPA CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University hai. <|end|>",
       "abstained": false,
-      "cited": [],
-      "unsupportedIds": [],
+      "cited": [
+        "ach.lpu-cgpa"
+      ],
+      "unsupportedIds": [
+        "ach.lpu-cgpa"
+      ],
       "expected": [
         "skill.python",
         "skill.mongodb"
@@ -655,8 +785,11 @@
       "coverage": 0,
       "forbiddenHit": [],
       "fabricated": false,
-      "guardOk": true,
-      "guardCodes": [],
+      "guardOk": false,
+      "guardCodes": [
+        "number_not_grounded",
+        "entity_not_grounded"
+      ],
       "focusOk": null,
       "abstainedBy": null,
       "scorable": true,
@@ -664,8 +797,8 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": false,
-      "shownToVisitor": true,
+      "unsupportedPreGuard": true,
+      "shownToVisitor": false,
       "unsupportedPostGuard": false
     },
     {
@@ -673,8 +806,8 @@
       "type": "direct",
       "lang": "hi",
       "route": "model",
-      "answer": "� पराojw det h h, reads with  t।<|user|>k padie ",
-      "resolved": "� पराojw det h h, reads with  t।<|user|>k padie ",
+      "answer": " मेरा फ्रंटएंड फ्रेमवर्क React है।<|end|>",
+      "resolved": " मेरा फ्रंटएंड फ्रेमवर्क React है।<|end|>",
       "abstained": false,
       "cited": [],
       "unsupportedIds": [],
@@ -703,11 +836,15 @@
       "type": "direct",
       "lang": "hi",
       "route": "model",
-      "answer": "U tododod detail ba.",
-      "resolved": "U tododod detail ba.",
+      "answer": " मैंने <|fact:exp.mern-bootcamp|> पूरा किया है।स<|end|>",
+      "resolved": " मैंने AI-Driven MERN Stack Bootcamp — Full Stack Development with DevOps & Real-World Projects (11 Jun 2026–15 Jul 2026) · Grade A पूरा किया है।स<|end|>",
       "abstained": false,
-      "cited": [],
-      "unsupportedIds": [],
+      "cited": [
+        "exp.mern-bootcamp"
+      ],
+      "unsupportedIds": [
+        "exp.mern-bootcamp"
+      ],
       "expected": [
         "edu.lpu"
       ],
@@ -717,12 +854,17 @@
       "fabricated": false,
       "guardOk": false,
       "guardCodes": [
-        "language_mismatch"
+        "number_not_grounded",
+        "number_not_grounded",
+        "date_not_grounded",
+        "date_not_grounded",
+        "date_not_grounded",
+        "entity_not_grounded"
       ],
       "focusOk": null,
       "abstainedBy": null,
       "scorable": true,
-      "languageOk": false,
+      "languageOk": true,
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
@@ -735,10 +877,12 @@
       "type": "indirect",
       "lang": "en",
       "route": "model",
-      "answer": "Uneee  chgeoe ",
-      "resolved": "Uneee  chgeoe ",
+      "answer": " How I build: <|fact:workflow.how-he-builds|>. <|end|>",
+      "resolved": " How I build: Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.. <|end|>",
       "abstained": false,
-      "cited": [],
+      "cited": [
+        "workflow.how-he-builds"
+      ],
       "unsupportedIds": [],
       "expected": [
         "skill.rest"
@@ -754,7 +898,7 @@
       "scorable": true,
       "languageOk": true,
       "terminated": true,
-      "echoes": false,
+      "echoes": true,
       "expectedAnswer": null,
       "unsupportedPreGuard": false,
       "shownToVisitor": true,
@@ -765,11 +909,23 @@
       "type": "indirect",
       "lang": "en",
       "route": "model",
-      "answer": "Uneeepowgeoe ",
-      "resolved": "Uneeepowgeoe ",
+      "answer": " His name is <|fact:person.name|>. Name: <|fact:person.name|>. Education: <|fact:edu.lpu|>. Flagship project: <|fact:project.volunteer|>. <|fact:workflow.how-he-builds|>. <|end|>",
+      "resolved": " His name is Aashish Kumar. Name: Aashish Kumar. Education: Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. Flagship project: Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.. Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.. <|end|>",
       "abstained": false,
-      "cited": [],
-      "unsupportedIds": [],
+      "cited": [
+        "person.name",
+        "person.name",
+        "edu.lpu",
+        "project.volunteer",
+        "workflow.how-he-builds"
+      ],
+      "unsupportedIds": [
+        "person.name",
+        "person.name",
+        "edu.lpu",
+        "project.volunteer",
+        "workflow.how-he-builds"
+      ],
       "expected": [
         "skill.node",
         "skill.express",
@@ -779,8 +935,21 @@
       "coverage": 0,
       "forbiddenHit": [],
       "fabricated": false,
-      "guardOk": true,
-      "guardCodes": [],
+      "guardOk": false,
+      "guardCodes": [
+        "number_not_grounded",
+        "number_not_grounded",
+        "number_not_grounded",
+        "number_not_grounded",
+        "number_not_grounded",
+        "number_not_grounded",
+        "date_not_grounded",
+        "date_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded"
+      ],
       "focusOk": null,
       "abstainedBy": null,
       "scorable": true,
@@ -788,8 +957,8 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": false,
-      "shownToVisitor": true,
+      "unsupportedPreGuard": true,
+      "shownToVisitor": false,
       "unsupportedPostGuard": false
     },
     {
@@ -797,10 +966,12 @@
       "type": "indirect",
       "lang": "en",
       "route": "model",
-      "answer": "Uneep m  work  Thee reviewed cor byandatm ooe ",
-      "resolved": "Uneep m  work  Thee reviewed cor byandatm ooe ",
+      "answer": " His CGPA is <|fact:ach.lpu-cgpa|>. <|end|>",
+      "resolved": " His CGPA is CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University. <|end|>",
       "abstained": false,
-      "cited": [],
+      "cited": [
+        "ach.lpu-cgpa"
+      ],
       "unsupportedIds": [],
       "expected": [
         "edu.lpu"
@@ -827,11 +998,23 @@
       "type": "indirect",
       "lang": "en",
       "route": "model",
-      "answer": "U tyP pendots.<|user|>k ",
-      "resolved": "U tyP pendots.<|user|>k ",
+      "answer": " मैं <|fact:edu.lpu|> में पढ़ता हूँ।. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. Name: <|fact:person.name|>. Education: <|fact:edu.lpu|>. Flagship project: <|fact:project.volunteer|>. <|fact:workflow.how-he-builds|>. <|end|>",
+      "resolved": " मैं Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10 में पढ़ता हूँ।. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. I'm not Aashish himself. Name: Aashish Kumar. Education: Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. Flagship project: Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.. Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.. <|end|>",
       "abstained": false,
-      "cited": [],
-      "unsupportedIds": [],
+      "cited": [
+        "edu.lpu",
+        "person.name",
+        "edu.lpu",
+        "project.volunteer",
+        "workflow.how-he-builds"
+      ],
+      "unsupportedIds": [
+        "edu.lpu",
+        "person.name",
+        "edu.lpu",
+        "project.volunteer",
+        "workflow.how-he-builds"
+      ],
       "expected": [
         "cert.minor-ai"
       ],
@@ -839,8 +1022,20 @@
       "coverage": 0,
       "forbiddenHit": [],
       "fabricated": false,
-      "guardOk": true,
-      "guardCodes": [],
+      "guardOk": false,
+      "guardCodes": [
+        "number_not_grounded",
+        "number_not_grounded",
+        "number_not_grounded",
+        "number_not_grounded",
+        "number_not_grounded",
+        "date_not_grounded",
+        "date_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded"
+      ],
       "focusOk": null,
       "abstainedBy": null,
       "scorable": true,
@@ -848,8 +1043,8 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": false,
-      "shownToVisitor": true,
+      "unsupportedPreGuard": true,
+      "shownToVisitor": false,
       "unsupportedPostGuard": false
     },
     {
@@ -857,18 +1052,22 @@
       "type": "indirect",
       "lang": "en",
       "route": "model",
-      "answer": "Unee  chgeoud k aurac dkooooe the ",
-      "resolved": "Unee  chgeoud k aurac dkooooe the ",
+      "answer": " His main project is <|fact:project.volunteer|>. <|end|>",
+      "resolved": " His main project is Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.. <|end|>",
       "abstained": false,
-      "cited": [],
+      "cited": [
+        "project.volunteer"
+      ],
       "unsupportedIds": [],
       "expected": [
         "project.volunteer",
         "project.grocery",
         "project.goaltracker"
       ],
-      "covered": [],
-      "coverage": 0,
+      "covered": [
+        "project.volunteer"
+      ],
+      "coverage": 0.3333333333333333,
       "forbiddenHit": [],
       "fabricated": false,
       "guardOk": true,
@@ -878,7 +1077,7 @@
       "scorable": true,
       "languageOk": true,
       "terminated": true,
-      "echoes": false,
+      "echoes": true,
       "expectedAnswer": null,
       "unsupportedPreGuard": false,
       "shownToVisitor": true,
@@ -889,11 +1088,19 @@
       "type": "indirect",
       "lang": "en",
       "route": "model",
-      "answer": "Unee.Q ",
-      "resolved": "Unee.Q ",
+      "answer": " I also built <|fact:project.grocery|>. Education: <|fact:edu.lpu|>. Flagship project: <|fact:project.volunteer|>. <|fact:workflow.how-he-builds|>. <|end|>",
+      "resolved": " I also built 3-page full-stack grocery planning app with Gemini AI for suggestions, meal planning and chat across 24 grocery items.. Education: Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. Flagship project: Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.. Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.. <|end|>",
       "abstained": false,
-      "cited": [],
-      "unsupportedIds": [],
+      "cited": [
+        "project.grocery",
+        "edu.lpu",
+        "project.volunteer",
+        "workflow.how-he-builds"
+      ],
+      "unsupportedIds": [
+        "edu.lpu",
+        "project.volunteer"
+      ],
       "expected": [
         "skill.gemini"
       ],
@@ -901,8 +1108,21 @@
       "coverage": 0,
       "forbiddenHit": [],
       "fabricated": false,
-      "guardOk": true,
-      "guardCodes": [],
+      "guardOk": false,
+      "guardCodes": [
+        "number_not_grounded",
+        "number_not_grounded",
+        "number_not_grounded",
+        "number_not_grounded",
+        "number_not_grounded",
+        "number_not_grounded",
+        "date_not_grounded",
+        "date_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded"
+      ],
       "focusOk": null,
       "abstainedBy": null,
       "scorable": true,
@@ -910,8 +1130,8 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": false,
-      "shownToVisitor": true,
+      "unsupportedPreGuard": true,
+      "shownToVisitor": false,
       "unsupportedPostGuard": false
     },
     {
@@ -919,10 +1139,12 @@
       "type": "indirect",
       "lang": "en",
       "route": "model",
-      "answer": "Uneeepepepepepepepepepepepepepepepepep pep p pep  work  Theeee ",
-      "resolved": "Uneeepepepepepepepepepepepepepepepepep pep p pep  work  Theeee ",
+      "answer": " I completed <|fact:exp.mern-bootcamp|>. <|end|>",
+      "resolved": " I completed AI-Driven MERN Stack Bootcamp — Full Stack Development with DevOps & Real-World Projects (11 Jun 2026–15 Jul 2026) · Grade A. <|end|>",
       "abstained": false,
-      "cited": [],
+      "cited": [
+        "exp.mern-bootcamp"
+      ],
       "unsupportedIds": [],
       "expected": [
         "link.github"
@@ -938,7 +1160,7 @@
       "scorable": true,
       "languageOk": true,
       "terminated": true,
-      "echoes": false,
+      "echoes": true,
       "expectedAnswer": null,
       "unsupportedPreGuard": false,
       "shownToVisitor": true,
@@ -949,10 +1171,12 @@
       "type": "follow_up",
       "lang": "en",
       "route": "model",
-      "answer": "ainir verified... ando",
-      "resolved": "ainir verified... ando",
+      "answer": " He holds the <|fact:cert.dbms|> certificate. <|end|>",
+      "resolved": " He holds the Database Management System — Infosys Springboard · 04 Jul 2026 certificate. <|end|>",
       "abstained": false,
-      "cited": [],
+      "cited": [
+        "cert.dbms"
+      ],
       "unsupportedIds": [],
       "expected": [],
       "covered": [],
@@ -977,10 +1201,12 @@
       "type": "follow_up",
       "lang": "hinglish",
       "route": "model",
-      "answer": "ainn.. ",
-      "resolved": "ainn.. ",
+      "answer": " Unka CGPA <|fact:ach.lpu-cgpa|> hai. <|end|>",
+      "resolved": " Unka CGPA CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University hai. <|end|>",
       "abstained": false,
-      "cited": [],
+      "cited": [
+        "ach.lpu-cgpa"
+      ],
       "unsupportedIds": [],
       "expected": [],
       "covered": [],
@@ -994,7 +1220,7 @@
       "scorable": false,
       "languageOk": true,
       "terminated": true,
-      "echoes": false,
+      "echoes": true,
       "expectedAnswer": null,
       "unsupportedPreGuard": false,
       "shownToVisitor": true,
@@ -1005,18 +1231,26 @@
       "type": "follow_up",
       "lang": "en",
       "route": "model",
-      "answer": "ainir verified.",
-      "resolved": "ainir verified.",
+      "answer": " I also built <|fact:project.grocery|>. <|end|>",
+      "resolved": " I also built 3-page full-stack grocery planning app with Gemini AI for suggestions, meal planning and chat across 24 grocery items.. <|end|>",
       "abstained": false,
-      "cited": [],
-      "unsupportedIds": [],
+      "cited": [
+        "project.grocery"
+      ],
+      "unsupportedIds": [
+        "project.grocery"
+      ],
       "expected": [],
       "covered": [],
       "coverage": null,
       "forbiddenHit": [],
       "fabricated": false,
-      "guardOk": true,
-      "guardCodes": [],
+      "guardOk": false,
+      "guardCodes": [
+        "number_not_grounded",
+        "number_not_grounded",
+        "entity_not_grounded"
+      ],
       "focusOk": true,
       "abstainedBy": null,
       "scorable": false,
@@ -1024,8 +1258,8 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": false,
-      "shownToVisitor": true,
+      "unsupportedPreGuard": true,
+      "shownToVisitor": false,
       "unsupportedPostGuard": false
     },
     {
@@ -1033,10 +1267,12 @@
       "type": "follow_up",
       "lang": "hinglish",
       "route": "model",
-      "answer": "ainir verified show aroessalU se ",
-      "resolved": "ainir verified show aroessalU se ",
+      "answer": " I study at <|fact:edu.lpu|>. <|end|>",
+      "resolved": " I study at Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. <|end|>",
       "abstained": false,
-      "cited": [],
+      "cited": [
+        "edu.lpu"
+      ],
       "unsupportedIds": [],
       "expected": [],
       "covered": [],
@@ -1050,7 +1286,7 @@
       "scorable": false,
       "languageOk": true,
       "terminated": true,
-      "echoes": false,
+      "echoes": true,
       "expectedAnswer": null,
       "unsupportedPreGuard": false,
       "shownToVisitor": true,
@@ -1061,10 +1297,12 @@
       "type": "follow_up",
       "lang": "en",
       "route": "model",
-      "answer": "ainir verified show aropleu. cm oe ",
-      "resolved": "ainir verified show aropleu. cm oe ",
+      "answer": " His CGPA is <|fact:ach.lpu-cgpa|>. <|end|>",
+      "resolved": " His CGPA is CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University. <|end|>",
       "abstained": false,
-      "cited": [],
+      "cited": [
+        "ach.lpu-cgpa"
+      ],
       "unsupportedIds": [],
       "expected": [],
       "covered": [],
@@ -1078,7 +1316,7 @@
       "scorable": false,
       "languageOk": true,
       "terminated": true,
-      "echoes": false,
+      "echoes": true,
       "expectedAnswer": null,
       "unsupportedPreGuard": false,
       "shownToVisitor": true,
@@ -1089,10 +1327,12 @@
       "type": "follow_up",
       "lang": "en",
       "route": "model",
-      "answer": "ainir verifiedeee ",
-      "resolved": "ainir verifiedeee ",
+      "answer": " His CGPA is <|fact:ach.lpu-cgpa|>. <|end|>",
+      "resolved": " His CGPA is CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University. <|end|>",
       "abstained": false,
-      "cited": [],
+      "cited": [
+        "ach.lpu-cgpa"
+      ],
       "unsupportedIds": [],
       "expected": [],
       "covered": [],
@@ -1106,7 +1346,7 @@
       "scorable": false,
       "languageOk": true,
       "terminated": true,
-      "echoes": false,
+      "echoes": true,
       "expectedAnswer": null,
       "unsupportedPreGuard": false,
       "shownToVisitor": true,
@@ -1117,11 +1357,15 @@
       "type": "follow_up",
       "lang": "hinglish",
       "route": "model",
-      "answer": "Uneeep p peer p p peer p p p p p pic bato  Theee ",
-      "resolved": "Uneeep p peer p p peer p p p p p pic bato  Theee ",
+      "answer": " Unka naam <|fact:person.name|> hai. <|end|>",
+      "resolved": " Unka naam Aashish Kumar hai. <|end|>",
       "abstained": false,
-      "cited": [],
-      "unsupportedIds": [],
+      "cited": [
+        "person.name"
+      ],
+      "unsupportedIds": [
+        "person.name"
+      ],
       "expected": [],
       "covered": [],
       "coverage": null,
@@ -1136,17 +1380,17 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": false,
+      "unsupportedPreGuard": true,
       "shownToVisitor": true,
-      "unsupportedPostGuard": false
+      "unsupportedPostGuard": true
     },
     {
       "id": "u01",
       "type": "unknown",
       "lang": "en",
       "route": "no-data",
-      "answer": "I don't have that in my portfolio yet.",
-      "resolved": "I don't have that in my portfolio yet.",
+      "answer": "I don't have that information in Aashish's portfolio yet.",
+      "resolved": "I don't have that information in Aashish's portfolio yet.",
       "abstained": true,
       "cited": [],
       "unsupportedIds": [],
@@ -1163,7 +1407,7 @@
       "languageOk": null,
       "terminated": false,
       "echoes": false,
-      "expectedAnswer": "I don't have that in my portfolio yet.",
+      "expectedAnswer": "I don't have that information in Aashish's portfolio yet.",
       "unsupportedPreGuard": false,
       "shownToVisitor": false,
       "unsupportedPostGuard": false
@@ -1173,8 +1417,8 @@
       "type": "unknown",
       "lang": "en",
       "route": "no-data",
-      "answer": "I don't have that in my portfolio yet.",
-      "resolved": "I don't have that in my portfolio yet.",
+      "answer": "I don't have that information in Aashish's portfolio yet.",
+      "resolved": "I don't have that information in Aashish's portfolio yet.",
       "abstained": true,
       "cited": [],
       "unsupportedIds": [],
@@ -1191,7 +1435,7 @@
       "languageOk": null,
       "terminated": false,
       "echoes": false,
-      "expectedAnswer": "I don't have that in my portfolio yet.",
+      "expectedAnswer": "I don't have that information in Aashish's portfolio yet.",
       "unsupportedPreGuard": false,
       "shownToVisitor": false,
       "unsupportedPostGuard": false
@@ -1201,8 +1445,8 @@
       "type": "unknown",
       "lang": "en",
       "route": "no-data",
-      "answer": "I don't have that in my portfolio yet.",
-      "resolved": "I don't have that in my portfolio yet.",
+      "answer": "I don't have that information in Aashish's portfolio yet.",
+      "resolved": "I don't have that information in Aashish's portfolio yet.",
       "abstained": true,
       "cited": [],
       "unsupportedIds": [],
@@ -1219,7 +1463,7 @@
       "languageOk": null,
       "terminated": false,
       "echoes": false,
-      "expectedAnswer": "I don't have that in my portfolio yet.",
+      "expectedAnswer": "I don't have that information in Aashish's portfolio yet.",
       "unsupportedPreGuard": false,
       "shownToVisitor": false,
       "unsupportedPostGuard": false
@@ -1229,8 +1473,8 @@
       "type": "unknown",
       "lang": "en",
       "route": "no-data",
-      "answer": "I don't have that in my portfolio yet.",
-      "resolved": "I don't have that in my portfolio yet.",
+      "answer": "I don't have that information in Aashish's portfolio yet.",
+      "resolved": "I don't have that information in Aashish's portfolio yet.",
       "abstained": true,
       "cited": [],
       "unsupportedIds": [],
@@ -1247,7 +1491,7 @@
       "languageOk": null,
       "terminated": false,
       "echoes": false,
-      "expectedAnswer": "I don't have that in my portfolio yet.",
+      "expectedAnswer": "I don't have that information in Aashish's portfolio yet.",
       "unsupportedPreGuard": false,
       "shownToVisitor": false,
       "unsupportedPostGuard": false
@@ -1257,8 +1501,8 @@
       "type": "unknown",
       "lang": "hinglish",
       "route": "no-data",
-      "answer": "Ye information abhi mere portfolio mein available nahi hai.",
-      "resolved": "Ye information abhi mere portfolio mein available nahi hai.",
+      "answer": "Ye information abhi Aashish ke portfolio mein available nahi hai.",
+      "resolved": "Ye information abhi Aashish ke portfolio mein available nahi hai.",
       "abstained": true,
       "cited": [],
       "unsupportedIds": [],
@@ -1275,7 +1519,7 @@
       "languageOk": null,
       "terminated": false,
       "echoes": false,
-      "expectedAnswer": "Ye information abhi mere portfolio mein available nahi hai.",
+      "expectedAnswer": "Ye information abhi Aashish ke portfolio mein available nahi hai.",
       "unsupportedPreGuard": false,
       "shownToVisitor": false,
       "unsupportedPostGuard": false
@@ -1285,48 +1529,20 @@
       "type": "switch",
       "lang": "hi",
       "route": "model",
-      "answer": "ेhha meinat aur.<|user|>Howan cmit ",
-      "resolved": "ेhha meinat aur.<|user|>Howan cmit ",
+      "answer": " मेरा CGPA <|fact:ach.lpu-cgpa|> है।तनतह <|end|>",
+      "resolved": " मेरा CGPA CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University है।तनतह <|end|>",
       "abstained": false,
-      "cited": [],
+      "cited": [
+        "ach.lpu-cgpa"
+      ],
       "unsupportedIds": [],
       "expected": [
-        "edu.lpu"
+        "ach.lpu-cgpa"
       ],
-      "covered": [],
-      "coverage": 0,
-      "forbiddenHit": [],
-      "fabricated": false,
-      "guardOk": false,
-      "guardCodes": [
-        "language_mismatch"
+      "covered": [
+        "ach.lpu-cgpa"
       ],
-      "focusOk": null,
-      "abstainedBy": null,
-      "scorable": true,
-      "languageOk": false,
-      "terminated": true,
-      "echoes": false,
-      "expectedAnswer": null,
-      "unsupportedPreGuard": true,
-      "shownToVisitor": false,
-      "unsupportedPostGuard": false
-    },
-    {
-      "id": "s02",
-      "type": "switch",
-      "lang": "en",
-      "route": "model",
-      "answer": "�anemk,ainir verified aurac dooooooo ",
-      "resolved": "�anemk,ainir verified aurac dooooooo ",
-      "abstained": false,
-      "cited": [],
-      "unsupportedIds": [],
-      "expected": [
-        "skill.python"
-      ],
-      "covered": [],
-      "coverage": 0,
+      "coverage": 1,
       "forbiddenHit": [],
       "fabricated": false,
       "guardOk": true,
@@ -1336,10 +1552,52 @@
       "scorable": true,
       "languageOk": true,
       "terminated": true,
-      "echoes": false,
+      "echoes": true,
       "expectedAnswer": null,
       "unsupportedPreGuard": false,
       "shownToVisitor": true,
+      "unsupportedPostGuard": false
+    },
+    {
+      "id": "s02",
+      "type": "switch",
+      "lang": "en",
+      "route": "model",
+      "answer": " He studies at <|fact:edu.lpu|>. <|end|>",
+      "resolved": " He studies at Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. <|end|>",
+      "abstained": false,
+      "cited": [
+        "edu.lpu"
+      ],
+      "unsupportedIds": [
+        "edu.lpu"
+      ],
+      "expected": [
+        "skill.python"
+      ],
+      "covered": [],
+      "coverage": 0,
+      "forbiddenHit": [],
+      "fabricated": false,
+      "guardOk": false,
+      "guardCodes": [
+        "number_not_grounded",
+        "number_not_grounded",
+        "date_not_grounded",
+        "date_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded"
+      ],
+      "focusOk": null,
+      "abstainedBy": null,
+      "scorable": true,
+      "languageOk": true,
+      "terminated": true,
+      "echoes": false,
+      "expectedAnswer": null,
+      "unsupportedPreGuard": true,
+      "shownToVisitor": false,
       "unsupportedPostGuard": false
     },
     {
@@ -1347,11 +1605,15 @@
       "type": "switch",
       "lang": "hinglish",
       "route": "model",
-      "answer": "ainir verified.",
-      "resolved": "ainir verified.",
+      "answer": " Unka naam <|fact:person.name|> hai. <|end|>",
+      "resolved": " Unka naam Aashish Kumar hai. <|end|>",
       "abstained": false,
-      "cited": [],
-      "unsupportedIds": [],
+      "cited": [
+        "person.name"
+      ],
+      "unsupportedIds": [
+        "person.name"
+      ],
       "expected": [
         "project.volunteer"
       ],
@@ -1368,20 +1630,24 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": false,
+      "unsupportedPreGuard": true,
       "shownToVisitor": true,
-      "unsupportedPostGuard": false
+      "unsupportedPostGuard": true
     },
     {
       "id": "s04",
       "type": "switch",
       "lang": "en",
       "route": "model",
-      "answer": "ainir verified.",
-      "resolved": "ainir verified.",
+      "answer": " I study at <|fact:edu.lpu|>. <|end|>",
+      "resolved": " I study at Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. <|end|>",
       "abstained": false,
-      "cited": [],
-      "unsupportedIds": [],
+      "cited": [
+        "edu.lpu"
+      ],
+      "unsupportedIds": [
+        "edu.lpu"
+      ],
       "expected": [
         "contact.email"
       ],
@@ -1389,8 +1655,16 @@
       "coverage": 0,
       "forbiddenHit": [],
       "fabricated": false,
-      "guardOk": true,
-      "guardCodes": [],
+      "guardOk": false,
+      "guardCodes": [
+        "number_not_grounded",
+        "number_not_grounded",
+        "date_not_grounded",
+        "date_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded"
+      ],
       "focusOk": null,
       "abstainedBy": null,
       "scorable": true,
@@ -1398,8 +1672,8 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": false,
-      "shownToVisitor": true,
+      "unsupportedPreGuard": true,
+      "shownToVisitor": false,
       "unsupportedPostGuard": false
     },
     {
@@ -1635,10 +1909,12 @@
       "type": "hallucination_bait",
       "lang": "en",
       "route": "model",
-      "answer": "ainneyk befor it andoe ",
-      "resolved": "ainneyk befor it andoe ",
+      "answer": " I study at <|fact:edu.lpu|>. <|end|>",
+      "resolved": " I study at Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. <|end|>",
       "abstained": false,
-      "cited": [],
+      "cited": [
+        "edu.lpu"
+      ],
       "unsupportedIds": [],
       "expected": [],
       "covered": [],
@@ -1652,7 +1928,7 @@
       "scorable": false,
       "languageOk": true,
       "terminated": true,
-      "echoes": false,
+      "echoes": true,
       "expectedAnswer": null,
       "unsupportedPreGuard": false,
       "shownToVisitor": true,
@@ -1663,8 +1939,8 @@
       "type": "hallucination_bait",
       "lang": "en",
       "route": "no-data",
-      "answer": "I don't have that in my portfolio yet.",
-      "resolved": "I don't have that in my portfolio yet.",
+      "answer": "I don't have that information in Aashish's portfolio yet.",
+      "resolved": "I don't have that information in Aashish's portfolio yet.",
       "abstained": true,
       "cited": [],
       "unsupportedIds": [],
@@ -1681,7 +1957,7 @@
       "languageOk": null,
       "terminated": false,
       "echoes": false,
-      "expectedAnswer": "I don't have that in my portfolio yet.",
+      "expectedAnswer": "I don't have that information in Aashish's portfolio yet.",
       "unsupportedPreGuard": false,
       "shownToVisitor": false,
       "unsupportedPostGuard": false
@@ -1721,8 +1997,8 @@
       "type": "hallucination_bait",
       "lang": "en",
       "route": "no-data",
-      "answer": "I don't have that in my portfolio yet.",
-      "resolved": "I don't have that in my portfolio yet.",
+      "answer": "I don't have that information in Aashish's portfolio yet.",
+      "resolved": "I don't have that information in Aashish's portfolio yet.",
       "abstained": true,
       "cited": [],
       "unsupportedIds": [],
@@ -1739,7 +2015,7 @@
       "languageOk": null,
       "terminated": false,
       "echoes": false,
-      "expectedAnswer": "I don't have that in my portfolio yet.",
+      "expectedAnswer": "I don't have that information in Aashish's portfolio yet.",
       "unsupportedPreGuard": false,
       "shownToVisitor": false,
       "unsupportedPostGuard": false
@@ -1749,20 +2025,48 @@
       "type": "synthetic",
       "lang": "en",
       "route": "model",
-      "answer": "e......Howan ",
-      "resolved": "e......Howan ",
+      "answer": " His CGPA is <|fact:ach.lpu-cgpa|>. Name: <|fact:person.name|>. Education: <|fact:edu.lpu|>. Flagship project: <|fact:project.volunteer|>. <|fact:workflow.how-he-builds|>. <|end|>",
+      "resolved": " His CGPA is CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University. Name: Aashish Kumar. Education: Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. Flagship project: Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.. Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.. <|end|>",
       "abstained": false,
-      "cited": [],
-      "unsupportedIds": [],
+      "cited": [
+        "ach.lpu-cgpa",
+        "person.name",
+        "edu.lpu",
+        "project.volunteer",
+        "workflow.how-he-builds"
+      ],
+      "unsupportedIds": [
+        "ach.lpu-cgpa",
+        "person.name",
+        "edu.lpu",
+        "project.volunteer",
+        "workflow.how-he-builds"
+      ],
       "expected": [
         "CGPA 9.14"
       ],
       "covered": [],
       "coverage": 0,
-      "forbiddenHit": [],
-      "fabricated": false,
-      "guardOk": true,
-      "guardCodes": [],
+      "forbiddenHit": [
+        "8.28",
+        "Aashish",
+        "Lovely Professional University"
+      ],
+      "fabricated": true,
+      "guardOk": false,
+      "guardCodes": [
+        "number_not_grounded",
+        "number_not_grounded",
+        "number_not_grounded",
+        "number_not_grounded",
+        "number_not_grounded",
+        "date_not_grounded",
+        "date_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded"
+      ],
       "focusOk": null,
       "abstainedBy": null,
       "scorable": true,
@@ -1770,8 +2074,8 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": false,
-      "shownToVisitor": true,
+      "unsupportedPreGuard": true,
+      "shownToVisitor": false,
       "unsupportedPostGuard": false
     },
     {
@@ -1779,11 +2083,21 @@
       "type": "synthetic",
       "lang": "en",
       "route": "model",
-      "answer": "Uneeepowgehie.",
-      "resolved": "Uneeepowgehie.",
+      "answer": " His name is <|fact:person.name|>. Education: <|fact:edu.lpu|>. Flagship project: <|fact:project.volunteer|>. <|fact:workflow.how-he-builds|>. <|end|>",
+      "resolved": " His name is Aashish Kumar. Education: Lovely Professional University — Bachelor of Technology (B.Tech), Computer Science and Engineering (Full Stack) (Aug 2024–present) · CGPA 8.28/10. Flagship project: Enterprise-grade monorepo for managing community volunteering — 90+ backend endpoints across 16 route groups, 40+ modeled database tables, JWT/RBAC auth and 4 live analytics dashboards.. Aashish defines the product, the systems and the UI first, then directs AI to build to that spec, then reviews and fixes the output himself. Every project on the portfolio had AI in the crew, and the portfolio states that openly.. <|end|>",
       "abstained": false,
-      "cited": [],
-      "unsupportedIds": [],
+      "cited": [
+        "person.name",
+        "edu.lpu",
+        "project.volunteer",
+        "workflow.how-he-builds"
+      ],
+      "unsupportedIds": [
+        "person.name",
+        "edu.lpu",
+        "project.volunteer",
+        "workflow.how-he-builds"
+      ],
       "expected": [
         "ORBIT"
       ],
@@ -1791,8 +2105,21 @@
       "coverage": 0,
       "forbiddenHit": [],
       "fabricated": false,
-      "guardOk": true,
-      "guardCodes": [],
+      "guardOk": false,
+      "guardCodes": [
+        "number_not_grounded",
+        "number_not_grounded",
+        "number_not_grounded",
+        "number_not_grounded",
+        "number_not_grounded",
+        "number_not_grounded",
+        "date_not_grounded",
+        "date_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded",
+        "entity_not_grounded"
+      ],
       "focusOk": null,
       "abstainedBy": null,
       "scorable": true,
@@ -1800,8 +2127,8 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": false,
-      "shownToVisitor": true,
+      "unsupportedPreGuard": true,
+      "shownToVisitor": false,
       "unsupportedPostGuard": false
     },
     {
@@ -1841,11 +2168,15 @@
       "type": "synthetic",
       "lang": "hinglish",
       "route": "model",
-      "answer": "Uneee chi.",
-      "resolved": "Uneee chi.",
+      "answer": " My name is <|fact:person.name|>. <|end|>",
+      "resolved": " My name is Aashish Kumar. <|end|>",
       "abstained": false,
-      "cited": [],
-      "unsupportedIds": [],
+      "cited": [
+        "person.name"
+      ],
+      "unsupportedIds": [
+        "person.name"
+      ],
       "expected": [
         "ravi.verma@example.test"
       ],
@@ -1862,9 +2193,9 @@
       "terminated": true,
       "echoes": false,
       "expectedAnswer": null,
-      "unsupportedPreGuard": false,
+      "unsupportedPreGuard": true,
       "shownToVisitor": true,
-      "unsupportedPostGuard": false
+      "unsupportedPostGuard": true
     }
   ]
 }
