@@ -1446,3 +1446,293 @@ see `docs/PROGRESS.md` §"watchStream read a NOTICE instead of the answer".
 | frames, panel closed → open | 33.2 → 33.3 ms = **0.3 %** (p95 **1×**), ladder `step=0` |
 | control (open, sampled twice) | 33.3 → 33.2 ms = −0.3 % — this box's bimodal baseline |
 | §11.2 checks | `badge="HEARD"`, EDIT present, and pressing it puts `"who are you"` back in the box |
+
+---
+
+## 100% pure AI answer path (2026-10-14)
+
+**Owner decision:** "the assistant must not look like an algorithm — remove
+the algorithmic techniques; answer everything with the model." Every
+pre-model decision is gone: the deterministic list answers (§5.1's planner),
+the data-file wording tier (2026-10-08), and the pre-model refusals — §9
+injection, the "who are you" disclosure, §14's invented-employer bait,
+withheld fields. EVERY question is asked of the on-device model in its own
+trained voice. The fixed sentences that remain are exactly two kinds: the
+machine not running (§10), and the refusal for a turn the model produced no
+text to keep (an `<|abstain|>`, or a double guard failure). What stays
+deterministic is VERIFICATION, not wording: the guard still rejects every
+claim that does not appear in the context the model read, and §8.1 still
+keeps `public:false` values out of that context.
+
+| Change | Where |
+|---|---|
+| `routeQuestion`: ONE refusal (no-model); everything else routes to the model | `ai/answers/model.mjs` |
+| `ask()`: planner block, WORDABLE_PLANS wording, and the §8.4 layer-1 retrieval gate removed — the model is asked with empty contexts | `ai/answers/model.mjs` |
+| Multi-turn: answered turns fed back as `history`, so follow-ups ("come again") read the conversation | `ai/ui/chat.mjs` |
+| The shell refuses nothing on its own authority; the planner branch and the three refusal routes are gone | `ai/ui/chat.mjs` |
+| The evaluator stops emitting pre-model refusal rows; every §14 case is a prompt | `tools/model-eval.mjs` |
+
+Tests: `npm test` **547 pass / 0 fail, exit 0** (was 552 — PLANNER-1…6 retired
+with the planner, replaced by MODEL-14, which keeps the §8.1 property);
+`npm run build` clean.
+
+Measured on the built bundle (`ROOT=dist PORT=5580`, headless Chrome, this
+dev box — a slow, loaded host; labeled per §15):
+
+| Turn | Result |
+|---|---|
+| model load | `model.state === 'ready'` observed within ~2 min on this box |
+| "hi" | `unverified` refusal after **≈72 s** — two attempts, the checkpoint's run-on answer did not ground in an empty context |
+| "what are his skills?" | `strained` refusal after the §6.3 ladder fired — the designed stop on a struggling device |
+| two long turns | overflowed the probe's 90 s window on this box (the film's rendering slows decode; NOT a real-device number) |
+
+**The honest cost, labeled ESTIMATED until measured on a real device:** every
+answer is now a generation (two when the guard retries), so the instant
+replies the planner gave are gone; small talk and list questions — the very
+shapes the eval scored zero at v8 — will abstain or half-answer more often
+than the wording tier did; and §14's bait protection now rests on the
+model's trained abstention plus the guard, which cannot catch an invented
+employer the knowledge base never names. §14's adversarial set must be
+re-run against the new path before any trust claim.
+
+**NOT RUN:** `tools/model-eval.mjs` against the shipping checkpoint under the
+new all-model routing (its row CONTRACT changed — bait/injection/withheld
+questions are prompts now — so previous coverage numbers are not comparable
+without a full re-run). Real-device answer latency hands-free (needs the
+owner's click).
+
+## 2026-10-15 — §6.3 relative strain: the ladder stops blaming the film's own pace on the answer (GOV-5)
+
+**Symptom measured, not reported:** every ask on the R1 dev laptop ended in
+"I've stopped generating answers". Why: `slowFrameMs: 24` treats any frame
+over ~42 fps as "slow", and this box's film idles slower than that
+*without any answer running* — measured (SwiftShader headless, 30 s idle,
+film running): ema **27.5 ms (36 fps), p95 83 ms**. So the moment a turn
+armed the ladder, the rungs read the film's own chronic slowness as the
+answer's fault. Every turn climbed the full ladder to rung 4 inside ~6 s of
+dwell time; `budget.stopped` then held for the rest of the turn (measured:
+one full turn lasted 334.7 s), so questions asked during it got the
+instant "strained" refusal. User-visible: one refusal, every time.
+
+**Change:** the armed bar is now RELATIVE. While the ladder is idle, its
+frames feed a second monitor (the baseline). Arming computes
+`strainBar = max(slowFrameMs, ceil(idleEma × strainFactor))` —
+`strainFactor: 1.5` — and freezes the baseline for the armed window, so
+degradation the ladder acts on cannot teach it that degraded is normal.
+With no idle measurement on record, the bar falls back to the absolute
+floor, which is why every GOV-2 pin is unchanged.
+
+**Verified (built bundle, real GPU, 2026-10-15):** one full turn ("hi"):
+finished in **56.1 s**, ladder `maxStep = 0` for the entire armed window,
+armed bar **33 ms** against a measured idle of ~21.5–23 ms (the relative
+rule visibly engaged), no strain refusal shipped, `budget.stopped: false`.
+
+**Tests:** `tests/governor.test.mjs` GOV-5 pins the decision rules — armed
+bar ≡ film's idle pace; no-baseline fallback; frozen baseline; per-frame
+bar on `createFrameMonitor.push`. Suite: **552/552, exit 0** (up from 547).
+`npm run build` clean.
+
+**Still honest, still NOT RUN / NOT FIXED here:**
+- Turn 2 ("come again") did not settle inside the probe watchdog on this
+  loaded box — likely two guard attempts of slow generation; latency on
+  real devices remains **NOT TESTED** (labelled as such on 2026-10-14).
+- Answer accuracy: the "hi" turn's model output failed the §8.4 guard on
+  both attempts ("could not verify it"). That is the model/guard quality
+  question behind the still-pending checkpoint eval, not a §6.3 question.
+
+## 2026-10-20 — the sft4 checkpoint: the greeting is right, the STOP is missing, and a stop bias cannot fix it
+
+**What was measured.** The Kaggle export `aashish-ai-b-sft4`
+(`manifest.source`: run `stage-b`, `best`, **step 2000**, sha256 `c74d9d0b…`),
+pulled to `D:/aashish-ai-kaggle/export-b/export-browser` and decoded with the
+SHIPPING engine (`tools/eval-decode.mjs` → `ScratchLlamaEngine`, greedy, q8 as
+exported). Device: R1 dev box, **4-core CPU, no GPU** — ~0.47 s/token, so the
+five-case probe is 72 s. Method: `node tmp-greet-sft4.mjs <export>` and
+`node tmp-pstop2.mjs <export>` (per-position `end`-token rank against the
+argmax, over the gold continuation).
+
+### The greeting is fixed — measured, not inferred
+
+| Case | Shipped step 500 (2026-10-18) | sft4 step 2000 |
+|---|---|---|
+| `Hi`, `Hello`, `Hey, good morning` | ` I study at <|fact:edu.lpu|>. ` | ` Hi! Ask me about Aashish's projects, skills, education or how to reach him. I'm not Aashish himself.` |
+
+No `fact` token is emitted for a greeting on ANY of the three shapes, and the
+counterfactual-name context (`[person.name] Rohan Mehta`) produces the same
+sentence — the greeting is not memorised from a name. The text MODEL-11's
+2026-10-18 comment measured ("a greeting answered with education") no longer
+holds for this checkpoint; it is preserved here as what step 500 did.
+
+### …and the model does not stop. This is NOT a near-miss
+
+`p(<|end|>)` at the position where a trained answer has just finished:
+
+| Position | `p(end)` | rank of `end` | argmax |
+|---|---|---|---|
+| after the greeting sentence (`…him.`) | **0.0003** | **103** | `" I"` 0.684 |
+| after the summary sentence (`His name is <|fact:person.name|>.`) | 0.0009 | 34 | `" Education"` 0.634 |
+
+So the refusal-shaped answer the visitor meets is a greeting followed by
+"I'm not Aashish himself. I'm not…" to the token cap. The interesting part is
+the size of the gap: `end` is rank **103**, and the measured probabilities put
+it **≈7.7 logits** below the top-1 (`" I"` 0.684 against `p(end)` 0.0003). The
+premise `inference/forced_eos.py` was written on — "the stop token's natural
+logit is anywhere in −8 … +2, so a big constant bias puts it on top" — is
+**refuted for this artifact**: the bias needed to promote rank 103 at that
+position is far larger than one that leaves the short cases alone, which is
+exactly the trade that probe's docstring warns can "silently break" them.
+A decode-loop bias is therefore **not** the cheap fix it was labelled as.
+
+The second row is the same finding in the model's own trained shape: after a
+complete slot it wants the NEXT slot (` Education`), because the answers it was
+trained on concatenate slots. Continuing is the trained behaviour; stopping is
+the thing it never learned to do.
+
+### What this does not say
+
+- **NOT TESTED:** held-out answer accuracy for this checkpoint
+  (`tools/eval_answer_accuracy.py --n 120 --seed 999`, the 2-minute T4 run).
+  One hand-written factual case (`What database does he use?` with two
+  `skill.*` lines) put `exp.mern-bootcamp` above `skill.mysql` at the fact
+  position — an ANECDOTE from one case, not an accuracy number, and the reason
+  that eval is the next measurement rather than a conclusion drawn here.
+  **Update 2026-10-22:** the run happened, but it scored the *step-500*
+  checkpoint (the only one the `training-stage-b` kernel still holds), not this
+  artifact — see the 2026-10-22 lane. sft4's accuracy remains **NOT TESTED**.
+
+### The run-on DOES reach the visitor — the guard does not clip it
+
+Measured rather than assumed (`node tmp-guard-greet.mjs`), because "the guard
+saves it" was the comfortable reading and it is wrong. The probe feeds the
+checkpoint's own bytes to the real answer path (`createModelAnswerer().ask()`,
+stub session, `maxNewTokens` 96) so only the resolve/guard/clip layers vary:
+
+| Question | `kind` | attempts | guard failed | text the panel shows |
+|---|---|---|---|---|
+| `Hi` / `Hello` / `how are you` | `model` | 1 | **no** | ` Hi! Ask me about Aashish's projects, skills, education or how to reach him. I'm not Aashish himself. I'm not` |
+
+`clipToGroundedSentences` never runs here, and that is not a bug in it: every
+sentence of the run-on is *grounded*. `Aashish` is in the context (or the
+allowlist), and the tail names no number, date, email or unknown entity, so
+§8.4 has nothing to reject and the clip's "longest clean prefix" is the whole
+text. The clip exists for trailing content that **fails** the check (§8.4's
+2026-10-06 note); a tail that merely repeats a true sentence is invisible to
+it.
+
+So the failure a visitor meets is not a refusal and not a wrong fact. It is a
+correct greeting followed by a sentence cut mid-word at the token cap
+(`I'm not`), which reads as a broken machine. Nothing between the checkpoint
+and the panel truncates it at a sentence boundary.
+
+## 2026-10-22 — the stop is ONE UNSUPERVISED TOKEN, not a rank-103 miscalibration
+
+**This corrects the lane above.** That lane read `p(<|end|>)` at the answer's
+last character and concluded the model "does not stop". The measurement below
+splits that in two: the stop is at **rank 1, p = 1.0000** one token later — at
+the position after the separator every training turn carries — and the model is
+not at that position because the separator is the one token the mask excludes.
+
+### Method
+
+`node tmp-rowstop.mjs D:/aashish-ai-kaggle/export-b/export-browser 3`: reads
+rows straight out of `data/instruction/sft.jsonl` (the exact serialised frame),
+teacher-forces them through the shipping engine, and reports the rank and
+probability of `end` at (a) the answer's final character and (b) the position
+after the separator. Export `aashish-ai-b-sft4` (run `stage-b`, `best`, step
+2000, sha256 `c74d9d0b…`), R1 dev box, 4-core CPU, q8 as exported, greedy.
+
+| Row (tail of the assistant turn) | Position | `p(end)` | Rank | Argmax |
+|---|---|---|---|---|
+| greeting, `… reach him.` | last char | 0.0004 | 153 | `" I"` 0.255 |
+| greeting, Hindi `… pucho.` | last char | 0.0033 | 3 | `"vel"` 0.215 |
+| factual, ends on a `link.github` fact token | last char | 0.0014 | 58 | `" "` 0.335 |
+| factual, ends on an `ach.lpu-cgpa` fact token | last char | 0.0027 | 24 | `" "` 0.256 |
+| every row measured (6 rows, 3 + 3) | **after the separator** | **1.0000** | **1** | `<|end|>` |
+
+So the model does know how to end the turn; it is asked to end it from a token
+it was never taught to produce. `assistant_spans` stops one character before
+`<|end|>`, `_in_span` rejects a token that starts at the span end, and the
+mask's closer rule covered only the `<|end|>` itself — the space between them
+was left out on purpose (§7.4's mask docstring said so). At inference the model
+answers `him.` + `" I"` and carries on into the meta-answer sentence, which is
+the run-on in the lane above.
+
+### The inference-only fix is refuted, by measurement
+
+The obvious decode-time repair — at a sentence boundary ask "would you stop if
+the separator were already written?" — was implemented and killed before
+shipping (`node tmp-interior.mjs <export>`). `p(end | text + " ")` is **1.0000
+at every sentence boundary, interior ones included**:
+
+| Prefix | After the separator |
+|---|---|
+| the greeting (the turn's real end) | `p(end)` 1.0000, rank 1 |
+| the greeting **plus** `I'm not Aashish himself.` | 1.0000, rank 1 |
+| a CGPA answer (real end) | 1.0000, rank 1 |
+| `I study at … .` then `My CGPA is … .` (**interior** period) | 1.0000, rank 1 |
+| a certificate answer then an education answer, ends with `.` (**interior**) | 1.0000, rank 1 |
+
+A lone trailing space *means* "end of turn" to this model with near-certainty,
+whatever precedes it, so that probe would truncate every multi-sentence answer
+at its first period. A constant stop bias has the same defect for the same
+reason: the decision it would force is not the decision the model is making.
+The stop has to be trained at the position the decoder asks for it.
+
+### The fix (data side — a new Stage B run is needed for it to take effect)
+
+`ai/data/sft.py`: the separator is now part of the assistant mask, so the loss
+covers `answer` + `" "` + `<|end|>`.
+`tests/py/test_sft.py::test_the_separator_before_each_end_token_is_trained_on`
+pins it over **378 turns in 300 real examples**: the token before every
+`<|end|>` is whitespace and is supervised. `python -m unittest tests.py.test_sft`
+→ **25/25, OK**. The serialised file does not change (`masked_text` now ends
+`" <|end|>"` instead of `"<|end|>"`), so no dataset rebuild is required — but
+**sft4 was trained with the hole, so nothing about the shipped export changes
+until a new run exists. That run is NOT STARTED here.**
+
+### Why `--stop-weight 20.0` never stopped anything
+
+The sft4 run was started with `--stop-weight 20.0` (`training/scripts/train_stage_b.py`),
+which puts a 20× class weight on `<|end|>`. A **class** weight applies at every
+position whose *target* is that class — and in this format those are the
+positions after the separator, the ones already at p = 1.0000. At the answer's
+last character the target is the separator, so the weight never reached the
+decision (before this lane's fix, that target was outside the mask entirely).
+That is the mechanical reason a 20× lever measured nothing: it multiplied a
+near-zero gradient.
+
+The weight cannot simply be moved onto the separator class either. Over 300
+examples, **927** supervised positions target a bare space and only **378** of
+them precede an `<|end|>`; the other 549 are interior word boundaries inside
+answers (`e: Neha K|ulkarni`, `m not Aashish hi|mself`). A 20× class weight on
+id 289 would push spaces into the middle of every answer. What is wanted is a
+**per-position** weight on the turn-closing positions, which needs the loss
+(a per-class tensor today, `ai/model/model.py`) to take a per-token one. That
+change is **NOT MADE here**: it cannot be exercised on this machine (no torch)
+and this lane does not ship numeric code it has not run. It is the next lever,
+named so the next run does not re-try the class weight and conclude that
+weighting does not work.
+
+### Held-out fact-slot accuracy — measured, and for which checkpoint
+
+Kaggle kernel `aashishkumarrajput/eval-answer-accuracy` (final status COMPLETE,
+2026-10-21 21:18; CPU, `torch 2.11.0+cpu`), running
+`tools/eval_answer_accuracy.py --n 120 --seed 999 --tokens 40` on the factual
+category:
+
+| | |
+|---|---|
+| correct fact slot | **108/120 = 90.0 %** |
+| no slot at all | 3/120 |
+| a different slot | 9/120 |
+| chance (question ignored) | 33.3 % |
+
+**Read the checkpoint before reading the number.** The kernel attaches
+`aashishkumarrajput/training-stage-b` as a Kernel Source and scans its output;
+what it found was `…/checkpoints/stage-b` — **steps 500**, written
+2026-10-05T16:44:14Z, final loss 0.0969 — the step-500 checkpoint, not the sft4
+step-2000 export this lane is about. sft4 has no HF-format checkpoint on this
+machine (only the browser export), so this script cannot score it here. The
+90.0 % is therefore a real, repeatable number for **step 500**; sft4's accuracy
+remains **NOT TESTED**. It is also a fact-slot metric — does the answer name
+the fact the question named — not an answer-quality score.

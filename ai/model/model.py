@@ -319,6 +319,15 @@ class LlamaForCausalLM(nn.Module):
             # stop class is the standard remedy (weighted cross-entropy; see
             # also arXiv 2609.11029 on token-importance rebalancing). It is
             # None by default so every existing objective is byte-identical.
+            #
+            # CORRECTION 2026-10-22 (docs/BENCHMARKS.md): it WAS a masking bug,
+            # one token to the left. The positions this weight reaches (target
+            # `<|end|>`) already sit at p=1.0000; the answer's last character —
+            # where `end` competes with the next sentence — was supervised with
+            # a *separator* target that the old mask left out entirely, so no
+            # weight could reach it. `ai/data/sft.py` now supervises that
+            # separator; until the weight follows it per POSITION (not per
+            # class) the stop class weight stays a no-op at the failing step.
             loss = F.cross_entropy(
                 logits[:, :-1].float().reshape(-1, logits.shape[-1]),
                 labels[:, 1:].reshape(-1),

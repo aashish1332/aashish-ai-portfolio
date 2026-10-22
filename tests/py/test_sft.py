@@ -12,7 +12,9 @@ data, with no torch involved:
 * no leak — no supervised token brings in a non-whitespace character from
   outside the turn, and no question/system/context/delimiter token is ever
   supervised;
-* every turn's closing `<|end|>` is supervised, exactly once per turn.
+* every turn's closing `<|end|>` is supervised, exactly once per turn, and so
+  is the separator in front of it (the space the stop decision is conditioned
+  on — see `test_the_separator_before_each_end_token_is_trained_on`).
 
 The cursor half of "training is resumable" is checked the same way
 `TokenBatcher` is: resuming from a saved state must produce the identical
@@ -103,6 +105,41 @@ class SftCase(unittest.TestCase):
                              "each turn must be taught to emit its <|end|>")
             checked += 1
         self.assertGreater(checked, 100)
+
+    def test_the_separator_before_each_end_token_is_trained_on(self):
+        """The stop is conditioned on that space, so the loss has to reach it.
+
+        Every turn ends `answer + " " + <|end|>`, and the supervised position
+        that predicts `<|end|>` is one token *after* the answer. While the
+        separator itself was unsupervised the model was never taught to write
+        it, so at inference it wrote the next sentence instead — measured on
+        the step-2000 checkpoint (2026-10-22): `p(<|end|>)` 0.0004, rank
+        24–153 at the answer's last character, 1.0000, rank 1 after the
+        separator. This pins the fix: the space is part of the mask.
+        """
+        end_id = self.tokenizer.token_to_id(sft.END_TOKEN)
+        separators = 0
+        for example in self.examples:
+            enc = self.tokenizer.encode(example.text)
+            ids, supervised = sft.supervised_token_indices(self.tokenizer, example)
+            trained = set(supervised)
+            for (start, end) in example.spans:
+                closer = end + 1
+                self.assertEqual(example.text[closer:closer + len(sft.END_TOKEN)],
+                                 sft.END_TOKEN)
+                index = next(i for i, (s, _) in enumerate(enc.offsets) if s == closer)
+                self.assertEqual(ids[index], end_id)
+                separator = index - 1
+                start_at, end_at = enc.offsets[separator]
+                self.assertTrue(example.text[start_at:end_at].isspace(),
+                                f"the token before <|end|> is not a separator: "
+                                f"{example.text[start_at:end_at]!r}")
+                self.assertIn(separator, trained,
+                              "the separator before <|end|> is not trained on, so the "
+                              "stop has no gradient at the position the decoder asks "
+                              f"for it: {example.text[end - 20:closer]!r}")
+                separators += 1
+        self.assertGreater(separators, 100)
 
     def test_the_answer_is_never_the_whole_sequence(self):
         """If the mask were everything, Stage B would be Stage A with extra steps."""

@@ -312,6 +312,18 @@ def train(args) -> int:
         class_weights[end_id] = float(args.stop_weight)
         print(f"  stop weight {args.stop_weight} on <|end|> (id {end_id}); "
               f"all other classes 1.0")
+        # WHERE THIS LANDS, measured 2026-10-22 (docs/BENCHMARKS.md): a class
+        # weight is applied at every position whose TARGET is `<|end|>`, and in
+        # this format those positions already put end at rank 1 with p=1.0000
+        # (the separator is what precedes it). The position that actually
+        # decides — the answer's last character, where end competes with the
+        # next sentence at p=0.0004 — has a *separator* target, so this weight
+        # multiplies a near-zero gradient there and cannot help. The separator
+        # is now supervised (`ai/data/sft.py`), which is the fix; making the
+        # weight follow it needs a PER-POSITION weight (turn-closing positions
+        # only), not a per-class one — a class weight on id 289 would also hit
+        # the interior bare spaces (549 of 927 of them in 300 examples) and
+        # push double spaces into every answer.
 
     model = build(cfg, device)
     actual = model.param_count()
@@ -542,7 +554,10 @@ def build_parser() -> argparse.ArgumentParser:
                          "position past a finished, correct answer is "
                          "0.000-0.014 and three corpus levers (v9/v10/v11) "
                          "failed to lift it. 1.0 leaves the objective "
-                         "unchanged.")
+                         "unchanged. NOTE (2026-10-22): the position that "
+                         "decides is the separator one token earlier, which "
+                         "this class weight does not reach — see the note at "
+                         "the weighting below.")
     ap.add_argument("--clip", type=float, default=1.0)
     ap.add_argument("--seed", type=int, default=1337)
     ap.add_argument("--device", default="cuda" if _cuda() else "cpu")

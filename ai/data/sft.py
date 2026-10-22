@@ -17,13 +17,23 @@ to get wrong are each covered by a test:
    boundary of a span is not supervised — half-supervising `<|asst|>` is a
    silent way to train the model to emit delimiters in the wrong places.
 
-2. **The terminating `<|end|>` is supervised too.** `assistant_spans` stops
-   before it, and generation stops by *emitting* it (§9: stop ids). A model
-   that is never taught to end its turn rambles until the token ceiling,
-   which is exactly the failure the runtime's stop list papers over. The
-   choice is explicit here rather than implied: assistant content **plus**
-   the `<|end|>` token that closes the turn, and the whitespace token between
-   them is left unsupervised.
+2. **The terminating `<|end|>` is supervised too**, *and so is the separator
+   in front of it.* `assistant_spans` stops before both, and generation stops
+   by *emitting* `<|end|>` (§9: stop ids). A model that is never taught to end
+   its turn rambles until the token ceiling, which is exactly the failure the
+   runtime's stop list papers over. The choice is explicit here rather than
+   implied: assistant content **plus** the `<|end|>` token that closes the
+   turn **plus the space the serializer joins between them**.
+
+   That last token used to be left unsupervised, and the reason it no longer
+   is, is a measurement (2026-10-22, `docs/BENCHMARKS.md`): the turn ends
+   `answer + " " + <|end|>`, so the stop decision is conditioned on a lone
+   trailing space. Unsupervised, the model was never asked to *produce* that
+   space — and at inference it does not. On the run's own rows `p(<|end|>)` is
+   **0.0004** (rank 24–153) at the answer's last character and **1.0000**
+   (rank 1) one token later, after the separator: the model knows how to stop
+   from a position it never reaches. Supervising the separator puts the
+   gradient on the decision the decoder actually has to make.
 
 3. **Packing must not lose a mask.** Examples are far shorter than a training
    sequence (mean ≈ 400 tokens against a 1024 block), so a block-aligned
@@ -187,7 +197,19 @@ def supervised_token_indices(tokenizer, example: Example) -> tuple[list[int], li
             # token to supervise starts at `end + 1` of the matching span.
             for (start, end) in example.spans:
                 closer = end + 1
-                if closer in ends and tok_start == closer:
+                if closer not in ends:
+                    continue
+                if tok_start == closer:
+                    supervised.append(i)
+                    break
+                # …and the separator itself is supervised. It is the token the
+                # stop decision is conditioned on (see the module docstring):
+                # leave it unsupervised and the model is trained to predict
+                # `<|end|>` from a position it was never taught to reach, which
+                # is why a trained answer is followed by the next sentence
+                # rather than by the end of the turn.
+                if (tok_start == end and tok_end == closer
+                        and not example.text[tok_start:tok_end].strip()):
                     supervised.append(i)
                     break
     return ids, supervised
@@ -217,7 +239,8 @@ def masked_text(tokenizer, ids: list[int], labels: list[int]) -> str:
 
     Used by the tests and by `--pipeline-only` to *show* the mask instead of
     claiming it: the string this returns must be the assistant's answers plus
-    their `<|end|>` tokens, with no part of the question or the rules.
+    the closing `" "` + `<|end|>` of each turn, with no part of the question or
+    the rules.
 
     Special tokens are decoded rather than skipped, so a masked abstention
     (whose whole answer is `<|abstain|><|end|>`) prints as that instead of as
