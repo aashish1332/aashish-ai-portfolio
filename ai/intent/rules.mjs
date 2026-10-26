@@ -72,7 +72,21 @@ const PATTERNS = {
     /\bare you aashish\b/i,
     /\b(are|r) (you|u) (a )?(bot|human|robot|real|ai)\b/i,
     /\bwhat (is|are) (this|you)\b/i,
-    /\b(aap|tum|tu) (kaun|kon)\b/i,
+    /* "kaun se/si/sa" is "which", not "who": "aap kaun se project pe kaam
+       karte ho?" is a project question. MEASURED 2026-10-26 — the bare
+       pronoun+kaun form matched it and answered an identity question to a
+       question about projects. */
+    /\b(aap|tum|tu) (kaun|kon)\b(?!\s*(sa|se|si)\b)/i,
+    /* …and the same question with the copula between them, which is how people
+       actually type it. MEASURED 2026-10-26 (owner report, the shipping UI):
+       "tum ho kon?" matched NEITHER the pronoun-first pattern above nor any
+       other, so it fell to `out_of_scope`, retrieved nothing and the model
+       abstained — a legitimate identity question refused. "tum ho kon",
+       "kaun ho tum", "tum kon ho" and "tu kaun hai" are all in the same hole.
+       The `(?!\s*(sa|se|si)\b)` guard is what keeps "kaun sa project" (which
+       project) a fact question instead of an identity one. */
+    /\b(aap|tum|tu)\b(?:\s+[^\s.!?]+){0,2}\s+(kaun|kon)\b(?!\s*(sa|se|si)\b)/i,
+    /\b(kaun|kon)\b(?:\s+[^\s.!?]+){0,2}\s+(aap|tum|tu)\b/i,
     /\bwho am i (talking|chatting) (to|with)\b/i,
     /* "who is this?" is the likeliest first message a recruiter types, and it
        abstained until now: this bucket only matched the second person
@@ -96,15 +110,47 @@ const PATTERNS = {
     /अपने? बारे में/,
     /परिचय/,
   ],
+  /* ── greetings AND small talk. §11.1 measured the plain forms here ("hi",
+     "namaste", "thanks", time-of-day), but a visitor also greets WITH a
+     question — "how are you?", "what's up?", "kaise ho?" — and until 2026-10-11
+     all of those fell through to the retrieval gate and answered "I don't have
+     that in my portfolio yet." A question about the ASSISTANT's wellbeing is
+     small talk, exactly like "hi": it is answered with no facts, and
+     `contextless` (the same allowance MODEL-11 pins) is the reason it may
+     reach the model with an empty context. Sorted longest-first so "good
+     morning how are you" matches the fuller shape when several do.
+
+     anchors are stripped below, so "hi" mid-sentence still counts like the
+     bare form does ("ok"/"hmm" already behaved that way). */
   greeting: [
+    /\bhow (are|r|is) (you|u|everything)\b/i,
+    /\bhow('s| is) (it |life |things |your (day|week|day going)|it going)\b/i,
+    /\bhow('s| is) (your )?(day|week|morning|evening|night)\b/i,
+    /\bwhat('s| is) up\b/i,
+    /* `kese`/`kesa`/`kesi` are the spellings people actually type; the
+       `kaise`-only patterns sent "kese ho" to retrieval, which answered the
+       Hinglish abstention ("andaaza laga kar" — 2026-10-18 owner report). */
+    /\b(how|kaise|kaisa|kaisi|kese|kesa|kesi)( ho| hai ho| aap| tum)\b/i,
+    /\b(kaise|kaisa|kaisi|kese|kesa|kesi) (ho|hai|hain)\b/i,
+    /\b(aap|tum|tu) (kaise|kaisa|kaisi|kese|kesa|kesi) (ho|hai|ho)\b/i,
+    /\bwhat about you\b/i,
+    /\b(you|u) (good|ok|okay|fine|there|right there)\b/i,
+    /\bathe ?(kya |kaisa )?haal\b/i,
+    /^(good|gd) (morning|afternoon|evening|night)\b/i,
     /^(hi|hey|hello|yo|hola|sup)\b/i,
-    /^good (morning|afternoon|evening)\b/i,
     /^(namaste|namaskar|salaam|dhanyavad|thanks|thank you|shukriya)\b/i,
     /^(ok|okay|hmm|cool|nice|great)\b/i,
+    /* goodbyes — a farewell is answered, not refused */
+    /\bkya ?haal\b/i,
+    /^(bye|good ?bye|see (ya|you)|take care|night)\b/i,
+    /\b(bye|good ?bye|milte|alvida)\b/i,
     /* Devanagari greetings — the Latin-only patterns above never fired for
        "नमस्ते", so Hindi/Hinglish visitors got an abstention instead of a
        greeting until tests/intent.test.mjs pinned it. */
     /^\s*(नमस्ते|नमस्कार|हैलो|हाय|धन्यवाद|शुक्रिया|सलाम)/,
+    /* Devanagari small talk ("आप कैसे हैं?") — the same hole, same fix */
+    /(कैसे (हैं|हो)|क्या हाल)/,
+    /अलविदा|फिर मिलेंगे/,
   ],
   contact: [
     /\b(email|mail|gmail|e-mail)\b/i,
@@ -149,6 +195,16 @@ const PATTERNS = {
     /\b(padhai|padhaai)\b/i,
     /\bwhere does he (study|go to school)\b/i,
     /\bwhere do (you|u) (study|go to school)\b/i,
+    /* A QUESTION THAT NAMES A SCHOOL LEVEL is a schooling question even when
+       it also says "percentage"/"score" (which `achievements` owns). Without
+       this, "what is his 10th percentage?" reached the achievements bucket and
+       the class-10 record — the only fact that carries 83 % — was never in the
+       context the model read, so it could not be answered from the base at
+       all. ``12th``/``senior secondary`` are here for the same reason and now
+       reach the Class 12 record instead of the CGPA achievement. Measured
+       2026-10-24 against knowledge.json v1.1.0 (edu.kv1). */
+    /\b(10th|tenth|class ?(10|ten)|matriculation|high ?school|12th|twelfth|class ?(12|twelve)|senior secondary|intermediate|dasvi|dasvin|barhvi)\b/i,
+    /दसवीं|१०वीं|10वीं|बारहवीं|१२वीं|12वीं/,
   ],
   certifications: [
     /\b(certificat|certified|infosys|masai|iit ?ropar|minor)/i,
@@ -268,10 +324,18 @@ export function detectIntent(query, kb = null) {
 }
 
 /* ── localized safety strings (§8.4) ──────────────────────────── */
+/* The off-topic refusal, in the owner's words (2026-10-11): a question about
+   something the portfolio does not hold gets one honest sentence — this panel
+   only speaks about Aashish's portfolio — and a pointer back at what it CAN
+   answer, rather than the bare "don't have that" that taught visitors nothing.
+   The follow-up chips under it are the pointer's second half. */
 export const ABSTAIN = {
-  en: "I don't have that information in Aashish's portfolio yet.",
-  hi: 'यह जानकारी अभी Aashish के पोर्टफोलियो में उपलब्ध नहीं है।',
-  hinglish: 'Ye information abhi Aashish ke portfolio mein available nahi hai.',
+  en: "I can only provide info related to Aashish's portfolio — about his projects, skills, "
+    + 'education or contact. What would you like to know about that?',
+  hi: 'मैं केवल Aashish के पोर्टफोलियो से जुड़ी जानकारी दे सकता हूँ — उनके प्रोजेक्ट्स, स्किल्स, '
+    + 'पढ़ाई या संपर्क के बारे में। आप इसके बारे में क्या जानना चाहेंगे?',
+  hinglish: "Main sirf Aashish ke portfolio se judi info provide kar sakta hoon — unke projects, "
+    + 'skills, padhai ya contact ke baare mein. Aap iske baare mein kya jaanna chahenge?',
 };
 
 /* The same refusal in the first-person voice. An abstention is not a safety
@@ -281,9 +345,12 @@ export const ABSTAIN = {
    `ABSTAIN` above (§5); only the *identity* answers are kept neutral, see
    `BUILD.meta` and `INJECTION_REPLY`. */
 export const ABSTAIN_FIRST = {
-  en: "I don't have that in my portfolio yet.",
-  hi: 'यह जानकारी अभी मेरे पोर्टफोलियो में उपलब्ध नहीं है।',
-  hinglish: 'Ye information abhi mere portfolio mein available nahi hai.',
+  en: "I can only provide info related to my portfolio — my projects, skills, education "
+    + 'or contact. What would you like to know about that?',
+  hi: 'मैं केवल अपने पोर्टफोलियो से जुड़ी जानकारी दे सकता हूँ — मेरे प्रोजेक्ट्स, स्किल्स, '
+    + 'पढ़ाई या संपर्क के बारे में। आप इसके बारे में क्या जानना चाहेंगे?',
+  hinglish: 'Main sirf mere portfolio se judi info provide kar sakta hoon — mere projects, '
+    + 'skills, padhai ya contact ke baare mein. Aap iske baare mein kya jaanna chahenge?',
 };
 
 /** The abstention line for a voice — unknown languages fall back to English. */

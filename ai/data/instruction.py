@@ -394,12 +394,18 @@ def _topic_cgpa():
         if lang == "hinglish":
             return f"Mera CGPA {ach} hai." if persona == "first" else f"Unka CGPA {ach} hai."
         return f"My CGPA is {ach}." if persona == "first" else f"His CGPA is {ach}."
+    # "What is your 12th percentage?" used to sit here and was answered with the
+    # B.Tech CGPA. That is not a paraphrase of a CGPA question, it is a
+    # different question, and the corpus taught a wrong answer: a visitor
+    # asking for the school result was shown 8.28. The school results now have
+    # their own fact (`edu.kv1`/`edu.kv2`) and their own topic, so this bucket
+    # only asks about the metric it carries.
     return Topic(
         "cgpa", ["ach.lpu-cgpa"],
         {
-            "en": _q("What is your CGPA?", "How many marks did you get?", "What is your 12th percentage?"),
+            "en": _q("What is your CGPA?", "How many marks did you get?", "What is your CGPA out of 10?"),
             "hi": _q("आपका CGPA क्या है?", "मार्क्स कितने हैं?"),
-            "hinglish": _q("cgpa kya hai?", "marks kitne hain?", "12th percentage batao"),
+            "hinglish": _q("cgpa kya hai?", "marks kitne hain?", "cgpa kitna hai out of 10?"),
         },
         ans,
     )
@@ -536,10 +542,67 @@ def _topic_experience():
     )
 
 
+def _topic_class10():
+    """The Class 10 result (`edu.kv1`, added 2026-10-24).
+
+    Its own topic for the same reason `cgpa` is one: "what did he get in class
+    10" is a question about ONE fact, and the education topic answers "where do
+    you study" with the B.Tech entry. Trained as part of the education kind it
+    would inherit that answer shape and cite the university for a school
+    result — the failure f05 recorded (right value, wrong fact id), measured on
+    the sft5 checkpoint as "12th marks" answered from `edu.lpu`.
+    """
+    def ans(f: Facts, lang, persona):
+        return _answer_about("edu.kv1", f, lang, persona)
+    return Topic(
+        "class10", ["edu.kv1"],
+        {
+            "en": _q("What did you score in class 10?",
+                     "How much did you get in your 10th board exams?"),
+            "hi": _q("दसवीं में आपने कितने प्रतिशत प्राप्त किए?",
+                     "आपके 10वीं के अंक कितने थे?"),
+            "hinglish": _q("10th mein kitne percent aaye the?",
+                           "dasvi ke marks kitne the?"),
+        },
+        ans,
+    )
+
+
+def _topic_class12():
+    """The Class 12 result (`edu.kv2`).
+
+    The same argument as `_topic_class10`, and it is not theoretical: §14's f06
+    ("and his 12th marks?") retrieves `edu.kv2` — the Class 12 line carrying
+    87.6 % — and this table had no sentence for it. The closed-answer grammar
+    (`ai/engine/grammar.mjs`) frames a turn from the sentences the model was
+    trained to say, so with no `edu.kv2` frame `answerGrammar` returned `null`
+    and the decode fell back to the weaker citation mask. Measured 2026-10-26
+    on the sft7 export, the 60-prompt sweep: f06 answered `His CGPA is  .` —
+    the CGPA FRAME with an EMPTY slot. A sentence about the wrong fact that
+    also says nothing, which neither the mask nor the guard can see, because
+    an empty slot asserts nothing to check.
+    """
+    def ans(f: Facts, lang, persona):
+        return _answer_about("edu.kv2", f, lang, persona)
+    return Topic(
+        "class12", ["edu.kv2"],
+        {
+            "en": _q("What did you score in class 12?",
+                     "How much did you get in your 12th board exams?",
+                     "What was your senior secondary percentage?"),
+            "hi": _q("बारहवीं में आपने कितने प्रतिशत प्राप्त किए?",
+                     "आपके 12वीं के अंक कितने थे?"),
+            "hinglish": _q("12th mein kitne percent aaye the?",
+                           "barhavi ke marks kitne the?"),
+        },
+        ans,
+    )
+
+
 TOPICS = [
-    _topic_name(), _topic_education(), _topic_cgpa(), _topic_skills(),
-    _topic_projects(), _topic_contact(), _topic_workflow(), _topic_certs(),
-    _topic_experience(),
+    _topic_name(), _topic_education(), _topic_cgpa(), _topic_class10(),
+    _topic_class12(), _topic_skills(), _topic_projects(), _topic_contact(),
+    _topic_workflow(), _topic_certs(), _topic_experience(),
 ]
 
 #: How many topics' facts a `factual` example's context carries. See the note
@@ -570,23 +633,50 @@ _FRAMES: dict[str, dict[str, tuple[str, str]]] = {
         "hi": ("मेरा CGPA {v} है।", "उनका CGPA {v} है।"),
         "hinglish": ("Mera CGPA {v} hai.", "Unka CGPA {v} hai."),
     },
+    # `edu.kv1` (Class 10, 83 %) — a label frame, not "he studies at": the value
+    # already reads "Kendriya Vidyalaya No. 2 … — Secondary (Class 10), CBSE
+    # (2021–2022) · 83 %", so a verb frame would say "he studies at" a school
+    # he left in 2022.
+    "edu.kv1": {
+        "en": ("My Class 10: {v}.", "His Class 10: {v}."),
+        "hi": ("मेरी दसवीं: {v}।", "उनकी दसवीं: {v}।"),
+        "hinglish": ("Meri 10th: {v}.", "Unki 10th: {v}."),
+    },
+    # `edu.kv2` (Class 12, 87.6 %) — the same label frame as Class 10, for the
+    # same reason, and the fact had NO frame at all until 2026-10-26: f06
+    # retrieved it and the closed grammar came back `null` (see
+    # `_topic_class12`).
+    "edu.kv2": {
+        "en": ("My Class 12: {v}.", "His Class 12: {v}."),
+        "hi": ("मेरी बारहवीं: {v}।", "उनकी बारहवीं: {v}।"),
+        "hinglish": ("Meri 12th: {v}.", "Unki 12th: {v}."),
+    },
+    # The value is `{v}`, never the real skill spelled out. Written the other
+    # way round (as these three were until 2026-10-23) a counterfactual
+    # example keeps saying "He writes Python." while its context says
+    # `[skill.python] Fortran`, and 396 of the 40,000 rows taught exactly the
+    # thing the counterfactual share exists to prevent: answer from memory,
+    # ignore the passage. MEASURED on the sft5 export — "Where does he live?"
+    # (context line 1 is the city) answered "He writes Python." For a real KB
+    # fact `ref()` returns the placeholder, so the rendered sentence is
+    # unchanged ("I write <|fact:skill.python|>." → "I write Python.").
     "skill.python": {
-        "en": ("I write Python.", "He writes Python."),
-        "hi": ("मैं Python लिखता हूँ।", "वे Python लिखते हैं।"),
-        "hinglish": ("Main Python likhta hoon.", "Wo Python likhte hain."),
+        "en": ("I write {v}.", "He writes {v}."),
+        "hi": ("मैं {v} लिखता हूँ।", "वे {v} लिखते हैं।"),
+        "hinglish": ("Main {v} likhta hoon.", "Wo {v} likhte hain."),
     },
     "skill.react": {
-        "en": ("My frontend framework is React.", "His frontend framework is React."),
-        "hi": ("मेरा फ्रंटएंड फ्रेमवर्क React है।", "उनका फ्रंटएंड फ्रेमवर्क React है।"),
-        "hinglish": ("Mera frontend framework React hai.",
-                     "Unka frontend framework React hai."),
+        "en": ("My frontend framework is {v}.", "His frontend framework is {v}."),
+        "hi": ("मेरा फ्रंटएंड फ्रेमवर्क {v} है।", "उनका फ्रंटएंड फ्रेमवर्क {v} है।"),
+        "hinglish": ("Mera frontend framework {v} hai.",
+                     "Unka frontend framework {v} hai."),
     },
     "skill.mysql": {
-        "en": ("I use MySQL for relational data.", "He uses MySQL for relational data."),
-        "hi": ("मैं रिलेशनल डेटा के लिए MySQL उपयोग करता हूँ।",
-               "वे रिलेशनल डेटा के लिए MySQL उपयोग करते हैं।"),
-        "hinglish": ("Main relational data ke liye MySQL use karta hoon.",
-                     "Wo relational data ke liye MySQL use karte hain."),
+        "en": ("I use {v} for relational data.", "He uses {v} for relational data."),
+        "hi": ("मैं रिलेशनल डेटा के लिए {v} उपयोग करता हूँ।",
+               "वे रिलेशनल डेटा के लिए {v} उपयोग करते हैं।"),
+        "hinglish": ("Main relational data ke liye {v} use karta hoon.",
+                     "Wo relational data ke liye {v} use karte hain."),
     },
     "project.volunteer": {
         "en": ("My main project is {v}.", "His main project is {v}."),
@@ -695,6 +785,22 @@ TARGETS: dict[str, dict[str, list[tuple[str, str]]]] = {
         "hinglish": [("cgpa kya hai?", "ach.lpu-cgpa"),
                      ("marks kitne hain?", "ach.lpu-cgpa")],
     },
+    "class10": {
+        "en": [("What did you score in class 10?", "edu.kv1"),
+               ("How were your 10th board results?", "edu.kv1")],
+        "hi": [("दसवीं में कितने अंक आए थे?", "edu.kv1"),
+               ("आपका 10वीं का रिजल्ट क्या था?", "edu.kv1")],
+        "hinglish": [("10th ka result kya tha?", "edu.kv1"),
+                     ("dasvi mein kitne marks mile the?", "edu.kv1")],
+    },
+    "class12": {
+        "en": [("What did you score in class 12?", "edu.kv2"),
+               ("How were your 12th board results?", "edu.kv2")],
+        "hi": [("बारहवीं में कितने अंक आए थे?", "edu.kv2"),
+               ("आपका 12वीं का रिजल्ट क्या था?", "edu.kv2")],
+        "hinglish": [("12th ka result kya tha?", "edu.kv2"),
+                     ("barhavi mein kitne marks mile the?", "edu.kv2")],
+    },
     "skills": {
         "en": [("Which language do you write?", "skill.python"),
                ("Which frontend framework do you use?", "skill.react"),
@@ -751,6 +857,144 @@ TARGETS: dict[str, dict[str, list[tuple[str, str]]]] = {
     },
 }
 
+#: The same topics in the OTHER voice — a visitor reading the site asks about
+#: "him", not "you".
+#:
+#: **This table exists because of a measured mismatch, 2026-10-24.** The §14 suite
+#: asks about Aashish in the third person (43 of its 60 cases say "his"/"he",
+#: 9 say "unka"/"uske"; 5 say "you"), and `RULES["third"]` is the shipped
+#: persona. The generated corpus was the reverse: **9.5 % of its 40,000 questions
+#: mentioned "his"/"he" and 56.9 % said "your"/"you"** (MEASURED over
+#: `data/instruction/sft.jsonl`). So the checkpoint that scores 91.7 % on
+#: single-fact prompts drawn from its own distribution (§14-independent holdout,
+#: seed 424242) answered `What is his CGPA?` with `I study at
+#: <|fact:edu.lpu|>` on the eval: it had learned the answer SHAPE in the voice
+#: its data used and had almost never seen the voice a visitor uses.
+#:
+#: Every question below names the SAME fact its second-person sibling does, so
+#: no answer, category, fact or counterfactual rule moves — only the surface the
+#: model has to read. The strings are deliberately NOT the §14 phrasings:
+#: `test_no_eval_question_is_in_the_training_tables` fails the build on a
+#: verbatim copy, because a number earned by memorising the eval is not a number.
+TARGETS_THIRD: dict[str, dict[str, list[tuple[str, str]]]] = {
+    "name": {
+        "en": [("What is his name?", "person.name"),
+               ("Who is he?", "person.name"),
+               ("Introduce him in one line.", "person.name")],
+        "hi": [("उनका नाम बताइए।", "person.name"),
+               ("वे कौन हैं?", "person.name")],
+        "hinglish": [("unka naam batao", "person.name"),
+                     ("wo kaun hai?", "person.name")],
+    },
+    "education": {
+        "en": [("Where is he studying?", "edu.lpu"),
+               ("Which college does he attend?", "edu.lpu")],
+        "hi": [("वे कहाँ पढ़ते हैं?", "edu.lpu"),
+               ("उनका कॉलेज कौन सा है?", "edu.lpu")],
+        "hinglish": [("wo kahan padhai karta hai?", "edu.lpu"),
+                     ("unki college kaun si hai?", "edu.lpu")],
+    },
+    "cgpa": {
+        "en": [("What CGPA does he have?", "ach.lpu-cgpa"),
+               ("What are his marks?", "ach.lpu-cgpa"),
+               ("How much did he score?", "ach.lpu-cgpa")],
+        "hi": [("उनके CGPA कितने हैं?", "ach.lpu-cgpa"),
+               ("उनके मार्क्स कितने हैं?", "ach.lpu-cgpa")],
+        "hinglish": [("unka cgpa kitna hai?", "ach.lpu-cgpa"),
+                     ("uske marks kitne hai?", "ach.lpu-cgpa")],
+    },
+    "class10": {
+        "en": [("What did he get in class 10?", "edu.kv1"),
+               ("How were his 10th board results?", "edu.kv1")],
+        "hi": [("उसने दसवीं में कितना स्कोर किया?", "edu.kv1"),
+               ("उसकी 10वीं का रिजल्ट कैसा था?", "edu.kv1")],
+        "hinglish": [("usne 10th mein kya score kiya?", "edu.kv1"),
+                     ("uska 10th result kaisa tha?", "edu.kv1")],
+    },
+    "class12": {
+        "en": [("What did he get in class 12?", "edu.kv2"),
+               ("How were his 12th board results?", "edu.kv2")],
+        "hi": [("उसने बारहवीं में कितना स्कोर किया?", "edu.kv2"),
+               ("उसकी 12वीं का रिजल्ट कैसा था?", "edu.kv2")],
+        "hinglish": [("usne 12th mein kya score kiya?", "edu.kv2"),
+                     ("uska 12th result kaisa tha?", "edu.kv2")],
+    },
+    "skills": {
+        # No database question here on purpose: "which database does he use?"
+        # sits one plural away from §14 d05 ("Which databases does he use?",
+        # answered by ALL five database skills), and teaching that wording a
+        # single-fact answer is the d05 contradiction again. The database
+        # skills are reached by their own names (`_COVERAGE_QUESTIONS`) and by
+        # the list frame.
+        "en": [("Which language does he write?", "skill.python"),
+               ("Which frontend library does he use?", "skill.react")],
+        "hi": [("वे कौन सी भाषा लिखते हैं?", "skill.python"),
+               ("उनका फ्रंटएंड फ्रेमवर्क कौन सा है?", "skill.react")],
+        "hinglish": [("wo kaun si language likhte hain?", "skill.python"),
+                     ("unki frontend framework kaun si hai?", "skill.react")],
+    },
+    "projects": {
+        # Only the flagship, and only in the singular: "what else has he
+        # built?" is a plural question (`_LIST_FRAMES["project"]`, and §14
+        # d08/d16/i05 expect all three), so pairing it with one fact is the
+        # d05/d06 contradiction with the sign flipped. The other two projects
+        # are reached by name (`_COVERAGE_QUESTIONS`) and by the list frame.
+        "en": [("What is his flagship project?", "project.volunteer"),
+               ("Which project is his biggest one?", "project.volunteer")],
+        "hi": [("उनका मुख्य प्रोजेक्ट कौन सा है?", "project.volunteer")],
+        "hinglish": [("unka main project kaun sa hai?", "project.volunteer"),
+                     ("unka flagship project kya hai?", "project.volunteer")],
+    },
+    "contact": {
+        "en": [("How do I email him?", "contact.email"),
+               ("Give me his email address.", "contact.email"),
+               ("Where is his GitHub profile?", "link.github")],
+        "hi": [("उन्हें ईमेल कैसे करूँ?", "contact.email"),
+               ("उनका ईमेल पता बताइए।", "contact.email"),
+               ("उनका GitHub प्रोफ़ाइल कहाँ है?", "link.github")],
+        "hinglish": [("unhe email kaise karun?", "contact.email"),
+                     ("unka email address batao", "contact.email"),
+                     ("unka github profile kahan hai?", "link.github")],
+    },
+    "workflow": {
+        "en": [("How does he use AI?", "workflow.how-he-builds"),
+               ("Explain his development process.", "workflow.how-he-builds"),
+               ("What is his workflow like?", "workflow.how-he-builds")],
+        "hi": [("वे AI का उपयोग कैसे करते हैं?", "workflow.how-he-builds"),
+               ("उनकी विकास प्रक्रिया समझाइए।", "workflow.how-he-builds")],
+        "hinglish": [("wo AI kaise use karta hai?", "workflow.how-he-builds"),
+                     ("uska workflow kya hai?", "workflow.how-he-builds")],
+    },
+    "certs": {
+        "en": [("Which certification does he hold?", "cert.dbms"),
+               ("Has he done any certification?", "cert.dbms")],
+        "hi": [("उनके पास कौन सा सर्टिफिकेट है?", "cert.dbms"),
+               ("क्या उन्होंने कोई सर्टिफिकेशन किया है?", "cert.dbms")],
+        "hinglish": [("unke paas kaun sa certificate hai?", "cert.dbms"),
+                     ("unhone certification kiya hai?", "cert.dbms")],
+    },
+    "experience": {
+        "en": [("Which bootcamp did he finish?", "exp.mern-bootcamp"),
+               ("What training has he completed?", "exp.mern-bootcamp")],
+        "hi": [("उन्होंने कौन सा बूटकैंप पूरा किया?", "exp.mern-bootcamp"),
+               ("उन्होंने क्या प्रशिक्षण लिया है?", "exp.mern-bootcamp")],
+        "hinglish": [("unhone kaun sa bootcamp kiya?", "exp.mern-bootcamp"),
+                     ("unki training kya hai?", "exp.mern-bootcamp")],
+    },
+}
+
+
+def target_pairs(topic_name: str, lang: str) -> list[tuple[str, str]]:
+    """Both question voices for one topic, in `lang`.
+
+    The §7.4 answer stays a function of the fact; only the surface the model
+    has to read doubles. See `TARGETS_THIRD` for the measurement behind it.
+    """
+    second = TARGETS[topic_name].get(lang) or TARGETS[topic_name]["en"]
+    third = TARGETS_THIRD[topic_name].get(lang) or TARGETS_THIRD[topic_name]["en"]
+    return list(second) + list(third)
+
+
 # Questions the portfolio must NOT answer (§8.4 / §14 bait + unknown)
 ABSTENTION_QUESTIONS = {
     "en": [
@@ -802,10 +1046,35 @@ GREETING_ANSWERS = {
 }
 
 # Meta questions that must DISCLOSE rather than join the voice (§10/QA-11)
+#
+# MEASURED 2026-10-26 (owner report, the shipping UI): "who are you?" answered
+# `His name is Aashish Kumar.` and "tum ho kon?" abstained. The bucket held
+# THREE phrasings per language, all of them "are you X?" — none of them was the
+# plain identity question, which is the most likely first thing a visitor asks.
+# The model therefore read the `[person.name]` line those examples carry and
+# answered the NAME question, which is the one shape it had seen a thousand
+# times over the same context.
+#
+# So the bucket now holds the identity question in the forms people actually
+# type, in all three languages, and the `are you Aashish?` disclosure forms
+# stay: the answer to both is META_ANSWER, and the point of the pair is that
+# "who are you" and "are you him" must both DISCLOSE rather than join the voice.
 META_QUESTIONS = {
-    "en": ["Are you Aashish?", "Are you a real person?", "Are you an AI?"],
-    "hi": ["क्या आप Aashish हैं?", "आप असली इंसान हैं?"],
-    "hinglish": ["tum Aashish ho?", "tum AI ho?", "are you a real person?"],
+    "en": ["Are you Aashish?", "Are you a real person?", "Are you an AI?",
+           "Who are you?", "Who are you exactly?", "What are you?",
+           "Who am I talking to?", "Who is this?", "What is this assistant?",
+           "Introduce yourself", "Tell me about yourself",
+           "Are you a bot?", "Who am I chatting with?"],
+    "hi": ["क्या आप Aashish हैं?", "आप असली इंसान हैं?",
+           "आप कौन हैं?", "तुम कौन हो?", "आप क्या हैं?",
+           "मैं किससे बात कर रहा हूँ?", "यह कौन है?",
+           "अपना परिचय दीजिए", "आप एक AI हैं?"],
+    "hinglish": ["tum Aashish ho?", "tum AI ho?", "are you a real person?",
+                 "tum ho kon?", "tum kaun ho?", "aap kaun hain?",
+                 "kaun ho tum?", "tum kon ho", "tu kaun hai?",
+                 "main kisse baat kar raha hoon?", "yeh kaun hai?",
+                 "apna intro do", "tum bot ho?",
+                 "aapka naam kya hai? nahi, aap kaun ho?"],
 }
 
 META_ANSWER = (
@@ -895,11 +1164,17 @@ _LIST_KINDS = ["skill", "cert", "ach", "exp", "project"]
 #: per-fact sentence chain would need frames for all 33 skills (most have
 #: none) and would make the list end depend on which sentence came last.
 _LIST_FRAMES: dict[str, dict[str, tuple[str, str]]] = {
+    # The English frame used to be `"I work with {v}."` — the SAME sentence the
+    # single-fact `_COVERAGE_FRAMES["skill"]` teaches. So after "I work with "
+    # both a one-fact answer and a list answer were legal, and the model had to
+    # commit to one of them from the question alone. MEASURED on sft6:
+    # "and what are his skills?" — 12 skill lines in the context — answered
+    # `I work with <|fact:skill.node|>.`, a single fact in the list's own frame.
+    # A list is now visibly a list before its first item, in every language.
     "skill": {
-        "en": ("I work with {v}.", "He works with {v}."),
-        "hi": ("मैं {v} जैसी तकनीकों पर काम करता हूँ।", "वे {v} जैसी तकनीकों पर काम करते हैं।"),
-        "hinglish": ("Main {v} jaise technologies pe kaam karta hoon.",
-                     "Wo {v} jaise technologies pe kaam karte hain."),
+        "en": ("My tech stack: {v}.", "His tech stack: {v}."),
+        "hi": ("मेरी तकनीकें: {v}।", "उनकी तकनीकें: {v}।"),
+        "hinglish": ("Meri technologies: {v}.", "Unki technologies: {v}."),
     },
     "cert": {
         "en": ("My certifications: {v}.", "His certifications: {v}."),
@@ -969,7 +1244,8 @@ def _list_questions(kind: str) -> dict[str, list[str]]:
 
 
 def _example_list_answer(kb: dict, f: "Facts", lang: str, persona: str,
-                         counterfactual: bool, rng: random.Random) -> dict:
+                         counterfactual: bool, rng: random.Random,
+                         category: str = "other") -> dict:
     """A question whose correct answer is EVERY fact of one kind in the
     context — the d05/d06 shape.
 
@@ -1007,14 +1283,231 @@ def _example_list_answer(kb: dict, f: "Facts", lang: str, persona: str,
         return make_example(kb, "factual", rng, counterfactual)
     kind = _pick(rng, listable)
     pool = sorted(by_kind[kind])
-    ids = sorted(rng.sample(pool, min(len(pool), rng.randint(4, 8))))
+    # The sizes the RUNTIME produces, not a taste. A whole-kind question now
+    # reads its plan's own facts (`WHOLE_KIND_PLANS` in ai/answers/model.mjs),
+    # so the context is 3 certifications, 3 projects, 5 databases, 3 backend
+    # skills, or the 12-skill window cap — never the 4–8 sample this drew
+    # before. MEASURED on the 2026-10-24 sweep: with a 12-line context the model
+    # answered a plural question with ONE fact, and with 13 ids it opened
+    # repeating (`gsap, gsap, gsap`), which is what a list longer than anything
+    # in its training looks like.
+    ids = sorted(rng.sample(pool, min(len(pool), _pick(rng, (2, 3, 3, 4, 4, 5, 5, 6, 8, 12)))))
     q = _pick(rng, _list_questions(kind).get(lang) or _list_questions(kind)["en"])
     first, third = _LIST_FRAMES[kind].get(lang) or _LIST_FRAMES[kind]["en"]
     frame = first if persona == "first" else third
     a = frame.format(v=_conj([f.ref(fid) for fid in ids], lang))
-    return {"category": "other", "lang": lang, "persona": persona,
+    return {"category": category, "lang": lang, "persona": persona,
             "counterfactual": counterfactual,
             "context": build_context(f, ids),
+            "turns": [(q, a)]}
+
+
+# ── fact coverage: every public fact gets a question ────────────────
+#: **The measured reason this exists (2026-10-23).** Only **13** fact ids were
+#: ever the answer in the 40,000 sft rows: the nine `TARGETS` topics name nine
+#: ids, and `_LIST_FRAMES` names a whole kind in one sentence and never
+#: singles one out. The §14 suite asks about **29** distinct ids and **22 of
+#: them had never been an answer to anything** — `skill.mongodb`,
+#: `skill.express`, `cert.cpp`, `contact.location` and 18 more. A model cannot
+#: cite an id the training data never made an option.
+#:
+#: MEASURED on the sft5 export, which is what that ceiling looks like: "What
+#: backend technologies has he worked with?" — context `[skill.express]
+#: Express.js / [skill.node] Node.js / [skill.rest] REST APIs` — answered
+#: "His name is Tara Deshpande.", a fact it HAD been trained to recite, because
+#: nothing in the data made the three ids in front of it answers.
+#:
+#: So this branch asks about ONE fact that `TARGETS` does not cover, by the
+#: label a visitor would use (`name`), with a context that carries the same
+#: kind's other facts in a shuffled order — the id, not its position, is what
+#: the answer has to name. Topics that already cover an id are excluded, so a
+#: coverage row is new signal rather than a second wording of an existing one.
+#: Share of the factual rows that ask a PLURAL question ("What are his
+#: skills?") and answer with every fact of that kind in the context.
+#:
+#: MEASURED 2026-10-23: list questions were ~1 % of the corpus (`other` only),
+#: while 1,458 rows did the opposite — a plural question from a topic answered
+#: by ONE fact (`"What are your skills?"` → `"I write <|fact:skill.python|>."`).
+#: That contradiction is the d05/d06 failure written into the data: sft5 answers
+#: `What are his skills?` with a single skill, and it was taught to. The list
+#: frame was correct all along; it was just outvoted ~4:1 by the contradiction.
+#: 10 % of factual is enough for the model to see the shape in every language
+#: and for each listable kind, and it is spent inside the factual budget rather
+#: than by changing §7.4's category mix.
+_LIST_SHARE = 0.10
+_COVERAGE_SHARE = 0.40
+_COVERAGE_KINDS = ("skill", "certification", "project")
+
+_COVERAGE_QUESTIONS: dict[str, dict[str, list[str]]] = {
+    "skill": {
+        # Both voices: `TARGETS_THIRD` documents the measurement (9.5 % of the
+        # old corpus asked about "him", the §14 suite asks it in 43 of 60).
+        "en": ["Do you know {label}?", "Have you worked with {label}?",
+               "What is your experience with {label}?",
+               "Does he know {label}?", "Has he worked with {label}?",
+               "Does he have experience with {label}?"],
+        "hi": ["क्या आप {label} जानते हैं?", "{label} का अनुभव है?",
+               "क्या उन्हें {label} आता है?", "{label} का उन्हें अनुभव है?"],
+        "hinglish": ["aapko {label} aata hai?", "{label} use karte ho?",
+                     "unhe {label} aata hai?", "unhone {label} use kiya hai?"],
+    },
+    "certification": {
+        "en": ["Have you completed the {label} certification?",
+               "Do you hold the {label} certificate?",
+               "Has he completed the {label} certification?",
+               "Does he hold the {label} certificate?"],
+        "hi": ["क्या आपके पास {label} सर्टिफिकेट है?",
+               "क्या उनके पास {label} सर्टिफिकेट है?"],
+        "hinglish": ["{label} certificate hai?", "{label} kiya hai?",
+                     "{label} certificate unke paas hai?",
+                     "unhone {label} kiya hai?"],
+    },
+    "project": {
+        "en": ["Tell me about {label}.", "What is {label}?",
+               "Has he built {label}?", "Tell me about the {label} project."],
+        "hi": ["{label} क्या है?", "उन्होंने {label} बनाया है?"],
+        "hinglish": ["{label} kya hai?", "{label} ke baare mein batao",
+                     "unhone {label} banaya hai?",
+                     "unka {label} project kya hai?"],
+    },
+}
+
+_COVERAGE_FRAMES: dict[str, dict[str, tuple[str, str]]] = {
+    "skill": {
+        "en": ("I work with {v}.", "He works with {v}."),
+        "hi": ("मैं {v} के साथ काम करता हूँ।", "वे {v} के साथ काम करते हैं।"),
+        "hinglish": ("Main {v} ke saath kaam karta hoon.",
+                     "Wo {v} ke saath kaam karte hain."),
+    },
+    "certification": {
+        "en": ("I hold the {v} certificate.", "He holds the {v} certificate."),
+        "hi": ("मेरे पास {v} सर्टिफिकेट है।", "उनके पास {v} सर्टिफिकेट है।"),
+        "hinglish": ("Mere paas {v} certificate hai.",
+                     "Unke paas {v} certificate hai."),
+    },
+    "project": {
+        "en": ("I built {v}.", "He built {v}."),
+        "hi": ("मैंने {v} बनाया।", "उन्होंने {v} बनाया।"),
+        "hinglish": ("Maine {v} banaya.", "Unhone {v} banaya."),
+    },
+}
+
+#: The two contact facts whose kind (`contact`) is shared with a topic-covered
+#: id (the email), so they need their own question — and their questions name
+#: no label, because "Where is he based?" is how a visitor asks it. Neither
+#: string is a §14 question; `test_no_eval_question_is_in_the_training_tables`
+#: scans these pools with the rest, so a later edit cannot quietly paste one in.
+_COVERAGE_BY_ID: dict[str, dict] = {
+    "contact.location": {
+        "questions": {
+            "en": ["Where is he based?", "Which city is he in?"],
+            "hi": ["वे किस शहर में रहते हैं?"],
+            "hinglish": ["wo kis city mein hai?", "kahan rehta hai?"],
+        },
+        "frames": {
+            "en": ("I am based in {v}.", "He is based in {v}."),
+            "hi": ("मैं {v} में रहता हूँ।", "वे {v} में रहते हैं।"),
+            "hinglish": ("Main {v} mein rehta hoon.", "Wo {v} mein rehta hai."),
+        },
+    },
+    "contact.availability": {
+        "questions": {
+            "en": ["Is he available for internships?", "What is his availability?"],
+            "hi": ["क्या वे इंटर्नशिप के लिए उपलब्ध हैं?"],
+            "hinglish": ["kya wo internship ke liye available hai?"],
+        },
+        "frames": {
+            "en": ("My availability: {v}.", "His availability: {v}."),
+            "hi": ("मेरी उपलब्धता: {v}।", "उनकी उपलब्धता: {v}।"),
+            "hinglish": ("Meri availability: {v}.", "Unki availability: {v}."),
+        },
+    },
+}
+
+
+#: Facts per coverage panel, by kind. A panel is a FIXED set of same-kind
+#: facts that many examples share, and that is load-bearing: the point is that
+#: one context admits several different answers depending on which fact the
+#: question names. A fresh random subset per row would give every row its own
+#: context — measured, that dropped
+#: `test_most_contexts_admit_more_than_one_answer`, and made
+#: `tools/measure_answer_conditioning.py` report the corpus as "the question is
+#: redundant" — the same failure it was built to catch on 2026-10-03. A panel
+#: of five is enough for the question to discriminate and keeps the window
+#: small.
+_COVERAGE_PANEL_SIZE = {"skill": 5, "certification": 3, "project": 3,
+                        "contact": 3}
+
+
+def _example_fact_coverage(kb: dict, f: "Facts", rng: random.Random,
+                           lang: str, persona: str) -> dict | None:
+    """A question that names ONE fact no topic covers, answered with its id.
+
+    The context is a fixed panel of same-kind facts, so which of them the
+    answer names is only in the question — the property
+    `test_instruction_answer_conditioning` measures.
+    """
+    facts = index_facts(kb)
+    # Panels are cut from every public fact of the kind, INCLUDING the ones a
+    # topic already covers: a panel of one is dropped, and measured on
+    # 2026-10-23 that made `project.goaltracker` unreachable — the project pool
+    # minus the two framed projects is exactly one fact. Framed ids are only
+    # barred as the *target*, which is what keeps a coverage row new signal.
+    by_kind: dict[str, list[str]] = {}
+    for fid, e in facts.items():
+        if e["kind"] in _COVERAGE_KINDS and f.value(fid):
+            by_kind.setdefault(e["kind"], []).append(fid)
+    by_kind["contact"] = [fid for fid in ["contact.email"] + list(_COVERAGE_BY_ID)
+                          if fid in facts and f.value(fid)]
+
+    # Panels, then the fact within a panel. Drawing a fact uniformly across the
+    # whole pool instead measured 64 `project.goaltracker` rows against 5
+    # `skill.javascript` ones in 3,000 examples, with four skills never drawn:
+    # the kind with 3 facts and the kind with 38 got the same share.
+    panels = []
+    for kind, ids in by_kind.items():
+        size = _COVERAGE_PANEL_SIZE[kind]
+        ordered = sorted(ids)
+        for start in range(0, len(ordered), size):
+            panel = tuple(ordered[start:start + size])
+            if len(panel) >= 2:
+                panels.append((kind, panel))
+    if not panels:
+        return None
+    kind, panel = _pick(rng, panels)
+    targets = [fid for fid in panel
+               if kind != "contact" or fid in _COVERAGE_BY_ID]
+    fresh = [fid for fid in targets if fid not in _FRAMES]
+    # A panel whose only untrained fact is the target is a single-answer
+    # context by construction — measured, the project panel was one of the
+    # 9.8%-of-contexts that gave the conditioning measurement its worst reading.
+    # Two or more fresh targets keep the panel ambiguous; below that the framed
+    # ids are allowed as targets too, so the panel still asks a real question.
+    if len(fresh) >= 2:
+        targets = fresh
+    if not targets:
+        return None
+    target = _pick(rng, targets)
+    by_kind = {kind: list(panel)}
+
+    if kind == "contact":
+        spec = _COVERAGE_BY_ID[target]
+        q = _pick(rng, spec["questions"].get(lang) or spec["questions"]["en"])
+        first, third = spec["frames"].get(lang) or spec["frames"]["en"]
+    else:
+        label = facts[target]["fact"].get("name") or f.value(target)
+        q = _pick(rng, _COVERAGE_QUESTIONS[kind].get(lang)
+                  or _COVERAGE_QUESTIONS[kind]["en"]).format(label=label)
+        first, third = _COVERAGE_FRAMES[kind].get(lang) or _COVERAGE_FRAMES[kind]["en"]
+
+    # The WHOLE panel is the context, not a subset: a subset per row would make
+    # every row's context unique again, which is exactly what the panel exists
+    # to avoid. Order is shuffled because position must not be the cue.
+    ids = list(panel)
+    rng.shuffle(ids)
+    a = (first if persona == "first" else third).format(v=f.ref(target))
+    return {"category": "factual", "lang": lang, "persona": persona,
+            "counterfactual": False, "context": build_context(f, ids),
             "turns": [(q, a)]}
 
 
@@ -1031,13 +1524,26 @@ def make_example(kb: dict, category: str, rng: random.Random,
         # the context. See the note on `TARGETS`: with one topic per context and
         # one canned answer per topic, the question was redundant and Stage B
         # v1 and v2 both fitted that mapping without ever reading it.
+        # Three factual shapes, drawn before the topic path: a plural question
+        # answered by the whole kind, one fact no topic names (answered by its
+        # id), then the curated topics. A counterfactual example stays on the
+        # topic path — it fabricates a whole context, and a fabricated label in
+        # the question is not a question a visitor could type.
+        if not counterfactual:
+            roll = rng.random()
+            if roll < _LIST_SHARE:
+                return _example_list_answer(kb, f, lang, persona, counterfactual,
+                                            rng, category="factual")
+            if roll < _LIST_SHARE + _COVERAGE_SHARE:
+                covered = _example_fact_coverage(kb, f, rng, lang, persona)
+                if covered is not None:
+                    return covered
         chosen = rng.sample(TOPICS, min(_FACTUAL_TOPICS, len(TOPICS)))
         ids = list(dict.fromkeys(fid for t in chosen for fid in t.context))
         if counterfactual and "person.name" not in ids:
             ids.insert(0, "person.name")
         target = _pick(rng, chosen)
-        pairs = TARGETS[target.name].get(lang) or TARGETS[target.name]["en"]
-        q, fact_id = _pick(rng, pairs)
+        q, fact_id = _pick(rng, target_pairs(target.name, lang))
         # Every targeted fact belongs to `target`, whose facts are in `ids`
         # above, so the answer is always supported by the context it is asked
         # against. `test_no_targeted_answer_asks_about_an_absent_fact` holds
@@ -1064,12 +1570,26 @@ def make_example(kb: dict, category: str, rng: random.Random,
         pool = [fid for fid in ids if f.value(fid)]
         if not pool:
             return make_example(kb, "factual", rng, counterfactual)
-        first, second = (rng.sample(pool, 2) if len(pool) >= 2
-                         else (pool[0], pool[0]))
-        q1 = _pick(rng, t.questions.get("en", t.questions["en"]))
+        # The question and the fact it asks about must be the SAME pair. Until
+        # 2026-10-23 the question was drawn from `t.questions` — the topic's
+        # PLURAL wording, "What are your skills?" — and then answered with one
+        # fact, which wrote the d05/d06 failure into 1,458 rows: sft5 answers
+        # `What are his skills?` with a single skill, and it was taught to.
+        # `TARGETS` is the table where every question names its own fact, so
+        # the pair is drawn from there; the topic wording stays for the
+        # single-fact topics whose context holds one fact anyway.
+        pairs = [(q, fid) for q, fid in target_pairs(t.name, "en")
+                 if fid in ids and f.value(fid)]
+        q1, first = _pick(rng, pairs) if pairs else (
+            _pick(rng, t.questions.get("en") or t.questions["en"]), pool[0])
         a1 = _answer_about(first, f, "en", persona)
-        follow = _pick(rng, ["And where was that again?", "Tell me more about that.",
-                             "And which technologies?", "Is there anything else about it?"])
+        rest = [fid for fid in pool if fid != first] or pool
+        second = _pick(rng, rest)
+        # Fact-neutral follow-ups only: "And which technologies?" asked a second
+        # fact to fill a skill-shaped slot, so the pair contradicted itself the
+        # same way the first turn did.
+        follow = _pick(rng, ["Tell me more about that.", "Is there anything else about it?",
+                             "Anything else?", "And one more thing?"])
         # the second answer stays within the same context — a follow-up must
         # not silently widen what the model is allowed to say
         a2 = _answer_about(second, f, "en", persona)
@@ -1089,15 +1609,20 @@ def make_example(kb: dict, category: str, rng: random.Random,
         t = choose_topic(rng, counterfactual)
         t2 = choose_topic(rng, counterfactual)
         l1, l2 = rng.sample(["en", "hi", "hinglish"], 2)
-        q1 = _pick(rng, t.questions.get(l1) or t.questions["en"])
-        q2 = _pick(rng, t2.questions.get(l2) or t2.questions["en"])
-        # one fact each, for the same reason as `multi_turn` above
+        # one fact each, and — same as `multi_turn` — the question is the one
+        # that NAMES that fact, in the language being answered.
         p1 = [fid for fid in t.context if f.value(fid)]
         p2 = [fid for fid in t2.context if f.value(fid)]
         if not p1 or not p2:
             return make_example(kb, "factual", rng, counterfactual)
-        a1 = _answer_about(_pick(rng, p1), f, l1, persona)
-        a2 = _answer_about(_pick(rng, p2), f, l2, persona)
+        pairs1 = [(q, fid) for q, fid in target_pairs(t.name, l1) if fid in p1]
+        pairs2 = [(q, fid) for q, fid in target_pairs(t2.name, l2) if fid in p2]
+        q1, f1 = _pick(rng, pairs1) if pairs1 else (
+            _pick(rng, t.questions.get(l1) or t.questions["en"]), _pick(rng, p1))
+        q2, f2 = _pick(rng, pairs2) if pairs2 else (
+            _pick(rng, t2.questions.get(l2) or t2.questions["en"]), _pick(rng, p2))
+        a1 = _answer_about(f1, f, l1, persona)
+        a2 = _answer_about(f2, f, l2, persona)
         ids = list(dict.fromkeys(t.context + t2.context))
         if counterfactual and "person.name" not in ids:
             ids.insert(0, "person.name")
@@ -1137,7 +1662,13 @@ def make_example(kb: dict, category: str, rng: random.Random,
         return {"category": "other", "lang": lang, "persona": persona,
                 "counterfactual": counterfactual, "context": build_context(f, ["person.name"]),
                 "turns": [(q, META_ANSWER)]}
-    if rng.random() < 0.5:
+    # A counterfactual example never takes the list slot: it returns the
+    # comparison shape instead. `_example_list_answer` used to handle that by
+    # handing back a FACTUAL example, which moved ~470 rows a run out of
+    # `other` and into `factual` (MEASURED on the 2026-10-23 regeneration: other
+    # 1,758 against a planned 2,000). Choosing another `other` shape keeps §7.4's
+    # mix exact and keeps the fabricated values out of a list answer.
+    if counterfactual or rng.random() < 0.5:
         q = _pick(rng, ["Which project should I look at first?", "Compare the projects."])
         a = (f"Start with {f.ref('project.volunteer')}; it is the most complete, and "
              f"{f.ref('project.grocery')} is the second.")

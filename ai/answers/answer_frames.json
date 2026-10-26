@@ -1,0 +1,379 @@
+{
+  "frames": {
+    "ach.lpu-cgpa": {
+      "en": {
+        "first": "My CGPA is {v}.",
+        "third": "His CGPA is {v}."
+      },
+      "hi": {
+        "first": "मेरा CGPA {v} है।",
+        "third": "उनका CGPA {v} है।"
+      },
+      "hinglish": {
+        "first": "Mera CGPA {v} hai.",
+        "third": "Unka CGPA {v} hai."
+      }
+    },
+    "cert.dbms": {
+      "en": {
+        "first": "I hold the {v} certificate.",
+        "third": "He holds the {v} certificate."
+      },
+      "hi": {
+        "first": "मेरे पास {v} सर्टिफिकेट है।",
+        "third": "उनके पास {v} सर्टिफिकेट है।"
+      },
+      "hinglish": {
+        "first": "Mere paas {v} certificate hai.",
+        "third": "Unke paas {v} certificate hai."
+      }
+    },
+    "contact.availability": {
+      "en": {
+        "first": "My availability: {v}.",
+        "third": "His availability: {v}."
+      },
+      "hi": {
+        "first": "मेरी उपलब्धता: {v}।",
+        "third": "उनकी उपलब्धता: {v}।"
+      },
+      "hinglish": {
+        "first": "Meri availability: {v}.",
+        "third": "Unki availability: {v}."
+      }
+    },
+    "contact.email": {
+      "en": {
+        "first": "Email me at {v}.",
+        "third": "Email him at {v}."
+      },
+      "hi": {
+        "first": "मुझे {v} पर ईमेल करें।",
+        "third": "उन्हें {v} पर ईमेल करें।"
+      },
+      "hinglish": {
+        "first": "Mujhe {v} pe email karo.",
+        "third": "Unhe {v} pe email karo."
+      }
+    },
+    "contact.location": {
+      "en": {
+        "first": "I am based in {v}.",
+        "third": "He is based in {v}."
+      },
+      "hi": {
+        "first": "मैं {v} में रहता हूँ।",
+        "third": "वे {v} में रहते हैं।"
+      },
+      "hinglish": {
+        "first": "Main {v} mein rehta hoon.",
+        "third": "Wo {v} mein rehta hai."
+      }
+    },
+    "edu.kv1": {
+      "en": {
+        "first": "My Class 10: {v}.",
+        "third": "His Class 10: {v}."
+      },
+      "hi": {
+        "first": "मेरी दसवीं: {v}।",
+        "third": "उनकी दसवीं: {v}।"
+      },
+      "hinglish": {
+        "first": "Meri 10th: {v}.",
+        "third": "Unki 10th: {v}."
+      }
+    },
+    "edu.kv2": {
+      "en": {
+        "first": "My Class 12: {v}.",
+        "third": "His Class 12: {v}."
+      },
+      "hi": {
+        "first": "मेरी बारहवीं: {v}।",
+        "third": "उनकी बारहवीं: {v}।"
+      },
+      "hinglish": {
+        "first": "Meri 12th: {v}.",
+        "third": "Unki 12th: {v}."
+      }
+    },
+    "edu.lpu": {
+      "en": {
+        "first": "I study at {v}.",
+        "third": "He studies at {v}."
+      },
+      "hi": {
+        "first": "मैं {v} में पढ़ता हूँ।",
+        "third": "वे {v} में पढ़ते हैं।"
+      },
+      "hinglish": {
+        "first": "Main {v} se padhai karta hoon.",
+        "third": "Wo {v} se padhte hain."
+      }
+    },
+    "exp.mern-bootcamp": {
+      "en": {
+        "first": "I completed {v}.",
+        "third": "He completed {v}."
+      },
+      "hi": {
+        "first": "मैंने {v} पूरा किया है।",
+        "third": "उन्होंने {v} पूरा किया है।"
+      },
+      "hinglish": {
+        "first": "Maine {v} complete kiya hai.",
+        "third": "Unhone {v} complete kiya hai."
+      }
+    },
+    "link.github": {
+      "en": {
+        "first": "My GitHub is {v}.",
+        "third": "His GitHub is {v}."
+      },
+      "hi": {
+        "first": "मेरा GitHub {v} है।",
+        "third": "उनका GitHub {v} है।"
+      },
+      "hinglish": {
+        "first": "Mera GitHub {v} hai.",
+        "third": "Unka GitHub {v} hai."
+      }
+    },
+    "person.name": {
+      "en": {
+        "first": "My name is {v}.",
+        "third": "His name is {v}."
+      },
+      "hi": {
+        "first": "मेरा नाम {v} है।",
+        "third": "उनका नाम {v} है।"
+      },
+      "hinglish": {
+        "first": "Mera naam {v} hai.",
+        "third": "Unka naam {v} hai."
+      }
+    },
+    "project.grocery": {
+      "en": {
+        "first": "I also built {v}.",
+        "third": "He also built {v}."
+      },
+      "hi": {
+        "first": "मैंने {v} भी बनाया।",
+        "third": "उन्होंने {v} भी बनाया।"
+      },
+      "hinglish": {
+        "first": "Maine {v} bhi banaya.",
+        "third": "Unhone {v} bhi banaya."
+      }
+    },
+    "project.volunteer": {
+      "en": {
+        "first": "My main project is {v}.",
+        "third": "His main project is {v}."
+      },
+      "hi": {
+        "first": "मेरा मुख्य प्रोजेक्ट {v} है।",
+        "third": "उनका मुख्य प्रोजेक्ट {v} है।"
+      },
+      "hinglish": {
+        "first": "Mera main project {v} hai.",
+        "third": "Unka main project {v} hai."
+      }
+    },
+    "skill.mysql": {
+      "en": {
+        "first": "I use {v} for relational data.",
+        "third": "He uses {v} for relational data."
+      },
+      "hi": {
+        "first": "मैं रिलेशनल डेटा के लिए {v} उपयोग करता हूँ।",
+        "third": "वे रिलेशनल डेटा के लिए {v} उपयोग करते हैं।"
+      },
+      "hinglish": {
+        "first": "Main relational data ke liye {v} use karta hoon.",
+        "third": "Wo relational data ke liye {v} use karte hain."
+      }
+    },
+    "skill.python": {
+      "en": {
+        "first": "I write {v}.",
+        "third": "He writes {v}."
+      },
+      "hi": {
+        "first": "मैं {v} लिखता हूँ।",
+        "third": "वे {v} लिखते हैं।"
+      },
+      "hinglish": {
+        "first": "Main {v} likhta hoon.",
+        "third": "Wo {v} likhte hain."
+      }
+    },
+    "skill.react": {
+      "en": {
+        "first": "My frontend framework is {v}.",
+        "third": "His frontend framework is {v}."
+      },
+      "hi": {
+        "first": "मेरा फ्रंटएंड फ्रेमवर्क {v} है।",
+        "third": "उनका फ्रंटएंड फ्रेमवर्क {v} है।"
+      },
+      "hinglish": {
+        "first": "Mera frontend framework {v} hai.",
+        "third": "Unka frontend framework {v} hai."
+      }
+    },
+    "workflow.how-he-builds": {
+      "en": {
+        "first": "How I build: {v}",
+        "third": "How he builds: {v}"
+      },
+      "hi": {
+        "first": "मेरा तरीका: {v}",
+        "third": "उनका तरीका: {v}"
+      },
+      "hinglish": {
+        "first": "Mera tareeka: {v}",
+        "third": "Unka tareeka: {v}"
+      }
+    }
+  },
+  "generatedFrom": "ai/data/instruction.py",
+  "kindFrames": {
+    "cert": {
+      "en": {
+        "first": "I hold the {v} certificate.",
+        "third": "He holds the {v} certificate."
+      },
+      "hi": {
+        "first": "मेरे पास {v} सर्टिफिकेट है।",
+        "third": "उनके पास {v} सर्टिफिकेट है।"
+      },
+      "hinglish": {
+        "first": "Mere paas {v} certificate hai.",
+        "third": "Unke paas {v} certificate hai."
+      }
+    },
+    "project": {
+      "en": {
+        "first": "I built {v}.",
+        "third": "He built {v}."
+      },
+      "hi": {
+        "first": "मैंने {v} बनाया।",
+        "third": "उन्होंने {v} बनाया।"
+      },
+      "hinglish": {
+        "first": "Maine {v} banaya.",
+        "third": "Unhone {v} banaya."
+      }
+    },
+    "skill": {
+      "en": {
+        "first": "I work with {v}.",
+        "third": "He works with {v}."
+      },
+      "hi": {
+        "first": "मैं {v} के साथ काम करता हूँ।",
+        "third": "वे {v} के साथ काम करते हैं।"
+      },
+      "hinglish": {
+        "first": "Main {v} ke saath kaam karta hoon.",
+        "third": "Wo {v} ke saath kaam karte hain."
+      }
+    }
+  },
+  "languages": [
+    "en",
+    "hi",
+    "hinglish"
+  ],
+  "listFrames": {
+    "ach": {
+      "en": {
+        "first": "My academic record: {v}.",
+        "third": "His academic record: {v}."
+      },
+      "hi": {
+        "first": "मेरा शैक्षणिक रिकॉर्ड: {v}।",
+        "third": "उनका शैक्षणिक रिकॉर्ड: {v}।"
+      },
+      "hinglish": {
+        "first": "Mera academic record: {v}.",
+        "third": "Unka academic record: {v}."
+      }
+    },
+    "cert": {
+      "en": {
+        "first": "My certifications: {v}.",
+        "third": "His certifications: {v}."
+      },
+      "hi": {
+        "first": "मेरे पास {v} सर्टिफिकेट हैं।",
+        "third": "उनके पास {v} सर्टिफिकेट हैं।"
+      },
+      "hinglish": {
+        "first": "Mere paas {v} certificates hai.",
+        "third": "Unke paas {v} certificates hai."
+      }
+    },
+    "exp": {
+      "en": {
+        "first": "My training: {v}.",
+        "third": "His training: {v}."
+      },
+      "hi": {
+        "first": "मेरी प्रशिक्षण: {v}।",
+        "third": "उनकी प्रशिक्षण: {v}।"
+      },
+      "hinglish": {
+        "first": "Meri training: {v}.",
+        "third": "Unki training: {v}."
+      }
+    },
+    "project": {
+      "en": {
+        "first": "My projects: {v}.",
+        "third": "His projects: {v}."
+      },
+      "hi": {
+        "first": "मेरे प्रोजेक्ट्स: {v}।",
+        "third": "उनके प्रोजेक्ट्स: {v}।"
+      },
+      "hinglish": {
+        "first": "Mere projects: {v}.",
+        "third": "Unke projects: {v}."
+      }
+    },
+    "skill": {
+      "en": {
+        "first": "My tech stack: {v}.",
+        "third": "His tech stack: {v}."
+      },
+      "hi": {
+        "first": "मेरी तकनीकें: {v}।",
+        "third": "उनकी तकनीकें: {v}।"
+      },
+      "hinglish": {
+        "first": "Meri technologies: {v}.",
+        "third": "Unki technologies: {v}."
+      }
+    }
+  },
+  "note": "generated by tools/export_answer_frames.py — do not edit by hand",
+  "separators": {
+    "en": [
+      ", ",
+      " and "
+    ],
+    "hi": [
+      ", ",
+      " और "
+    ],
+    "hinglish": [
+      ", ",
+      " aur "
+    ]
+  }
+}

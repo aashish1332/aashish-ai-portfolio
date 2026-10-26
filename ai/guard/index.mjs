@@ -60,6 +60,7 @@ export const GUARD_CODES = Object.freeze({
   NUMBER: 'number_not_grounded',
   DATE: 'date_not_grounded',
   ENTITY: 'entity_not_grounded',
+  NAME: 'name_not_grounded',
   LANGUAGE: 'language_mismatch',
   LENGTH: 'too_long',
   EMPTY: 'empty_answer',
@@ -76,6 +77,18 @@ const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/g;
    splitting at the punctuation. Letters terminate a run, so "2021 to 2023"
    is two numbers and "3 projects" is one. */
 const NUMBER_RUN_RE = /\d+(?:[\s,.\u2013-]*\d+)*/g;
+/* "whose name is X": the copula may be a colon, "is" or a Hindi/Hinglish
+   "hai". The capture is a run of capitalised words, so it stops before a
+   trailing "hai"/"is" and cannot swallow the rest of the sentence. */
+const NAME_VALUE = '([A-Z][\\w\'\u2019.]*(?:\\s+[A-Z][\\w\'\u2019.]*){0,3})';
+/* BOTH word orders, because the answer that got through used the Hindi/Hinglish
+   one: "unka naam Arjun Verma hai" puts the copula AFTER the value, while
+   "his name is Arjun Verma" puts it before. A rule that only knew the English
+   order passed the very sentence it was written for. */
+const NAME_CLAIM_RES = [
+  new RegExp(`\\b(?:naam|name)\\s*(?:[:=]|is|hai|hain)\\s+${NAME_VALUE}`, 'g'),
+  new RegExp(`\\b(?:naam|name)\\s+${NAME_VALUE}\\s+(?:hai|hain|is|h)\\b`, 'g'),
+];
 
 /* ── normalization ─────────────────────────────────────────────── */
 
@@ -350,6 +363,42 @@ export function guard(text, opts = {}) {
     const num = String(MONTHS.indexOf(mo) + 1).padStart(2, '0');
     if (!ctxMonths.has(mo) && !ctxMonthNums.has(num)) {
       add(GUARD_CODES.DATE, mo, 'the month does not appear in the retrieved context');
+    }
+  }
+
+  /* 4b. a claimed PERSON NAME. §8.4's list does not name this one because the
+        vocabulary check (step 5) only knows names the KB HAS — a name the
+        model invented outright is invisible to it, and that is the worst kind
+        to miss: an answer that says whose name it is, and is wrong.
+
+        MEASURED 2026-10-26, the owner's own report: "tum ho kon?" answered
+        `unka naam Arjun Verma hai.` — "Arjun Verma" is one of the
+        COUNTERFACTUAL filler names in ai/data/instruction.py, memorised from
+        training and emitted as literal text. It carried no number, no date and
+        no known entity, so it passed every check above and reached the screen.
+
+        The rule is narrow on purpose: only a sentence that says whose name it
+        is ("naam … hai", "name is …") is read, and only a Latin
+        capitalised run inside it is taken as the claim. The claim passes when
+        it, or each of its words, is grounded in the context or allowlisted
+        (his own name is). A Devanagari name claim is NOT covered — stated
+        here rather than implied, because every real name this app can render
+        is Latin. */
+  const nameClaims = NAME_CLAIM_RES.flatMap((re) => [...answer.matchAll(re)]);
+  if (nameClaims.length) {
+    const allow = opts.allow || (opts.kb ? defaultAllowlist(opts.kb) : []);
+    for (const match of nameClaims) {
+      const claim = normalizeClaim(match[1]);
+      if (!claim) continue;
+      const words = claim.split(/\s+/).filter(Boolean);
+      const grounded = containsTerm(hayNorm, claim)
+        || allow.some((term) => { const t = normalizeClaim(term); return t && (claim === t || claim.includes(t)); })
+        || words.every((w) => w.length < 3 || containsTerm(hayNorm, w)
+          || allow.some((term) => normalizeClaim(term) === w));
+      if (!grounded) {
+        add(GUARD_CODES.NAME, match[1].trim(),
+          'the answer names someone the retrieved context does not');
+      }
     }
   }
 
