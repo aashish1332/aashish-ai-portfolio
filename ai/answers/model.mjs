@@ -1,67 +1,40 @@
 /* ═══════════════════════════════════════════════════════════════
-   ai/answers/model.mjs — the answer path. Two tiers, one decision.
+   ai/answers/model.mjs — the answer path. ONE tier: the model.
 
-   0. **The data file answers first** (owner decision, 2026-10-08). A
-      question whose plan `quickAnswer()` selected is worded straight from
-      `knowledge/knowledge.json`'s public view (`ai/answers/wording.mjs`) —
-      edit that file, push, and the answers change with no retraining. The
-      on-device model answers only what the file cannot.
-   1. **Retrieve** (§8.2). Below the calibrated gate there is nothing to
-      ground on, so the model is never asked and the panel says so. That is
-      the §8.4 layer-1 decision — the honest answer is "I don't have that" —
-      made *before* a token is generated, because a model asked a question
-      its context cannot answer only has making something up left to do.
+   (Owner decision, 2026-10-14: 100% pure AI. The data-file wording, the
+   deterministic list answerer and every pre-model refusal are gone. Every
+   question — safety, identity, adversarial bait, withheld fields, lists,
+   small talk — is put to the on-device model, whose trained refusal and
+   abstention behavior speaks it in its own words.)
+
+   1. **Retrieve** (§8.2) — the model is given only what the portfolio
+      publishes, because a model that can read a withheld value has a way
+      to leak it (`renderFact` filters `public:false`, §8.1).
    2. **Ask the model** — its own vocabulary, its own weights, greedy, in a
-      worker (`ai/engine/session.mjs`). No template is consulted for prose.
+      worker (`ai/engine/session.mjs`). No template is consulted for prose,
+      and there is no refusal anymore that the model does not speak.
    3. **Guard** (§8.4 layer 4), with one greedy retry over a shortened
       context. If both attempts fail, the model made no claim and the panel
       says that — it does **not** fall back to a template answer.
    4. **Resolve placeholders** to allowlisted values (`<|fact:x|>`), which
       is the only way a URL or an email ever reaches the screen (§7.2).
 
-   ### What the owner's 2026-10-08 decision changed, and what it did not
-
-   The deterministic wording (`ai/answers/wording.mjs`) is once again an
-   ANSWER source — for the plans the data file selected by construction:
-   contact fields, links, skills, education, certifications, achievements,
-   experience, workflow, project detail and single facts. Every value it
-   renders comes from the knowledge base's public view, so it is grounded
-   the same way `deterministicListAnswer` is and no guard run is needed
-   (`tests/model-answers.test.mjs` PLANNER-6 holds that in).
-
-   What did NOT change: a MODEL answer that fails the guard is still a
-   refusal, never repaired or replaced by wording (the rule below that a
-   template must not stand in for a rejected model answer stands); the
-   refusals keep their own paths and their "NO ANSWER" badges — the data
-   file never answers a question the file itself abstains on; and a plan
-   kind with no wording falls through to the model unchanged.
-
-   §5.1 step 5 used to end at a Quick Answer: a template built from
-   `knowledge.json`, grounded by construction. The owner retired it on
-   2026-10-06; on 2026-10-08, with the §7.4 levers measured falsified and
-   the model's fact selection still below the §14 gate, the owner chose the
-   data-file-first product and the wording became the FIRST tier again —
-   for the plans the file itself selected. So every string this module
-   returns is one of exactly four things:
-
-     * the portfolio data file's own answer for a plan it selected,
-       guard-exempt by construction (`kind: 'planner'`),
-     * the model's text, guard-checked (`kind: 'model'`),
-     * the localized sentence that says the model could not verify its own
-       answer (`kind: 'unverified'`),
-     * the localized sentence that says the portfolio has nothing to answer
-       with (`kind: 'notFound'`).
-
-   The second and third assert nothing about Aashish, which is what makes
-   them safe to fix as constants. `NO_ANSWER_KINDS` below is the whole list.
+   What this contract costs, told honestly: the model's refusals are now
+   its own sentences, so an untrained checkpoint can phrase them badly —
+   the guard and the `<|abstain|>` token are what keep it from asserting a
+   fact. Every generated claim is still verified against exactly the
+   context the model read; nothing else about §8.4 changed. The only text
+   in this module that is not the model's own is the `NO_ANSWER_KINDS`
+   table, used only when the model produced NOTHING to keep (an abstention
+   token, or a double guard failure) — a refusal the model never wrote
+   cannot wear the AI-ANSWER badge.
    ═══════════════════════════════════════════════════════════════ */
 
 import { clipToGroundedSentences, guardedAnswer } from '../guard/index.mjs';
 import { buildIndex, search, MIN_TOP_SCORE } from '../retrieval/index.mjs';
 import { abstainFor } from '../intent/rules.mjs';
-import { contextSizer, DEFAULT_PERSONA, rawFact, resolveFacts, renderFact } from './quick.mjs';
-import { say } from './wording.mjs';
-import { placeholderToken } from '../knowledge/placeholders.mjs';
+import { emptySlotFrame } from '../engine/grammar.mjs';
+import { contextSizer, DEFAULT_PERSONA, resolveFacts, renderFact } from './quick.mjs';
 
 /* ── how many facts the intent fallback may paste ────────────────
    §8.2's budget is "top-k ≤ 3 chunks, ≤ ~300 tokens", and retrieval keeps it.
@@ -77,6 +50,82 @@ import { placeholderToken } from '../knowledge/placeholders.mjs';
    fits is a budget that fails the moment anything is added. */
 export const MAX_INTENT_FACTS = 12;
 
+/* ── the plans whose answer is a WHOLE KIND, not one fact ────────
+   §8.2's budget is top-3 chunks, and a plural question's correct answer is
+   every fact of one kind: "Which databases does he use?" is answered by all
+   five database skills. Three BM25 chunks cannot carry five, and the 2026-10-24
+   §14 sweep is what that costs — d05 was asked against a context holding
+   `[skill.mysql] MySQL` and `[skill.mongoose] Mongoose` while the case expects
+   five ids, so no answer, however well trained, could score above 2/5.
+
+   Measured, the same sweep: of the 8 plural cases, 54% of expected ids were in
+   the top 3 and only 25% of the cases had all of them there — at k=5 that
+   rises to 75%/63%. So the ceiling here is the CONTEXT, not the model.
+
+   `quickAnswer()` already knows the exact set: its plan for these intents is
+   `{kind, ids}` over the whole kind (`skills` filtered to the category the
+   visitor named, `list_projects`, `certifications`, …). This module had that
+   set in hand and used it only when BM25 returned nothing. For these plans the
+   plan's own facts ARE the scope of the question, so they are the context —
+   capped by `MAX_INTENT_FACTS`, which is the window's bound, not a taste. */
+export const WHOLE_KIND_PLANS = new Set([
+  'skills', 'list_projects', 'certifications', 'achievements', 'experience',
+  'education', 'contact_links', 'contact_all',
+]);
+
+/** Does this intent plan's fact set scope the answer (§8.2 / §7.4)? */
+export function intentScopesContext(plan) {
+  return !!plan && WHOLE_KIND_PLANS.has(plan.kind);
+}
+
+/* ── plans whose context is exactly their own source list ─────────
+
+   A whole-kind plan is not the only one whose fact set IS the question's
+   scope. An identity turn is trained with `[person.name]` and nothing else —
+   every meta example in ai/data/instruction.py is built with
+   `build_context(f, ["person.name"])` — and its answer is the same fixed
+   disclosure whatever else the retrieval happened to score.
+
+   MEASURED 2026-10-27 on the sft8 export: "are you Aashish?" reached the model
+   with three lines (name, GitHub link, how-he-builds) and it answered
+   `Unka tareeka: <|fact:workflow.how-he-builds|>` — a Hinglish list sentence to
+   an English identity question. The same checkpoint answers the disclosure on
+   all four phrasings when it is given the frame training gave it: the name
+   line alone. So the drift was the context, not the weights.
+
+   `greeting` is not here: it already carries `person.name` alone because its
+   question has no content token for BM25 to match, and widening it is the
+   defect the 2026-10-17 note in `quick.mjs` records. */
+export const PINNED_CONTEXT_PLANS = new Set(['meta']);
+
+/** Is this plan's source list the whole context, whatever retrieval found? */
+export function planPinsContext(plan) {
+  return !!plan && PINNED_CONTEXT_PLANS.has(plan.kind);
+}
+
+/* ── which turns may be decoded against the closed answer space ───
+   `ai/engine/grammar.mjs` can constrain a turn to the sentences the model was
+   trained to say about the facts it was given. That is right for a question
+   ABOUT a fact, and wrong for the turns whose answer is not one: a greeting, a
+   "who are you", an off-topic question, or a bait — all of those have their own
+   trained shapes (a claim-free line, `<|abstain|>`), and forcing them into a
+   fact sentence would answer a different question than the visitor asked.
+
+   `hallucination_bait` is open on purpose: its correct answer is a refusal, and
+   a closed grammar would hand it a legal fact sentence instead of the abstain it
+   should prefer — the bait class is measured (b01/b02/b03/b05) and this change
+   must not move it.
+
+   `plan === null` is open too: no intent matched, so there is no evidence the
+   question is about a fact, and `contact_withheld` stays closed because its
+   context is empty — the grammar then admits nothing but `<|abstain|>`, which is
+   exactly what a withheld field must produce (§8.1). */
+const OPEN_ANSWER_PLANS = new Set(['greeting', 'meta', 'abstain', 'hallucination_bait']);
+
+export function wantsClosedAnswer(plan) {
+  return Boolean(plan) && !OPEN_ANSWER_PLANS.has(plan.kind);
+}
+
 /** The fact ids a context actually names, in order. The engine may DROP lines
  *  to fit the model's window, so the ids a visitor is shown as "where this
  *  came from" must come from the context that was read, not from the list
@@ -88,99 +137,8 @@ export function idsInContext(context) {
   return out;
 }
 
-/* ── list answers, deterministic (§5.1, measured 2026-10-06) ────
-
-The multi-fact eval rows (d05/d06/d07/d08/d16/d18/i02/i05) scored ZERO
-passes at v8, and the probes settled why: skill-list items sit at p≈0.01
-(rank 9-57) at every slot — the copy-from-context circuit was never
-formed at 37.9M — while project lists compose near-perfectly under
-teacher-forcing yet still decode into the wrong frame. Four training
-levers (v9-v12) are measured falsifications; this shape of question has
-to be answered deterministically until a bigger checkpoint exists.
-
-The wording uses the corpus's own list frames (`ai/data/instruction.py`
-_LIST_FRAMES) and its conjunction rule, but builds the list over
-PLACEHOLDER tokens and resolves them through `resolveFacts` — the same
-rendering path the model's answers take, so values can never drift from
-what the guard/KB allow. The context stays the retrieved/intent lines
-exactly as `ask()` assembled them, so the answer still only claims what
-was read. */
-
-const LIST_FRAMES_JS = Object.freeze({
-  skill: {
-    en: 'He works with {v}.',
-    hi: 'वे {v} जैसी तकनीकों पर काम करते हैं।',
-    hinglish: 'Wo {v} jaise technologies pe kaam karte hain.',
-  },
-  cert: {
-    en: 'His certifications: {v}.',
-    hi: 'उनके पास {v} सर्टिफिकेट हैं।',
-    hinglish: 'Unke paas {v} certificates hai.',
-  },
-  ach: {
-    en: 'His academic record: {v}.',
-    hi: 'उनका शैक्षणिक रिकॉर्ड: {v}।',
-    hinglish: 'Unka academic record: {v}.',
-  },
-  exp: {
-    en: 'His training: {v}.',
-    hi: 'उनकी प्रशिक्षण: {v}।',
-    hinglish: 'Unki training: {v}.',
-  },
-  project: {
-    en: 'His projects: {v}.',
-    hi: 'उनके प्रोजेक्ट्स: {v}।',
-    hinglish: 'Unke projects: {v}.',
-  },
-});
-
-const LIST_KIND_OF_INTENT = Object.freeze({
-  list_projects: 'project',
-  skills: 'skill',
-  certifications: 'cert',
-  achievements: 'ach',
-  experience: 'exp',
-});
-
-function conjIn(names, lang) {
-  const word = lang === 'hi' ? 'और' : (lang === 'hinglish' ? 'aur' : 'and');
-  if (names.length === 1) return names[0];
-  return `${names.slice(0, -1).join(', ')} ${word} ${names[names.length - 1]}`;
-}
-
-/** The deterministic list answer for an intent whose plan enumerates one
- *  kind, or null when the question is not that shape (caller falls through
- *  to the model unchanged). Mirrors `_example_list_answer`'s frame choice. */
-export function deterministicListAnswer(kb, intent, plan, lang = 'en') {
-  const kind = LIST_KIND_OF_INTENT[intent];
-  if (!kind || !plan?.ids?.length) return null;
-  const phs = [];
-  /* The FULL enumerable list: a data-file answer's evidence is the whole
-     public bucket, and a skills list that stops at a prompt-window cap would
-     silently drop true facts from a true answer (2026-10-08: the trim was
-     tried and measured worse — d06/d18 lost facts the cases expect). */
-  const ids = plan.ids.slice();
-  /* the experience plan carries its availability fact beside the list — a
-     "what has he done?" answer that omits it is an incomplete enumeration */
-  if (plan.availabilityId) ids.push(plan.availabilityId);
-  for (const id of ids) {
-    /* `renderFact` is the same public-fact filter `ask()` applies to intent
-       ids: unknown or `public:false` facts render to nothing, so a withheld
-       value cannot reach a deterministic answer through this door (§8.1). */
-    if (!renderFact(kb, id, lang)) return null;
-    /* a project item names itself: the codename is the discriminator a
-       recruiter scans for, and the summary alone cannot carry it (a fictional
-       portfolio's literal name is exactly what §14's synthetic rows check) */
-    const name = kind === 'project' ? rawFact(kb, id)?.name : null;
-    phs.push(name ? `${name}: ${placeholderToken(id)}` : placeholderToken(id));
-  }
-  const frame = LIST_FRAMES_JS[kind][lang] || LIST_FRAMES_JS[kind].en;
-  return frame.replace('{v}', conjIn(phs, lang));
-}
-
 export const MODEL_BADGES = Object.freeze({
   model: 'AI ANSWER · ON-DEVICE MODEL',
-  planner: 'ANSWER · FROM THE PORTFOLIO DATA',
   notFound: 'NO ANSWER · NOT IN THE PORTFOLIO',
   unverified: 'NO ANSWER · COULD NOT VERIFY IT',
   withheld: 'NO ANSWER · NOT PUBLISHED',
@@ -314,51 +272,36 @@ export function contextLines(kb, hits, lang = 'en') {
  *
  * It is pure so it can be *tested*: the same decision used to be an inline
  * `if` chain in the chat shell, which needs a DOM to exercise and so was
- * covered by nothing at all. That is how two of §6.3's rungs ended up matching
- * a key that did not exist and silently doing nothing (see
- * `ai/ui/chat.mjs`). A decision with six outcomes and three safety rules
- * deserves to be a value, not a paragraph.
+ * covered by nothing at all (see `ai/ui/chat.mjs`).
  *
- * Three outcomes short-circuit before the model, and **none of them is an
- * answer**:
+ * It has ONE outcome short-circuiting before the model, and it is **not an
+ * answer**: `no-model` — the device cannot run the model right now
+ * (loading, unsupported, the worker died, or §6.3's last rung stopped
+ * generation). That is a fact about the machine, not a portfolio claim, so
+ * it stays a fixed sentence.
  *
- *  · `safety` — an attempt to change the instructions (§9). Never reaches the
- *    generator, and its text is a fixed reply, not a portfolio claim.
- *  · `no-data` — a question that presumes something the CV does not have
- *    (§14's adversarial set). This one *must* be decided here: the invented
- *    thing is an employer, and the guard checks named entities against the
- *    knowledge base's own vocabulary — which never contains one, so §8.4
- *    could not catch it. Nothing after this point can.
- *  · `withheld` — a field the base marks `public:false`. Declined, not
- *    answered around.
- *
- * `disclosure` is the fourth fixed reply and the only other one, for the same
- * reason as `safety`: "are you Aashish?" asks about the *assistant*, and the
- * answer is a statement about what this thing is. A generated sentence could
- * answer it falsely — claim to be a person — and no check in §8.4 could tell,
- * because the guard grounds claims about Aashish, not claims about the thing
- * making them. It is a disclosure, not a portfolio answer, so it is fixed.
+ * Everything ELSE goes to the model, 100% pure AI (owner decision,
+ * 2026-10-14): prompt-injection attempts (§9), "are you Aashish?",
+ * §14's invented-employer bait, questions about a `public:false` field —
+ * all are put to the model in the normal frame, and its trained refusal
+ * and `<|abstain|>` behavior speaks them in its own words. The guard still
+ * rejects every claim that does not ground in what the model read, which
+ * is what stops a bait question from being answered with an invented
+ * employer even though nothing refuses before a token exists.
  *
  * @param {object} opts
- * @param {object} opts.res            a `quickAnswer()` result
+ * @param {object} opts.res            a `quickAnswer()` result (kept in the
+ *                                     signature so callers and probes keep
+ *                                     passing the same object)
  * @param {boolean} opts.hasModel      an answerer that is loaded and ready
  * @param {string} [opts.modelState]   idle | loading | ready | unsupported | error
  * @param {boolean} [opts.generationStopped] §6.3's last rung has fired
  * @param {'en'|'hi'|'hinglish'} [opts.lang]
- * @returns {{path:'safety'|'disclosure'|'no-data'|'withheld'|'no-model'|'model',
- *            kind:string, noAnswer?:string}}
+ * @returns {{path:'no-model'|'model', kind:string, noAnswer?:string}}
  */
 export function routeQuestion({
-  res, hasModel, modelState = 'idle', generationStopped = false, lang = 'en',
+  hasModel, modelState = 'idle', generationStopped = false, lang = 'en',
 } = {}) {
-  if (res?.injection) return { path: 'safety', kind: 'safety' };
-  if (res?.intent === 'meta') return { path: 'disclosure', kind: 'disclosure' };
-  if (res?.intent === 'hallucination_bait') {
-    return { path: 'no-data', kind: 'no-answer', noAnswer: noAnswerLine('notFound', lang) };
-  }
-  if (res?.private) {
-    return { path: 'withheld', kind: 'no-answer', noAnswer: noAnswerLine('withheld', lang) };
-  }
   if (generationStopped || !hasModel) {
     const why = generationStopped ? 'strained'
       : modelState === 'unsupported' ? 'unsupported'
@@ -376,82 +319,13 @@ export function routeQuestion({
  * @param {number} [opts.maxNewTokens]  §6.2's per-tier cap
  * @param {number} [opts.minScore]  the calibrated layer-1 gate
  */
-/* ── the data file's own answers (§5.1, owner decision 2026-10-08) ──
-   The plan is worded by `ai/answers/wording.mjs`, whose every value comes
-   from the public view — the same guarantee `deterministicListAnswer`
-   rests on, so no guard run is needed here either (PLANNER-6 pins that).
-   Rules that keep this a floor and not a regression to the retired Quick
-   Answers:
-
-   · a plan whose ids do not all render (a `public:false` fact slipped in)
-     is refused, never half-answered (PLANNER-5);
-   · a plan kind with no wording falls through to the model unchanged;
-   · the refusals (`abstain`, hallucination_bait) and the two fixed
-     assistant-voice replies (`meta`, `greeting`) are NOT worded here —
-     they keep their own paths and badges, so a refusal can never wear the
-     "FROM THE PORTFOLIO DATA" badge and a greeting stays MODEL-11's; */
-const WORDABLE_PLANS = Object.freeze(new Set([
-  'contact_withheld', 'contact_field', 'contact_links', 'contact_all',
-  'skills', 'education', 'certifications', 'achievements', 'experience',
-  'workflow', 'project_detail', 'fact',
-]));
-
-/* A question asking for a SCORE (§14's d03/d13/s01 shape) or for AVAILABILITY
-   (d10). A category plan carries every fact in its bucket; a specific question
-   is answered by the fact the question named — citing the whole bucket is how
-   an answer claims things the question never asked about. */
-const SCORE_Q = /\b(cgpa|gpa|marks?|percentage|grades?|sgpa|सीजीपीए|अंक)\b/i;
-const AVAIL_Q = /\b(available|availability|hiring|open to|internships?)\b/i;
-
-/** Word one plan from the data file, or null to fall through to the model. */
-function dataFileAnswer(kb, plan, lang, intentIds, question, started) {
-  /* an enumerable plan with an empty id list has nothing to say */
-  if (Array.isArray(plan.ids) && !plan.ids.length) return null;
-  /* an id that does not render is a withheld value trying the side door */
-  if (plan.ids?.length && !plan.ids.every((id) => renderFact(kb, id, lang))) return null;
-  if ((plan.kind === 'project_detail' || plan.kind === 'fact')
-    && !renderFact(kb, plan.id, lang)) return null;
-
-  /* Question-scoped plans: the bucket stays the bucket, but a question that
-     names ONE thing is answered with that thing. A CGPA question answers with
-     the score-bearing fact(s), not the whole education list; an availability
-     question answers with the availability fact, not the training list. */
-  let p = plan;
-  if (plan.kind === 'education' && SCORE_Q.test(question)) {
-    /* the corpus's own convention (the CGPA rows are graded against the CGPA
-       fact): the metric achievement is the score answer; an education entry's
-       score only stands in when no metric fact exists */
-    const facts = (plan.ids || []).map((id) => [id, rawFact(kb, id)]);
-    const metric = facts.find(([, f]) => (f?.metric?.type || '').toLowerCase() === 'cgpa');
-    const scored = facts.filter(([, f]) => f && (f.score?.type || f.metric?.type));
-    const pick = metric || scored[0];
-    if (pick) p = { ...plan, kind: 'fact', id: pick[0], ids: undefined };
-  }
-  if (plan.kind === 'experience' && plan.availabilityId && AVAIL_Q.test(question)) {
-    p = { ...plan, kind: 'fact', id: plan.availabilityId, ids: undefined };
-  }
-
-  const raw = say(p, { kb, lang, persona: 'third', plan: p });
-  if (!raw || raw.startsWith('[no wording')) return null;
-  const resolved = resolveFacts(kb, raw, lang);
-  /* Unreachable while every id rendered — but a wording layer and a
-     resolver that ever disagree must say so, not paint brackets. */
-  if (resolved.unresolved.length) return null;
-  const sources = p.ids?.length
-    ? p.ids.slice()
-    : (p.id ? [p.id] : (intentIds || []).filter(Boolean));
-  return {
-    kind: 'planner', text: resolved.text, sources,
-    context: '', contextFrom: 'planner',
-    attempts: 0, guardFailed: false, abstained: false,
-    reason: 'answered from the portfolio data file (knowledge.json)',
-    ms: Date.now() - started,
-  };
-}
-
 export function createModelAnswerer(opts = {}) {
   const {
-    kb, session, persona = DEFAULT_PERSONA, history = [],
+    kb, session, persona = DEFAULT_PERSONA,
+    /* The whole conversation a shell wants the model to see, oldest first.
+       Overridden per call by `ask({ history })` — the shell keeps the turns,
+       the answerer only carries a default (tests pass none). */
+    history: defaultHistory = [],
     minScore = MIN_TOP_SCORE, onNotice = null,
   } = opts;
   /* Mutable because §6.3's degrade ladder lowers the budget mid-session and
@@ -495,73 +369,30 @@ export function createModelAnswerer(opts = {}) {
     },
 
     /**
-     * Every return has a `text` the caller may render: the model's own when it
-     * produced a verified answer, and a localized refusal when it could not.
-     * One exception, measured into existence 2026-10-06: a LIST question
-     * whose plan the shell already computed is answered deterministically
-     * (`kind: 'planner'`) — the multi-fact rows score zero at v8 and the
-     * probes show the composition was never learned at this size.
+     * Every return has a `text` the caller may render: the model's own when
+     * it produced a verified answer, and a localized sentence when the model
+     * produced nothing that could be kept (an abstention, or a double guard
+     * failure). 100% pure AI per the owner's 2026-10-14 decision: there is
+     * no planner, no data-file wording and no pre-model refusal anymore —
+     * EVERY question reaches the model, even with an empty retrieval, and
+     * the guard still grounds every claim against what the model read.
      *
-     * @returns {Promise<{kind:'model'|'notFound'|'unverified'|'planner',
+     * @param {Array<[string,string]>} [opts.history] the conversation so far,
+     *  oldest first — the engine's frame carries it (`ai/engine/prompt.mjs`)
+     *  and `fitToBudget` trims it, so follow-ups ("come again", "his age"?
+     *  after "how old is he"? — anything referencing the last turn) are
+     *  answered from what was ALREADY said, not re-retrieved from scratch.
+     *
+     * @returns {Promise<{kind:'model'|'notFound'|'unverified',
      *   text:string, sources:string[], context:string, attempts:number,
      *   guardFailed:boolean, abstained:boolean, reason?:string, ms:number}>}
      */
     async ask({
-      question, lang = 'en', focus = null, intentIds = null, contextless = false,
-      plan = null, onToken = null, onReplace = null, signal = null,
+      question, lang = 'en', focus = null, intentIds = null, plan = null,
+      history = null, onToken = null, onReplace = null, signal = null,
     }) {
       const started = Date.now();
-
-      /* ── deterministic list answers (§5.1, measured 2026-10-06) ──
-         d05/d06/d07/d08/d16/d18/i02/i05: ZERO passes at v8, four training
-         levers falsified (v9-v12), and probe-selection-v8.txt shows why:
-         skill-list slots sit at p≈0.01 under teacher-forcing — the copy
-         circuit was never formed at 37.9M — while project lists compose
-         near-perfectly and still decode into the wrong frame. Until a
-         bigger checkpoint answers these, the planner's enumeration IS the
-         answer: worded over placeholder tokens and resolved through the
-         same `resolveFacts` the model's text goes through, so it can only
-         ever claim ids the caller's retrieval/intent pass selected, every
-         one of them renderable (§8.1 holds by construction — that is why
-         no guard run is needed here, the same guarantee factPlan uses). */
-      if (plan?.ids?.length && LIST_KIND_OF_INTENT[plan.kind]) {
-        const listText = deterministicListAnswer(kb, plan.kind, plan, lang);
-        if (listText) {
-          const resolvedList = resolveFacts(kb, listText, lang);
-          /* Unreachable while every id passed `renderFact` — but a guard and
-             a resolver that ever disagree must say so, not paint brackets. */
-          if (resolvedList.unresolved.length) {
-            return {
-              kind: 'unverified', text: noAnswerLine('unverified', lang),
-              sources: [], context: '', attempts: 0, guardFailed: true,
-              abstained: true,
-              reason: 'the deterministic list answer produced an unresolved placeholder',
-              ms: Date.now() - started,
-            };
-          }
-          return {
-            kind: 'planner', text: resolvedList.text,
-            /* the enumerated ids — the full list — plus the experience
-               plan's availability fact (PLANNER-3) */
-            sources: [...plan.ids.slice(),
-              ...(plan.availabilityId ? [plan.availabilityId] : [])],
-            context: '', contextFrom: 'planner',
-            attempts: 0, guardFailed: false, abstained: false,
-            reason: 'list question answered deterministically (§5.1)',
-            ms: Date.now() - started,
-          };
-        }
-      }
-
-      /* ── the data file answers first (owner decision, 2026-10-08) ──
-         A plan the file itself selected is worded straight from
-         `knowledge.json`; the model is asked only what the file cannot
-         answer. `null` falls through — same contract as the list block
-         above. */
-      if (plan && WORDABLE_PLANS.has(plan.kind)) {
-        const dataAnswer = dataFileAnswer(kb, plan, lang, intentIds, question, started);
-        if (dataAnswer) return dataAnswer;
-      }
+      const turns = history ?? defaultHistory;
 
       const found = this.retrieve(question, focus);
 
@@ -583,7 +414,13 @@ export function createModelAnswerer(opts = {}) {
       let hits = found.hits;
       let context = found.context;
       let how = 'retrieval';
-      if (!hits.length && intentIds?.length) {
+      /* Three reasons to read the topic's facts: retrieval found NOTHING (the
+         stop set ate the query), the question is a whole-kind question and
+         three chunks cannot hold its answer (`intentScopesContext`), or the
+         plan is trained on one exact line and retrieval would widen it
+         (`planPinsContext`). */
+      if ((!hits.length || intentScopesContext(plan) || planPinsContext(plan))
+          && intentIds?.length) {
         const ids = intentIds.filter((id) => renderFact(kb, id, lang)).slice(0, MAX_INTENT_FACTS);
         if (ids.length) {
           hits = ids.map((id) => ({ id, kind: 'intent', label: id, score: 0 }));
@@ -592,32 +429,26 @@ export function createModelAnswerer(opts = {}) {
         }
       }
 
-      /* §8.4 layer 1 — the gate. It is "retrieval produced something to read",
-         not the calibrated score floor, and on the evaluation corpus the two
-         are provably the same SET: 13 of 60 cases sit below the floor and all
-         13 have zero hits, so nothing is loosened by stating it this way (worth
-         pinning — see `tests/retrieval.test.mjs`). What IS gained is the case
-         above: facts that retrieval could not reach because the question had no
-         query left in it.
-
-         `contextless` is for the one topic the frame's own RULES answer with no
-         facts at all — a greeting. Asking the model is the point; the guard
-         still runs against an empty context, so nothing can be asserted. */
-      if (!hits.length && !contextless) {
-        return {
-          kind: 'notFound', text: noAnswerLine('notFound', lang), sources: [], context: '',
-          attempts: 0, guardFailed: false, abstained: true,
-          reason: `retrieval found nothing to read (top score ${found.hits[0]?.score ?? 0}, floor ${minScore})`,
-          hits: found.hits, ms: Date.now() - started,
-        };
-      }
+      /* The gate (§8.4 layer 1) is GONE. The model is asked even when the
+         retrieval found nothing to read — a 100%-AI panel does not "decide
+         before a token exists" (owner decision, 2026-10-14). The guard is
+         the entire honesty mechanism now: with an empty context nothing can
+         ground, so an inventive answer is rejected (`unverified`) and the
+         trained `<|abstain|>` is read as the refusal it is (`notFound`).
+         This is the sentence-level contract §8.4 kept: what the panel SHOWS
+         is either the model's grounded words or the refusal for no words at
+         all — the gate moved from before the model to after it. */
 
       asks += 1;
       let streamed = false;
       const generate = async (ctx, { greedy } = {}) => {
         const summary = await session.generate({
-          question, context: ctx, history, rules: persona,
+          question, context: ctx, history: turns, rules: persona,
           maxNewTokens, paceMs: greedy ? 0 : paceMs,
+          /* Decided once per turn, from the intent — see `wantsClosedAnswer`.
+             The engine reads the CONTEXT for which facts are on offer; this
+             only says whether the closed space applies at all. */
+          answerGrammar: wantsClosedAnswer(plan),
         }, {
           signal,
           // Streaming only happens for the FIRST attempt. A guard failure
@@ -631,13 +462,30 @@ export function createModelAnswerer(opts = {}) {
            what the model READ — the engine trims the tail to fit the window
            and reports the trimmed string. Omitting it would let a dropped
            line ground a claim. */
-        return { text: summary.text, context: summary.context };
+        /* §7.2's placeholder rule, APPLIED: the model was TRAINED to speak in
+           `fact` tokens (`<|fact:edu.lpu|>` is token id 6 — writing numbers and
+           named values token-by-token is the failure the mechanism exists to
+           prevent), so an answer that leans on the mechanism arrives holding
+           `<|fact:…|>` tokens. The guard's own contract says it sees the answer
+           "AFTER placeholder resolution" (§8.4 step 6) — resolve HERE, where
+           the summary lands, so a resolvable id renders to its public value
+           and ONLY an id the app cannot render reaches the guard as
+           unresolved. Resolving after the guard instead made every grounded
+           placeholder-bearing answer mechanically fail: the greeting "I study
+           at `<|fact:edu.lpu|>`" read the WHOLE education line, resolved to
+           its public value — and was still refused because nobody resolved
+           before the check. What the guard sees after this line is the same
+           answer the visitor will read. */
+        const resolvedText = resolveFacts(kb, summary.text ?? '').text;
+        return { text: resolvedText, context: summary.context };
       };
 
       /* No `fallback`. There is no template answer to fall back to, so a
          double guard failure arrives as `guardFailed` and becomes a refusal.
          Passing a template here is what made "the guard rejected this" look
          like "the portfolio answered" (§15.5). */
+      /* The §6.3 ladder's budget lives in `maxNewTokens`; the persona lives
+         in the frame's RULES. */
       const guarded = await guardedAnswer({ generate, context, lang, kb });
 
       /* The model's own `<|abstain|>` is a DECISION, not a failed attempt, and
@@ -686,6 +534,33 @@ export function createModelAnswerer(opts = {}) {
       // construction (guard checks it first), so a non-empty list here would
       // mean the guard and this resolver disagree — say so rather than paint
       // an angle bracket at a visitor.
+      /* A trained FRAME with an EMPTY slot — MEASURED 2026-10-26 on the sft7
+         export: §14's f06 ("and his 12th marks?") decoded `His CGPA is  .`.
+         Neither defence could see it. The citation mask admits ordinary words,
+         and the guard grounds CLAIMS, while a sentence whose slot is empty
+         claims nothing — it passed every check and told the visitor nothing.
+
+         Why it was reachable: the frame table had no sentence for `edu.kv2`,
+         so `answerGrammar` returned null and the turn fell back to the mask.
+         The sentence exists now (`_topic_class12` in ai/data/instruction.py),
+         but the hole is structural — any fact the table cannot frame falls
+         through it, and the synthetic §14 cases fall through it by design,
+         because their fictional ids are not vocabulary tokens at all. So the
+         turn is refused instead of shown, which is what §15.5 asks for: a
+         sentence the app cannot check is not an answer. */
+      const hollow = emptySlotFrame(clip.clipped ? clip.text : guarded.text);
+      if (hollow) {
+        onNotice?.(`the model wrote a frame with no fact in it: ${hollow}`);
+        const text = noAnswerLine('unverified', lang);
+        if (streamed && onReplace) onReplace(text);
+        return {
+          kind: 'unverified', text, sources: [], context,
+          attempts: guarded.attempts, guardFailed: true, abstained: true,
+          reason: `a frame with an empty slot is not an answer: ${hollow}`,
+          ms: Date.now() - started,
+        };
+      }
+
       const resolved = resolveFacts(kb, clip.clipped ? clip.text : guarded.text, lang);
       if (resolved.unresolved.length) {
         /* The guard checks placeholders first, so reaching here means the

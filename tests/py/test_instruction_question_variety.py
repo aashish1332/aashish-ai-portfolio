@@ -42,18 +42,50 @@ class VarietyWidensTheQuestionSet(unittest.TestCase):
         return collections.Counter(
             q for ex in examples for q, _ in ex["turns"])
 
+    def _varied_only(self, examples):
+        """The examples `generate()` is allowed to wrap.
+
+        2026-10-27: an identity question and an injection attempt are the
+        visitor's own words — "Someone asked me: whom am I speaking with?" is a
+        different question from "whom am I speaking with?". Both classes are
+        therefore unvaried now (`_UNVARYED` + `vary: False`), and counting them
+        in a global multiplier measures the exemption rather than the property.
+        The multiplication claim still has to hold for every category it is
+        about, so it is computed over exactly those examples.
+        """
+        return [ex for ex in examples
+                if ex.get("category") not in inst._UNVARYED and ex.get("vary") is not False]
+
     def test_it_raises_the_number_of_distinct_questions_a_lot(self):
-        before = inst.distinct_questions(self.flat)
-        after = inst.distinct_questions(self.varied)
+        before = inst.distinct_questions(self._varied_only(self.flat))
+        after = inst.distinct_questions(self._varied_only(self.varied))
         self.assertGreater(
             after, before * 5,
             f"distinct questions only went {before} -> {after}; v1's problem was "
             f"that 40,000 examples came from ~100 strings, so a small "
             f"multiplication leaves the model memorising")
 
+    def test_the_unvaried_classes_are_wide_enough_without_a_carrier(self):
+        """The other half of the anti-memorisation property.
+
+        An unvaried class cannot multiply its strings, so its protection has to
+        be the width of its own pool: a class taught from three strings is what
+        v1's failure was made of, with or without carrier forms. MEASURED
+        2026-10-27: the identity bucket had three phrasings per language, all
+        "are you X?", and the checkpoint answered "who are you?" with a name.
+        """
+        meta = {q for qs in inst.META_QUESTIONS.values() for q in qs}
+        self.assertGreaterEqual(len(meta), 35, "the identity pool is too narrow")
+        for lang, qs in inst.META_QUESTIONS.items():
+            self.assertGreaterEqual(len(qs), 8, f"{lang} identity pool is thin")
+        self.assertGreaterEqual(len(inst.INJECTION_QUESTIONS), 15,
+                                "the adversarial pool is too narrow")
+        self.assertGreaterEqual(len(inst.ABSTENTION_QUESTIONS["en"]), 15,
+                                "the abstention pool is too narrow")
+
     def test_it_lowers_the_mean_repetitions(self):
-        flat = self._questions(self.flat)
-        varied = self._questions(self.varied)
+        flat = self._questions(self._varied_only(self.flat))
+        varied = self._questions(self._varied_only(self.varied))
         self.assertGreater(sum(flat.values()) / len(flat),
                            sum(varied.values()) / len(varied) * 3)
 

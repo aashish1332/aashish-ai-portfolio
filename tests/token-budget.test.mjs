@@ -15,10 +15,11 @@
    evaluation questions assembled a prompt over 512 tokens, and the intent
    fallback handed the model 764 tokens for "What are your skills?".
 
-   These tests run the REAL tokenizer (the shipping 1,024-vocab one, from the
-   committed export) against the REAL knowledge base and the REAL evaluation
-   corpus, so a tokenizer retrain or a knowledge-base edit that invalidates
-   any of these numbers fails here and names the command that re-measures it:
+   These tests run the REAL tokenizer (the shipping aashish-ai-b one, from
+   the committed export — a 16,384-vocab BPE, window 1024) against the REAL
+   knowledge base and the REAL evaluation corpus, so a tokenizer retrain or
+   a knowledge-base edit that invalidates any of these numbers fails here
+   and names the command that re-measures it:
 
        npm run probe:tokens
 
@@ -40,7 +41,7 @@ import { quickAnswer, contextSizer, renderFact } from '../ai/answers/quick.mjs';
 import { contextLines, idsInContext, MAX_INTENT_FACTS } from '../ai/answers/model.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const EXPORT_DIR = resolve(HERE, '..', 'ai/model-export/aashish-ai-1');
+const EXPORT_DIR = resolve(HERE, '..', 'ai/model-export/aashish-ai-b');   /* what ships */
 const KB = JSON.parse(readFileSync(resolve(HERE, '..', 'knowledge/knowledge.json'), 'utf8'));
 const CASES = JSON.parse(
   readFileSync(resolve(HERE, '..', 'evaluation/portfolio_tests.json'), 'utf8'));
@@ -118,6 +119,7 @@ test('BUDGET-1 CHARS_PER_TOKEN matches the tokenizer the model ships with', () =
   assert.ok(CHARS_PER_TOKEN >= median * 0.8 && CHARS_PER_TOKEN <= median * 1.25,
     `CHARS_PER_TOKEN=${CHARS_PER_TOKEN} vs measured median ${median.toFixed(2)}`);
   assert.notEqual(CHARS_PER_TOKEN, 4, 'the generic 4-chars-per-token guess is back');
+
   /* and it is NOT set below the worst case, because that direction has its own
      failure: a single long project chunk priced over the whole budget is
      skipped, so the best evidence stops being retrieved at all. */
@@ -131,7 +133,9 @@ test('BUDGET-1 CHARS_PER_TOKEN matches the tokenizer the model ships with', () =
 test('BUDGET-2 every evaluation prompt fits after fitToBudget, and the retrieval path needs no trimming',
   () => {
     const rows = CASES.map((c) => promptFor(c.question));
-    assert.equal(rows.length, 60, 'the evaluation corpus shrank');
+    /* 60 original cases + the four identity questions (§14's identity class,
+       added because a name sentence answered "who are you?"). */
+    assert.equal(rows.length, 66, 'the evaluation corpus changed size');
 
     for (const r of rows) {
       assert.ok(r.fitted.promptTokens + MAX_NEW_TOKENS <= MAX_SEQ,
@@ -185,23 +189,28 @@ test('BUDGET-3 the intent fallback is capped, and the cap fits the window', () =
     `MAX_INTENT_FACTS=${MAX_INTENT_FACTS} does not fit: ${fitted.promptTokens} tokens`);
   assert.ok(fitted.promptTokens + MAX_NEW_TOKENS <= MAX_SEQ);
 
-  /* and the whole list really would not have fitted — the cap is load-bearing,
-     not decoration */
-  const uncapped = fitToBudget({
-    tokenizer: TOKENIZER, question,
-    context: contextLines(KB, all.map((id) => ({ id }))),
-    history: [], rules: 'first', maxNewTokens: MAX_NEW_TOKENS, maxSeq: MAX_SEQ,
-  });
-  assert.ok(uncapped.droppedContextLines > 0 || uncapped.droppedHistoryTurns > 0,
-    'the uncapped fallback fits after all, so this cap is not doing anything');
+  /* The cap has headroom measured, not assumed: the capped prompt must be a
+     real fraction of the window, so MAX_INTENT_FACTS cannot silently double
+     and still pass. The old second half here — "the uncapped list must NOT
+     fit" — was written for the 512-token export, and the shipping one has a
+     1024 window, so the full list fits *by measured tokens* and that check
+     stopped testing anything. The hard overflow limit lives in fitToBudget
+     either way; the cap's remaining job is keeping the fallback SHORT, and
+     the headroom assert below is what keeps it honest. */
+  assert.ok(fitted.promptTokens <= MAX_SEQ / 2,
+    `MAX_INTENT_FACTS grew the fallback to ${fitted.promptTokens} tokens — ` +
+    'more than half the window for one question');
 });
 
 /* ── BUDGET-4: the sources shown are the ones the model READ ───── */
 test('BUDGET-4 sources come from the trimmed context, never from what was offered', () => {
   /* The engine drops context lines to fit, and both the guard and the §12
-     "where did this come from" anchors follow the trimmed string. The 38-deep
-     skills case is the one that gets trimmed, so it is the one to check. */
-  const all = Array.from({ length: 40 }, (_, i) => `[fact.${i}] value ${i}`);
+     "where did this come from" anchors follow the trimmed string. The lines
+     are long on purpose: at the 1024-token window, a corpus of short lines
+     fits WHOLE and the trimming half of this test would be dead code. */
+  const all = Array.from({ length: 40 }, (_, i) =>
+    `[fact.${i}] value ${i} — a deliberately long line so the whole corpus ` +
+    'measures well past the window: ' + 'x'.repeat(120 + i));
   const fitted = fitToBudget({
     tokenizer: TOKENIZER, question: 'What is his CGPA?', context: all.join('\n'),
     history: [], rules: 'first', maxNewTokens: MAX_NEW_TOKENS, maxSeq: MAX_SEQ,

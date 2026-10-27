@@ -9,13 +9,16 @@
    one unreachable one, and the reason the most common question a recruiter asks
    was about to be answered with "I don't have that".
 
-   The property being pinned is a decision the owner updated on 2026-10-08:
-   **the portfolio data file answers first, and the model answers what the
-   file cannot.** The wording (`ai/answers/wording.mjs`) renders a plan the
-   file itself selected; the model is never asked for those. Where the file
-   has no plan, or the plan kind has no wording, the model answers — and
-   where a MODEL answer fails the guard, the panel still refuses and says
-   which refusal it is: a wording never repairs a rejected model answer.
+   The property being pinned is the owner's 2026-10-14 decision: **100%
+   pure AI.** EVERY question — greeting, identity, bait, withheld,
+   off-portfolio, lists — is put to the on-device model; there is no
+   wording and no pre-model refusal in the answer path anymore. What
+   makes that safe, and what these tests pin: the intent bucket is the
+   model's context when retrieval is empty, a withheld fact never
+   reaches that context (§8.1), the guard still rejects fabricated
+   numbers and dates against what the model read, and the fixed
+   sentences left in the module are refusals for turns the model
+   produced no text for.
 
    The session is a stub, so "the model was never asked" is a fact about the
    test rather than a claim about the code, and no checkpoint is needed.
@@ -30,10 +33,12 @@ import { dirname, join } from 'node:path';
 
 import {
   createModelAnswerer, routeQuestion, noAnswerLine, NO_ANSWER_KINDS, MODEL_BADGES,
-  MAX_INTENT_FACTS, partialAnswer,
+  MAX_INTENT_FACTS, partialAnswer, WHOLE_KIND_PLANS, intentScopesContext,
+  planPinsContext, wantsClosedAnswer,
 } from '../ai/answers/model.mjs';
 import { quickAnswer, renderFact } from '../evaluation/answer-text.mjs';
 import { languageMatches } from '../ai/guard/index.mjs';
+import { emptySlotFrame } from '../ai/engine/grammar.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const KB = JSON.parse(readFileSync(join(HERE, '..', 'knowledge', 'knowledge.json'), 'utf8'));
@@ -93,50 +98,47 @@ const OFF_TOPIC = 'What is his favourite pizza?';
 const TOPIC_ONLY = 'What are his skills?';
 
 const shellAsk = (answerer, question, extra = {}) => {
-  /* the handoff the chat shell performs, kept in one place so both sides of it
-     are visible: the intent's facts go along as a fallback context, and only a
-     greeting is allowed to reach the model with nothing to read */
+  /* the handoff the chat shell performs, kept in one place so both sides of
+     it are visible: the intent's facts go along as a fallback context, and
+     the conversation so far goes along as history. 2026-10-14: there is no
+     `contextless` flag and no `plan` anymore — every question, greeting
+     included, is asked of the model. */
   const res = quickAnswer(KB, question, { lang: 'en' });
   return answerer.ask({
     question,
     lang: 'en',
     intentIds: res.sources,
-    contextless: res.intent === 'greeting',
+    history: [],
     ...extra,
   });
 };
 
-test('MODEL-1 routing is one pure decision with six outcomes and a fixed precedence',
+test('MODEL-1 routing is one pure decision with ONE refusal: the machine',
   () => {
     const base = { res: { intent: 'skills' }, hasModel: true, lang: 'en' };
     assert.equal(routeQuestion(base).path, 'model');
     assert.equal(routeQuestion(base).kind, 'model', 'an answer by the model is the only kind');
 
-    assert.equal(routeQuestion({ ...base, res: { injection: true } }).path, 'safety');
-    assert.equal(routeQuestion({ ...base, res: { intent: 'meta' } }).path, 'disclosure');
+    /* 2026-10-14: pure AI. Nothing refuses on the panel's authority —
+       injection attempts, identity questions, adversarial bait and withheld
+       fields are all model turns, spoken in the model's own trained words. */
+    for (const res of [
+      { injection: true }, { intent: 'meta' },
+      { intent: 'hallucination_bait' }, { private: true },
+    ]) {
+      assert.equal(routeQuestion({ ...base, res }).path, 'model', JSON.stringify(res));
+    }
 
-    const bait = routeQuestion({ ...base, res: { intent: 'hallucination_bait' } });
-    assert.equal(bait.path, 'no-data');
-    assert.equal(bait.noAnswer, noAnswerLine('notFound', 'en'));
-
-    const withheld = routeQuestion({ ...base, res: { private: true } });
-    assert.equal(withheld.path, 'withheld');
-    assert.equal(withheld.noAnswer, noAnswerLine('withheld', 'en'));
-
+    /* the ONE refusal left is the machine state (§10: the panel never claims
+       a visitor's question was unanswerable when the laptop could not run) */
     assert.equal(routeQuestion({ ...base, hasModel: false }).path, 'no-model');
     assert.equal(routeQuestion({ ...base, generationStopped: true }).path, 'no-model');
-
-    /* Precedence matters: an injection attempt that also looks like bait is
-       still refused as an injection, and a no-model session still refuses bait
-       as bait rather than reporting a missing download. */
-    assert.equal(routeQuestion({
-      ...base, res: { injection: true, intent: 'hallucination_bait' },
-    }).path, 'safety');
+    /* and the machine state outranks everything else — a missing model
+       answers nothing, including a bait question the model would have
+       abstained on */
     assert.equal(routeQuestion({
       ...base, hasModel: false, res: { intent: 'hallucination_bait' },
-    }).path, 'no-data');
-    assert.equal(routeQuestion({ ...base, res: { injection: true, intent: 'meta' } }).path,
-      'safety', 'a jailbreak phrased as "who are you" is still a jailbreak');
+    }).path, 'no-model');
   });
 
 test('MODEL-2 the session is told WHY there is no model, not just that there is none',
@@ -156,18 +158,26 @@ test('MODEL-2 the session is told WHY there is no model, not just that there is 
     assert.equal(answers.size, 3, 'three distinct reasons: cannot, stopped, not yet');
   });
 
-test('MODEL-3 a question with nothing to ground on never reaches the model',
+test('MODEL-3 a question with nothing to ground on is still asked — and a fabricated claim still cannot ship',
   async () => {
-    const session = stubSession({ text: 'this must never be produced' });
+    const session = stubSession({ text: 'He scored 98.5% at Google.' });
     const answerer = answererWith(session);
     assert.equal(answerer.retrieve(OFF_TOPIC).hits.length, 0,
       'this test needs a question retrieval cannot see at all');
 
     const out = await shellAsk(answerer, OFF_TOPIC);
-    assert.equal(out.kind, 'notFound');
-    assert.equal(out.text, noAnswerLine('notFound', 'en'));
-    assert.equal(session.calls.length, 0,
-      'the model was asked a question its context could not answer in any way');
+    /* 2026-10-14: the model IS asked a question its context cannot answer —
+       what changed is that the guard is now the whole honesty mechanism.
+       With an empty context nothing grounds, so the invented number is
+       rejected twice and the turn ships as the refusal sentence, never as
+       the model's claim. */
+    /* two attempts, measured: the first fails the guard, so the greedy
+       retry over the (already empty) context runs once — and fails again */
+    assert.equal(session.calls.length, 2, 'asked, then the guard retry (owner decision 2026-10-14)');
+    assert.equal(out.kind, 'unverified');
+    assert.equal(out.text, noAnswerLine('unverified', 'en'));
+    assert.equal(out.guardFailed, true);
+    assert.ok(!/98\.5/.test(out.text), 'a rejected claim must not appear in the refusal');
   });
 
 test('MODEL-4 a model answer the guard rejects is refused, not repaired by a template',
@@ -363,7 +373,7 @@ test('MODEL-10 a question retrieval cannot see still reaches the model with its 
   });
 
 test('MODEL-10b the intent fallback cannot smuggle a withheld or unknown fact', async () => {
-  const session = stubSession({ text: 'x' });
+  const session = stubSession({ text: 'He scored 99.' });
   const answerer = answererWith(session);
 
   /* The premise, stated so it is checked rather than assumed: a `public:false`
@@ -377,30 +387,58 @@ test('MODEL-10b the intent fallback cannot smuggle a withheld or unknown fact', 
     question: OFF_TOPIC, lang: 'en',
     intentIds: ['contact.phone', 'no.such.fact'],
   });
-  assert.equal(out.kind, 'notFound');
-  assert.equal(session.calls.length, 0,
-    'ids that render to nothing must not become a reason to ask the model');
+  /* 2026-10-14: the model IS asked — what cannot happen is the context
+     growing a withheld or unknown line out of ids that render to nothing. */
+  assert.equal(session.calls.length, 2, 'asked, then the guard retry (owner decision 2026-10-14)');
+  /* §8.1 unchanged: ids that render to nothing never become evidence */
+  assert.equal(out.context, '', 'ids that render to nothing must not reach the context');
+  /* and nothing the model said about facts it never read can survive */
+  assert.equal(out.kind, 'unverified');
+  assert.equal(out.guardFailed, true);
 });
 
-test('MODEL-11 a greeting reaches the model with nothing to read, and asserts nothing',
+test('MODEL-11 a small-talk question is answered BY the model (2026-10-14)',
   async () => {
+    /* 2026-10-11 reversed the original, and 2026-10-14 reverses it again: the
+       planner is gone, so a hello goes to the model exactly like every other
+       question. 2026-10-15: the greeting frame also matches TRAINING now —
+       every §7.4 greeting example pairs the question with the
+       `[person.name]` context line, so greetrouting carries that one fact.
+       Empty-context greetings are not a trained shape, and when the runtime
+       asked for one the checkpoint rambled and the guard rejected it twice.
+       What survives all three decisions: the ANSWER is written by the model
+       (claim-free, so the guard checks it and passes it), not by a fallback. */
     const res = quickAnswer(KB, 'hi', { lang: 'en' });
     assert.equal(res.intent, 'greeting');
-    assert.equal(res.sources.length, 0, 'a greeting has no facts by design');
+    /* 2026-10-18: the education facts are gone from the greeting frame.
+       MEASURED against the shipped export: "hi" with `[person.name]` alone
+       already emits ` I study at <|fact:edu.lpu|>. ` — the extra lines never
+       changed the model's words, they only let that recitation pass the
+       guard, so a greeting answered with education. The trained frame has
+       one fact; the frame carries one fact. */
+    assert.deepEqual(res.sources, [KB.person.id],
+      'a greeting trains on the `[person.name]` line, and nothing else');
 
     const session = stubSession({ text: 'Hello! Ask me anything about my work.' });
     const out = await shellAsk(answererWith(session), 'hi');
-    assert.equal(session.calls.length, 1, 'the model is the thing that greets');
-    assert.equal(session.calls[0].context, '', 'and it has nothing to read, by design');
-    assert.equal(out.kind, 'model');
+    assert.equal(session.calls.length, 1, 'the model is asked a hello now');
+    assert.ok(
+      session.calls[0].context.includes(`[${KB.person.id}]`),
+      'the greeting frame carries the fact training always gave it');
+    assert.equal(out.kind, 'model', 'claim-free small talk passes the grounded guard');
+    assert.ok(out.text.length > 20, 'the greeting said something');
+    assert.deepEqual(out.sources, [KB.person.id],
+      'sources are the facts the model read — the one framing fact');
 
-    /* Without the explicit allowance it is refused like any other question with
-       nothing to ground on — so the allowance is doing real work, and this
-       assertion is what says so. */
-    const refused = await answererWith(stubSession({ text: 'x' })).ask({
-      question: 'hi', lang: 'en', intentIds: [],
-    });
-    assert.equal(refused.kind, 'notFound');
+    /* and the same for the small-talk phrasings that used to fall through to
+       the retrieval gate */
+    for (const q of ['how are you', 'how are u', "what's up", 'kaise ho', 'kese ho', 'bye', 'good morning']) {
+      const session2 = stubSession({ text: 'Fine! What would you like to know?' });
+      const r = await shellAsk(answererWith(session2), q);
+      assert.equal(session2.calls.length, 1, `"${q}" is asked of the model`);
+      assert.equal(r.kind, 'model', `"${q}" is answered by the model`);
+      assert.ok(r.text.length > 20, `"${q}" has something to say`);
+    }
   });
 
 test('MODEL-13 the intent fallback is capped, and the sources are the facts it read',
@@ -524,6 +562,70 @@ test('MODEL-17 a stopped answer is finished, placeholder-free, or honestly empty
   }
 });
 
+test('MODEL-15 a whole-kind question reads the KIND, not the three chunks BM25 found',
+  async () => {
+    /* MEASURED on the 2026-10-24 §14 sweep (sft6, 38.2 % factual): "Which
+       databases does he use?" was asked against `[cert.dbms]`, `[skill.mysql]`
+       and `[skill.mongoose]` — 2 of the 5 databases the case expects — because
+       §8.2's budget is top-3 chunks. `quickAnswer()` already returns the whole
+       kind as the plan; this is the run where it becomes the context. */
+    const question = 'Which databases does he use?';
+    const res = quickAnswer(KB, question, { lang: 'en' });
+    assert.equal(res.plan.kind, 'skills');
+    assert.equal(res.plan.category, 'database', 'the question named a category');
+    const expected = res.sources.filter((id) => id.startsWith('skill.'));
+    assert.ok(expected.length >= 5, `the database set is ${expected.length} facts — more than 3`);
+
+    const answerer = answererWith(stubSession({ text: 'He works with MongoDB and MySQL.' }));
+    assert.ok(answerer.retrieve(question).hits.length > 0,
+      'BM25 DOES return chunks here — that is the shape being fixed, so the test is pointless if it does not');
+
+    /* without the plan: the retrieval context, which is allowed to be partial */
+    const partial = await answerer.ask({ question, lang: 'en', intentIds: res.sources });
+    assert.ok(partial.context.split('\n').length <= 3,
+      'three chunks is the retrieval budget, and it is not the answer to a plural question');
+
+    /* with it: every database the plan names, capped by the window */
+    const answerer2 = answererWith(stubSession({ text: 'He works with MongoDB and MySQL.' }));
+    const out = await answerer2.ask({
+      question, lang: 'en', intentIds: res.sources, plan: res.plan,
+    });
+    for (const id of expected.slice(0, MAX_INTENT_FACTS)) {
+      assert.ok(out.context.includes(`[${id}]`), `${id} must be readable: ${out.context}`);
+    }
+    assert.equal(out.sources.length, expected.length, 'the sources are what was read');
+  });
+
+test('MODEL-15b the whole-kind scope is a table, not a guess at question wording', () => {
+  for (const kind of ['skills', 'list_projects', 'certifications', 'education']) {
+    assert.ok(intentScopesContext({ kind }), kind);
+  }
+  for (const kind of ['contact_field', 'project_detail', 'workflow', 'greeting', 'meta', 'fact']) {
+    assert.ok(!intentScopesContext({ kind }), kind);
+  }
+  assert.ok(!intentScopesContext(null), 'no plan is the old behaviour');
+  assert.ok(!WHOLE_KIND_PLANS.has('contact_withheld'),
+    'a withheld field is never widened into a context');
+});
+
+test('MODEL-15c an identity turn reads the name line alone, whatever retrieval scored', () => {
+  /* Every meta example in ai/data/instruction.py is built with
+     `build_context(f, ["person.name"])`, and the answer is the same fixed
+     disclosure. MEASURED 2026-10-27 on the sft8 export: given the retrieval
+     context (name + GitHub + how-he-builds) "are you Aashish?" answered
+     `Unka tareeka: <|fact:workflow.how-he-builds|>`; given the training frame
+     it disclosed. So the plan has to pin its context, and only meta does: a
+     greeting already reaches `[person.name]` by having no retrievable content
+     token, and widening it is the defect quick.mjs records. */
+  assert.ok(planPinsContext({ kind: 'meta' }));
+  for (const kind of ['greeting', 'skills', 'contact_field', 'fact', 'abstain']) {
+    assert.ok(!planPinsContext({ kind }), kind);
+  }
+  assert.ok(!planPinsContext(null));
+  assert.ok(!intentScopesContext({ kind: 'meta' }),
+    'pinning is narrower than whole-kind: the two predicates are not the same claim');
+});
+
 test('MODEL-14 a prompt that overflows the window is impossible, not an error the visitor reads',
   () => {
     /* The engine is what enforces the window now (see `fitToBudget`), and this
@@ -540,127 +642,96 @@ test('MODEL-14 a prompt that overflows the window is impossible, not an error th
   });
 
 /* ═══════════════════════════════════════════════════════════════
-   PLANNER — deterministic list answers (added 2026-10-06)
+   LISTS — now model turns (2026-10-14)
 
-   The multi-fact eval rows (d05/d06/d07/d08/d16/d18/i02/i05) score ZERO
-   passes at v8 and four training levers are measured falsifications
-   (v9–v12, notebook cell 13). The probes (probe-selection-v8.txt) show
-   the composition was never learned at 37.9M. So the answerer now
-   answers LIST intents deterministically, worded over placeholder
-   tokens and resolved through `resolveFacts` — the same rendering path
-   as the model's text. These tests pin the honesty rules that make
-   that a floor and not a regression to the retired Quick Answers:
-   only list intents, only enumerable plans, the model's session never
-   asked, the model badge never claimed, and one vocabulary round-trip
-   through the shipped corpus frames.
+   The planner answers (PLANNER-1…PLANNER-6) are retired with the owner's
+   pure-AI decision: list questions go to the model like everything else,
+   and how well the model composes lists is measured by the eval, not
+   compensated in the shipping path. The property that MUST survive the
+   retirement is §8.1's: the intent bucket the model reads contains only
+   facts that RENDER — a `public:false` item is filtered at the door and
+   is not in the context, whatever the question asked for.
    ═══════════════════════════════════════════════════════════════ */
 
-test('PLANNER-1 a skills question is answered deterministically without the model', async () => {
-  const session = stubSession({ text: 'THE MODEL MUST NOT BE ASKED' });
-  const answerer = answererWith(session);
-  const out = await answerer.ask({
-    question: 'What are his skills?', lang: 'en',
-    intentIds: ['skill.python'], plan: { kind: 'skills', ids: ['skill.python', 'skill.react'] },
-  });
-  assert.equal(out.kind, 'planner');
-  assert.equal(session.calls.length, 0, 'the session was asked for a list answer');
-  assert.match(out.text, /He works with /);
-  assert.ok(out.text.includes('Python') && out.text.includes('React'), out.text);
-  assert.ok(!/HTML|<\|fact:/.test(out.text), 'every placeholder must resolve');
-  assert.equal(out.abstained, false);
-  assert.deepEqual(out.sources, ['skill.python', 'skill.react']);
-});
-
-test('PLANNER-2 a project list answers in Hindi: Devanagari frame, fully resolved text', async () => {
-  /* The corpus's list answers name values by PLACEHOLDER and the shipped
-     pipeline resolves them after the guard (the same shape v8's graded
-     single-project answers took), so the language check that matters is on
-     the pre-resolution frame — which is what `deterministicListAnswer`
-     builds, with the corpus's own Hindi list frame and `और`. */
-  const { deterministicListAnswer } = await import('../ai/answers/model.mjs');
-  const frame = deterministicListAnswer(KB, 'list_projects',
-    { kind: 'list_projects',
-      ids: ['project.volunteer', 'project.grocery', 'project.goaltracker'] }, 'hi');
-  assert.match(frame, /उनके प्रोजेक्ट्स: .*।/);
-  assert.ok(frame.includes('और'), 'the conjunction is Hindi, not "and"');
-  assert.equal(languageMatches(frame, 'hi'), true,
-    'the Hindi frame must carry Devanagari (§8.3)');
-
-  const answerer = answererWith(stubSession({ text: 'NO' }));
-  const out = await answerer.ask({
-    question: 'उन्होंने कौन से प्रोजेक्ट बनाए हैं?', lang: 'hi',
-    plan: { kind: 'list_projects',
-      ids: ['project.volunteer', 'project.grocery', 'project.goaltracker'] },
-  });
-  assert.equal(out.kind, 'planner');
-  assert.ok(!/<\|fact:/.test(out.text), 'every placeholder resolved for display');
-  assert.deepEqual(out.sources,
-    ['project.volunteer', 'project.grocery', 'project.goaltracker']);
-});
-
-test('PLANNER-3 the experience list includes the availability fact (§ enum completeness)', async () => {
-  const answerer = answererWith(stubSession({ text: 'NO' }));
-  const out = await answerer.ask({
-    question: 'What has his experience been?', lang: 'en',
-    plan: { kind: 'experience', ids: ['exp.mern-bootcamp'],
-      availabilityId: 'contact.availability' },
-  });
-  assert.equal(out.kind, 'planner');
-  assert.ok(out.text.includes('Open to internships'), out.text);
-  assert.ok(out.text.includes('MERN'), out.text);
-});
-
-test('PLANNER-4 an education plan answers from the data file; an unknown kind falls through', async () => {
-  /* 2026-10-08, owner decision: the data file answers first. An education
-     plan is worded from knowledge.json and the session is never asked; a
-     plan kind with no wording still reaches the model unchanged. The plan
-     here is the one the shell actually passes for a CGPA question: the
-     institution id plus the achievement that carries the metric. */
-  const session = stubSession({ text: ' CGPA 8.28 <|end|>' });
-  const answerer = answererWith(session);
-  const out = await answerer.ask({
-    question: ANSWERABLE, lang: 'en',
-    intentIds: ['ach.lpu-cgpa'],
-    plan: { kind: 'education', ids: ['edu.lpu', 'ach.lpu-cgpa'] },
-  });
-  assert.equal(out.kind, 'planner', 'the data file answers an education plan');
-  assert.equal(session.calls.length, 0, 'the model was never asked');
-  assert.ok(out.text.includes('CGPA 8.28'), out.text);
-  /* the score-scoped answer cites the score fact, not the whole bucket */
-  assert.deepEqual(out.sources, ['ach.lpu-cgpa']);
-
-  /* the fall-through half of the rule, kept: no wording → the model */
-  const fall = await answererWith(stubSession({ text: ' CGPA 8.28 <|end|>' })).ask({
-    question: ANSWERABLE, lang: 'en',
-    intentIds: ['ach.lpu-cgpa'],
-    plan: { kind: 'no_such_plan', ids: ['ach.lpu-cgpa'] },
-  });
-  assert.equal(fall.kind, 'model', 'a plan kind with no wording falls through');
-  assert.equal(fall.ms === undefined, false);
-});
-
-test('PLANNER-5 a withheld fact in the plan refuses instead of answering', async () => {
+test('MODEL-14 a list question is answered by the model from the intent bucket, and a withheld item is not in it', async () => {
   const withheld = JSON.parse(JSON.stringify(KB));
   (withheld.skills || []).forEach((s) => { if (s.id === 'skill.python') s.public = false; });
-  const session = stubSession({ text: 'NO' });
+  assert.equal(renderFact(withheld, 'skill.python', 'en'), '',
+    'the premise: the public:false skill renders to nothing');
+
+  const session = stubSession({ text: 'He works with React.' });
   const answerer = createModelAnswerer({ kb: withheld, session, maxNewTokens: 48 });
   const out = await answerer.ask({
     question: 'What are his skills?', lang: 'en',
-    plan: { kind: 'skills', ids: ['skill.python', 'skill.react'] },
+    intentIds: ['skill.python', 'skill.react'],
   });
-  assert.notEqual(out.kind, 'planner', 'a withheld item must not be enumerated');
+  /* retrieval is empty for this shape (`skills` sits in the retrieval stop
+     set), so the context the model read is the intent bucket — with the
+     withheld item filtered out at the door */
+  assert.equal(session.calls.length, 1, 'the model IS asked for a list answer now');
+  assert.ok(out.context.includes('[skill.react]'), out.context);
+  assert.ok(!out.context.includes('skill.python'),
+    'a public:false fact must not reach the model (§8.1)');
+  assert.equal(out.kind, 'model');
+  assert.deepEqual(out.sources, ['skill.react'],
+    'the sources are the context ids actually read');
 });
 
-test('PLANNER-6 the deterministic text survives the shipped guard unchanged', async () => {
-  const { guard, contextText } = await import('../ai/guard/index.mjs');
-  const answerer = answererWith(stubSession({ text: 'NO' }));
-  const out = await answerer.ask({
-    question: 'Which certifications does he hold?', lang: 'en',
-    plan: { kind: 'certifications',
-      ids: (KB.certifications || []).filter((c) => c.public !== false).map((c) => c.id) },
-  });
-  assert.equal(out.kind, 'planner');
-  const ctx = contextText(out.sources.map((id) => ({ id, text: renderFact(KB, id, 'en') })));
-  const verdict = guard(out.text, { context: ctx, kb: KB, lang: 'en' });
-  assert.equal(verdict.ok, true, JSON.stringify(verdict.violations));
+/* ── which turns are decoded against the closed answer space ─────
+
+   `answerGrammar` is what lets the engine constrain a turn to the trained
+   answer frames (ai/engine/grammar.mjs). It must NOT be on for the turns whose
+   answer is not a fact sentence — a greeting forced into `His name is …` would
+   answer a different question than the visitor asked — and it must be on for
+   the fact kinds, including the withheld-field kind, where the empty context
+   leaves the model nothing legal but `<|abstain|>`. */
+test('MODEL-15 the closed answer space is chosen by the intent, not by the model', () => {
+  for (const kind of ['greeting', 'meta', 'abstain', 'hallucination_bait']) {
+    assert.equal(wantsClosedAnswer({ kind }), false, `${kind} must keep the free decode`);
+  }
+  for (const kind of ['skills', 'education', 'certifications', 'list_projects',
+    'project_detail', 'contact_field', 'contact_links', 'contact_all',
+    'contact_withheld', 'workflow']) {
+    assert.equal(wantsClosedAnswer({ kind }), true, `${kind} answers from a fact frame`);
+  }
+  /* No intent matched: nothing says the question is about a fact, so the
+     weaker citation mask stays in charge rather than a closed space that
+     could refuse a question the portfolio can answer. */
+  assert.equal(wantsClosedAnswer(null), false);
+  assert.equal(wantsClosedAnswer(undefined), false);
+});
+
+/* ── a frame with nothing in its slot ─────────────────────────
+
+   MEASURED 2026-10-26 on the sft7 export, the 60 §14 prompts: f06
+   ("and his 12th marks?") decoded `His CGPA is  .` — an answer whose frame is
+   a trained one, whose fact is the wrong one, and whose slot is empty. It
+   reached the visitor because neither defence looks at it: the citation mask
+   admits ordinary words, and the guard grounds CLAIMS, while a sentence with
+   nothing in its slot claims nothing.
+
+   WHY it was reachable: `edu.kv2` had no sentence in the frame table, so the
+   closed grammar returned null for that turn and only the mask applied. The
+   sentence exists now (`_topic_class12`), and this check is what makes the
+   NEXT fact the table cannot frame a refusal instead of a broken sentence. */
+test('MODEL-18 a frame with an empty slot is refused, not shown', async () => {
+  /* The pure rule, against the observed text and its near misses. */
+  assert.equal(emptySlotFrame(' His CGPA is  .'), 'His CGPA is {v}.');
+  assert.equal(emptySlotFrame(' His CGPA is \n. '),
+    'His CGPA is {v}.', 'a bare newline in the slot is still an empty slot');
+  assert.equal(emptySlotFrame(' His CGPA is 8.28.'), null,
+    'a filled slot is an answer, not a hollow frame');
+  assert.equal(emptySlotFrame(' Hello, I am Aashish.'), null);
+  assert.equal(emptySlotFrame(''), null);
+
+  /* And the answer path: the visitor is told the app could not verify it,
+     rather than shown a sentence with a hole in it. */
+  const session = stubSession({ text: ' His CGPA is  .' });
+  const out = await answererWith(session).ask({ question: 'and his 12th marks?' });
+  assert.equal(out.kind, 'unverified');
+  assert.equal(out.guardFailed, true);
+  assert.equal(out.abstained, true);
+  assert.match(out.reason, /empty slot/);
+  assert.equal(out.text, noAnswerLine('unverified', 'en'));
+  assert.ok(!out.text.includes('CGPA'), 'the hollow sentence must not survive');
 });

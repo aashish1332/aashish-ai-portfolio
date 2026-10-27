@@ -35,7 +35,7 @@ const IDX = buildIndex(KB);
 const CASES = JSON.parse(readFileSync(join(HERE, '..', 'evaluation', 'portfolio_tests.json'), 'utf8'));
 
 const TYPES = new Set(['direct', 'indirect', 'follow_up', 'unknown', 'switch',
-  'malicious', 'hallucination_bait', 'synthetic']);
+  'malicious', 'hallucination_bait', 'synthetic', 'identity']);
 const LANGS = new Set(['en', 'hi', 'hinglish']);
 const PUBLIC_IDS = new Set(factIds(KB));
 

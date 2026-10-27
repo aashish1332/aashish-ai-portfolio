@@ -21,26 +21,26 @@
     "other": 5
   },
   "language_counts": {
-    "en": 24988,
-    "hi": 5441,
-    "hinglish": 9571
+    "en": 24792,
+    "hi": 5511,
+    "hinglish": 9697
   },
   "persona_counts": {
-    "first": 20095,
-    "third": 19905
+    "first": 19942,
+    "third": 20058
   },
   "counterfactual": 14000,
   "counterfactual_share": 0.35,
-  "characters": 29017569,
-  "tokens_estimated": 8534579,
+  "characters": 27577742,
+  "tokens_estimated": 8111100,
   "token_estimate_method": "ESTIMATED — characters / 3.4; real count needs the P4 tokenizer",
-  "distinct_questions": 2774,
+  "distinct_questions": 6908,
   "seed": 1337,
   "share": 0.35,
-  "knowledge": "1.0.0",
-  "sft_bytes": 35749830,
+  "knowledge": "1.1.0",
+  "sft_bytes": 34284202,
   "format": "§7.4 <|sys|> <|ctx|> <|user|> <|asst|> <|end|>",
-  "tokens_measured": 8474436,
-  "supervised_tokens_measured": 743275,
+  "tokens_measured": 8067287,
+  "supervised_tokens_measured": 737211,
   "token_measure_method": "MEASURED — encoded with the shipping tokenizer"
 }
