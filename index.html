@@ -23,11 +23,18 @@
 </script>
 <title>AASHISH KUMAR — Spec, Build, Ship · Full-Stack Developer</title>
 <meta name="description" content="Aashish Kumar — full-stack developer. I define the product and architecture, direct AI to build it, and review every line that ships." />
+<link rel="canonical" href="https://aashishk.vercel.app/" />
 <meta name="theme-color" content="#080909" id="themeColor" />
 <meta property="og:title" content="AASHISH KUMAR — Spec, Build, Ship" />
 <meta property="og:description" content="Full-stack developer. Product brief, system architecture, AI-built implementation, human review. Three shipped systems." />
 <meta property="og:type" content="website" />
+<meta property="og:url" content="https://aashishk.vercel.app/" />
+<meta property="og:image" content="https://aashishk.vercel.app/assets/og-card.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="Aashish Kumar — Spec, Build, Ship. Full-stack developer." />
 <meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:image" content="https://aashishk.vercel.app/assets/og-card.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wdth,wght@0,62..125,100..900;1,62..125,100..900&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -35,6 +42,8 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='4' fill='%23080909'/><text x='50' y='68' font-size='48' text-anchor='middle' fill='%23ff4a16' font-family='monospace' font-weight='bold'>AK</text></svg>" />
 </head>
 <body>
+
+<a class="skip-link" href="#film">Skip to content</a>
 
 <!-- ══════════════════ BOOT / BUILD LOG ══════════════════ -->
 <div id="boot" aria-hidden="true">
@@ -68,10 +77,10 @@
   </a>
 
   <nav class="site-nav" aria-label="Primary">
-    <a href="#scene-story" data-scene-link="scene-story"><span>01</span>Profile</a>
-    <a href="#scene-work" data-scene-link="scene-work"><span>02</span>Builds</a>
-    <a href="#scene-codir" data-scene-link="scene-codir"><span>03</span>Method</a>
-    <a href="#scene-end" data-scene-link="scene-end"><span>04</span>Contact</a>
+    <a href="#scene-story" data-scene-link="scene-story"><span>02</span>Profile</a>
+    <a href="#scene-work" data-scene-link="scene-work"><span>03</span>Builds</a>
+    <a href="#scene-codir" data-scene-link="scene-codir"><span>04</span>Method</a>
+    <a href="#scene-end" data-scene-link="scene-end"><span>06</span>Contact</a>
   </nav>
 
   <div class="site-tools">
@@ -90,7 +99,7 @@
 </footer>
 
 <aside class="chapters" aria-label="Chapter navigation">
-  <button class="chapters__dot is-active" type="button" data-chapter="0" title="Opening" aria-label="Opening"><span>01</span></button>
+  <button class="chapters__dot is-active" type="button" data-chapter="0" title="Opening" aria-label="Opening" aria-current="location"><span>01</span></button>
   <button class="chapters__dot" type="button" data-chapter="1" title="Profile" aria-label="Profile"><span>02</span></button>
   <button class="chapters__dot" type="button" data-chapter="2" title="Builds" aria-label="Builds"><span>03</span></button>
   <button class="chapters__dot" type="button" data-chapter="3" title="Method" aria-label="Method"><span>04</span></button>
@@ -118,7 +127,7 @@
   <span class="askai__hint">GUIDED</span>
 </button>
 
-<main id="film">
+<main id="film" tabindex="-1">
 
   <!-- WebGL film: one fixed full-page canvas behind all scenes -->
   <canvas id="filmgl" aria-hidden="true"></canvas>
@@ -222,6 +231,7 @@
   <section class="scene scene--work" id="scene-work" data-scene="work" data-ai-topics="projects project work">
     <div class="pinwrap">
       <header class="work__head">
+        <h2 class="sr-only">Selected builds</h2>
         <p><span class="work__kicker">03 / SELECTED BUILDS</span><span class="work__hint">THREE SYSTEMS · THREE PROBLEMS</span></p>
         <p class="work__count" id="workCount">01 / 03</p>
       </header>
@@ -470,6 +480,7 @@
   <!-- ══════════════════ 05 · STACK / COLOPHON ══════════════════ -->
   <section class="scene scene--credits" id="scene-credits" data-scene="credits" data-ai-topics="credits stack skills tools certifications">
     <div class="pinwrap">
+      <h2 class="sr-only">Stack and tools</h2>
       <p class="credits__label">05 / STACK · WHAT IT IS BUILT WITH</p>
       <div class="credits__overflow">
         <div class="credits__roll" id="creditsRoll">
@@ -513,19 +524,19 @@
 
           <form class="end__form" id="contactForm" novalidate>
             <div class="field">
-              <input type="text" name="name" id="cfName" placeholder=" " required autocomplete="name" />
+              <input type="text" name="name" id="cfName" placeholder=" " required maxlength="120" autocomplete="name" aria-describedby="formStatus" />
               <label for="cfName">YOUR NAME</label>
             </div>
             <div class="field">
-              <input type="email" name="email" id="cfEmail" placeholder=" " required autocomplete="email" />
+              <input type="email" name="email" id="cfEmail" placeholder=" " required maxlength="200" autocomplete="email" aria-describedby="formStatus" />
               <label for="cfEmail">YOUR EMAIL</label>
             </div>
             <div class="field field--wide">
-              <textarea name="message" id="cfMsg" rows="3" placeholder=" " required></textarea>
+              <textarea name="message" id="cfMsg" rows="3" placeholder=" " required maxlength="4000" aria-describedby="formStatus"></textarea>
               <label for="cfMsg">THE BRIEF</label>
             </div>
             <button class="btn btn--primary" type="submit" data-magnetic data-cursor="SEND">SEND THE BRIEF <span aria-hidden="true">→</span></button>
-            <p class="end__formStatus" id="formStatus" role="status"></p>
+            <p class="end__formStatus" id="formStatus" role="status" aria-live="polite"></p>
           </form>
         </div>
       </div>

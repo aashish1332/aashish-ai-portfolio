@@ -423,7 +423,12 @@ const Director = (() => {
         end: 'bottom center',
         onToggle: (self) => {
           if (self.isActive) {
-            document.querySelectorAll('.chapters__dot').forEach((d, k) => d.classList.toggle('is-active', k === i));
+            document.querySelectorAll('.chapters__dot').forEach((d, k) => {
+              const active = k === i;
+              d.classList.toggle('is-active', active);
+              if (active) d.setAttribute('aria-current', 'location');
+              else d.removeAttribute('aria-current');
+            });
             document.body.classList.add('is-cinematic');
           }
         },

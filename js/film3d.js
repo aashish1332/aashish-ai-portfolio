@@ -900,16 +900,16 @@ const Film3D = (() => {
   /* ---------- camera path (chapter keyframes) ---------- */
   let posCurve, lookCurve;
   function buildPath() {
-    /* 8 knots = one per story beat (hero, rings, story, work,
-       interlude face-off, credits rise, monolith clear, end orbit).
+    /* 8 knots trace the story beats (hero, rings, story, work,
+       monolith pass, credits rise, crown clear, end orbit).
        The world spans z -110..520; the camera spends the WHOLE film
-       inside it — monolith reveal lands at the intermission. */
+       inside it — the monolith reveal lands mid-film. */
     const P = [
       new THREE.Vector3(-34, 9, -110),   // 01 gateway approach
       new THREE.Vector3(0, 13, -20),     // 01 through the rings
       new THREE.Vector3(10, 20, 90),     // 02 story: entering the boulevard
       new THREE.Vector3(-8, 28, 185),    // 03 work: cruising the towers
-      new THREE.Vector3(0, 38, 262),     // 04 interlude: face the monolith
+      new THREE.Vector3(0, 38, 262),     // mid-film: face the monolith
       new THREE.Vector3(0, 78, 300),     // 05 credits: rise over district
       new THREE.Vector3(0, 105, 430),    // 05 clearing the monolith crown
       new THREE.Vector3(0, 150, 500),    // 06 end: high night orbit

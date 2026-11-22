@@ -45,6 +45,7 @@ export const ROOT = resolve(HERE, '..');
  * of this list shipped all of it — the leak scan is what caught that. */
 export const SHIP_PATHS = [
   'index.html',
+  'assets',
   'css',
   'js',
   'ai/answers',

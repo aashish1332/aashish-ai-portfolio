@@ -56,11 +56,36 @@ function initSceneLinks() {
 function initContactForm() {
   const form = document.getElementById('contactForm');
   const status = document.getElementById('formStatus');
+  if (!form || !status) return;
+  const submit = form.querySelector('button[type="submit"]');
+
+  form.addEventListener('input', (e) => e.target.removeAttribute('aria-invalid'));
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(form);
-    const payload = { name: fd.get('name'), email: fd.get('email'), message: fd.get('message') };
+    const payload = {
+      name: String(fd.get('name') || '').trim(),
+      email: String(fd.get('email') || '').trim(),
+      message: String(fd.get('message') || '').trim(),
+    };
+
+    const invalid = !payload.name ? form.elements.name
+      : !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(payload.email) ? form.elements.email
+      : !payload.message ? form.elements.message
+      : null;
+    if (invalid) {
+      invalid.setAttribute('aria-invalid', 'true');
+      invalid.focus();
+      status.dataset.state = 'error';
+      status.textContent = 'CHECK YOUR NAME, EMAIL, AND BRIEF.';
+      return;
+    }
+
+    status.dataset.state = '';
     status.textContent = 'TRANSMITTING…';
+    form.setAttribute('aria-busy', 'true');
+    if (submit) submit.disabled = true;
     try {
       const res = await fetch('/api/contact', {
         method: 'POST',
@@ -68,11 +93,17 @@ function initContactForm() {
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error('bad status');
+      status.dataset.state = 'success';
       status.textContent = '✔ RECEIVED. HE REPLIES FAST.';
+      form.reset();
     } catch {
       const mail = `mailto:aashishkumarrajut1345@gmail.com?subject=${encodeURIComponent('Portfolio pitch from ' + payload.name)}&body=${encodeURIComponent(payload.message + '\n\n— ' + payload.name + ' (' + payload.email + ')')}`;
+      status.dataset.state = '';
+      status.textContent = 'EMAIL DELIVERY UNAVAILABLE — OPENING YOUR MAIL CLIENT…';
       window.location.href = mail;
-      status.textContent = 'OPENING YOUR MAIL CLIENT…';
+    } finally {
+      form.removeAttribute('aria-busy');
+      if (submit) submit.disabled = false;
     }
   });
 }

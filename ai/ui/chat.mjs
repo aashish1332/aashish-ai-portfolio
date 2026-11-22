@@ -1835,13 +1835,12 @@ let working = 0;
     /* close() disarms frame health, so a reopen must re-arm it. The re-arm is
        idempotent, or repeated open/close would stack ticker callbacks. */
     startFrameHealth();
-    /* The film is the heaviest main-thread work on the page, and the
-       interlude's own canvas (scene 6) rides an independent rAF that
-       otherwise keeps drawing behind the panel, so both stop — not only
-       on a phone, where the panel covers the scene and it was pointless
-       anyway (§10), but on every device: the whole point is to hand
-       generation the machine. A paused scene is measured seconds off
-       every answer's first token. */
+    /* The film is the heaviest main-thread work on the page, and its
+       canvas rides an independent rAF that otherwise keeps drawing
+       behind the panel, so both stop — not only on a phone, where the
+       panel covers the scene and it was pointless anyway (§10), but on
+       every device: the whole point is to hand generation the machine.
+       A paused scene is measured seconds off every answer's first token. */
     hooks.pauseScene?.();
     input?.focus();
   }

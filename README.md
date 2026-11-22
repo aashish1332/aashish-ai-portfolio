@@ -98,12 +98,14 @@ The demo's procedural world proves the interaction model. To get the full "insan
 | 01 | Opening shot | Camera flies through a procedural neon city; title card |
 | 02 | The story | Pinned: word-mask reveals, stat counters, polaroids |
 | 03 | The work | 3 projects as film takes with animated clapperboard slates |
-| 04 | Credits | Skills as movie end-credits, rolled by scroll |
-| 05 | Post-credits | Contact console + hidden terminal (`Ctrl+K`, `sudo hire aashish`) |
+| 04 | The method | AI direction and reviewed engineering, in three ledgers |
+| 05 | Stack | Skills as movie end-credits, rolled by scroll |
+| 06 | Contact | Contact console + hidden terminal (`Ctrl+K`, `sudo hire aashish`) |
 
 ## 🚀 Deploy
-Static (no backend): **Vercel / Netlify** — drag & drop, done.
-Full-stack: `MONGODB_URI=... node server.js` (Railway/Render) or convert `server.js` to Vercel serverless functions.
+Vercel runs `npm run build` (output `dist`) and `api/contact.mjs`. Add `RESEND_API_KEY` in the project environment to send briefs; optionally set `CONTACT_TO` and `CONTACT_FROM`. Without the key, the form falls back to `mailto:`.
+
+Full-stack local alternative: `MONGODB_URI=... node server.js` on `:3000`.
 
 ## ✍️ Before you publish
 - Links are real: `github.com/aashish1332` and `linkedin.com/in/aashishkumar13`.

@@ -1,0 +1,29 @@
+# Deployment source only: the remote build reads the site, AI runtime,
+# model export, tools, and api function. Local archives and dev artifacts
+# stay on this machine.
+.git
+.vercel
+.claude
+.freebuff
+node_modules
+dist
+dist-nomodel
+backup
+data
+docs
+evaluation
+experiments
+inference
+tests
+training
+ai/model
+ai/tokenizer/artifacts
+knowledge/PII_REVIEW.md
+Aashish_AI_Agent_Prompt_v2.md
+.cv-raw.txt
+dev-*
+tmp-*
+.tmp-*
+*.log
+.env
+.env.*
