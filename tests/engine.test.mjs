@@ -19,6 +19,9 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { ScratchLlamaEngine, createEngine, LLMEngine } from '../ai/engine/index.mjs';
+import { answerGrammar, blockedCitations, factTokens, offeredFactIds,
+  templatesFor } from '../ai/engine/grammar.mjs';
+import ANSWER_FRAMES from '../ai/answers/answer_frames.json' with { type: 'json' };
 import { LlamaEngine, applyRope, ropeCache } from '../ai/engine/llama.mjs';
 import { manifestIssues, parseManifest, sha256hex } from '../ai/engine/manifest.mjs';
 import { dequantiseQ8, matvecQ8, rmsNorm, rowQ8 } from '../ai/engine/quant.mjs';
@@ -686,3 +689,335 @@ test('ENG-20 the decode loop hands the event loop back, so a Stop is not queued 
       `stopped after ${summary.tokens} of 60 tokens`);
     engine.dispose();
   });
+
+/* ── the closed answer space (ai/engine/grammar.mjs) ──────────────
+
+   These pin the property the sft7 sweep needed and did not have: a turn can
+   name a fact, but not in someone else's sentence — `His GitHub is <email>` is
+   unreachable rather than merely unlikely. The measurement is in
+   docs/BENCHMARKS.md (2026-10-25). */
+test('ENG-23 the closed grammar is the trained frames, over offered facts only',
+  async () => {
+    const engine = await loadEngine();
+    const tok = engine.tokenizer;
+
+    // The table the grammar is built from is the training table, not a copy.
+    assert.ok(ANSWER_FRAMES.frames['person.name'].en.third.includes('{v}'));
+    /* A skill with no frame of its own is answered by its kind: the
+       question-agnostic frame and the list frame, in each language. */
+    assert.deepEqual(templatesFor('skill.mongodb', 'third').map((t) => t.text),
+      ['He works with {v}.', 'वे {v} के साथ काम करते हैं।', 'Wo {v} ke saath kaam karte hain.',
+        'His tech stack: {v}.', 'उनकी तकनीकें: {v}।', 'Unki technologies: {v}.']);
+    assert.equal(templatesFor('skill.mongodb', 'third').every((t) => !t.text.startsWith('I ')),
+      true, 'the first-person frames must not be offered to a third-person turn');
+
+    const g = answerGrammar(tok, '[person.name] Aashish');
+    assert.deepEqual(g.offered, ['person.name']);
+    const walk = (text) => {
+      let state = g.start;
+      for (const id of tok.encode(text)) {
+        if (!g.allowed(state).has(id)) return null;
+        state = g.step(state, id);
+        if (!state.size) return null;
+      }
+      return state;
+    };
+    assert.ok(walk(' His name is '), 'the trained frame must be walkable');
+    assert.equal(walk(' His GitHub is '), null,
+      'a frame whose fact was not offered is not a legal answer');
+
+    const slot = walk(' His name is ');
+    assert.deepEqual([...g.allowed(slot)], [tok.vocab['<|fact:person.name|>']],
+      'the slot admits exactly the fact the frame names');
+    const after = g.step(slot, tok.vocab['<|fact:person.name|>']);
+    assert.deepEqual([...g.allowed(after)], tok.encode('.'),
+      'only the frame\'s own suffix may follow the fact');
+    const done = g.step(after, tok.encode('.')[0]);
+    assert.deepEqual([...g.allowed(done)].sort(),
+      [tok.vocab['<|end|>'], tok.vocab['<|asst|>']].sort(),
+      'a finished sentence can only end');
+
+    // A turn with nothing framed is NOT forced into a refusal by the grammar:
+    // `null` sends the caller back to the weaker citation mask.
+    assert.equal(answerGrammar(tok, ''), null);
+    engine.dispose();
+  });
+
+/* A joined list is a LOOP through the separator, so the separator is a
+   TRANSITION and not merely a permission. MEASURED before this was true, on
+   the sft7 export (2026-10-26, the 60 §14 prompts): `His tech stack:
+   <|fact:skill.c|>` stopped after 8 tokens with reason `grammar` and no full
+   stop, because `allowed` offered `,` (from `seps`) and `step` had no node to
+   walk to. Every `_conj` list could hold exactly one item. */
+test('ENG-25 a list separator walks into the next fact of the same kind',
+  async () => {
+    const engine = await loadEngine();
+    const tok = engine.tokenizer;
+    const g = answerGrammar(tok, '[skill.mongodb] MongoDB\n[skill.mysql] MySQL');
+    const mongo = tok.vocab['<|fact:skill.mongodb|>'];
+    const mysql = tok.vocab['<|fact:skill.mysql|>'];
+    const comma = tok.encode(',')[0];
+    const fullStop = tok.encode('.')[0];
+
+    const feed = (state, ids) => {
+      for (const id of ids) {
+        assert.ok(g.allowed(state).has(id), `token ${id} should be legal here`);
+        state = g.step(state, id);
+        assert.ok(state.size, 'a legal token must lead somewhere');
+      }
+      return state;
+    };
+
+    let state = feed(g.start, tok.encode(' His tech stack: '));
+    assert.deepEqual([...g.allowed(state)].sort(), [mongo, mysql].sort(),
+      'both offered skills fill the kind frame');
+
+    state = feed(state, [mongo]);
+    assert.ok(g.allowed(state).has(fullStop), 'the frame can end after one fact');
+    assert.ok(g.allowed(state).has(comma), 'a second fact can follow a separator');
+
+    state = feed(state, [comma]);
+    /* The joiner is the trained text `", "`, and it tokenizes to `","` and
+       `" "`: after the comma the rest of the separator is still owed. MEASURED
+       before this was true (the 2026-11-01 scoped sweep): the sink sat at the
+       END of the joiner's token chain, so `step` skipped every token after the
+       first and the model wrote `His certifications: <a>,<b> and<c>.` — the
+       words `" "` and `" aur "` it was trained to say were never written. */
+    assert.deepEqual([...g.allowed(state)], tok.encode(' '),
+      'the rest of the joiner is required, not skipped');
+    state = feed(state, tok.encode(' '));
+    assert.ok(g.allowed(state).has(mysql), 'the separator leads into the next item');
+    assert.equal(g.allowed(state).has(mongo), false, 'a fact is named once per sentence');
+
+    state = feed(state, [mysql]);
+    assert.equal(g.allowed(state).has(comma), false,
+      'with every fact of the kind named, the separator has nowhere to lead');
+    assert.ok(g.allowed(state).has(fullStop));
+    state = feed(state, [fullStop]);
+    assert.deepEqual([...g.allowed(state)].sort(),
+      [tok.vocab['<|end|>'], tok.vocab['<|asst|>']].sort());
+    engine.dispose();
+  });
+
+/* The plan's own single-fact decision, passed to the decoder. MEASURED
+   2026-10-30 (§14 d01): "What is his email?" offered `contact.email` and one
+   retrieved project, and the model wrote `His main project is …`. Both frames
+   were legal, so the closed space had to be narrowed by what the planner
+   already knew — and only ever inside the context it read. */
+test('ENG-26 the plan\'s single fact narrows the closed space, inside the context',
+  async () => {
+    const engine = await loadEngine();
+    const tok = engine.tokenizer;
+    const context = '[contact.email] a@b.test\n[project.volunteer] A monorepo';
+    const email = tok.vocab['<|fact:contact.email|>'];
+    const project = tok.vocab['<|fact:project.volunteer|>'];
+
+    const g = answerGrammar(tok, context, { only: ['contact.email'] });
+    assert.deepEqual(g.offered, ['contact.email'],
+      'only the scoped fact may fill a slot');
+    assert.equal(g.scoped, true);
+
+    let state = g.start;
+    for (const id of tok.encode(' Email him at ')) {
+      assert.ok(g.allowed(state).has(id), `token ${id} must be legal in the frame`);
+      state = g.step(state, id);
+    }
+    assert.deepEqual([...g.allowed(state)], [email], 'the slot holds the one fact');
+
+    /* The distractor's own frame must not even be walkable. */
+    let projectState = g.start;
+    let reachable = true;
+    for (const id of tok.encode(' His main project is ')) {
+      if (!g.allowed(projectState).has(id)) { reachable = false; break; }
+      projectState = g.step(projectState, id);
+    }
+    assert.equal(reachable, false, 'the unrelated project frame is not reachable');
+    assert.ok(!g.offered.includes('project.volunteer'));
+    assert.equal(project > -1, true);
+
+    /* A scope the turn never read is not evidence: the context stays the
+       bound and the turn is NOT narrowed into an empty space. */
+    const fallback = answerGrammar(tok, context, { only: ['skill.gemini'] });
+    assert.deepEqual(fallback.offered, ['contact.email', 'project.volunteer']);
+    assert.equal(fallback.scoped, false);
+    engine.dispose();
+  });
+
+/* The question's own shape, carried to the decoder. MEASURED 2026-11-06 on the
+   shipping export: `i02` ("What backend technologies has he worked with?") and
+   `d16` ("uske projects kaun kaun se hain?") each carried three expected facts
+   and answered with one, in the ONE-FACT kind frame (`He works with …`,
+   `Unhone … banaya.`) — a sentence that answers "which one", not "which ones".
+   `listsOnly` removes the single-fact shapes for a whole-kind question, so the
+   only legal answer is the trained list sentence. */
+test('ENG-27 a whole-kind turn is decoded against the LIST sentence only',
+  async () => {
+    const engine = await loadEngine();
+    const tok = engine.tokenizer;
+    const context = '[project.volunteer] A\n[project.grocery] B\n[project.goaltracker] C';
+
+    /* The predicate is what the answer layer passes; here it is stated
+       directly so the grammar's contract is measured on its own. */
+    assert.deepEqual(templatesFor('project.volunteer', 'third', { listsOnly: true })
+      .map((t) => t.text),
+    ['His projects: {v}.', 'उनके प्रोजेक्ट्स: {v}।', 'Unke projects: {v}.'],
+    'listsOnly keeps the list frame in every language and nothing else');
+    assert.ok(templatesFor('project.volunteer', 'third').length > 3,
+      'without the flag the single-fact frames are still offered');
+
+    const g = answerGrammar(tok, context, { listsOnly: true });
+    const walk = (text) => {
+      let state = g.start;
+      for (const id of tok.encode(text)) {
+        if (!g.allowed(state).has(id)) return null;
+        state = g.step(state, id);
+        if (!state.size) return null;
+      }
+      return state;
+    };
+    assert.ok(walk(' His projects: '), 'the list frame is walkable');
+    assert.equal(walk(' He built '), null,
+      'the one-fact frame is not a legal answer to a whole-kind question');
+
+    /* And the list still holds every fact it was given: one item is a legal
+       prefix, but the separator stays open until all three are named. */
+    const volunteer = tok.vocab['<|fact:project.volunteer|>'];
+    const grocery = tok.vocab['<|fact:project.grocery|>'];
+    const goal = tok.vocab['<|fact:project.goaltracker|>'];
+    let state = walk(' His projects: ');
+    assert.deepEqual([...g.allowed(state)].sort(), [volunteer, grocery, goal].sort(),
+      'every offered project fills the list');
+    state = g.step(state, volunteer);
+    assert.ok(g.allowed(state).has(tok.encode(',')[0]), 'a second item is offered');
+
+    /* A kind with no trained list sentence is NOT forced into an empty space. */
+    assert.equal(answerGrammar(tok, '[edu.lpu] A university', { listsOnly: true }), null);
+    engine.dispose();
+  });
+
+test('ENG-24 with the closed grammar the answer is a trained sentence, not a fragment',
+  async () => {
+    const engine = await loadEngine();
+    const tok = engine.tokenizer;
+    const { byId } = factTokens(tok);
+    const name = byId.get('person.name');
+    const email = byId.get('contact.email');
+
+    /* The stub ranks the UNOFFERED fact first — the failure the grammar exists
+       for. Only `person.name` is in the context. */
+    const real = engine.model;
+    const logits = new Float32Array(tok.vocabSize).fill(-20);
+    logits[email] = 9;
+    logits[name] = 7;
+    engine.model = {
+      maxSeq: real.maxSeq,
+      reset() {}, reusePrefix: () => 0, rememberPrefix() {},
+      forward: () => logits,
+      argmax: (l, blocked) => real.argmax(l, blocked),
+      argmaxOf: (l, ids) => real.argmaxOf(l, ids),
+    };
+
+    const summary = await collect(engine.generate({
+      question: 'Who is he?', context: '[person.name] Aashish', maxNewTokens: 40,
+      answerGrammar: true,
+    }));
+
+    const text = summary.rawText.trim();
+    const frames = ['en', 'hi', 'hinglish']
+      .map((lang) => ANSWER_FRAMES.frames['person.name'][lang].third
+        .replace('{v}', '<|fact:person.name|>').trim());
+    assert.equal(summary.stopReason, 'end-token',
+      `the turn must end at the frame's end (got ${summary.stopReason}: ${text})`);
+    assert.ok(frames.includes(text),
+      `the answer must be one of the trained frames, got ${JSON.stringify(text)}`);
+    assert.equal(summary.closedAnswer?.offered, 1);
+    assert.ok(summary.closedAnswer.templates >= 3);
+    assert.ok(summary.maskedCitations > 0,
+      'the grammar had to overrule the model at least once');
+
+    engine.dispose();
+  });
+
+/* ── the citation grammar (ai/engine/grammar.mjs) ─────────────────
+
+   WHY it exists is measured, not asserted here: 14 of the 19 wrong answers in
+   the 2026-10-25 §14 sweep cited a fact that was not in the prompt's context
+   (docs/BENCHMARKS.md). What these pin is that the constraint is derived from
+   the context the model actually read, and that the decode loop obeys it. */
+test('ENG-21 a turn offers exactly the facts its fitted context names', () => {
+  const tokenizer = { vocab: { 'x': 0, '<|fact:person.name|>': 7, '<|fact:edu.lpu|>': 9 } };
+
+  assert.deepEqual([...offeredFactIds('[person.name] Aashish\n[edu.lpu] a university')],
+    ['person.name', 'edu.lpu']);
+  // Only a LINE-LEADING `[id]` is a context line: brackets inside a value, or
+  // a bracketed phrase in prose, must not extend what the turn may cite.
+  assert.equal(offeredFactIds('he said [not a fact] and left').size, 0);
+  assert.deepEqual([...offeredFactIds('[a.b] value with [brackets] inside')], ['a.b']);
+  assert.equal(offeredFactIds('no markers at all').size, 0);
+  assert.equal(offeredFactIds('').size, 0);
+  assert.equal(offeredFactIds(null).size, 0);
+
+  assert.deepEqual([...blockedCitations(tokenizer, '[person.name] Aashish')], [9],
+    'the offered fact is allowed and every other fact token is removed');
+  assert.deepEqual([...blockedCitations(tokenizer, '')], [7, 9],
+    'no context offers no facts, so no citation is legal');
+  assert.equal(factTokens(tokenizer).byId.size, 2);
+
+  /* The frame tokens are never content: a model that emits one has fallen out
+     of the answer and into the prompt layout (measured on `syn01`, which read
+     "His CGPA is <|user|>."). `<|end|>`, `<|asst|>` and `<|abstain|>` are a
+     stop and a result, so they stay available. */
+  const framed = { vocab: { x: 0, '<|sys|>': 1, '<|ctx|>': 2, '<|user|>': 3,
+    '<|asst|>': 4, '<|end|>': 5, '<|abstain|>': 6 } };
+  assert.deepEqual([...blockedCitations(framed, '')], [1, 2, 3]);
+  assert.equal(blockedCitations({ vocab: { x: 0 } }, '').size, 0,
+    'a vocabulary with no frame tokens and no facts blocks nothing');
+});
+
+test('ENG-22 the decode loop cannot emit a fact token the turn was not offered', async () => {
+  const engine = await loadEngine();
+  const { byId, ids: allFactIds } = factTokens(engine.tokenizer);
+  const offered = byId.get('person.name');
+  const offLimits = byId.get('contact.email');
+  assert.ok(offered !== undefined && offLimits !== undefined,
+    'the fixture vocabulary must carry both fact tokens for this to mean anything');
+
+  /* A stub model (as in ENG-20): the fixture is random-init, and the subject
+     here is the CONSTRAINT, not what a random model happens to prefer. It
+     ranks the off-limits fact ABOVE the offered one, which is the failure the
+     grammar exists to catch. */
+  const real = engine.model;
+  const logits = new Float32Array(engine.tokenizer.vocabSize).fill(-10);
+  logits[offered] = 5;
+  logits[offLimits] = 8;
+  engine.model = {
+    maxSeq: real.maxSeq,
+    reset() {}, reusePrefix: () => 0, rememberPrefix() {},
+    forward: () => logits,
+    argmax: (l, blocked) => real.argmax(l, blocked),
+  };
+
+  const run = (context) => collect(engine.generate({
+    question: 'Who is he?', context, maxNewTokens: 2,
+  }));
+
+  const free = await run('[person.name] Aashish\n[contact.email] a@b.test');
+  assert.deepEqual(free.ids, [offLimits, offLimits],
+    'when both facts were offered the model keeps its own preference');
+  assert.equal(free.maskedCitations, 0, 'nothing had to be blocked');
+  assert.equal(free.offeredFacts, 2);
+
+  const constrained = await run('[person.name] Aashish');
+  assert.deepEqual(constrained.ids, [offered, offered],
+    'the un-offered citation is skipped and the next-best token wins');
+  assert.equal(constrained.maskedCitations, 2,
+    'the number reported is how often the grammar overruled the model');
+  assert.equal(constrained.offeredFacts, 1);
+
+  const empty = await run('');
+  assert.equal(empty.offeredFacts, 0);
+  assert.ok(empty.ids.every((id) => !allFactIds.has(id)),
+    'with no context no fact token is legal: ' + JSON.stringify(empty.ids));
+
+  engine.dispose();
+});

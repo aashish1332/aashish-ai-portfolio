@@ -21,6 +21,12 @@ export const STYLES = `
   position: absolute; inset: 0; background: rgba(10,10,11,.55);
   opacity: 0; transition: opacity .28s ease; pointer-events: none;
 }
+/* The scrim CLOSES the panel on click (build() wires it) — but only if it
+   can actually receive that click. With pointer-events: none permanently,
+   every backdrop click went THROUGH to the page underneath: behind the dim
+   the visitor could still click the site's buttons, and the panel could not
+   be dismissed by the backdrop at all. */
+.ai.is-open .ai__scrim { pointer-events: auto; }
 
 .ai__panel {
   position: absolute; right: 0; top: 0; bottom: 0;
@@ -51,6 +57,42 @@ export const STYLES = `
   color: var(--paper-faint); border: 1px solid var(--line);
   padding: 4px 7px; white-space: nowrap;
 }
+
+/* Answer mode: portfolio guide first, AI model second and explicitly priced.
+   The buttons are not decoration; they are the only way the model download
+   can start. The note under the name is the visible size disclosure (§6.5). */
+.ai__modes {
+  display: flex; gap: 8px; padding: 10px 16px;
+  border-bottom: 1px solid var(--line); background: var(--panel, #141418);
+}
+.ai__mode {
+  flex: 1; min-width: 0; text-align: left; cursor: pointer;
+  background: none; border: 1px solid var(--line); color: var(--paper-dim);
+  padding: 8px 10px; transition: color .2s, border-color .2s, background .2s;
+}
+.ai__mode:hover, .ai__mode:focus-visible {
+  color: var(--accent); border-color: var(--accent);
+}
+.ai__mode.is-on {
+  color: var(--paper); border-color: var(--accent);
+  background: rgba(255, 77, 0, .08);
+}
+.ai__mode:disabled { cursor: wait; opacity: .7; }
+.ai__mode-name {
+  display: block; font-family: var(--font-mono); font-size: 9px;
+  letter-spacing: .12em; white-space: nowrap;
+}
+.ai__mode-note {
+  display: block; margin-top: 3px; font-family: var(--font-mono);
+  font-size: 8px; letter-spacing: .03em; color: var(--paper-faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ai__mode.is-on .ai__mode-note { color: var(--paper-dim); }
+@media (max-width: 640px) {
+  .ai__modes { padding: 9px 12px; gap: 6px; }
+  .ai__mode { padding: 7px 8px; }
+  .ai__mode-note { font-size: 7.5px; }
+}
 .ai__close {
   background: none; border: 1px solid var(--line); color: var(--paper-dim);
   width: 30px; height: 30px; cursor: pointer; font-size: 13px; line-height: 1;
@@ -71,6 +113,28 @@ export const STYLES = `
 .ai__mic:disabled { color: var(--paper-faint); border-color: var(--line); cursor: default; }
 .ai__mic.is-on { color: var(--cyan); border-color: var(--cyan); }
 
+/* §11.5 — the mic is HOT: a ripple ring that says "your voice is going in"
+   without a word. Border and opacity only, so it costs no layout work (§4);
+   gated behind no-preference like the orb's pulse (see the media block
+   below). A ripple that ran for a disabled or off button would be the exact
+   "permanently-lit microphone" lie the base state refuses to make. */
+.ai__mic { position: relative; }
+.ai__mic::after {
+  content: ''; position: absolute; inset: -4px;
+  border: 1px solid var(--cyan); border-radius: inherit;
+  opacity: 0; pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ai__mic[data-voice='listening']::after, .ai__mic[data-voice='speaking']::after {
+    animation: aiMicRipple 1.8s ease-out infinite;
+  }
+}
+@keyframes aiMicRipple {
+  0% { transform: scale(1); opacity: .55; }
+  70% { transform: scale(1.35); opacity: 0; }
+  100% { transform: scale(1.35); opacity: 0; }
+}
+
 /* §11.5 — the voice visual. One dot that says which state the microphone is
    in, drawn with transforms and opacity only. No canvas, no WebGL, and no
    JavaScript frame loop: the shell sets one data-voice attribute when the
@@ -89,11 +153,20 @@ export const STYLES = `
 .ai__mic[data-voice='off'] .ai__orb, .ai__mic:disabled .ai__orb { display: none; }
 
 /* Motion is the enhancement, never the message: the dot is already brighter
-   when it is listening, so with reduced motion it simply stays still. */
+   when it is listening, so with reduced motion it simply stays still.
+   When it IS moving, the dot now breathes with the visitor's own voice —
+   the level is fed per-frame as a CSS custom property (--orb-level, 0–1)
+   from the VAD, and scale is a plain weighted mix of the idle pulse and
+   that live number, so the dot visibly grows the moment a voice arrives. */
 @media (prefers-reduced-motion: no-preference) {
   .ai__mic[data-voice='listening'] .ai__orb { animation: aiOrbPulse 1.6s ease-in-out infinite; }
   .ai__mic[data-voice='speaking'] .ai__orb { animation: aiOrbPulse .8s ease-in-out infinite; }
 }
+.ai__orb {
+  transform: scale(calc(.9 + .45 * var(--orb-level, 0)));
+  transition: transform .09s ease-out;
+}
+.ai__mic[data-voice='off'] .ai__orb { transform: none; }
 @keyframes aiOrbPulse {
   0%, 100% { transform: scale(.8); opacity: .55; }
   50% { transform: scale(1.35); opacity: 1; }

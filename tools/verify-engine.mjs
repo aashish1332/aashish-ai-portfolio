@@ -2,8 +2,8 @@
 /* ═══════════════════════════════════════════════════════════════
    tools/verify-engine.mjs — P6's parity gate, on the real export.
 
-     node tools/verify-engine.mjs ai/model-export/aashish-ai-1 \
-          ai/model-export/aashish-ai-1/reference.json
+     node tools/verify-engine.mjs ai/model-export/aashish-ai-b \
+          ai/model-export/aashish-ai-b-sft7.reference.json
 
    `tests/engine.test.mjs` proves the engine is correct on a **seeded random
    fixture**. This proves it is correct on **the weights that will ship**,
@@ -29,7 +29,7 @@ import { ScratchLlamaEngine } from '../ai/engine/index.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
 
-const exportDir = resolve(ROOT, process.argv[2] || 'ai/model-export/aashish-ai-1');
+const exportDir = resolve(ROOT, process.argv[2] || 'ai/model-export/aashish-ai-b');
 const referencePath = resolve(ROOT, process.argv[3] || `${exportDir}/reference.json`);
 
 const reference = JSON.parse(readFileSync(referencePath, 'utf8'));

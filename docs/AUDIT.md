@@ -223,8 +223,8 @@ it against the copy the portfolio's copy was written from.
 | Field | Proposed `public` | Reason |
 |---|---|---|
 | email | **true** | already public at `js/main.js:26` (mailto) and `index.html:442` |
-| **phone `+91 6280287425`** | **true** *(corrected)* | ⚠️ **Already published by the portfolio itself** at `index.html:447` — *"+91 62802 87425 · PHAGWARA, PUNJAB · OPEN TO INTERNSHIPS & ROLES"*. My initial audit assumed it was CV-only; it is not. §1's "public:true only if the portfolio already shows them publicly" therefore applies → `public:true`. **Flagged for your explicit confirmation anyway**, because the rule's intent is to avoid *widening* exposure |
-| **location "Phagwara, Punjab"** | **true** *(corrected)* | also already at `index.html:447` |
+| **phone** | **false / withheld** | The CV contains a phone number, but the owner directed on 2026-10-29 to remove it from site content; it is not in the portfolio or public bundle |
+| **location "Phagwara, Punjab"** | **true** | published in the portfolio footer alongside availability; the phone number was removed while this location remains |
 | home address / DOB / ID numbers | **false** | absent from the parsed CV and the portfolio entirely |
 | **GitHub `github.com/aashish1332`**, **LinkedIn `linkedin.com/in/aashishkumar13/`** | **true — with a fix needed** | Recovered from the CV's `word/_rels/document.xml.rels`. ⚠️ The portfolio ships **placeholder links**: `href="https://github.com/"` ×4 (`index.html:184, 209, 234, 443`) and `href="https://linkedin.com/"` (`index.html:444`) — all missing the username. The *intent* to publish is proven; the URLs themselves need correcting |
 | **Project live URLs** — `atlascommunity-one.vercel.app` · `smart-grocery-lemon.vercel.app` · `personal-goal-tracker-five.vercel.app` | **true** | also recovered from the CV's hyperlink relationships (the third-party `vercel.app` host is the portfolio's own deployment, not visitor data) |
@@ -232,10 +232,10 @@ it against the copy the portfolio's copy was written from.
 | Bootcamp grade "A" | **true** | low sensitivity; also in the portfolio (`index.html:150`) |
 | Third-party names (Gemini, Groq, Infosys, Masai × IIT Ropar, LPU, Kendriya Vidyalaya) | **true** | education/employer-style facts already in the CV **and** in the portfolio's credits/story scenes |
 
-> **Correction note (kept deliberately, per §0.5 "no fake numbers / don't assume").** My first pass
-> at this table was derived from the CV alone and got the phone and location wrong. Reading
-> `index.html` properly changed the answer. This is recorded rather than silently edited because the
-> audit is the artefact you will check against.
+> **Correction note (kept deliberately, per §0.5 "no fake numbers / don't assume").** The initial
+> review found the phone in the then-current footer and recommended a true flag. The owner later
+> chose the stricter option: remove the number from the portfolio. The current decision and release
+> artifacts follow that instruction; the location remains published.
 
 ---
 
@@ -262,9 +262,10 @@ it against the copy the portfolio's copy was written from.
    rests at tier 4 on R1, *any* AI cost is a direct regression with no ladder headroom left. That
    makes §9.1's default (CPU/WASM-SIMD in a dedicated worker, 1 thread) a **hard requirement** on
    T1–T2 here rather than a preference.
-3. **`MODEL_STATUS=untrained`.** Per rule 4, nothing beyond the deterministic Quick Answers engine
-   may be presented as "AI" until real checkpoints exist; Kaggle T4 training is **run by you** from
-   scripts/notebooks I write.
+3. **`MODEL_STATUS=untrained` — historical audit note.** This was the rule-4 state before a
+   measured checkpoint existed. On 2026-11-15 the v18 export cleared all eight §14 gates at
+   97.1 % factual (33/34), so the shipping constant is now `MODEL_STATUS='trained'`; the coupling
+   in `tests/disclosure.test.mjs` still prevents the claim from outrunning `docs/EVALUATION.json`.
 
 ---
 

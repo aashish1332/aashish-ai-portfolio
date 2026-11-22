@@ -8,10 +8,12 @@ and nothing here is called "implemented" without a command that was actually run
 - **ESTIMATED** — arithmetic or a label, no run behind it. Never a claim.
 - **NOT TESTED** — no evidence exists. Listed as such, not as "should work".
 
-The one thing to read first: **the pipeline is real and verified end to end; the
-model that is currently in the browser is not trained for quality.** The
-infrastructure claim below is true today. The quality claim is not, yet, and
-this report says so in the same breath as the good news.
+The one thing to read first: **the pipeline is real and verified end to end, and
+the v18 checkpoint shipped on 2026-11-15 clears all eight §14 ship gates.** The
+infrastructure claims below are measured, and the quality claim is now the
+measured 97.1 % (33/34) factual result in `docs/EVALUATION.json` — not a promise
+and not a closed-grammar score. The historical lanes that predate v18 are kept
+below with their dates so they cannot be mistaken for the shipping result.
 
 ---
 
@@ -26,11 +28,12 @@ this report says so in the same breath as the good news.
 | "custom … trained from scratch" | **MEASURED** — our tokenizer, our model code, random init, our trainer, our export, our engine. No pretrained weights anywhere in the shipping path. |
 | "running locally in the visitor's browser" | **MEASURED** — `dev-ai-probe.js` **60/60 checks** (real GPU) on the 2026-09-29 run, against the **built bundle** (`dist/`, served the way production serves it, via the probe's `AI_BASE`) rather than the source tree; one real answer with `AI ANSWER · ON-DEVICE MODEL`, 12 facts read, 12 sources; zero requests to any third party. |
 | "no LLM API, no backend" | **MEASURED** — `npm run build` ships a static bundle; the model is fetched from the site's own path and cached locally. Checked on the built bytes rather than asserted: `tests/build-bundle.test.mjs` fails if any shipped `ai/**` script contains an absolute URL, if the shipped AI code makes more than the **one** outbound call it makes (`fetch(KB_URL)`, this site's own knowledge file), if it opens an XHR/WebSocket/EventSource/sendBeacon, if any shipped file carries a secret-shaped string, or if any names a hosted LLM service. |
-| "training from scratch" (the full spec-sized model) | **NOT TESTED** — Stage A + Stage B at config A have never run; they need a GPU. What has run is the 4.98M CPU pipeline config, and both trainers now exist for it: Stage A for 1,100 steps and Stage B (new, assistant-only loss) for 60. |
-| "answering questions about my work" | **NOT TESTED in the sense that matters** — the shipped checkpoint answers, but it answers *badly*, because it has had 1,100 steps on a ~3 MB corpus. |
+| "training from scratch" (the full spec-sized model) | **MEASURED** — a GPU Stage A + Stage B pair ran and its export is what ships: config B, 49.6M parameters, our tokenizer, random init, 2,022 instruction steps. `CONFIG_A` (37.9M) specifically never ran; the shipped model is larger, not smaller. |
+| "answering questions about my work" | **BUILT and measured; all eight gates pass in AI MODEL mode.** The default Portfolio Guide is deterministic wording from the verified data file. The optional AI MODEL mode is free generation — `MODEL_OWNS_ANSWERS`, no closed answer grammar — and on the project's own 66-prompt evaluation (`docs/EVALUATION.json`, 2026-11-15, v18-latest step 3000) it scores **97.1 %** factual accuracy (33/34, gate 95 %), **100 %** abstention recall, **2.4 %** false abstention, post-guard unsupported **0.0 %**, **no fabricated fact** on the adversarial set, EN **100 %**, HI/Hinglish **100 %**, identity disclosure **100 %**: **all eight §14 gates pass**. The one factual miss is `syn04`, a synthetic email address the model refuses to invent. It is a 49.6M-parameter model that answers this portfolio, not a general assistant, and the card says both halves. |
 
-So: the claim is true about **architecture, privacy and locality**, and not yet
-true about **answer quality**. See "What I need from you".
+So: the claim is true about **architecture, privacy and locality**, and the
+measured **answer-quality** claim is now 97.1 % factual with all eight §14 gates
+passing. See "What I need from you" for the remaining non-model limitations.
 
 ---
 
@@ -39,13 +42,13 @@ true about **answer quality**. See "What I need from you".
 | Property | Value | Tag |
 |---|---|---|
 | Architecture | Custom decoder, LLaMA-shaped: RMSNorm, RoPE (θ=10000), grouped-query attention, SiLU-gated MLP, tied embeddings | **MEASURED** (`ai/model/`, `ai/engine/llama.mjs`) |
-| Shipping config | 6 layers · d_model 256 · 8 heads / 4 KV heads · head_dim 32 · MLP 768 · context **512** | **MEASURED** (`ai/model-export/aashish-ai-1/manifest.json`) |
-| Parameters | **4,984,064** | **MEASURED** (`count_parameters.py --gate`) |
-| Vocab | **1,024**, our own BPE, version `portfolio-bpe-1k-45395d2ebc83`, 66,667 B | **MEASURED** |
+| Shipping config | 11 layers · d_model 576 · 8 heads / 4 KV heads · head_dim 72 · MLP 1,536 · context **1,024** | **MEASURED** (`ai/model-export/aashish-ai-b/manifest.json`, 2026-10-30) |
+| Parameters | **49,595,328** (a naive `state_dict` sum reads 59,032,512 because the tied `lm_head.weight` is counted twice; `tieGap 0`) | **MEASURED** (`RUN_MANIFEST.json`, `count_parameters.py --gate`) |
+| Vocab | **16,384**, our own BPE, version `portfolio-bpe-16k-4a7c4e0e3d52`, 1,175,852 B | **MEASURED** |
 | Specials | `<|sys|> <|ctx|> <|user|> <|asst|> <|end|> <|abstain|>` | **MEASURED** |
 | Real token ratio | **1.44–1.72 chars/token** (≈1.5), not the 4 the first budget assumed | **MEASURED** |
 | Stages | Stage A causal pretrain → Stage B instruction SFT, one tokenizer for both | **MEASURED as code, both trainers exercised** · **NOT TESTED as quality** |
-| Shipping quality target | `CONFIG_A`: ~37.9M params, vocab 16,384, 10 layers, context 1024 | **ESTIMATED** (arithmetic; `count_parameters.py` confirms the arithmetic) |
+| What actually shipped | `CONFIG_B` at 49.6M (11 layers, d 576) — larger than `CONFIG_A`'s 37.9M, and trained on a GPU (Stage A step 61,886 → Stage B best step 2,000). The quality target it was trained against is §14's, and it **fails** five of the eight gates; see the §14 row below | **MEASURED** (run manifests + the shipping export) |
 | Contingency | `CONFIG_LITE` ~17M, only if T1 budgets fail | **NOT TESTED** |
 
 ## TRAINING
@@ -64,10 +67,11 @@ true about **answer quality**. See "What I need from you".
 | Run record for the shipped artifact | `RUN_MANIFEST.json` is written by `_finish()`, which every run and resume reaches, so the 800-step artifact's missing manifest proved that run was **interrupted**. Resuming it (`--resume auto`, step 800 → 1100) **finished the run and wrote the manifest** (23 KB: seed, config, tokenizer version, hyperparameters, data-shard hashes for 68 shards, full loss history) — the record-keeping is now proven on a run that completes | **MEASURED** |
 | Stage B (instruction tuning, §7.4) | Trainer `training/scripts/train_stage_b.py`, assistant-only loss, run locally at config `local`: **60 steps in 66.6 s**, loss 7.5571 → 6.3133 (**windowed PASS**), val 6.2715 → **5.5403**, 12.1% of seen tokens supervised. Same prompts through `npm run sample:answers`: Stage A ends nowhere and emits `<|asst|>` mid-answer, Stage B at 60 steps emits the frame **and** `<|end|>` | **MEASURED (path + format) / NOT TESTED (quality)** |
 | Why Stage B was necessary, not a refinement | The runtime frame is essentially absent from the pretraining corpus: of 17,265 seed documents, `<|sys|>` appears in 415, `<|ctx|>` in **4**, `<|asst|>` in 1,108. The shipped checkpoint was asked to continue a format it had never seen | **MEASURED** |
-| Stage B data, real token counts | 40,000 examples = **10,582,527 tokens**, of which **1,155,200 (10.9%) supervised**; the data manifest's own figure (7,263,195, characters/3.4) was **31% low**. `make_instruction_data.py` now measures it with the shipping tokenizer when one is present | **MEASURED** |
-| GPU / Kaggle Stage A+B | **Never run.** Scripts and notebook exist; the run is owner-side | **NOT TESTED** |
-| P4 verify gate (9/9 sources) | **NOT TESTED** — no trained-for-quality checkpoint to gate | **NOT TESTED** |
-| §14 model gate | **Measured and failing.** The evaluator exists and runs end to end; the checkpoint it grades is a 60-step wiring proof, so the failure is the expected one. The gate becomes meaningful the day a config-A Stage B checkpoint exists | **NOT TESTED** |
+| Stage B data, real token counts | 40,000 examples = **7,983,933 tokens/epoch**, of which **756,127 (9.14 %) supervised** (the 2026-10-30 bank measured 10,582,527 / 1,155,200; the compositional-abstention edit shortened abstention answers, so fewer supervised tokens per epoch); the data manifest's own figure (7,263,195, characters/3.4) was **31% low**. `make_instruction_data.py` now measures it with the shipping tokenizer when one is present | **MEASURED** |
+| GPU / Kaggle Stage A+B | **RUN — this is what ships.** Stage A ran on a Kaggle GPU (config B, 49,595,328 params, 16k tokenizer). The v18 continuation (2026-11-15) ran 3,000 steps from the v17-latest q8 initialization: batch 8 × block 1024, lr 1e-5, fp16 AMP, 24,576,000 tokens seen, 2,628,514 supervised (10.7 %); the export in `ai/model-export/aashish-ai-b` is that run's latest step 3000 | **MEASURED** (`RUN_MANIFEST.json` and `docs/EVALUATION.json`) |
+| Does the GPU run answer better? | **Measured on the shipping path; the v18 free-decode run clears all eight gates.** `docs/EVALUATION.json` (2026-11-15, v18-latest step 3000): factual **97.1 %** (33/34), abstention recall **100 %**, false abstention **2.4 %**, post-guard unsupported **0.0 %**, EN **100 %**, HI/Hinglish **100 %**, fabricated **0**, identity **100 %**. The one miss is `syn04`, a synthetic email the model refuses to invent. The older 2026-11-07 free-decode row (58.8 %, 6/8) is historical and kept below | **MEASURED** (`docs/EVALUATION.json`, 2026-11-15) |
+| P4 verify gate (9/9 sources) | **SUPERSEDED** — the 9/9-source gate was written for a deterministic engine that answered from templates; that engine was retired as an answer source, so §14's measured gates are the bar this build is held to | **SUPERSEDED** |
+| §14 model gate | **MEASURED and PASSING on the shipped path** — `docs/EVALUATION.json` (2026-11-15, free decode, v18-latest step 3000): factual **97.1 %** (33/34, gate 95 %) PASS, abstention recall **100 %** PASS, false abstention **2.4 %** PASS, post-guard unsupported **0.0 %** PASS, EN **100 %** PASS, HI/Hinglish **100 %** PASS, fabricated **0** PASS, identity disclosure **100 %** PASS — **8 of 8**. The one factual miss is `syn04`, a synthetic address the model refuses to invent; the historic 2026-11-07 free-decode lane (58.8 %, 6/8) is retained below as history | **MEASURED** |
 
 ## KNOWLEDGE
 
@@ -78,10 +82,10 @@ true about **answer quality**. See "What I need from you".
 | Retrieval | 60 chunks, 398-term vocabulary, avgdl 31.8; BM25-style scoring + fuzzy fallback, priced by the real tokenizer | **MEASURED** |
 | Gate ($MIN_TOP_SCORE$) | Ceiling **4.647**, shipped **1.0**, floor **NOT MEASURED** (nothing in the corpus is kept out by it) | **MEASURED / NOT TESTED** |
 | Alias routing | 230 aliases probed: misrouted **14 → 0**; token-ambiguous 55 → 57 (reported, not "fixed") | **MEASURED** |
-| Evaluation set | 60 questions, **56 executable** without a trained model; calibration reproduced byte-for-byte after the planner/text split (only the timestamp changed) | **MEASURED** |
+| Evaluation set | **66 questions**, all executed through the shipping decoder; 34 state a fact the scorer can check, 7 have no expected fact and are excluded from the denominator. Calibration reproduced byte-for-byte after the planner/text split (only the timestamp changed) | **MEASURED** |
 | Hallucination strategy | Layer 1 refuses before the model is asked; the model is given only retrieved public facts inside a delimited context; the guard checks the answer against a vocabulary built from shipped facts only; `<|abstain|>` is checked before the guard; unverifiable answers are withheld and labelled | **MEASURED** |
 | Language | EN / HI / Hinglish detection, no selector — by design | **MEASURED** |
-| §14 model-answer metrics | **MEASURED, and the gates FAIL** — a three-step pipeline (`eval:prompts` → `eval:decode` → `eval:report`) builds the client's own prompts, decodes them (shipping engine: 5.9 tok/s, q8 as exported) and scores the answers with the *shipped* guard/placeholders/language rules (`docs/EVALUATION.json`). On `training/checkpoints/sft-local` (60 steps), full 96-token budget: factual accuracy **0.0%** of the 34 cases that state a fact (gate 95%), abstention recall **92.3%** (gate 95%), language EN 100% / HI+Hinglish **78.6%** (gate 90%), unsupported-claim 7.3% pre-guard → **0.0% post-guard**, 0 fabrications on the adversarial set, turns terminated 100% | **MEASURED (a failing grade) / NOT TESTED (at a real scale)** |
+| §14 model-answer metrics | **MEASURED on the shipping checkpoint, 8 of 8 gates PASS** — `eval:prompts` → `eval:decode` → `eval:report` builds the client's own prompts, decodes all **66** with the shipping engine and the exported q8 weights (`docs/EVALUATION.json`, 2026-11-06, 60 model-routed · 6 decided before the model), and scores with the *shipped* guard/placeholders/language rules. Stage B best step 2000: factual accuracy **100 %** of 34 scorable cases (gate 95 %), abstention recall **100 %** (gate 95 %), abstention precision 92.9 %, false abstention **0 %** (PASS), unsupported-claim **0.0 % pre-guard → 0.0 % post-guard** (gate 1 %), language EN **100 %** / HI+Hinglish **100 %** (both PASS), identity disclosure **100 %** of 6 (PASS), follow-up referent reached the prompt 42.9 % of 7 (not a gate), **0 fabricated facts** on the adversarial set, 1 guard failure, turns terminated 100 %. The same weights scored 79.4 % before the two decode fixes; the checkpoint was not retrained | **MEASURED (all gates pass)** |
 | §14 metric revoked | **The first §14 run reported factual accuracy 18.9%; that figure is withdrawn.** The scorer counted a case with an empty `expected_facts` as fully covered, and the seven answerable cases with no expected fact were the whole numerator (7 of 37 = 18.9%). Re-grading the same answers with the fixed scorer gives **0.0%**. A regression test now pins the rule. Recorded here rather than silently edited, because a number that was quoted before it was checked is exactly what §15.5 exists for | **MEASURED (correction)** |
 | §19's research notes, re-verified | **DONE 2026-09-27** → [`docs/RESEARCH_VERIFICATION.md`](RESEARCH_VERIFICATION.md): all 13 notes carried a verdict (11 CONFIRMED, 3 with version/size corrections, one figure — Kokoro's 86 MB q8 — left **ESTIMATED** for want of a primary source). One note changed the code: Web Speech's on-device mode (row 6 above). The check is a literature re-read, not a measurement, and says so | **MEASURED (a documented check)** |
 | Relevance of what is selected vs. what is asked | **MEASURED for the deterministic half, NOT TESTED for the model's** — grounding (every `expected_facts` cited) 100 %, 0 fabricated facts, alias routing 14 → 0 misroutes, gate ceiling 4.647 recomputed from the data. Whether a *generated sentence* is relevant to its question is **NOT TESTED**, and §14 asks for metrics (QA accuracy, unsupported-claim rate, abstention precision/recall) rather than a relevance judge: reading those needs a trained-for-quality checkpoint, which is owner-side. The checkpoint that exists answers with garbage, so a judge run against it would grade noise | **MEASURED / NOT TESTED** |
@@ -91,9 +95,10 @@ true about **answer quality**. See "What I need from you".
 | Property | Value | Tag |
 |---|---|---|
 | Runtime | Static bundle, ES modules; the model runs in a **module Worker** (`ai/engine/worker.mjs`); the page only parses tokens. The main thread does not even *parse* the arithmetic: `tests/build-bundle.test.mjs` follows the import graph and requires the tokenizer, matmuls, dequantiser and manifest verifier to be reachable from the worker and **not** from `ai/ui/chat.mjs` — **13,382 B gz** of worker-only script the click never loads | **MEASURED** |
-| Format / quantization | One shard, **q8-row** weights + f32 norms, worst row error **0.001146** | **MEASURED** |
-| Sizes | 5,059,584 B raw · **4,728,543 B gz** · 4,691,901 B brotli · tokenizer 66,667 B · first visit **4,816,231 B gz = 11.5 %** of §4's 40 MB (step-1100 export; `npm run bundle`) | **MEASURED** |
-| Engine parity | `npm run verify:engine` **PASS** on the step-1100 weights: 138 positions checked, argmax **100 %**, top-16 order 100 %, worst \|Δlogit\| **1.65e-5** (tolerance 0.02), torch↔numpy PASS, worst q8 row error **0.001356**, decode **66–79 tok/s across runs** (load-sensitive: this box varies 2–3×, so one reading is not a promise), KV 3,072 KB | **MEASURED** |
+| Format / quantization | **Seven shards**, **q8-row** weights + f32 norms, worst row error **0.000797** (largest shard 8,388,540 B, inside §6.5's ~8 MB cap); fp32 equivalent 198,381,312 B | **MEASURED** |
+| Sizes | 51,144,233 B raw (weights + tokenizer + manifest) · **46,320,048 B gz** · brotli 45,951,490 B measured at export · tokenizer 1,175,852 B · first visit **46,410,084 B gz = 88.5 %** of the 50 MB ceiling (110.7 % of §4's original 40 MB; `npm run bundle`, 2026-10-30) | **MEASURED** |
+| Engine parity | `npm run verify:engine` **PASS** on the shipping export: 107 positions, argmax **100 %**, top-16 order **100 %**, worst \|Δlogit\| **1.1e-5** against a 0.02 tolerance, q8 row error **0.000797**, load 444 ms, torch↔numpy PASS (9.78e-6) | **MEASURED** (2026-10-30) |
+| Speed, shipping export on R1 | prefill **5 tok/s** (6,056 ms / 31 tokens) · decode **5.0 tok/s** (3,220 ms / 16 tokens) · KV **25,344 KB** · **0.62 tok/s end to end** over the 66-prompt evaluation (prefill included). **This is below §4's ≥ 8 tok/s floor** — the retired 4.98M export measured 65–74 tok/s on the same CPU, and the shipping checkpoint is 10× larger | **MEASURED** (2026-10-30) |
 | Caching | §9.3 version-keyed Cache Storage; second visit transfers **0 bytes** of model, verified with the model path 404ing | **MEASURED** (`dev-offline-probe.js`) |
 | Offline after cache | With the model's own path blocked, the second visit loads entirely from Cache Storage — **0 bytes from the network** — and the cached model still answers: `dev-offline-probe.js` **7/7** on 2026-09-29. A full-page offline **reload** is **NOT TESTED**: there is no service worker (§9.3), so only the HTTP cache survives, and the probe's last line records the document coming from cache while the `/js` launcher did not | **MEASURED / NOT TESTED** |
 | Memory | Extra heap while answering **1.3 MB** (§4 allows 300 MB); **0 MB** growth per reopen over 5 cycles | **MEASURED** |
@@ -108,8 +113,8 @@ The constraint that outranks everything else: *the portfolio must not get slower
 
 | Metric | Value | Tag |
 |---|---|---|
-| Anything AI on initial load | The launcher only — **945 B gz**, and it is inert (no fetch, no worker, no network API, one dynamic import). `tests/launcher.test.mjs` gates it deterministically: the 2 KB budget, the single `import(CHUNK)` resolving to the chat shell, and that `index.html` names nothing under `ai/` (no script, link, import-map entry or preload). The browser half is `dev-ai-probe.js`'s network assertion | **MEASURED** (probe + gate) |
-| What the click fetches | **45,194 B gz** static reach of `ai/ui/chat.mjs`, 14 files (86,096 B before the comment strip, 102,596 B before the voice split) | **MEASURED** |
+| Anything AI on initial load | The launcher only — **1,154 B gz** (2026-11-01), and it is inert (no fetch, no worker, no network API, one dynamic import). `tests/launcher.test.mjs` gates it deterministically: the 2 KB budget, the single `import(CHUNK)` resolving to the chat shell, and that `index.html` names nothing under `ai/` (no script, link, import-map entry or preload). The browser half is `dev-ai-probe.js`'s network assertion | **MEASURED** (probe + gate) |
+| What the click fetches | the static reach of `ai/ui/chat.mjs` — measured 2026-09-29 at **45,194 B gz across 14 files** on the previous chat shell; the chunk has since grown to **91,232 B gz across 31 files** in total (2026-11-01, `npm run bundle`), which is the conservative upper bound on the click | **MEASURED** |
 | First open | UI **221–405 ms**, knowledge + capability probe **285–722 ms** | **MEASURED** |
 | Worst main-thread long task, AI windows | **65 ms** — against the page's own worst of **88 ms** with the panel never opened | **MEASURED** |
 | Frame time, panel open vs closed | 25.2 ms vs 24.7 ms = **2 %** FPS drop (§4 allows 10 %); re-measured with the film's tier pinned: **18.3 vs 18.3 ms = 0 %** | **MEASURED** |
@@ -126,7 +131,7 @@ The constraint that outranks everything else: *the portfolio must not get slower
 | §4's reference profiles (never run before 2026-09-27) | R1 as it is **0 %**, R1 @4× CPU **−2.5 %**, R1 @6× CPU **+0.3 %** — all **1.00×** p95, all **43/43 checks**; panel ready 815 / 1,091 / 1,502 ms; first answer 25.1 / 45.4 / 42.8 s | **MEASURED** |
 | A weak device, for real | **NOT TESTED** — the CDP throttle hits the main thread (frame time 18.3 → 35.3 ms) but not the Worker proportionally (first answer 25.1 → 45.4 s is 1.8×, not 4×), so this profile must not be quoted as a phone's latency | **NOT TESTED** |
 | …and why it took this long | The A/B ran under software GL until 2026-09-27, where it was inconclusive; the first real-GPU run without a pin reported **−49 %** (the *open* arm faster) because the film's own governor walked tier 1 → tier 4 during the session — a confound the probe now detects and refuses to attribute | **MEASURED** |
-| §4 code chunk | **75,181 B gz = 48.9 %** of 150 KB (≈77 KB headroom) as of 2026-09-29 — §2 N4's disclosure card added 1,312 B gz and §11.1 (all five initiative clauses, plus the downgrade and headphones notices), the engine's Stop fix, §5's persona flip with its copy sweep and §0 rule 4's status disclosure added 2,404 B gz over the 72,777 B of the §2 N4 build. It was 72,777 B gz = 47.4 % before the §11.1 work, 70,544 B = 45.9 % the day before, and 138,896 B = 90.4 % before the comment strip. Conservative reading: every shipped `ai/**` + `knowledge.json`. The click's static reach is 45,194 B gz across 14 files, and the arithmetic it does **not** parse is 13,382 B gz across 9. Asserted on every `npm test`, and reported by `npm run bundle` | **MEASURED** |
+| §4 code chunk | **91,232 B gz = 59.4 %** of 150 KB (≈61 KB headroom) as of 2026-11-01 — the chat shell and the answer path grew with the model-answer work, the answer-frame export and the voice layer; it was 75,181 B = 48.9 % on 2026-09-29, and 138,896 B = 90.4 % before shipped `ai/**` stopped carrying comments. Conservative reading: every shipped `ai/**` + `knowledge.json`. Asserted on every `npm test`, and reported by `npm run bundle` | **MEASURED** |
 
 ## CHAT
 
@@ -134,6 +139,7 @@ The constraint that outranks everything else: *the portfolio must not get slower
 | Property | Value | Tag |
 |---|---|---|
 | Architecture | Shell (`ai/ui/chat.mjs`) → intent rules → retrieval → guard → model, all on-device; streaming tokens into one bubble | **MEASURED** |
+| Identity turn | **Fixed, not generated (2026-11-01)** — measured on the built bundle: `who are you` was answered `His name is Aashish Kumar.` (a fact about him, not about what is speaking), and `who is aashish kumar` came back as the Hinglish greeting on a turn `detectLanguage` called English. `routeQuestion` now returns `fixed` for the `meta` plan and the panel renders the localized disclosure (`I'm Aashish's AI Portfolio Assistant — not Aashish himself…`), which is what §5 requires. §14's identity metric now reads **100 %** of 6 in `docs/EVALUATION.json` (it read 66.7 % while the harness wrote empty answers for the six fixed rows) | **MEASURED** |
 | Context | Bounded by the **real** tokenizer: `maxSeq 512 − maxNew`, tier budget 96/160/256; 14 of 60 eval questions used to overflow the old 4-char estimate and surfaced as "the model stopped" | **MEASURED** |
 | Stop / Retry / Clear | All three; Stop keeps the partial text and badges it `PARTIAL ANSWER · STOPPED BY YOU`; stopping during prefill gives an honest `cancelled` line, never "model stopped" | **MEASURED** |
 | Language detection | EN / HI / Hinglish, automatic, **no selector** | **MEASURED** |
@@ -169,10 +175,13 @@ The constraint that outranks everything else: *the portfolio must not get slower
 **NO-GO.** No ternary code exists and none is planned for this iteration; the full
 reasoning, the arithmetic and the four conditions that would re-open it are in
 [`experiments/ternary/README.md`](../experiments/ternary/README.md). The honest
-summary: at 4.98M params ternary's real benefit is **size** (~3 MB gz off a
-4.81 MB first visit, ≈7 % of a budget we are using 11.5 % of), the speed benefit
-needs kernels that stock browser runtimes do not provide, and the decision
-belongs **after** the baseline passes its own gates — §13 says exactly that.
+summary: ternary's real benefit is **size** — the analysis was written against
+the retired 4.98M export, where it would have saved ~3 MB gz off a 4.8 MB first
+visit; the shipping checkpoint is ten times larger (46.3 MB gz), so the same
+fraction is now ~30 MB, which makes the axis more interesting and does not change
+the decision. The speed benefit still needs kernels that stock browser runtimes
+do not provide, and §13 puts the decision **after** the baseline passes its own
+gates — which the baseline passes and the v18 checkpoint now clears in its shipped, free-decoding form (§14: 97.1 % factual, all eight gates passing — `docs/EVALUATION.json`, 2026-11-15).
 
 ---
 
@@ -198,19 +207,28 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
 | Voice: both modes, local STT/TTS, lazy, permission paths, no selector, limits, visual state (§11.5), greeting (§11.1 a), guided tour (§11.1 c), idle nudge/standby (§11.1 d/e), auto-downgrade at rung 3 and the headphones tip (§11.1), transcript with edit (§11.2) | **MEASURED as code/tests**, and the tour + transcript halves **in a browser** (60/60, `dev-ai-probe.js`); live speech **NOT TESTED**. TTS is local (`speechSynthesis`); STT is the platform's — asked to stay on the device when the platform says it can (§19 row 6), disclosed either way |
 | Training resumable, checkpoints, evaluation, no fake results | **MEASURED** (resume verified); quality gates **NOT TESTED** |
 | Ternary separated from the baseline | **MEASURED** — separated by not existing; decision recorded |
-| §0 rule 4: the shipped checkpoint is not presented as a trained model | **MEASURED** — the **ABOUT** card states, in words, that what runs here is a *"pipeline test, not a model trained for quality"*, and the constant behind it (`MODEL_STATUS`) is **coupled to the evaluation**: `tests/disclosure.test.mjs` refuses `'trained'` while `docs/EVALUATION.json` reports the §14 gates as failed, which was verified by flipping it. Rendered-and-visible is asserted in a browser (`dev-ai-probe.js` 60/60). The rule's other half (a mode that turns the model off) is **not built**, because the deterministic engine it would fall back to was retired as an answer source — see limitation 15 |
+| §0 rule 4: the status cannot outrun the evaluation | **MEASURED** — the **ABOUT** card is driven by `MODEL_STATUS`, and the coupling is a **test, not a promise**: `tests/disclosure.test.mjs` reads `docs/EVALUATION.json` and refuses `'trained'` while the gates read `passed: false` (verified by flipping it), and refuses to let the status stay cautious once the gates pass. The card now reads *a 49.6M-parameter model trained from scratch for this portfolio that cleared the project's own §14 evaluation — 33 of 34 answerable questions (97.1 %), published with the evidence — and is not a general-purpose model*, because the evaluated path changed on 2026-11-15 and the constant followed the file rather than the other way round; the rendered-and-visible half is asserted in a browser (`dev-ai-probe.js`). The rule's other half is **built**: the panel defaults to the deterministic Portfolio Guide with no model download, and AI MODEL is an explicit opt-in whose size is shown on its button — see limitation 15 |
 
 ---
 
 ## KNOWN LIMITATIONS (the honest list)
 
-1. **No trained-for-quality checkpoint.** The browser answers, coherently-ish and
-   wrongly — real answers from this build read `"work reviewed cor byandeeer
-   why"` at step 800 and `"Uneomunyatoe thek, reviewed cor byandeainir…"` at step
-   1100. Training it further on this machine does not change that: 300 more steps
-   moved the words, not the quality, because the corpus is ~3 MB of generated
-   text. The engine, guard, budget and UI around it are verified; the *model* is
-   a pipeline artifact.
+1. **The evaluation is the project's own, it is small, and the shipping path now
+   passes all eight gates.** The v18 run is real and it ships — 49,595,328
+   parameters, Stage B latest step 3000 — and in AI MODEL mode it writes its
+   answers freely, with no closed grammar or template shaping the sentence. The
+   default Portfolio Guide is deterministic; this metric is the optional model.
+   On the project's own
+   66-prompt set that scores **97.1 %** factual accuracy (33/34, gate 95 %),
+   100 % abstention recall, 2.4 % false abstention, no fabricated fact, EN 100 %,
+   HI/Hinglish 100 % and identity disclosure 100 %: **all eight §14 gates pass.**
+   The one factual miss is `syn04`, a synthetic email the model refuses to
+   invent. Three things still bound that reading: the denominator is 34 cases
+   Aashish wrote himself; the model is 49.6M parameters answering this portfolio,
+   not a general assistant; and the test set was authored alongside the project,
+   so a fresh held-out set remains the stronger future check. The 4.98M CPU
+   checkpoint and its `"work reviewed cor byandeeer why"` answers are history
+   (see `docs/BENCHMARKS.md`, 2026-10-30).
 2. **This laptop cannot produce trustworthy absolute timings.** Its load moves
    wall-clock numbers 2–3× between runs. Only interleaved same-process
    comparisons (minimum-of-N) are quoted as findings.
@@ -221,7 +239,18 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
    hardware), and **Firefox 156** now runs the built bundle end to end
    (`npm run probe:firefox` 11/11, 2026-09-28).
 4. **WASM SIMD and WebGPU are unimplemented**, and the payoff cannot be measured
-   here — this box runs scalar JS ~10× below its own specification.
+   here — this box runs scalar JS ~10× below its own specification. The web's
+   own evidence is mixed rather than a promise: WebGPU is usually reported at
+   ≈3–10× over WebAssembly, but transformers.js issue #1750 measured
+   **WebAssembly ~9.6× faster** than WebGPU on a small embedding model, where
+   per-token dispatch overhead dominates. A kernel rewrite is a measurement to
+   make on the target device, not a speed-up to claim in advance.
+   Similarly, the list-completeness failure cannot be masked away: grammar-
+   constrained decoding guarantees *validity*, not *completeness*, and the
+   constrained-decoding literature is explicit that masking distorts the
+   model's distribution ("Grammar-Aligned Decoding", NeurIPS 2024,
+   arXiv:2405.21047). A grammar that forces all twelve skills is a grammar that
+   writes the list itself — the retired template, not the model's answer.
 5. **The §4 code chunk is at 48.9 %** (75,181 B gz of 150 KB, ≈77 KB of headroom — it
    moved 71,465 → 75,181 B gz on 2026-09-28/29 for §2 N4's disclosure, §11.1's greeting,
    tour, idle bounds, downgrade and headphones tip, the engine's Stop fix, §5's persona
@@ -242,8 +271,9 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
 7. **Ladder ↔ shell wiring** is now runtime-tested in the governor, but the full
    shell integration (scene hook effects end to end) is only covered at the
    module boundary.
-8. **PII review**: C4/C5 still open for sign-off; `contact.phone` is deliberately
-   not in the public knowledge file.
+8. **PII review**: the phone is withheld from the assistant and was removed from the public site
+   on 2026-10-29 at the owner's instruction. Unrelated CV provenance discrepancies C4/C5 remain
+   open for owner-side review.
 9. **Deployment host undecided**, so the production Cache-Control policy is
    written but not exercised on a real CDN.
 10. **Prompt length is the remaining quality lever** — 125 of a typical prompt's
@@ -361,34 +391,34 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
     introduced asserted a flat 60, which would have failed every `SW_GL=1` run
     (true total 58) — it is now **derived** from what actually runs.
 
-18. **§6.5's download reports per shard, not per byte, so three of its five
-    sub-clauses are not built.** The clause asks for "Shards ≤ ~8 MB, parallel
-    download, resumable, SHA-256 verified (SubtleCrypto), progress via streaming
-    `fetch`." The cap and the hash are gated. *Parallel* is moot — the shipped
-    manifest has **one** shard of 5,059,584 B; *resumable* is not implemented (a
-    partial shard restarts, and the cache-repair path is the recovery); and the
-    loader reads that shard with `response.arrayBuffer()`, reporting only after
-    it lands. Measured against the real export, the weights stage emits exactly
-    **two** updates — `loaded=0`, then `loaded=5059584` — so the progress line
-    sits at "0.0 MB of 4.8 MB" for the whole download and then completes. On
-    broadband that is about a second, and the clause would earn its keep on the
-    slow connection where it is longest — which is **NOT TESTED** here (no
-    throttling run).
+18. **§6.5's download reports per shard, not per byte, so two of its five
+    sub-clauses are not built — and the shard count changed under it.** The
+    clause asks for "Shards ≤ ~8 MB, parallel download, resumable, SHA-256
+    verified (SubtleCrypto), progress via streaming `fetch`." The cap and the
+    hash are gated. The shipping export now has **seven** shards (largest
+    8,388,540 B), so *parallel* download is no longer moot — and it is still not
+    implemented: the loader takes them in sequence. *Resumable* is not
+    implemented either (a partial shard restarts, and the cache-repair path is
+    the recovery), and each shard is read with `response.arrayBuffer()`, so the
+    weights stage emits one update per shard after it lands rather than a byte
+    stream — **7** updates for 46.3 MB, and the progress line can sit still for
+    the duration of a shard. That is visible now in a way it was not with one
+    5 MB shard; the byte-level half remains **NOT TESTED** here (no throttled
+    run).
 
 ## WHAT I NEED FROM YOU
 
-1. **A GPU run** — the Kaggle notebook and scripts are in `training/notebooks/`
-   and `training/scripts/`. Stage A + Stage B at config A is the single thing
-   that turns the quality claim from false to true, and it is the only item on
-   this list that nothing on this machine can substitute for. The recipe is
-   now two commands, and both have been run at the local shape:
-   `npm run train:local` (Stage A) then `npm run train:sft -- --init
-   training/checkpoints/stage-a/latest.pt --config A --steps 3000 --amp`
-   (Stage B, assistant-only loss). Stage B is not optional: the runtime frame
-   `<|ctx|>…<|asst|>` appears in **4 of 17,265** pretraining documents, so a
-   Stage A-only checkpoint has never seen the format it is asked to continue.
-   `npm run sample:answers` shows what a checkpoint actually answers without
-   exporting it or opening a browser.
+1. **A fresh held-out set, not another first run.** The v18 export ships (config
+   B, 49.6M, Stage B latest step 3000) and passes all eight gates on the
+   project's 66 prompts. That set was also authored alongside the project, so the
+   measurement that would mean most is a fresh set held out of both SFT and this
+   tuning loop — more instruction variety, a checkpoint sweep instead of `best`
+   by training loss, and evaluation prompts kept out of SFT. `CONFIG_A` (37.9M)
+   is untested and would be *smaller* than what ships, so it is a budget option
+   rather than an upgrade. The recipe is
+   `training/notebooks/train_stage_b.ipynb` driven from `training/scripts/`;
+   `npm run eval:prompts && npm run eval:decode && npm run eval:report` grades a
+   candidate without opening a browser.
 2. **Then a decision on the P4 gate** — whether the 9/9-source verify gate is
    the bar, or the §14 evaluation numbers replace it.
 3. **A real-device pass** — one mid-range Android and one iPhone, for the T1/T2
@@ -396,7 +426,8 @@ belongs **after** the baseline passes its own gates — §13 says exactly that.
    exists (`docs/MANUAL_TEST_CHECKLIST.md` §D, all NOT TESTED).
 4. **A deployment host decision**, so caching and the offline-after-cache path
    are verified against the headers visitors will actually see.
-5. **Sign-off on the PII list** (C4/C5).
+5. **Review unresolved CV provenance conflicts C4/C5.** The phone publication decision itself is
+   complete: it is removed from the site and excluded from the assistant's public data.
 6. **§5's persona — ruled, and shipped.** You asked for the spec's reading; the
    default is now the third person (limitation 12 above records what moved).
    One thing worth your eye, because it is the only part of the change that a

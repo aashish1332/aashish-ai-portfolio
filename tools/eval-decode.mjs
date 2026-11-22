@@ -2,7 +2,7 @@
    tools/eval-decode.mjs — decode the §14 prompts with the SHIPPING engine
 
      npm run eval:prompts                       # 1. the prompts
-     node tools/eval-decode.mjs --export ai/model-export/aashish-ai-1 \
+     node tools/eval-decode.mjs --export ai/model-export/aashish-ai-b \
           --prompts docs/EVAL_PROMPTS.json --out docs/EVAL_ANSWERS.json \
           --max-tokens 96                        # 2. answers (this tool)
      npm run eval:report                         # 3. score + gates
@@ -36,6 +36,7 @@ import { dirname, resolve as pathResolve } from 'node:path';
 
 import { ScratchLlamaEngine } from '../ai/engine/index.mjs';
 import { frame } from '../ai/engine/prompt.mjs';
+import { FREE_REPETITION_PENALTY } from '../ai/answers/model.mjs';
 
 export function fileFetch(base) {
   const root = pathResolve(base);
@@ -53,7 +54,9 @@ export function fileFetch(base) {
   };
 }
 
-export async function decodeWithEngine({ exportDir, prompts, maxNewTokens, onProgress = null }) {
+export async function decodeWithEngine({
+  exportDir, prompts, maxNewTokens, onProgress = null, free = false,
+}) {
   /* `load()` takes the manifest's URL and derives the tokenizer and shard URLs
      from it, so the shim only has to resolve the basename — the same shim
      shape `tests/token-budget.test.mjs` uses. `verify` stays on: the sha256
@@ -88,6 +91,24 @@ export async function decodeWithEngine({ exportDir, prompts, maxNewTokens, onPro
       history: row.history || [],
       rules: row.rules || 'third',
       maxNewTokens,
+      /* The answer layer's own decision, carried in the prompt row: a fact
+         question is decoded against the trained answer frames
+         (`ai/engine/grammar.mjs`), everything else keeps the free decode.
+         `free` is the A/B instrument: the same prompts, the constraint off,
+         so a claim about what the grammar buys is measured on identical
+         inputs rather than against a different prompt set. */
+      answerGrammar: !free && row.closedAnswer === true,
+      /* The plan's own single-fact decision, when it has one. Kept out of the
+         `free` arm: that arm is the unconstrained A/B control, so it must not
+         gain a different constraint in place of the one it is a control for. */
+      answerIds: !free ? row.answerIds || null : null,
+      /* The list-vs-single shape the answer layer decided from the plan, kept
+         out of the `free` arm for the same reason `answerIds` is. */
+      answerLists: !free && row.answerLists === true,
+      /* The product's own decode knob, so the evaluation measures the sentence
+         a visitor would read (ai/answers/model.mjs). Not a grammar: it only
+         penalises a token the turn already produced. */
+      repetitionPenalty: FREE_REPETITION_PENALTY,
     });
     let step = await run.next();
     while (!step.done) step = await run.next();
@@ -100,6 +121,10 @@ export async function decodeWithEngine({ exportDir, prompts, maxNewTokens, onPro
       decoded: summary?.tokens ?? 0,
       stopReason: summary?.stopReason ?? null,
       abstained: summary?.abstained ?? false,
+      /* What the grammar did on this turn — `null` when it was not used, so a
+         reader can tell "the constraint held" from "it was never applied". */
+      closedAnswer: summary?.closedAnswer ?? null,
+      maskedCitations: summary?.maskedCitations ?? 0,
       route: row.route,
     });
     if (onProgress) onProgress(row, summary);
@@ -111,7 +136,7 @@ export async function decodeWithEngine({ exportDir, prompts, maxNewTokens, onPro
 }
 
 export function parseArgs(argv) {
-  const args = { exportDir: null, prompts: null, out: null, maxTokens: 96, quiet: false };
+  const args = { exportDir: null, prompts: null, out: null, maxTokens: 96, quiet: false, free: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--export') args.exportDir = argv[++i];
@@ -119,8 +144,10 @@ export function parseArgs(argv) {
     else if (a === '--out') args.out = argv[++i];
     else if (a === '--max-tokens') args.maxTokens = Number(argv[++i]);
     else if (a === '--quiet') args.quiet = true;
+    else if (a === '--free') args.free = true;
     else if (a === '-h' || a === '--help') {
-      console.log('node tools/eval-decode.mjs --export <dir> --prompts <json> --out <json> [--max-tokens 96]');
+      console.log('node tools/eval-decode.mjs --export <dir> --prompts <json> --out <json> '
+        + '[--max-tokens 96] [--free]   (--free = the A/B arm: closed-answer grammar off)');
       process.exit(0);
     } else throw new Error(`unknown flag ${a}`);
   }
@@ -143,13 +170,14 @@ export async function main(argv = process.argv.slice(2)) {
 
   if (!args.quiet) {
     console.log(`engine decode: ${args.exportDir}, ≤${args.maxTokens} tokens, `
-      + `${payload.prompts.length} prompts`);
+      + `${payload.prompts.length} prompts${args.free ? ' (closed-answer grammar OFF)' : ''}`);
   }
   const started = Date.now();
   const { answers, source } = await decodeWithEngine({
     exportDir: args.exportDir,
     prompts: payload.prompts,
     maxNewTokens: args.maxTokens,
+    free: args.free,
     onProgress: args.quiet ? null : (row, summary) => {
       console.log(`    ${row.id}  ${String(summary?.tokens ?? 0).padStart(3)} tok  `
         + `${summary?.stopReason ?? '?'}  ${String(summary?.rawText ?? '').slice(0, 60)}`);
@@ -161,6 +189,7 @@ export async function main(argv = process.argv.slice(2)) {
     exportDir: args.exportDir,
     promptsFile: args.prompts,
     maxNewTokens: args.maxTokens,
+    answerGrammar: args.free ? 'off (--free)' : 'on where the row asks for it',
     decodeSeconds: (Date.now() - started) / 1000,
     checkpoint: source?.run ?? null,
     which: source?.which ?? null,

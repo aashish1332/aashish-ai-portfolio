@@ -43,6 +43,16 @@ class VarietyWidensTheQuestionSet(unittest.TestCase):
             q for ex in examples for q, _ in ex["turns"])
 
     def _varied_only(self, examples):
+        """Carrier-varied rows only — the composed bait is excluded.
+
+        2026-11-04: `ai/data/instruction.py` gained a compositional abstention
+        generator (`BAIT_SHAPES` × 18 companies and 10 universities). It writes
+        its own wide question set with no carrier at all, so counting it on
+        BOTH sides compares two widened sets: MEASURED 622 -> 2,443, under the
+        5× the test asks for, while the carrier multiplication it is about was
+        unchanged. The bait's width is its own claim and is tested below, so
+        the two properties stay separately falsifiable.
+        """
         """The examples `generate()` is allowed to wrap.
 
         2026-10-27: an identity question and an injection attempt are the
@@ -54,7 +64,40 @@ class VarietyWidensTheQuestionSet(unittest.TestCase):
         about, so it is computed over exactly those examples.
         """
         return [ex for ex in examples
-                if ex.get("category") not in inst._UNVARYED and ex.get("vary") is not False]
+                if ex.get("category") not in inst._UNVARYED
+                and ex.get("vary") is not False
+                and not ex.get("bait")]
+
+    def test_the_composed_bait_is_wide_on_its_own(self):
+        """The anti-memorisation property for the bucket that needs no carrier.
+
+        v1's failure was 40,000 examples from ~106 strings. The composed bait
+        cannot be widened by a carrier phrase, so it has to be wide in itself:
+        18 companies and 10 universities × 8/4 shapes × 3 languages. MEASURED
+        2026-11-04 at 4,000 examples: 600 abstention rows, 471 distinct
+        questions. The floor is set well under that because the exact count
+        moves with the seed, and a floor at the measured number would fail on
+        an unrelated RNG change rather than on a narrow pool.
+        """
+        bait = [ex for ex in self.varied if ex.get("bait")]
+        self.assertGreater(len(bait), 100, "no composed bait rows were produced")
+        distinct = len({q for ex in bait for q, _ in ex["turns"]})
+        # MEASURED at 4,000 examples: 213 bait rows, 209 distinct with carriers
+        # and 165 without. The floor sits under both, so it fails on a pool that
+        # collapsed, not on a seed change.
+        self.assertGreaterEqual(
+            distinct, 150,
+            f"the composed bait only produced {distinct} distinct questions; "
+            "a narrow bait pool is v1's failure in a new category")
+        # And the pool that makes them, counted rather than sampled: 12 EN
+        # shapes × 18 companies + 4 × 10 universities, and 8 × 18 + 3 × 10 in
+        # each of Hindi and Hinglish = 424 questions before any carrier.
+        space = sum(
+            len(shapes) * len(inst.BAIT_COMPANIES if kind == "company"
+                              else inst.BAIT_UNIVERSITIES)
+            for lang in inst.BAIT_SHAPES.values() for kind, shapes in lang.items())
+        self.assertGreaterEqual(space, 400,
+                                f"the composed bait space is only {space} questions")
 
     def test_it_raises_the_number_of_distinct_questions_a_lot(self):
         before = inst.distinct_questions(self._varied_only(self.flat))

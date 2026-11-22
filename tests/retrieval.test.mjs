@@ -398,17 +398,17 @@ test('focus switches when a different entity is named explicitly', () => {
 });
 
 /* The ratio is a MEASUREMENT of this model's tokenizer, not the generic
-   4-chars-per-token rule of thumb it used to be. `aashish-ai-1` has a
-   1,024-token vocabulary, so its BPE cannot merge long runs the way a 32k
-   vocabulary does and real text costs 1.0–2.8 chars/token. At 4, a
-   "300-token" context was really ~750 and 14 of the 60 evaluation questions
-   built a prompt past the 512-token window.
+   4-chars-per-token rule of thumb it used to be. The shipping tokenizer
+   (aashish-ai-b, a 16,384-vocab BPE) measures 1.74–3.44 chars/token across
+   the priced classes, median ~2.94 — re-measured when the old aashish-ai-1
+   export (1k vocab, 512 window) was replaced, which is also why the band
+   moved up from the 1.25–2 the original test pinned.
 
-   The numbers below come from `npm run probe:tokens`, and this test is the
-   tripwire: if the tokenizer is ever retrained to a bigger vocabulary, the
-   ratio moves and this fails, pointing at the command that re-measures it. */
+   The numbers come from `npm run probe:tokens`, and this test is the
+   tripwire: if the tokenizer is ever retrained again, the ratio moves and
+   this fails, pointing at the command that re-measures it. */
 test('estimateTokens uses the measured chars-per-token, not a generic 4', () => {
-  assert.ok(CHARS_PER_TOKEN >= 1.25 && CHARS_PER_TOKEN <= 2,
+  assert.ok(CHARS_PER_TOKEN >= 2.35 && CHARS_PER_TOKEN <= 3.68,
     `CHARS_PER_TOKEN=${CHARS_PER_TOKEN} is outside every measured class median`);
   assert.equal(estimateTokens('abcd'), Math.ceil(4 / CHARS_PER_TOKEN));
   assert.equal(estimateTokens('a'.repeat(400)), Math.ceil(400 / CHARS_PER_TOKEN));
@@ -417,7 +417,7 @@ test('estimateTokens uses the measured chars-per-token, not a generic 4', () => 
   /* monotone and conservative in the direction that matters: never claiming a
      string is cheaper than a generic 4-chars-per-token guess would */
   for (const n of [1, 7, 40, 999]) {
-    assert.ok(estimateTokens('a'.repeat(n)) >= Math.ceil(n / 2));
+    assert.ok(estimateTokens('a'.repeat(n)) >= Math.ceil(n / 4));
   }
 });
 

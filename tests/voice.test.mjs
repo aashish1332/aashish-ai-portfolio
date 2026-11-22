@@ -1041,18 +1041,62 @@ test('VOICE-13: the visual is CSS, and reduced motion leaves it still', () => {
      would be layout work on a portfolio that must not get slower (§4). */
   const keyframes = css.match(/@keyframes aiOrbPulse \{[\s\S]*?\n\}/);
   assert.ok(keyframes, 'the pulse keyframes are gone');
-  for (const prop of keyframes[0].match(/\{[^}]*\}/g) || []) {
-    assert.match(prop, /transform|opacity/,
-      `the orb animates ${prop.trim()}, which is not a transform or an opacity`);
+  const rippleKf = css.match(/@keyframes aiMicRipple \{[\s\S]*?\n\}/);
+  assert.ok(rippleKf, 'the ripple keyframes are gone');
+  for (const kf of [keyframes[0], rippleKf[0]]) {
+    for (const prop of kf.match(/\{[^}]*\}/g) || []) {
+      assert.match(prop, /transform|opacity/,
+        `the visual animates ${prop.trim()}, which is not a transform or an opacity`);
+    }
   }
-  /* The animation must live behind no-preference, or reduced motion moves. */
-  const gated = css.match(/@media \(prefers-reduced-motion: no-preference\) \{[\s\S]*?\n\}/);
-  assert.ok(gated, 'the orb animation is no longer gated on prefers-reduced-motion');
-  assert.match(gated[0], /\.ai__orb/);
-  assert.doesNotMatch(css.replace(gated[0], ''), /animation: aiOrbPulse/,
-    'an ungated copy of the animation would move for a visitor who asked it not to');
+  /* The animations must live behind no-preference, or reduced motion moves.
+     There are now TWO gated blocks (the orb pulse and the mic ripple), and
+     BOTH must hold their animation — so every no-preference block is
+     collected, and an ungated copy is hunted for after they are all removed. */
+  const gatedBlocks = css.match(/@media \(prefers-reduced-motion: no-preference\) \{[^@]*?\n\}/g) || [];
+  assert.ok(gatedBlocks.length >= 2, 'the gate blocks are gone');
+  assert.ok(gatedBlocks.some((b) => /\.ai__orb/.test(b)), 'the orb pulse is no longer gated');
+  assert.ok(gatedBlocks.some((b) => /\.ai__mic[^\n]*::after/.test(b)),
+    'the mic ripple is no longer gated on prefers-reduced-motion');
+  assert.doesNotMatch(gatedBlocks.reduce((acc, b) => acc.replace(b, ''), css),
+    /animation: (aiOrbPulse|aiMicRipple)/,
+    'an ungated copy of an animation would move for a visitor who asked it not to');
   assert.doesNotMatch(css, /requestAnimationFrame|getContext\(/,
     'the visual has to stay CSS: no frame loop and no canvas inside the shell');
+});
+
+test('VOICE-13b: the live voice level reaches the orb, and dies with voice mode', () => {
+  /* The complaint this answers: "proactive mode shows nothing while I am
+     talking". The VAD already measures the room every ~30 ms — its 0–1
+     number now lands on the orb as one CSS custom property, so the dot
+     visibly grows with the visitor's own voice. Testable without a
+     microphone: the shell's handler is a pure function of a frame. */
+  const css = readFileSync(join(HERE, '..', 'ai', 'ui', 'styles.mjs'), 'utf8');
+  assert.match(css, /--orb-level/, 'the level property is not read anywhere in the stylesheet');
+  assert.match(css, /\.ai__orb \{[^}]*transform: scale\([^)]*var\(--orb-level/, 's',
+    'the orb must be the element that scales with the live level');
+
+  /* The shell side: the handler writes EVEN frames only (throttle) and the
+     off state clears the value, so a stale level cannot outlive its session. */
+  const chatSrc = readFileSync(join(HERE, '..', 'ai', 'ui', 'chat.mjs'), 'utf8');
+  assert.match(chatSrc, /onVadFrame: vadLevelTick/,
+    'the voice layer is not wired to the shell\'s level handler');
+  assert.match(chatSrc, /removeProperty\('--orb-level'\)/,
+    'voice off must clear the level, not leave the orb frozen at the last loudness');
+
+  /* And the handler shape itself — this file has no DOM, so what is
+     testable is the contract the shell offers the browser: clamp, throttle,
+     and clear. The formula is read from the stylesheet rather than
+     restated, so the test and the browser compute the same number. */
+  const scaleRule = css.match(/scale\(calc\(\.9 \+ \.45 \* var\(--orb-level, 0\)\)\)/);
+  assert.ok(scaleRule, 'the transform no longer mixes the idle pulse and the live level');
+  /* The throttle: one write in two, from the same file the shell runs. */
+  assert.match(chatSrc, /vadFrameSkip\s*=\s*\(vadFrameSkip \+ 1\) % 2/,
+    'the write is no longer throttled to every other frame');
+  /* And the written value is clamped, so an out-of-range frame cannot
+     overdrive the orb. */
+  assert.match(chatSrc, /Math\.max\(0, Math\.min\(1,[^)]*level/,
+    'the live level is not clamped 0-1 before it reaches the dot');
 });
 
 /* ── VOICE-14 · §11.1's idle nudge, then the standby ───────────────
@@ -1401,6 +1445,31 @@ test('VOICE-16: the greeting is spoken through the answer path, in the session\u
   assert.equal(spk.lastOpts?.lang, 'hi-IN',
     'the greeting must be spoken in the language the session is in');
   assert.match(spk.spoken[0], /projects/i);
+  voice.disable();
+});
+
+test('VOICE-16: the greeting buys a turn — the next sentence needs no wake phrase', () => {
+  /* The bug this pins: after the greeting, the visitor says "what projects
+     has he built?" and is met with silence, because the turn was never
+     opened and the wake-phrase rule dropped the utterance. The turn must
+     open when the greeting finishes speaking — NOT while it speaks, because
+     on a speaker without echo cancellation the microphone can transcribe the
+     assistant's own sentence, and an open turn would make it answer itself. */
+  const { voice, chat, spk, flush } = build(2);
+  voice.enable();
+  assert.equal(voice.greet(), true);
+  assert.equal(voice.onFinal('what projects has he built?'), null,
+    'while the greeting is still going, a wake-less utterance stays dropped');
+  assert.deepEqual(chat.asked, [], 'nothing during the greeting is a question yet');
+  /* The greeting ends (the injected speaker has no onEnd, so the fallback
+     timer is the path a real browser's broken end event would ride too): */
+  flush();
+  assert.equal(voice.status().session, true, 'the greeting must buy a turn');
+  voice.onFinal('what projects has he built?');
+  assert.deepEqual(chat.asked, ['what projects has he built?'],
+    'the visitor\'s first reply after the greeting is a question without a wake phrase');
+  /* An answer keeps the turn alive exactly as on the wake-phrase path. */
+  assert.equal(voice.status().session, true);
   voice.disable();
 });
 

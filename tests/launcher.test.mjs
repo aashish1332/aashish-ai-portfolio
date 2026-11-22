@@ -1,27 +1,24 @@
 /* ═══════════════════════════════════════════════════════════════
-   tests/launcher.test.mjs — §2 N6: nothing AI loads before the click
+   tests/launcher.test.mjs — what AI work happens before the click
 
-   The promise is the strongest one in the spec and the easiest to break by
-   accident: add a tag to `index.html`, a static import to the launcher, or a
-   `<link rel="preload">`, and a visitor who never clicks pays for the
-   assistant anyway. The e2e probe already asserts it *in a browser*, by
-   watching the network — but that needs Chrome, a dev server and ~40 seconds,
-   so it runs when someone runs it, and it is the wrong shape for a regression
-   guard.
+   2026-10-30: the warm-up introduced on 2026-10-13 was removed. It had the
+   launcher mount the shell 1.2 s after `load` and start the model download,
+   which is exactly what §2 N6 forbids ("nothing AI-related loads or
+   initialises before the click") and, with the 49.6M checkpoint, cost every
+   visitor 46 MB whether or not they wanted the assistant. The browser probe
+   caught it as a pre-click network violation.
 
-   This is the deterministic half. It checks the two files that can break the
-   promise, at the moment they are written:
+   The contract is literal again:
 
-     · `js/ai/launcher.js` is the only AI code on the initial page load, and it
-       is inert — no request, no worker, no network API, exactly one dynamic
-       import, and that import is the UI chunk;
-     · it stays inside its ~2 KB gzip budget;
-     · `index.html` references nothing under `ai/` — no `<script src>`, no
-       `<link>`, no import-map entry, no preload/prefetch/modulepreload — and
-       the launcher is the only AI script it names at all.
+     · the page loads nothing under `ai/` statically — no `<script src>`, no
+       `<link>`, no import-map entry, no preload tag;
+     · the launcher is inert — no fetch, no worker, no wasm, no knowledge
+       base, and exactly one dynamic import of the UI chunk;
+     · that import happens on the click and nothing else — no `load` timer,
+       no hover prefetch, no focus prefetch.
 
-   The browser assertion is still the one that proves it end to end; this is
-   the one that stops it being broken in the first place.
+   The browser-level half (0 AI requests before the click) is
+   `dev-ai-probe.js`'s first check; this file stops the static regressions.
    ═══════════════════════════════════════════════════════════════ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -60,7 +57,7 @@ function importMapValues(html) {
   }
 }
 
-test('§2 N6: the launcher is inert, and it is the only AI code the page loads', () => {
+test('the launcher is inert of its own work, and it is the only AI code the page loads', () => {
   const src = read(LAUNCHER);
 
   /* 1. no network, no worker, no model — it answers "did the visitor click?" */
@@ -95,6 +92,29 @@ test('§2 N6: the launcher is inert, and it is the only AI code the page loads',
   const bytes = gz(LAUNCHER);
   assert.ok(bytes <= 2048, `${LAUNCHER} is ${bytes} B gz, over its 2 KB budget`);
 
+  /* 3b. §2 N6: the click is the ONLY trigger. A `load` timer, a pointerenter
+     or a focus handler that imports the chunk is a pre-click AI request, and
+     the browser probe sees it even when this file looks inert. */
+  for (const [pattern, what] of [
+    [/\bwarmup\s*\(/, 'a warm-up call'],
+    [/addEventListener\(['"]load['"]/, 'a page-load listener'],
+    [/pointerenter|pointerover|mouseenter/, 'a hover prefetch'],
+    [/addEventListener\(['"]focus['"]/, 'a focus prefetch'],
+  ]) {
+    assert.ok(!pattern.test(src),
+      `${LAUNCHER} contains ${what} — that loads AI before the click (§2 N6)`);
+  }
+  /* exactly one listener, and it is the click */
+  const listeners = [...src.matchAll(/addEventListener\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1]);
+  assert.deepEqual(listeners, ['click'],
+    `${LAUNCHER} listens for ${listeners.join(', ') || 'nothing'} — the click must be the only trigger`);
+  /* and never double-wires: mount() also attaches a click toggle to #askAI, so
+     the launcher must hand its own listener over when it mounts (or when the
+     first click does) — otherwise one click = open() + toggle() and the
+     button reads dead. This exact bug shipped once. */
+  assert.match(src, /removeEventListener\(['"]click['"]\s*,\s*open\)/,
+    `${LAUNCHER} never hands over its click listener — a first click would open and instantly close`);
+
   /* 4. the page loads it in exactly one place, and names nothing under ai/ */
   const html = read('index.html');
   const scripts = [...html.matchAll(/<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/g)].map((m) => m[1]);
@@ -115,7 +135,7 @@ test('§2 N6: the launcher is inert, and it is the only AI code the page loads',
   assert.deepEqual(aiPreloads, [], `index.html preloads ${aiPreloads.join(', ')}`);
 });
 
-test('§2 N6: the same holds in the built bundle, where a visitor actually is', () => {
+test('§2 N6 (static half): the bundle is built the same way, where a visitor actually is', () => {
   const out = mkdtempSync(join(tmpdir(), 'launcher-'));
   try {
     buildBundle({ out, quiet: true });

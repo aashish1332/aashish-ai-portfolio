@@ -1,0 +1,41 @@
+{
+  "url": "http://localhost:5577/",
+  "results": [
+    {
+      "name": "1 panel opens",
+      "ok": true,
+      "detail": "controller live and dialog visible"
+    },
+    {
+      "name": "1b model state settled",
+      "ok": true,
+      "detail": "modelState=ready"
+    },
+    {
+      "name": "2a handsFree set → true",
+      "ok": true,
+      "detail": "getHandsFree=true"
+    },
+    {
+      "name": "2b handsFree follow moved the page",
+      "ok": true,
+      "detail": "scrollY 0 -> 4195 (projects)"
+    },
+    {
+      "name": "3a handsFree unset → false",
+      "ok": true,
+      "detail": "getHandsFree=false"
+    },
+    {
+      "name": "3b handsFree off → no follow-sized move",
+      "ok": true,
+      "detail": "scrollY 4195 -> 4608 (tolerance 600)"
+    },
+    {
+      "name": "4 lastAnswer landed",
+      "ok": true,
+      "detail": "kind=planner text=His certifications: Database Management System — Infosys Springboard · 04 Jul 20"
+    }
+  ],
+  "passed": true
+}

@@ -47,8 +47,18 @@ def _load():
 
 sa = _load()
 
-SIXTEEN_K = "portfolio-bpe-16k-45395d2ebc83"
-ONE_K = "portfolio-bpe-1k-45395d2ebc83"
+# Read the generations off the artifacts rather than pinning a hash here. The
+# 2026-10-25 vocabulary refresh (knowledge.json 1.1.0's edu.kv1) rebuilt both
+# tokenizers, and a literal hash made these tests fail for the one reason they
+# are not about: the on-disk artifact had moved on. The behaviour under test is
+# "resolve the generation the checkpoint records", not "remember 45395d2e".
+def _generation(artifact: str) -> str:
+    return json.loads((ROOT / "ai" / "tokenizer" / "artifacts" / artifact
+                       / "meta.json").read_text(encoding="utf-8"))["tokenizer_version"]
+
+
+SIXTEEN_K = _generation("stage-a-16k")
+ONE_K = _generation("seed-1k")
 
 
 def _run_dir(tmp: str, generation: str) -> Path:

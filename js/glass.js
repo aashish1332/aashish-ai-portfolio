@@ -18,7 +18,12 @@
 'use strict';
 
 const GlassSurface = (() => {
-  const TARGETS = '.hud__brand, .hud__right, .sound, .perfchip, .btn';
+  /* Buttons are intentionally NOT glass. The old surface stripped the
+     button's accent fill and set its background transparent, which left the
+     dark-theme CTA as an empty outline and made the light-theme CTA depend on
+     a blur that isn't part of this build sheet. Chrome can be glass; actions
+     stay solid and legible. */
+  const TARGETS = '.hud__brand, .hud__right, .sound, .perfchip';
 
   /* prop defaults — the component's, tuned for visibility.
      borderWidth 0.4  → wide refraction band (default 0.07 was a

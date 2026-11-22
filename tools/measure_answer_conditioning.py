@@ -58,15 +58,26 @@ def grounded_factual(kb: dict, count: int, seed: int) -> list[dict]:
             if e["category"] == "factual" and not e["counterfactual"]]
 
 
+#: A context has to be generated at least this many times before it can say
+#: anything about the question. **Measured reason (2026-10-23):** a context seen
+#: once admits exactly one answer by construction, so counting it as
+#: "question-ignoring" punishes the generator for having a large context space.
+#: Adding the fact-coverage branch (91 -> 93 contexts) pushed the 2,000-example
+#: reading to 15.4% on singletons alone while the 8,000-example reading was
+#: 0.0% — the same generator, two answers, decided by sample size.
+MIN_OBSERVATIONS = 2
+
+
 def measure(kb: dict, count: int, seed: int) -> tuple[int, dict[int, int]]:
-    by_context: dict[tuple[str, ...], set[tuple[str, ...]]] = \
-        collections.defaultdict(set)
+    by_context: dict[tuple[str, ...], list[tuple[str, ...]]] = \
+        collections.defaultdict(list)
     for example in grounded_factual(kb, count, seed):
         context = tuple(sorted(CONTEXT_FACT.findall(example["context"])))
         answer = tuple(sorted(set(ANSWER_FACT.findall(example["turns"][0][1]))))
-        by_context[context].add(answer)
-    distribution = collections.Counter(len(v) for v in by_context.values())
-    return len(by_context), dict(sorted(distribution.items()))
+        by_context[context].append(answer)
+    counted = [set(v) for v in by_context.values() if len(v) >= MIN_OBSERVATIONS]
+    distribution = collections.Counter(len(v) for v in counted)
+    return len(counted), dict(sorted(distribution.items()))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -99,7 +110,8 @@ def main(argv: list[str] | None = None) -> int:
 
     print(f"§7.4 answer conditioning — {args.count:,} examples, seed {args.seed}")
     print(f"  topics                       {len(inst.TOPICS)}")
-    print(f"  distinct contexts            {contexts}")
+    print(f"  distinct contexts            {contexts}  "
+          f"(seen >= {MIN_OBSERVATIONS} times)")
     print(f"  answers per identical context {distribution}")
     print(f"  question-ignoring contexts   {single}/{contexts} = {share:.1%}")
     print(f"  floor                        {AMBIGUITY_FLOOR:.0%}")

@@ -56,7 +56,13 @@ test('the decoder drains the engine and records why it stopped', async () => {
   const [answer] = answers;
   assert.equal(answer.id, 'd06');
   assert.ok(answer.decoded <= 32, 'the cap must be respected');
-  assert.ok(['end-token', 'abstain', 'max-tokens'].includes(answer.stopReason),
+  /* `grammar` is the closed answer space refusing a continuation
+     (ai/engine/grammar.mjs). It is unreachable with a real checkpoint — every
+     token comes from the grammar's own edges — but this row IS a closed-answer
+     case, and the random-init fixture wanders, so the honest list includes it
+     rather than turning the grammar off for the one test that would exercise
+     the plumbing. */
+  assert.ok(['end-token', 'abstain', 'max-tokens', 'grammar'].includes(answer.stopReason),
     `stopReason was ${answer.stopReason}`);
   if (answer.decoded === 0) {
     assert.notEqual(answer.stopReason, 'max-tokens',
@@ -69,6 +75,34 @@ test('the decoder drains the engine and records why it stopped', async () => {
      rather than a checkpoint, and the decoder reports that source verbatim
      instead of inventing a run and a step number. */
   assert.equal(source?.kind, 'random-init', `source was ${JSON.stringify(source)}`);
+});
+
+test('--free decodes the same row with the closed-answer grammar off', async () => {
+  /* The A/B instrument: a claim about what the grammar buys has to be measured
+     on identical prompts, so the tool can switch the constraint off without
+     regenerating them. `closedAnswer` in the record is how a reader tells the
+     two arms apart after the fact.
+
+     Since 2026-11-06 the shipping chat does not constrain the decode at all
+     (`MODEL_OWNS_ANSWERS` in ai/answers/model.mjs), so the emitter's own row
+     carries `closedAnswer: false` — asserted below, because an evaluation that
+     quietly kept the grammar on would grade a product nobody runs. The
+     instrument still has to work the other way, so the closed arm is built by
+     ASKING for the constraint on the same prompt. */
+  const row = promptRow();
+  assert.equal(row.closedAnswer, false,
+    'the shipping emitter must not constrain the decode any more');
+
+  const closed = await decodeWithEngine({
+    exportDir: FIXTURE, prompts: [{ ...row, closedAnswer: true }], maxNewTokens: 32,
+  });
+  assert.ok(closed.answers[0].closedAnswer, 'the closed arm reports its grammar');
+
+  const open = await decodeWithEngine({
+    exportDir: FIXTURE, prompts: [row], maxNewTokens: 32, free: true,
+  });
+  assert.equal(open.answers[0].closedAnswer, null,
+    'the free arm must not build a grammar');
 });
 
 test('an answer with no tokens is a refusal, not an unsupported claim', () => {

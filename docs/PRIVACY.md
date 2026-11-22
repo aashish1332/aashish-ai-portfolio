@@ -24,7 +24,7 @@ can be declined by simply not using it.
 | Answers | **No.** Composed on the device from `knowledge.json` | same |
 | Voice input (SpeechRecognition) | **The default is yes — the browser's own speech service — and since 2026-09-27 we ask whether it can be avoided.** The session first calls `SpeechRecognition.available({ processLocally: true, langs })`; only on `'available'` does it set `processLocally` and recognise on-device. The sentence follows the answer: *"…sends what you say to your browser's speech service — so while it listens, your audio leaves this device. Typed questions never do."* on the server-side path, and *"…run on this device — what you say is not sent anywhere, and no audio leaves this device."* when the platform said yes. The cautious sentence is the one shown while the question is still open (`ai/ui/chat.mjs`, `disclosurePending`), because a privacy claim may be under-made while waiting and never over-made | `ai/voice/index.mjs` (`SPEECH_DISCLOSURE`, `SPEECH_DISCLOSURE_ON_DEVICE`, `probeOnDevice`), shown on the click that enables voice; `tests/voice.test.mjs` VOICE-12 |
 | Voice output (speechSynthesis) | **No.** OS voices are local | §11.4 V0 |
-| Model download (P6/P7) | Only the model files themselves are fetched from the static host — **no question, no transcript, no telemetry** | The shipped export (`ai/model-export/aashish-ai-1/`, 4.8 MB gz first visit) is fetched from this site's own path and cached by version (§9.3); `dev-ai-probe.js` asserts no third-party request, and `tests/build-bundle.test.mjs` fails on any absolute URL in a shipped AI script |
+| Model download (P6/P7) | Only the model files themselves are fetched from the static host — **no question, no transcript, no telemetry** | The shipped export (`ai/model-export/aashish-ai-b/`, 7 shards · 46.2 MB gz on a first visit) is fetched from this site's own path and cached by version (§9.3); `dev-ai-probe.js` asserts no third-party request, and `tests/build-bundle.test.mjs` fails on any absolute URL in a shipped AI script |
 | Page load | The portfolio's own assets only. **+0 AI requests before the click** | `dev-ai-probe.js`, `npm run build` |
 | Analytics | **None exists.** No analytics library is loaded and no chat content is sent anywhere | repo-wide grep; AUDIT §"analytics" |
 
@@ -54,8 +54,9 @@ only when the machine already has the language pack and the platform reports
 tells you the audio reached a server. Shipping speech input therefore means
 either accepting the platform's default, or shipping our own STT model — which
 §2 N4 explicitly permits ("STT / TTS / VAD may use open pretrained models") at the
-cost of a download §4 budgets against a 40 MB first use we are already spending
-12 % of.
+cost of a download §4 budgets against a first visit we are already spending
+**88.5 %** of (46.3 MB of the 50 MB ceiling the shipping 49.6M checkpoint moved
+the budget to).
 
 What was done instead, so the deviation is minimised rather than merely admitted:
 
@@ -107,7 +108,7 @@ is gated by a `public` flag rather than by "not shown in the UI":
 
 | Field | Decision |
 |---|---|
-| Phone number | **withheld** (`public:false`). The assistant declines and redirects to email. `index.html` still prints it as site content — an allow-listed, deliberate exception, reported as a build note |
+| Phone number | **withheld** (`public:false`). The assistant declines and redirects to email. Removed from the public portfolio on 2026-10-29 at the owner's direction; no site file is allow-listed to publish it |
 | Email, GitHub, LinkedIn | public — the portfolio already publishes them |
 | Project live URLs | public — the owner approved shipping them so a recruiter can open a demo |
 | Home address, DOB, ID numbers | not in the knowledge base at all |
@@ -171,8 +172,10 @@ graph and fails if they become statically reachable from the chat shell again.
 
 ## 7. What this document does not yet cover
 
-- **No model download path exists**, so the download/caching privacy
-  behaviour is unbuilt and untested (P6/P7).
+- **The model is opt-in.** No model bytes are requested unless the visitor
+  presses AI MODEL; the default Portfolio Guide reads only `knowledge.json`.
+  Once selected, the download uses the site's own path and Cache Storage as
+  described above. There is still no independent privacy review.
 - **No analytics at all** means there is also no way to know if anyone uses
   the assistant. That is a deliberate trade, recorded here so it is a
   decision rather than an oversight.

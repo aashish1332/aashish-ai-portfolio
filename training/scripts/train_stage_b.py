@@ -193,7 +193,7 @@ def masked_evaluate(model, batches, device, use_amp) -> float:
     return total / max(1, len(batches))
 
 
-def load_init_weights(model, path: Path, cfg) -> dict:
+def load_init_weights(model, path: Path, cfg, expected_tokenizer_version: str | None = None) -> dict:
     """Load Stage A's model weights into this run's module.
 
     Validated rather than hopeful: a checkpoint from a different vocab, width
@@ -226,6 +226,13 @@ def load_init_weights(model, path: Path, cfg) -> dict:
             raise SystemExit(
                 f"--init {path} is {key}={saved[key]} but this run is {live[key]}. "
                 f"Stage B must continue the model it will be exported from.")
+    checkpoint_tokenizer = state.get("tokenizer_version")
+    if expected_tokenizer_version and checkpoint_tokenizer != expected_tokenizer_version:
+        raise SystemExit(
+            f"--init {path} uses tokenizer {checkpoint_tokenizer!r}, but this run "
+            f"uses {expected_tokenizer_version!r}. Token IDs are learned embedding "
+            f"rows; continuing with a different vocabulary silently corrupts the "
+            f"model. Supply the exact Stage A tokenizer artifact.")
     if "model" not in state:
         raise SystemExit(f"--init {path} has no 'model' key; it is not a "
                          f"checkpoint this trainer can initialise from.")
@@ -301,17 +308,32 @@ def train(args) -> int:
     np.random.seed(args.seed)
     device = torch.device(args.device)
 
-    # Per-class cross-entropy weights. Only the stop class is weighted, and
-    # only when asked: a weight of 1.0 leaves the objective byte-identical,
-    # which is what every earlier checkpoint and test relied on.
+    # Per-class cross-entropy weights. A weight of 1.0 leaves the objective
+    # byte-identical, which is what every earlier checkpoint and test relied on.
+    #
+    # The abstain class needs its own weight because an empty-context answer is
+    # ONE supervised token: 8,775 empty-context rows contribute 45,000 of
+    # 2,428,835 supervised tokens (1.9 %), while each long list row contributes
+    # hundreds. Token-level CE therefore learns list continuation and treats
+    # "no evidence" as a low-cost mistake even when those rows are 15 % of the
+    # examples. MEASURED on v15: abstention recall 15.4 %, with the model
+    # emitting ordinary frame openers on an empty context. A class weight is the
+    # standard remedy for this imbalance and reaches exactly the target the
+    # failure needs; it does not alter the model, the prompt, or any guard.
     class_weights = None
-    if args.stop_weight != 1.0:
-        end_id = tokenizer.encode(spec.END_TOKEN).ids[0]
+    if args.stop_weight != 1.0 or args.abstain_weight != 1.0:
         class_weights = torch.ones(cfg.vocab_size, device=device,
                                    dtype=torch.float32)
+    if args.stop_weight != 1.0:
+        end_id = tokenizer.encode(spec.END_TOKEN).ids[0]
         class_weights[end_id] = float(args.stop_weight)
         print(f"  stop weight {args.stop_weight} on <|end|> (id {end_id}); "
               f"all other classes 1.0")
+    if args.abstain_weight != 1.0:
+        abstain_id = tokenizer.encode(spec.ABSTAIN_TOKEN).ids[0]
+        class_weights[abstain_id] = float(args.abstain_weight)
+        print(f"  abstain weight {args.abstain_weight} on <|abstain|> "
+              f"(id {abstain_id}); all other classes 1.0")
         # WHERE THIS LANDS, measured 2026-10-22 (docs/BENCHMARKS.md): a class
         # weight is applied at every position whose TARGET is `<|end|>`, and in
         # this format those positions already put end at rank 1 with p=1.0000
@@ -333,7 +355,9 @@ def train(args) -> int:
 
     init = None
     if args.init:
-        init = load_init_weights(model, Path(args.init), cfg)
+        init = load_init_weights(
+            model, Path(args.init), cfg,
+            expected_tokenizer_version=meta["tokenizer_version"])
         print(f"initialised from {init['checkpoint']} (step {init['step']})")
     else:
         # Printed, not silent, and for a concrete reason: Stage B *is*
@@ -548,6 +572,12 @@ def build_parser() -> argparse.ArgumentParser:
                     help="lower than Stage A's 3e-4 on purpose: see the module docstring")
     ap.add_argument("--warmup", type=int, default=10)
     ap.add_argument("--weight-decay", type=float, default=0.1)
+    ap.add_argument("--abstain-weight", type=float, default=1.0,
+                    help="cross-entropy weight on the <|abstain|> class. "
+                         "1.0 leaves the objective unchanged. Needed because an "
+                         "empty-context abstention is one supervised token while "
+                         "a list answer is hundreds, so token-level CE otherwise "
+                         "under-learns the no-evidence decision.")
     ap.add_argument("--stop-weight", type=float, default=1.0,
                     help="extra cross-entropy weight on the <|end|> class. "
                          "MEASURED reason it exists: on v8, p(<|end|>) one "

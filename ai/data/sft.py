@@ -283,7 +283,16 @@ class SftStream:
         self.tokens_consumed = 0
         self.supervised_consumed = 0
         self.skipped_windows = 0
-        self.max_skips = 8
+        # How many consecutive unsupervised windows are plausible is a property
+        # of the longest EXAMPLE, not of a broken file. MEASURED 2026-10-23:
+        # the longest sft example is 608 tokens, so at `--block 64` one long
+        # example is ~10 consecutive context-only windows and the old fixed 8
+        # raised `ValueError: 8 windows in a row carried no supervised token`
+        # on real data — the `--pipeline-only` check runs at exactly that block.
+        # The budget is now one 4k-token example's worth of windows at any
+        # block size, and stays bounded: a file with no assistant text at all
+        # still exhausts it, which is the failure the guard exists for.
+        self.max_skips = max(8, -(-4096 // self.block))
         self.epoch_rng_state = self.rng.bit_generator.state
         self._build_epoch()
 

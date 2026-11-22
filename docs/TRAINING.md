@@ -131,10 +131,43 @@ That refusal is not politeness. A smaller-than-requested vocab would leave
 count, export and parity check downstream would inherit the disagreement.
 
 After training, three contracts are checked and printed: the six special
-tokens exist, **all 63 placeholders are single tokens** (a multi-token
-placeholder can be corrupted token by token), and seven probes round-trip
-byte-exactly (English, Devanagari, Hinglish, SQL, URL/email, emoji, turn
-tokens).
+tokens exist, **every placeholder is a single token** (64 of them in the
+2026-10-25 artifact — a multi-token placeholder can be corrupted token by
+token), and seven probes round-trip byte-exactly (English, Devanagari,
+Hinglish, SQL, URL/email, emoji, turn tokens).
+
+### Adding a fact is a tokenizer change, not a JSON edit
+
+**MEASURED 2026-10-24.** `knowledge.json` gained `edu.kv1` (the Class 10
+result), which takes the placeholder set from 63 to 64. That is a different
+`spec_hash` — `45395d2ebc83` → `4a7c4e0e3d52` — and therefore a different
+`tokenizer_version`, so the artifact, the parity fixture and the Stage A
+checkpoint all have to be rebuilt. Three things make this unavoidable rather
+than annoying:
+
+1. **The ids after the placeholder block shift by one.** The special tokens and
+   placeholders occupy the front of the vocabulary, so a 64th placeholder moves
+   every byte/BPE id. A checkpoint trained against the old ids is not "almost
+   right" under the new tokenizer, it is garbage — the first rebuild attempt
+   tripped exactly this: the JS port decoded a space as `\x1F` (0x20 − 1)
+   until `python inference/encode_fixture.py` was regenerated.
+2. **The model cannot cite a fact it has no token for.** Placeholders are
+   atomic on purpose (§7.2). Asked "What is his 10th percentage?" with
+   `[edu.kv1] … · 83%` as its whole context, the `sft6` export answered
+   "His main project is `<|fact:project.volunteer|>`" — a memorised frame from
+   its training distribution — and the §8.4 guard passes it, because the guard
+   rejects fabricated numbers and dates, not a fact id that exists in the base.
+   A new id without a retrain is a wrong-answer generator, not a refusal.
+3. **The dev fixture is the cheap half.** `python -m ai.tokenizer.train`
+   (seed corpus, 1,024 vocab) plus `python inference/encode_fixture.py` keeps
+   the repo's own contract tests green in seconds. The shipped generation is
+   the expensive half: Stage A retrains the base model, then Stage B.
+
+So the rule is: **a fact may only be added together with a tokenizer rebuild
+and a Stage B retrain that carries its target examples.** `ai/data/instruction.py`
+has the rest of the contract — the topic, its `_FRAMES` entry in all three
+languages, and its rows in both `TARGETS` and `TARGETS_THIRD` — because a fact
+with a token but no training rows is just as unanswerable.
 
 For the real run, the vocab decision is made from the fertility table on the
 licensed corpus, within §7.2's 12–16k window (hard ceiling 32k in code). The

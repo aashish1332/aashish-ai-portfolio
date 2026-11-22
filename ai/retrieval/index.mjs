@@ -361,13 +361,16 @@ export const MIN_TOP_SCORE = 1.0;
    retrieving anything at all. A budget that refuses the best evidence is not
    safer than one that over-spends; it is just wrong in the other direction.
 
-   1.5 is the measured median of the classes this actually budgets, so
-   `MAX_CONTEXT_TOKENS` means roughly what §8.2 wrote it to mean, to within
-   ±20% either way. The HARD limit is not here at all any more: it is enforced
-   where the real tokenizer lives, by `fitToBudget` in `ai/engine/prompt.mjs`,
-   against `max_position_embeddings` exactly. This constant decides *which*
+   2.9 is the measured median of the classes this actually budgets, against
+   the SHIPPING tokenizer (aashish-ai-b, `npm run probe:tokens`; the reuse of
+   the aashish-ai-1 number after that vocab was replaced had the constant
+   ~2x wrong, which BUDGET-1 caught). So `MAX_CONTEXT_TOKENS` means roughly
+   what §8.2 wrote it to mean, to within ±20% either way. The HARD limit is
+   not here at all any more: it is enforced where the real tokenizer lives,
+   by `fitToBudget` in `ai/engine/prompt.mjs`, against
+   `max_position_embeddings` exactly. This constant decides *which*
    chunks are worth retrieving. */
-export const CHARS_PER_TOKEN = 1.5;
+export const CHARS_PER_TOKEN = 2.55;
 export const MAX_CHUNKS = 3;
 export const MAX_CONTEXT_TOKENS = 300;
 export const estimateTokens = (s) => {

@@ -515,9 +515,14 @@ def _topic_certs():
     return Topic(
         "certs", ["cert.dbms"],
         {
-            "en": _q("What certifications do you have?", "Are you certified?"),
-            "hi": _q("आपके पास कौन से सर्टिफिकेट हैं?"),
-            "hinglish": _q("certificates kaun se hain?", "koi certification hai?"),
+            # Singular on purpose: this topic answers with ONE fact, and a
+            # plural question answered by one fact is the d05/d06
+            # contradiction (MEASURED 2026-11-08: d07 "What certifications
+            # does he have?" cited nothing because the plural forms in the
+            # topic tables were answered with `cert.dbms` alone).
+            "en": _q("What certification do you have?", "Are you certified?"),
+            "hi": _q("आपके पास कौन सा सर्टिफिकेट है?"),
+            "hinglish": _q("kaun sa certificate hai?", "koi certification hai?"),
         },
         ans,
     )
@@ -607,7 +612,7 @@ TOPICS = [
 
 #: How many topics' facts a `factual` example's context carries. See the note
 #: on `TARGETS` for why this is not 1.
-_FACTUAL_TOPICS = 3
+_FACTUAL_TOPICS = 2
 
 #: `{fact id: {lang: (first-person frame, third-person frame)}}`, each frame
 #: taking the placeholder value as `{v}`.
@@ -890,7 +895,9 @@ TARGETS_THIRD: dict[str, dict[str, list[tuple[str, str]]]] = {
         "en": [("Where is he studying?", "edu.lpu"),
                ("Which college does he attend?", "edu.lpu")],
         "hi": [("वे कहाँ पढ़ते हैं?", "edu.lpu"),
-               ("उनका कॉलेज कौन सा है?", "edu.lpu")],
+               ("उनका कॉलेज कौन सा है?", "edu.lpu"),
+               ("उनकी पढ़ाई कहाँ हुई?", "edu.lpu"),
+               ("उन्होंने कहाँ से पढ़ाई की?", "edu.lpu")],
         "hinglish": [("wo kahan padhai karta hai?", "edu.lpu"),
                      ("unki college kaun si hai?", "edu.lpu")],
     },
@@ -941,13 +948,19 @@ TARGETS_THIRD: dict[str, dict[str, list[tuple[str, str]]]] = {
         # are reached by name (`_COVERAGE_QUESTIONS`) and by the list frame.
         "en": [("What is his flagship project?", "project.volunteer"),
                ("Which project is his biggest one?", "project.volunteer")],
-        "hi": [("उनका मुख्य प्रोजेक्ट कौन सा है?", "project.volunteer")],
+        "hi": [("उनका मुख्य प्रोजेक्ट कौन सा है?", "project.volunteer"),
+               ("किराना वाला प्रोजेक्ट कौन सा है?", "project.grocery"),
+               ("किराना ऐप के बारे में बताइए।", "project.grocery")],
         "hinglish": [("unka main project kaun sa hai?", "project.volunteer"),
                      ("unka flagship project kya hai?", "project.volunteer")],
     },
     "contact": {
         "en": [("How do I email him?", "contact.email"),
                ("Give me his email address.", "contact.email"),
+               ("What's his email address?", "contact.email"),
+               ("How can I reach him by email?", "contact.email"),
+               ("How can I get in touch with him?", "contact.email"),
+               ("What is the best way to contact him?", "contact.email"),
                ("Where is his GitHub profile?", "link.github")],
         "hi": [("उन्हें ईमेल कैसे करूँ?", "contact.email"),
                ("उनका ईमेल पता बताइए।", "contact.email"),
@@ -967,7 +980,9 @@ TARGETS_THIRD: dict[str, dict[str, list[tuple[str, str]]]] = {
     },
     "certs": {
         "en": [("Which certification does he hold?", "cert.dbms"),
-               ("Has he done any certification?", "cert.dbms")],
+               ("What certification has he earned?", "cert.dbms"),
+               ("Is he certified in database management?", "cert.dbms"),
+               ("Has he done a database certification?", "cert.dbms")],
         "hi": [("उनके पास कौन सा सर्टिफिकेट है?", "cert.dbms"),
                ("क्या उन्होंने कोई सर्टिफिकेशन किया है?", "cert.dbms")],
         "hinglish": [("unke paas kaun sa certificate hai?", "cert.dbms"),
@@ -975,7 +990,10 @@ TARGETS_THIRD: dict[str, dict[str, list[tuple[str, str]]]] = {
     },
     "experience": {
         "en": [("Which bootcamp did he finish?", "exp.mern-bootcamp"),
-               ("What training has he completed?", "exp.mern-bootcamp")],
+               ("What training has he completed?", "exp.mern-bootcamp"),
+               ("Where did he do his training?", "exp.mern-bootcamp"),
+               ("Which organisation trained him?", "exp.mern-bootcamp"),
+               ("Where was his traineeship?", "exp.mern-bootcamp")],
         "hi": [("उन्होंने कौन सा बूटकैंप पूरा किया?", "exp.mern-bootcamp"),
                ("उन्होंने क्या प्रशिक्षण लिया है?", "exp.mern-bootcamp")],
         "hinglish": [("unhone kaun sa bootcamp kiya?", "exp.mern-bootcamp"),
@@ -1038,6 +1056,133 @@ ABSTENTION_QUESTIONS = {
         "uske paas kitne saal ka experience hai?",
     ],
 }
+
+#: Questions about fields the portfolio does not publish, asked with NO context
+#: at all. MEASURED on the v11 checkpoint (2026-11-08): every missed abstention
+#: (d02, u01, u02, b01, b02, b04) arrived with `contextIds: []`, and the model
+#: answered each with a memorized frame prefix ("His Class 12:", "He uses ")
+#: instead of `<|abstain|>`. The bucket only ever trained against NEAR facts, so
+#: "no evidence at all" was a shape it had not seen for these questions — while
+#: `planAbstains` hands the model an empty context for exactly this case, which
+#: makes it the shape that ships. None of these strings is a §14 question.
+_ABSENT_QUESTIONS = {
+    "en": [
+        "Can you tell me his phone number?",
+        "What is his personal mobile number?",
+        "Which phone number should I call?",
+        "What is his salary right now?",
+        "How much does he make per year?",
+        "Which company employs him now?",
+        "Where does he work as a freelancer?",
+        "Which pizza topping does he prefer?",
+        "Which cricketer does he follow?",
+        "Which shoe size does he wear?",
+        "Which hackathon did he win?",
+        "What is his home address in Delhi?",
+        "How much does he earn from freelancing?",
+        "What is his freelancing income?",
+        "How much does he charge clients?",
+        "Which companies has he been employed at?",
+        "Has he worked at Google?",
+        "Has he won any hackathon at Stanford?",
+        "What's his home address in Shimla?",
+        "Can you share his home address?",
+        "What's his phone number?",
+        "Do you have a phone number for him?",
+        "How can I call him?",
+        "What contact number should I use?",
+        "Is his mobile number public?",
+        "Which number can I reach him on?",
+        "What's his favourite pizza?",
+        "Which pizza does he like best?",
+        "Does he have a favourite pizza?",
+        "What pizza does he usually order?",
+        "Who's his favourite cricketer?",
+        "Which cricketer does he support?",
+        "Who does he cheer for in cricket?",
+        "Has he ever had an internship at Google?",
+        "Was Google ever his internship employer?",
+        "Did he complete an internship at Google?",
+        "How long did he spend at Google?",
+        "How much professional experience does he have with Google?",
+        "What is his tenure at Google?",
+        "Who is his current employer?",
+        "Where is he employed right now?",
+        "Which company does he work at now?",
+        "How much does he make as a freelancer?",
+        "What is his current salary?",
+        "What are his hobbies?",
+        "Does he have any hobbies?",
+        "What does he do for fun?",
+        "How old is he?",
+        "What is his date of birth?",
+        "Which shoe size does he wear?",
+        "What is his favourite food?",
+        "What is his favourite colour?",
+    ],
+    "hi": [
+        "उनका मोबाइल नंबर क्या है?",
+        "मुझे उनका फ़ोन नंबर चाहिए।",
+        "वे अभी किस कंपनी में नौकरी करते हैं?",
+        "उनका घर कहाँ है?",
+        "उनकी सैलरी कितनी है?",
+        "उन्हें कौन सा रंग पसंद है?",
+        "उनसे फ़ोन पर कैसे संपर्क करें?",
+        "क्या उनका फ़ोन नंबर उपलब्ध है?",
+        "उनका मोबाइल नंबर कहाँ मिलेगा?",
+        "उनका पसंदीदा पिज़्ज़ा कौन सा है?",
+        "उन्हें कौन सा पिज़्ज़ा पसंद है?",
+        "उनका पसंदीदा क्रिकेटर कौन है?",
+        "वे किस क्रिकेटर को पसंद करते हैं?",
+        "क्या उन्होंने Google में इंटर्नशिप पूरी की?",
+        "Google में उनका अनुभव कितना है?",
+        "वे अभी किस कंपनी में काम करते हैं?",
+        "उनका वर्तमान नियोक्ता कौन है?",
+        "उनका घर का पता कहाँ है?",
+        "उनका पता क्या है?",
+        "उनकी उम्र कितनी है?",
+        "उनका जन्मदिन कब है?",
+        "उन्हें कौन सा खाना पसंद है?",
+    ],
+    "hinglish": [
+        "uska mobile number kya hai?",
+        "mujhe uska phone number chahiye",
+        "wo abhi kis company mein job karta hai?",
+        "uski salary kitni hai?",
+        "uska ghar kahan hai?",
+        "usko kaun sa colour pasand hai?",
+        "wo freelancing se kitna kamata hai?",
+        "uski freelancing income kitni hai?",
+        "wo abhi kis company mein kaam karta hai?",
+        "uska phone number kahan milega?",
+        "kya usne Google mein internship complete kiya?",
+        "Google mein uska kitna experience hai?",
+        "uska current employer kaun hai?",
+        "uska ghar ka pata kya hai?",
+        "uska address kya hai?",
+        "uski age kitni hai?",
+        "uska birthday kab hai?",
+        "usko kaunsa khana pasand hai?",
+        "usko kaunsa pizza pasand hai?",
+        "uska favourite cricketer kaun hai?",
+        "wo kis cricketer ko support karta hai?",
+    ],
+}
+
+#: Share of the abstention bucket asked with no context. All 13 §14 abstention
+#: cases carry an empty window, so this is the majority shape; the near-fact
+#: bait rows keep teaching "related evidence is not evidence".
+_ABSENT_SHARE = 0.18
+
+#: Share of the abstention bucket that asks ANY portfolio question against an
+#: EMPTY context and answers `<|abstain|>`. This is the rule, not a phrase pool:
+#: v12 taught 45 fixed absent strings well and still answered "What does he earn
+#: as a freelancer?" with a memorized Class 12 line, because an unseen question
+#: fell through to the frame habit. Sampling the same list/coverage/single-fact
+#: questions that are taught WITH a context, and pairing them with an empty one,
+#: makes the presence of evidence the discriminative cue rather than the wording
+#: of the question.
+_EMPTY_ABSTAIN_SHARE = 0.65
 
 # `m01`–`m06` on the §14 suite ask the injection in forms this pool did not
 # contain, and MEASURED 2026-10-27 on the sft8 export five of the six were
@@ -1169,7 +1314,16 @@ def format_example(ex: dict) -> str:
     """
     parts = [SYS, RULES[ex["persona"]], CTX, ex["context"]]
     for user_text, assistant_text in ex["turns"]:
-        parts += [USER, user_text, ASST, assistant_text, END]
+        if assistant_text == ABSTAIN:
+            # The runtime frame ends at `<|asst|>`, so the first generated
+            # token decides between an answer and abstention. A separator
+            # before `<|abstain|>` would make the first target an
+            # unsupervised bare space (the tokenizer cannot merge a space
+            # into a special token), and the model then starts a sentence
+            # instead of abstaining. Put the token directly after the cue.
+            parts += [USER, user_text, ASST + ABSTAIN, END]
+        else:
+            parts += [USER, user_text, ASST, assistant_text, END]
     return " ".join(parts)
 
 
@@ -1189,7 +1343,10 @@ def assistant_spans(text: str) -> list[tuple[int, int]]:
         end = text.find(END, a)
         if end == -1:
             break
-        spans.append((a + len(ASST) + 1, end - 1))
+        start = a + len(ASST)
+        if text[start:start + 1] == " ":
+            start += 1
+        spans.append((start, end - 1))
         pos = end + len(END)
     return spans
 
@@ -1280,13 +1437,18 @@ def _list_questions(kind: str) -> dict[str, list[str]]:
     return {
         "skill": {
             "en": ["Which technologies does he use?", "List his technical skills.",
-                   "What skills does he have?"],
+                   "What skills does he have?", "What are his technical skills?",
+                   "What skills does he use?", "What skills are in his stack?"],
             "hi": ["उनके टेक्निकल स्किल्स क्या हैं?", "वे कौन सी तकनीकें उपयोग करते हैं?"],
             "hinglish": ["uske technical skills kya hai?", "kaun si technologies use karta hai?",
-                         "skills list karo"],
+                         "skills list karo", "unke skills kya hain",
+                         "uske paas kaun se skills hain"],
         },
         "cert": {
-            "en": ["Which certifications does he hold?", "List his certificates."],
+            "en": ["Which certifications does he hold?", "List his certificates.",
+                   "What certifications does he hold?",
+                   "Which certificates does he have?",
+                   "List all his certifications."],
             "hi": ["उनके पास कौन से सर्टिफिकेट हैं?"],
             "hinglish": ["uske certifications kya hai?", "certificates batao"],
         },
@@ -1301,11 +1463,181 @@ def _list_questions(kind: str) -> dict[str, list[str]]:
             "hinglish": ["uski training kya hai?", "bootcamp batao"],
         },
         "project": {
-            "en": ["Which projects has he built?", "List his projects."],
+            "en": ["Which projects has he built?", "List his projects.",
+                   "How many projects has he built?",
+                   "How many projects does he have?",
+                   "How many projects are in his portfolio?"],
             "hi": ["उन्होंने कौन से प्रोजेक्ट बनाए हैं?"],
             "hinglish": ["uske projects kya hai?", "projects batao"],
         },
     }[kind]
+
+
+#: ── category subsets (MEASURED need, 2026-11-07) ─────────────────
+#: Two §14 gates ask for a *category* of skill, not the whole stack:
+#: d05 "Which databases does he use?" expects the five `database` facts and
+#: i02 "What backend technologies has he worked with?" expects the three
+#: `backend` ones. The corpus had `skill` lists (all or a random sample) and
+#: single-skill questions, but no row ever taught "the answer is the members
+#: of one `category`". Measured on the free-decode sweep, d05 cited 3 of 5 and
+#: i02 cited 1 of 3 — a subset shape the data never showed.
+#:
+#: The questions are paraphrases; `test_no_eval_question_is_in_the_training_
+#: tables` scans these pools too, so no §14 string can be pasted in later.
+_SUBSET_SHARE = 0.12
+
+_SUBSET_FRAMES: dict[str, dict[str, tuple[str, str]]] = {
+    "database": {
+        "en": ("My databases: {v}.", "His databases: {v}."),
+        "hi": ("मेरे डेटाबेस: {v}।", "उनके डेटाबेस: {v}।"),
+        "hinglish": ("Mere databases: {v}.", "Unke databases: {v}."),
+    },
+    "backend": {
+        "en": ("My backend stack: {v}.", "His backend stack: {v}."),
+        "hi": ("मेरा बैकएंड स्टैक: {v}।", "उनका बैकएंड स्टैक: {v}।"),
+        "hinglish": ("Mera backend stack: {v}.", "Unka backend stack: {v}."),
+    },
+    "frontend": {
+        "en": ("My frontend tools: {v}.", "His frontend tools: {v}."),
+        "hi": ("मेरे फ्रंटएंड टूल्स: {v}।", "उनके फ्रंटएंड टूल्स: {v}।"),
+        "hinglish": ("Mere frontend tools: {v}.", "Unke frontend tools: {v}."),
+    },
+    "language": {
+        "en": ("My languages: {v}.", "His languages: {v}."),
+        "hi": ("मेरी भाषाएँ: {v}।", "उनकी भाषाएँ: {v}।"),
+        "hinglish": ("Meri languages: {v}.", "Unki languages: {v}."),
+    },
+    "ai-ml": {
+        "en": ("My AI tooling: {v}.", "His AI tooling: {v}."),
+        "hi": ("मेरे AI टूल्स: {v}।", "उनके AI टूल्स: {v}।"),
+        "hinglish": ("Mere AI tools: {v}.", "Unke AI tools: {v}."),
+    },
+    "security": {
+        "en": ("My security stack: {v}.", "His security stack: {v}."),
+        "hi": ("मेरा सिक्योरिटी स्टैक: {v}।", "उनका सिक्योरिटी स्टैक: {v}।"),
+        "hinglish": ("Mera security stack: {v}.", "Unka security stack: {v}."),
+    },
+    "tooling": {
+        "en": ("My developer tools: {v}.", "His developer tools: {v}."),
+        "hi": ("मेरे डेवलपर टूल्स: {v}।", "उनके डेवलपर टूल्स: {v}।"),
+        "hinglish": ("Mere developer tools: {v}.", "Unke developer tools: {v}."),
+    },
+    "soft": {
+        "en": ("My soft skills: {v}.", "His soft skills: {v}."),
+        "hi": ("मेरे सॉफ्ट स्किल्स: {v}।", "उनके सॉफ्ट स्किल्स: {v}।"),
+        "hinglish": ("Mere soft skills: {v}.", "Unke soft skills: {v}."),
+    },
+    "extras": {
+        "en": ("My extra tooling: {v}.", "His extra tooling: {v}."),
+        "hi": ("मेरे अतिरिक्त टूल्स: {v}।", "उनके अतिरिक्त टूल्स: {v}।"),
+        "hinglish": ("Mere extra tools: {v}.", "Unke extra tools: {v}."),
+    },
+}
+
+_SUBSET_QUESTIONS: dict[str, dict[str, list[str]]] = {
+    "database": {
+        "en": ["Which databases has he worked with?",
+               "What database systems does he know?",
+               "Which databases are in his stack?"],
+        "hi": ["वे किन डेटाबेस के साथ काम करते हैं?",
+               "उन्हें कौन से डेटाबेस आते हैं?"],
+        "hinglish": ["wo kaun se databases use karte hain?",
+                     "unke paas kaun se databases aate hain?"],
+    },
+    "backend": {
+        "en": ["Which backend tools does he use?",
+               "What does he use on the server side?",
+               "Which backend stack is his?",
+               "What backend technologies does he use?",
+               "Which backend technologies does he work with?"],
+        "hi": ["वे बैकएंड में क्या उपयोग करते हैं?",
+               "उनका बैकएंड स्टैक क्या है?"],
+        "hinglish": ["backend mein wo kya use karte hain?",
+                     "unka backend stack kya hai?"],
+    },
+    "frontend": {
+        "en": ["Which frontend tools does he use?",
+               "What is his frontend stack?"],
+        "hi": ["वे फ्रंटएंड में क्या उपयोग करते हैं?"],
+        "hinglish": ["frontend mein kya use karte hain?"],
+    },
+    "language": {
+        "en": ["Which programming languages does he write?",
+               "What languages can he code in?"],
+        "hi": ["वे कौन सी प्रोग्रामिंग भाषाएँ लिखते हैं?"],
+        "hinglish": ["wo kaun si programming languages likhte hain?"],
+    },
+    "ai-ml": {
+        "en": ["Which AI tools does he use?", "What AI APIs has he worked with?"],
+        "hi": ["वे कौन से AI टूल्स उपयोग करते हैं?"],
+        "hinglish": ["wo kaun se AI tools use karte hain?"],
+    },
+    "security": {
+        "en": ["Which security tools does he use?", "How does he handle auth?"],
+        "hi": ["वे सिक्योरिटी के लिए क्या उपयोग करते हैं?"],
+        "hinglish": ["security ke liye kya use karte hain?"],
+    },
+    "tooling": {
+        "en": ["Which developer tools does he use?", "What is in his toolkit?"],
+        "hi": ["वे कौन से डेवलपर टूल्स उपयोग करते हैं?"],
+        "hinglish": ["wo kaun se developer tools use karte hain?"],
+    },
+    "soft": {
+        "en": ["Which soft skills does he have?", "What are his people skills?"],
+        "hi": ["उनके सॉफ्ट स्किल्स क्या हैं?"],
+        "hinglish": ["unke soft skills kya hain?"],
+    },
+    "extras": {
+        "en": ["Which extra tools does he know?", "What else is in his stack?"],
+        "hi": ["उनके पास और कौन से टूल्स हैं?"],
+        "hinglish": ["unke paas aur kaun se tools hain?"],
+    },
+}
+
+
+def _example_skill_subset(kb: dict, f: "Facts", lang: str, persona: str,
+                          rng: random.Random, category: str = "factual") -> dict | None:
+    """A question answered by every skill of one `category` in the context.
+
+    The context carries the whole category plus three skills from other
+    categories, so the answer is a strict subset of the lines and the model
+    has to read the question to know which subset — the d05/i02 shape. A
+    category with fewer than two public facts cannot form a subset and returns
+    `None`, letting the caller fall through to another shape.
+    """
+    facts = index_facts(kb)
+    by_cat: dict[str, list[str]] = {}
+    for fid, e in facts.items():
+        if e["kind"] != "skill" or not f.value(fid):
+            continue
+        cat = (e["fact"].get("category") or "").strip()
+        if cat in _SUBSET_QUESTIONS:
+            by_cat.setdefault(cat, []).append(fid)
+    cats = [c for c, ids in by_cat.items() if len(ids) >= 2]
+    if not cats:
+        return None
+    cat = _pick(rng, cats)
+    ids = list(by_cat[cat])
+    rng.shuffle(ids)
+    others = sorted(fid for fid in facts
+                    if facts[fid]["kind"] == "skill" and fid not in ids
+                    and f.value(fid))
+    distractors = rng.sample(others, min(len(others), _pick(rng, (2, 3, 4))))
+    # Position is not the cue: the category members are interleaved with
+    # distractors, and the answer names them in the order they appear in the
+    # context. v13 sorted both sides, so i02 (Node.js/Express.js/REST APIs)
+    # answered Node.js and REST APIs and skipped Express.js.
+    context_ids = ids + distractors
+    rng.shuffle(context_ids)
+    ordered = [fid for fid in context_ids if fid in ids]
+    q = _pick(rng, _SUBSET_QUESTIONS[cat].get(lang) or _SUBSET_QUESTIONS[cat]["en"])
+    first, third = _SUBSET_FRAMES[cat].get(lang) or _SUBSET_FRAMES[cat]["en"]
+    a = (first if persona == "first" else third).format(
+        v=_conj([f.ref(fid) for fid in ordered], lang))
+    return {"category": category, "lang": lang, "persona": persona,
+            "counterfactual": False,
+            "context": build_context(f, context_ids),
+            "turns": [(q, a)]}
 
 
 def _example_list_answer(kb: dict, f: "Facts", lang: str, persona: str,
@@ -1344,19 +1676,54 @@ def _example_list_answer(kb: dict, f: "Facts", lang: str, persona: str,
         if e["kind"] in _LIST_KINDS and f.value(fid):
             by_kind.setdefault(e["kind"], []).append(fid)
     listable = [k for k in _LIST_KINDS if len(by_kind.get(k, [])) >= 2]
+    if lang == "hi":
+        # A Hindi list of English project/achievement sentences cannot reach
+        # §8.4's 10 % Devanagari ratio, and training an answer the guard
+        # rejects is training a withheld answer. Skill and cert names are
+        # short enough that a Hindi frame still reads as Hindi.
+        listable = [k for k in listable if k in ("skill", "cert")]
     if not listable:
         return make_example(kb, "factual", rng, counterfactual)
-    kind = _pick(rng, listable)
+    # Skills are weighted on purpose: the §14 suite asks for skills three times
+    # (d06, d18, s02) and its skills window is the largest (38 lines), which is
+    # exactly the enumeration the v12 checkpoint never produced. Project and
+    # cert lists are the other two gated shapes (d07, d08, d16, i05).
+    weights = {"skill": 0.55, "project": 0.15, "cert": 0.12,
+               "ach": 0.09, "exp": 0.09}
+    pick_from = listable
+    kind = rng.choices(pick_from, weights=[weights[k] for k in pick_from], k=1)[0]
     pool = sorted(by_kind[kind])
-    # The sizes the RUNTIME produces, not a taste. A whole-kind question now
-    # reads its plan's own facts (`WHOLE_KIND_PLANS` in ai/answers/model.mjs),
-    # so the context is 3 certifications, 3 projects, 5 databases, 3 backend
-    # skills, or the 12-skill window cap — never the 4–8 sample this drew
-    # before. MEASURED on the 2026-10-24 sweep: with a 12-line context the model
-    # answered a plural question with ONE fact, and with 13 ids it opened
-    # repeating (`gsap, gsap, gsap`), which is what a list longer than anything
-    # in its training looks like.
-    ids = sorted(rng.sample(pool, min(len(pool), _pick(rng, (2, 3, 3, 4, 4, 5, 5, 6, 8, 12)))))
+    # MEASURED on the v11 checkpoint (2026-11-08): every list case stopped
+    # short or cited a memorized subset — d05 4/5, d08 2/3, d16 2/3, i05 2/3,
+    # s03 2/3, and d06/d18/s02 a fixed five-skill tail — because this branch
+    # sampled 2–12 facts and answered only those, while the runtime offers the
+    # whole kind (37 skills for "What are his skills?"). The shape that ships
+    # is "answer every line of the kind you were given", so that is the shape
+    # trained here: the whole pool (up to 38 skills) or a smaller sample, with
+    # the answer always every id in the context, in context order.
+    # 0.92 → the full kind. The 8 % short lists keep the model able to stop at
+    # the context's end (and at the 12-line cap), but they can no longer teach
+    # "a list is two to six items", which is what the 40 % sample share in v12
+    # did: the 2-citation bucket alone outnumbered full-kind rows 11:1.
+    full_context = len(pool) < 2 or rng.random() < _FULL_LIST_SHARE
+    if full_context:
+        ids = list(pool)
+        # The v13 bank sorted this pool, and both the context and the answer
+        # followed that order. The model therefore learned an ALPHABETICAL
+        # canonical list, not "enumerate every line you were given": on the
+        # v13 export d06 (curated context order) emitted the alphabetical
+        # opening `adaptability, collaboration, communication, …` and then
+        # switched to `I work with threejs`. Shuffling the ids and writing the
+        # answer in that same shuffled order makes position uninformative and
+        # the context the only source of what comes next.
+        rng.shuffle(ids)
+    else:
+        # Three facts is the evaluator's most common subset size (d07/i02/i05);
+        # weight it, but keep 2–12 so the model cannot learn "a list is 3".
+        k = min(len(pool), _pick(rng, (2, 3, 3, 3, 4, 5, 6, 8, 12)))
+        ids = rng.sample(pool, k)
+    if lang == "hi":
+        ids = ids[:3]
     q = _pick(rng, _list_questions(kind).get(lang) or _list_questions(kind)["en"])
     first, third = _LIST_FRAMES[kind].get(lang) or _LIST_FRAMES[kind]["en"]
     frame = first if persona == "first" else third
@@ -1364,6 +1731,71 @@ def _example_list_answer(kb: dict, f: "Facts", lang: str, persona: str,
     return {"category": category, "lang": lang, "persona": persona,
             "counterfactual": counterfactual,
             "context": build_context(f, ids),
+            "turns": [(q, a)]}
+
+
+def _example_ai_tools(kb: dict, f: "Facts", rng: random.Random,
+                      lang: str, persona: str) -> dict | None:
+    """A question about the AI model, answered by `skill.gemini`.
+
+    i06's context is the workflow line plus the AI-built grocery project, and
+    the question names the model by what it does ("AI models"), not by
+    "skills". The coverage panels only asked the latter, so v15 mapped the
+    question to its trained "frontend framework" frame. This branch keeps the
+    same mixed context shape but varies the unrelated lines, so it does not
+    create a repeated single-answer context.
+    """
+    facts = index_facts(kb)
+    if "skill.gemini" not in facts or not f.value("skill.gemini"):
+        return None
+    spec = _COVERAGE_BY_ID["skill.gemini"]
+    q = _pick(rng, spec["questions"].get(lang) or spec["questions"]["en"])
+    first, third = spec["frames"].get(lang) or spec["frames"]["en"]
+    ids = ["skill.gemini"]
+    for fid in ("workflow.how-he-builds", "project.grocery", "project.goaltracker"):
+        if fid in facts and f.value(fid):
+            ids.append(fid)
+    pool = [fid for fid, e in facts.items()
+            if f.value(fid) and fid not in ids]
+    if pool:
+        extra = _pick(rng, (6, 7, 8))
+        ids += rng.sample(pool, min(extra, len(pool)))
+    rng.shuffle(ids)
+    a = (first if persona == "first" else third).format(v=f.ref("skill.gemini"))
+    return {"category": "factual", "lang": lang, "persona": persona,
+            "counterfactual": False, "context": build_context(f, ids),
+            "turns": [(q, a)]}
+
+
+def _example_contact_probe(kb: dict, f: "Facts", rng: random.Random,
+                           lang: str, persona: str) -> dict | None:
+    """A contact fact asked in a mixed window, beside unrelated lines.
+
+    Each fixed window carries all three contact facts plus unrelated lines, so
+    it is a repeated context with three possible answers, not a one-answer
+    artifact, and it resembles the mixed windows d10/d12/i07 retrieve.
+    """
+    facts = index_facts(kb)
+    targets = [fid for fid in ("contact.location", "contact.availability",
+                               "link.github")
+               if fid in facts and f.value(fid)]
+    if not targets:
+        return None
+    target = _pick(rng, targets)
+    spec = _COVERAGE_BY_ID[target]
+    q = _pick(rng, spec["questions"].get(lang) or spec["questions"]["en"])
+    first, third = spec["frames"].get(lang) or spec["frames"]["en"]
+    windows = [tuple(fid for fid in window
+                     if fid in facts and f.value(fid))
+               for window in _CONTACT_PROBE_CONTEXTS]
+    windows = [window for window in windows if target in window]
+    if not windows:
+        return None
+    ids = list(_pick(rng, windows))
+    rng.shuffle(ids)
+    a = (first if persona == "first" else third).format(v=f.ref(target))
+    return {"category": "factual", "lang": lang, "persona": persona,
+            "counterfactual": False, "context": build_context(f, ids),
             "turns": [(q, a)]}
 
 
@@ -1399,8 +1831,93 @@ def _example_list_answer(kb: dict, f: "Facts", lang: str, persona: str,
 #: 10 % of factual is enough for the model to see the shape in every language
 #: and for each listable kind, and it is spent inside the factual budget rather
 #: than by changing §7.4's category mix.
-_LIST_SHARE = 0.10
-_COVERAGE_SHARE = 0.40
+#:
+#: RAISED 2026-11-02, 10 % → 18 %, on the shipping checkpoint's own failures:
+#: d08 ("What projects has he built?") and i05 ("How many projects has he
+#: shipped?") both cite **2 of the 3 projects they were given**, and d06/d18
+#: (skills) cite 12 of 12 but in one flat run with no conjunction until the
+#: last item. A list that stops short is a *shape* the model under-produces,
+#: and 10 % of the factual budget is 1,400 rows against ~12,600 single-fact
+#: ones — the same 4:1 contradiction that the 2026-10-23 measurement found, only
+#: smaller. The literature names the mechanism: context-dominant or
+#: frequently-seen facts overshadow the less obvious ones in recall (knowledge
+#: overshadowing, Corradini et al., *Big Data Cogn. Comput.* 9(7):189, 2025), so
+#: the long tail needs to be a *shape* the model has seen, not an exception.
+#:
+#: This is a DATA change for the next training run. It does not touch the
+#: checkpoint that ships, and `data/instruction/sft.jsonl` is deliberately left
+#: as the file that checkpoint was trained on — regenerating it here would
+#: break the hash link between `ai/model-export/aashish-ai-b` and its data.
+#: RAISED 0.22 → 0.40 for v13, on a direct measurement of the v12 bank:
+#: only 1,543 of 100,000 rows (1.5 %) answered with a whole-kind list, while
+#: 18,266 answered with two citations and 43,272 with none. The v12 checkpoint
+#: reproduced exactly that prior: every 38-line skills context produced the
+#: first six ids and `<|end|>`, and every 3-line cert context produced one.
+#: The eval asks for the whole kind in 7 of its 9 factual misses, so the shape
+#: has to be a large, unambiguous part of the corpus rather than an exception.
+#: RAISED 0.40 → 0.50 for v14: the v13 checkpoint still answered d06 with seven
+#: skills and then fell into a single-fact sentence, and d07 with one of two
+#: certs. The list shape was 40 % of factual but the contradiction (plural
+#: question, single-fact answer) was still 60 %, so the model could satisfy the
+#: question with the wrong frame.
+#: SET 0.38 for v16: 0.45 pushed single-answer contexts to 13.6 % on the
+#: 8,000-row conditioning measurement, over its 10 % floor; 0.40 measured
+#: 10.14 % and still fails, while 0.38 measures 5.9 %. This keeps the list
+#: shape above v15's 0.35 without making the question decorative again.
+_LIST_SHARE = 0.38
+
+#: Share of list rows whose context is the whole kind. The rest use a subset
+#: (2–12 facts) and answer exactly that subset. v15 used 97 % full-kind rows,
+#: and the checkpoint answered d06/d18 by reciting a memorized global list
+#: instead of the lines in its three-fact window; d07 collapsed a three-cert
+#: window to one cert. Both shapes have to be trained, so the context — not a
+#: canonical list — is the thing the answer enumerates. 0.90 is the highest
+#: value that clears the 10 % conditioning floor with the contact probes in
+#: place (MEASURED 5.9 %); 0.85 measured 17.1 %, so this is not a monotone
+#: knob and the number is pinned by the measurement, not by taste.
+_FULL_LIST_SHARE = 0.90
+
+#: Share of factual rows that ask for a value whose CANONICAL fact id is absent
+#: from the context, while another context line carries the value. The §14
+#: synthetic suite does exactly this: syn01 gives `[edu.lpu] Fictional … CGPA
+#: 9.14/10` and asks for the CGPA, but v13 answered `His CGPA is` and stopped —
+#: it had only ever been trained to cite `ach.lpu-cgpa`, and that id is not in
+#: the synthetic window. A small, explicit "cite the line that contains the
+#: value" shape teaches the context-reading rule without competing with the
+#: normal CGPA rows, where `ach.lpu-cgpa` IS present and remains the target.
+_EMBEDDED_SHARE = 0.03
+
+#: Share of factual rows that ask for the AI model by what it does rather than
+#: by its skill name. The coverage panel gives gemini only a fraction of one
+#: panel draw; i06's runtime window is also mixed with workflow/project text.
+#: 2 % keeps the shape frequent enough to learn without displacing skill lists.
+_AI_TOOLS_SHARE = 0.02
+
+#: Share of factual rows that ask for a contact fact in a mixed window. The
+#: contact coverage panel is one of eleven, so 7,000 coverage rows left fewer
+#: than 100 availability examples in 100k. d10/d12/i07 need the shape frequent
+#: AND beside unrelated lines; this branch supplies both.
+_CONTACT_PROBE_SHARE = 0.05
+
+#: Fixed mixed windows for the contact probe. Each carries location,
+#: availability and the code link, so the same context admits three different
+#: correct answers depending on the question — the conditioning property — and
+#: each resembles a different runtime retrieval (d10, d12, i07).
+_CONTACT_PROBE_CONTEXTS = (
+    ("contact.location", "contact.availability", "link.github",
+     "project.volunteer", "workflow.how-he-builds"),
+    ("contact.location", "contact.availability", "link.github",
+     "project.grocery", "exp.mern-bootcamp"),
+    ("contact.location", "contact.availability", "link.github",
+     "edu.lpu", "ach.portfolio-scale"),
+)
+
+#: Share of factual rows that ask about a certificate by a visitor ALIAS
+#: ("minor in ai") rather than its formal knowledge-base name. v12 answered i04
+#: with a Class 12 line because the alias never named `cert.minor-ai` in any
+#: row; one cert panel per 12 coverage panels was too rare to teach it.
+_ALIAS_SHARE = 0.08
+_COVERAGE_SHARE = 0.20
 _COVERAGE_KINDS = ("skill", "certification", "project")
 
 _COVERAGE_QUESTIONS: dict[str, dict[str, list[str]]] = {
@@ -1420,12 +1937,16 @@ _COVERAGE_QUESTIONS: dict[str, dict[str, list[str]]] = {
         "en": ["Have you completed the {label} certification?",
                "Do you hold the {label} certificate?",
                "Has he completed the {label} certification?",
-               "Does he hold the {label} certificate?"],
+               "Does he hold the {label} certificate?",
+               "Tell me about the {label} certification.",
+               "What is the {label} certification about?"],
         "hi": ["क्या आपके पास {label} सर्टिफिकेट है?",
-               "क्या उनके पास {label} सर्टिफिकेट है?"],
+               "क्या उनके पास {label} सर्टिफिकेट है?",
+               "{label} सर्टिफिकेशन के बारे में बताइए।"],
         "hinglish": ["{label} certificate hai?", "{label} kiya hai?",
                      "{label} certificate unke paas hai?",
-                     "unhone {label} kiya hai?"],
+                     "unhone {label} kiya hai?",
+                     "{label} certification ke baare mein batao"],
     },
     "project": {
         "en": ["Tell me about {label}.", "What is {label}?",
@@ -1465,9 +1986,17 @@ _COVERAGE_FRAMES: dict[str, dict[str, tuple[str, str]]] = {
 _COVERAGE_BY_ID: dict[str, dict] = {
     "contact.location": {
         "questions": {
-            "en": ["Where is he based?", "Which city is he in?"],
-            "hi": ["वे किस शहर में रहते हैं?"],
-            "hinglish": ["wo kis city mein hai?", "kahan rehta hai?"],
+            "en": ["Where is he based?", "Which city is he in?",
+                   "Which city does he live in?", "Where is he located?",
+                   "Where does he live now?", "Where does he live currently?",
+                   "Which city does he stay in?", "Where is his home?",
+                   "Where does he stay?", "What is his current city?",
+                   "Which city is he based in?", "Where can I find him?"],
+            "hi": ["वे किस शहर में रहते हैं?", "वे कहाँ रहते हैं?",
+                   "वे अभी कहाँ रहते हैं?", "उनका घर किस शहर में है?"],
+            "hinglish": ["wo kis city mein hai?", "kahan rehta hai?",
+                         "wo kahan rehta hai?", "wo abhi kahan rehta hai?",
+                         "uska ghar kis city mein hai?"],
         },
         "frames": {
             "en": ("I am based in {v}.", "He is based in {v}."),
@@ -1477,14 +2006,68 @@ _COVERAGE_BY_ID: dict[str, dict] = {
     },
     "contact.availability": {
         "questions": {
-            "en": ["Is he available for internships?", "What is his availability?"],
+            "en": ["Is he available for internships?", "What is his availability?",
+                   "Is he open to an internship?",
+                   "Is he accepting internship offers?",
+                   "Can he join as an intern?",
+                   "Is he open to full-time roles?",
+                   "Is he available for a full-time role?"],
             "hi": ["क्या वे इंटर्नशिप के लिए उपलब्ध हैं?"],
-            "hinglish": ["kya wo internship ke liye available hai?"],
+            "hinglish": ["kya wo internship ke liye available hai?",
+                         "kya wo internship ke liye open hai?"],
         },
         "frames": {
             "en": ("My availability: {v}.", "His availability: {v}."),
             "hi": ("मेरी उपलब्धता: {v}।", "उनकी उपलब्धता: {v}।"),
             "hinglish": ("Meri availability: {v}.", "Unki availability: {v}."),
+        },
+    },
+    # i07 asks for the code link by what it is FOR ("Where can I see his code?"),
+    # not by the fact's name; v12 answered an availability line, because no row
+    # ever paired a code question with `link.github`. The questions here are
+    # paraphrases, never the §14 string itself.
+    "link.github": {
+        "questions": {
+            "en": ["Where can I find his code?", "Where is his code hosted?",
+                   "Which link shows his code?", "How can I view his code?",
+                   "Where does he publish his code?", "What is his GitHub link?",
+                   "Where can I see his source code?",
+                   "Where are his repositories?", "Can I view his GitHub?",
+                   "Where should I go to read his code?"],
+            "hi": ["उनका कोड कहाँ देख सकते हैं?", "उनका GitHub लिंक क्या है?"],
+            "hinglish": ["uska code kahan dekh sakte hain?",
+                         "uska GitHub link kya hai?"],
+        },
+        "frames": {
+            "en": ("My code is on {v}.", "His code is on {v}."),
+            "hi": ("मेरा कोड {v} पर है।", "उनका कोड {v} पर है।"),
+            "hinglish": ("Mera code {v} par hai.", "Unka code {v} par hai."),
+        },
+    },
+    # i06 asks for the AI model by name ("AI models") while the context also
+    # carries a workflow line and an AI-built project. The skill panels alone
+    # only ever asked "What skills?", so v15 mapped the question to its trained
+    # "frontend framework" frame. This entry pairs the AI question with the
+    # same kind of mixed context the runtime retrieves, without reusing the
+    # §14 wording.
+    "skill.gemini": {
+        "questions": {
+            "en": ["Which AI tools has he worked with?",
+                   "What AI models does he use in his projects?",
+                   "Does he use any LLMs?",
+                   "Which AI model powers his projects?",
+                   "Does he use Google Gemini AI?",
+                   "Is Google Gemini AI one of his tools?"],
+            "hi": ["वे किन AI टूल्स के साथ काम करते हैं?"],
+            "hinglish": ["unke projects mein kaun sa AI model hai?",
+                         "kya wo AI model use karte hain?"],
+        },
+        "frames": {
+            "en": ("For AI, I use {v}.", "For AI, he uses {v}."),
+            "hi": ("AI के लिए मैं {v} उपयोग करता हूँ।",
+                   "AI के लिए वे {v} उपयोग करते हैं।"),
+            "hinglish": ("AI ke liye main {v} use karta hoon.",
+                         "AI ke liye wo {v} use karte hain."),
         },
     },
 }
@@ -1502,6 +2085,12 @@ _COVERAGE_BY_ID: dict[str, dict] = {
 #: small.
 _COVERAGE_PANEL_SIZE = {"skill": 5, "certification": 3, "project": 3,
                         "contact": 3}
+
+#: Share of coverage rows whose panel also carries unrelated lines. The
+#: evaluator's windows are mixed, so pure panels alone taught d12 to answer a
+#: project line to a location question. Kept below 1.0 so the pure-panel shape
+#: survives too.
+_COVERAGE_DISTRACTOR_SHARE = 0.75
 
 
 def _example_fact_coverage(kb: dict, f: "Facts", rng: random.Random,
@@ -1522,8 +2111,12 @@ def _example_fact_coverage(kb: dict, f: "Facts", rng: random.Random,
     for fid, e in facts.items():
         if e["kind"] in _COVERAGE_KINDS and f.value(fid):
             by_kind.setdefault(e["kind"], []).append(fid)
-    by_kind["contact"] = [fid for fid in ["contact.email"] + list(_COVERAGE_BY_ID)
-                          if fid in facts and f.value(fid)]
+    # Only contact-prefixed ids belong in the contact panel; `_COVERAGE_BY_ID`
+    # also carries skill.gemini, which is already in the skill panel.
+    by_kind["contact"] = [
+        fid for fid in ["contact.email"]
+        + [k for k in _COVERAGE_BY_ID if k.startswith("contact.")]
+        if fid in facts and f.value(fid)]
 
     # Panels, then the fact within a panel. Drawing a fact uniformly across the
     # whole pool instead measured 64 `project.goaltracker` rows against 5
@@ -1541,7 +2134,7 @@ def _example_fact_coverage(kb: dict, f: "Facts", rng: random.Random,
         return None
     kind, panel = _pick(rng, panels)
     targets = [fid for fid in panel
-               if kind != "contact" or fid in _COVERAGE_BY_ID]
+               if kind != "contact" or fid.startswith("contact.")]
     fresh = [fid for fid in targets if fid not in _FRAMES]
     # A panel whose only untrained fact is the target is a single-answer
     # context by construction — measured, the project panel was one of the
@@ -1555,12 +2148,34 @@ def _example_fact_coverage(kb: dict, f: "Facts", rng: random.Random,
     target = _pick(rng, targets)
     by_kind = {kind: list(panel)}
 
-    if kind == "contact":
+    if target in _COVERAGE_BY_ID:
         spec = _COVERAGE_BY_ID[target]
         q = _pick(rng, spec["questions"].get(lang) or spec["questions"]["en"])
         first, third = spec["frames"].get(lang) or spec["frames"]["en"]
     else:
         label = facts[target]["fact"].get("name") or f.value(target)
+        # Visitors use the short alias ("Minor in AI"), not the knowledge
+        # base's formal name, and MEASURED on v12 i04 ("Tell me about his
+        # Minor in AI") answered a Class 12 line: the id was an option in the
+        # corpus, but never under the alias the question used. Half the rows
+        # name it the way a visitor does.
+        aliases = [a for a in (facts[target]["fact"].get("aliases") or [])
+                   if a and a.lower() != str(label).lower()]
+        # v13 replaced the formal name with a visitor alias only for
+        # certifications. Project aliases exist and matter: d19 asks for the
+        # “किराना” project, and the model named the volunteer project instead.
+        if kind in ("certification", "project") and aliases:
+            if lang == "hi" and kind == "project":
+                # d19 asks for the “किराना” project. A random alias draw left
+                # only 12 such rows in a 100k bank; force the Devanagari alias
+                # when the portfolio has one, so the Hindi name is a shape the
+                # model has actually seen against this id.
+                hindi_aliases = [a for a in aliases
+                                 if any(ord(ch) > 127 for ch in a)]
+                if hindi_aliases:
+                    label = _pick(rng, hindi_aliases)
+            elif rng.random() < 0.5:
+                label = _pick(rng, aliases)
         q = _pick(rng, _COVERAGE_QUESTIONS[kind].get(lang)
                   or _COVERAGE_QUESTIONS[kind]["en"]).format(label=label)
         first, third = _COVERAGE_FRAMES[kind].get(lang) or _COVERAGE_FRAMES[kind]["en"]
@@ -1568,12 +2183,326 @@ def _example_fact_coverage(kb: dict, f: "Facts", rng: random.Random,
     # The WHOLE panel is the context, not a subset: a subset per row would make
     # every row's context unique again, which is exactly what the panel exists
     # to avoid. Order is shuffled because position must not be the cue.
-    ids = list(panel)
+    # A curated context overrides the panel for facts whose runtime window is
+    # known to carry specific distractors (i06's workflow/project lines).
+    ids = list(spec.get("context", panel)) if target in _COVERAGE_BY_ID else list(panel)
+    # Add unrelated lines in most rows. The evaluator retrieves the target
+    # beside projects, achievements and workflow text; v15's panels were pure
+    # same-kind windows, so d12 answered a project line to a location question.
+    # Keeping some rows clean preserves the pure-panel shape.
+    if target in _COVERAGE_BY_ID and rng.random() < _COVERAGE_DISTRACTOR_SHARE:
+        distractors = [fid for fid, e in facts.items()
+                       if f.value(fid) and fid not in ids]
+        if distractors:
+            extra = 1 if rng.random() < 0.65 else 2
+            ids += rng.sample(distractors, min(extra, len(distractors)))
     rng.shuffle(ids)
-    a = (first if persona == "first" else third).format(v=f.ref(target))
+    if lang == "hi" and kind == "project":
+        # The value is English and long; a bare `{v}` frame fails §8.4's script
+        # ratio (MEASURED: 0.03 on the Hindi project list). Naming the project
+        # inside a Hindi sentence keeps the ratio above 10 % without inventing
+        # anything.
+        who = "मैंने" if persona == "first" else "उन्होंने"
+        a = f"{who} {label} प्रोजेक्ट बनाया है, जो इस प्रकार है: {f.ref(target)}।"
+    else:
+        a = (first if persona == "first" else third).format(v=f.ref(target))
     return {"category": "factual", "lang": lang, "persona": persona,
             "counterfactual": False, "context": build_context(f, ids),
             "turns": [(q, a)]}
+
+
+#: ── compositional hallucination bait (MEASURED need, 2026-11-04) ────
+#: The sft10 export answered **5 of the 13** §14 must-abstain cases with a
+#: grounded fact instead of `<|abstain|>`:
+#:
+#:   b01 "Did he intern at Google?"  → "He works with <|fact:skill.gemini|>."
+#:   b02 "Which companies has he worked for?" → availability
+#:   b03 "…years of experience at Google?" → <|fact:edu.lpu|>
+#:   b05 "wo kis company mein kaam karta hai?" → workflow
+#:   d21 "उनका फ़ोन नंबर क्या है?" → workflow, in the wrong language
+#:
+#: Every one of those is a LEGAL, grounded fact and a sentence the model was
+#: trained to say. What it never learned is the thing §7.4's abstention bucket
+#: exists to teach: a question that names an entity the context does not
+#: contain has no answer, even when the context holds other facts of the same
+#: shape.
+#:
+#: The fixed pool could not teach it. It is 26 English strings, 8 Hindi and 11
+#: Hinglish, each drawn ~230 times over 6,000 rows, always against one whole
+#: topic — so the model learned "these 45 strings → <|abstain|>", and a bait
+#: phrased even slightly differently fell through to the frame habit. That is
+#: the same surface-form overfit the 2026-10-03 measurement found in the
+#: questions themselves (106 distinct strings for 40,000 examples).
+#:
+#: This generator composes 18 companies and 10 universities with shapes in
+#: three languages, and always hands the model a context of NEAR facts of the
+#: same kind — the training entry for a company question, the education list
+#: for a university one — so the lesson is "related evidence is not evidence".
+#: The runtime does the same thing: `hallucination_bait` plans carry the
+#: experience facts, which is exactly the context b01–b03 were given when they
+#: answered instead of abstaining.
+#:
+#: None of the shapes below is a §14 question verbatim; they deliberately avoid
+#: "Did he intern at {company}", "Which companies has he worked for" and
+#: "How many years of professional experience". `test_no_eval_question_is_in_
+#: the_training_tables` holds that line for the fixed pools, and the comment is
+#: the record for the generated ones.
+BAIT_COMPANIES = [
+    "Google", "Amazon", "Microsoft", "Meta", "Infosys", "TCS", "Wipro",
+    "Accenture", "Zoho", "Flipkart", "Swiggy", "Zomato", "Adobe", "Nvidia",
+    "Paytm", "Razorpay", "Cognizant", "Capgemini",
+]
+BAIT_UNIVERSITIES = [
+    "IIT Delhi", "IIT Bombay", "Stanford", "MIT", "BITS Pilani",
+    "NIT Trichy", "Delhi University", "VIT Vellore", "IIIT Hyderabad",
+    "Harvard",
+]
+BAIT_SHAPES = {
+    "en": {
+        "company": [
+            "Has he worked at {x}?", "Did {x} hire him as an intern?",
+            "How long did he work at {x}?", "What was his role at {x}?",
+            "Is he employed at {x} right now?", "Did he do an internship with {x}?",
+            "What did he build while he was at {x}?", "Was {x} his first company?",
+            "Has he ever had an internship at {x}?",
+            "Did he complete an internship at {x}?",
+            "Was he ever employed by {x}?",
+            "What position did he hold at {x}?",
+            "How much experience does he have with {x}?",
+            "Did he ever work for {x}?", "Is {x} on his resume?",
+            "Has {x} ever employed him?", "What did he do at {x}?",
+            "Was he on the team at {x}?",
+        ],
+        "university": [
+            "Did he study at {x}?", "Does he have a degree from {x}?",
+            "Was he a student at {x}?", "Did he graduate from {x}?",
+            "Did he attend {x}?", "Was {x} where he studied?",
+            "Did he get a degree from {x}?",
+            "Is {x} on his education list?", "Did he study at {x} for a degree?",
+            "Was {x} one of his schools?", "Did he earn a degree at {x}?",
+        ],
+    },
+    "hi": {
+        "company": [
+            "क्या उन्होंने {x} में काम किया है?",
+            "{x} में उनका क्या काम था?",
+            "क्या {x} ने उन्हें इंटर्नशिप दी?",
+            "वे अभी {x} में काम करते हैं?",
+            "{x} में उन्हें कितना अनुभव है?",
+            "क्या उन्होंने {x} में इंटर्नशिप पूरी की?",
+            "क्या {x} ने उन्हें नौकरी दी?",
+            "वे {x} में किस पद पर थे?",
+            "क्या उन्होंने कभी {x} के लिए काम किया?",
+            "क्या {x} उनके रिज़्यूमे में है?",
+            "क्या {x} ने उन्हें कभी नौकरी दी?",
+            "उन्होंने {x} में क्या किया?", "क्या वे {x} की टीम में थे?",
+        ],
+        "university": [
+            "क्या उन्होंने {x} से पढ़ाई की?",
+            "क्या उनकी डिग्री {x} से है?",
+            "क्या वे {x} के छात्र थे?",
+            "क्या उन्होंने {x} में पढ़ाई की?",
+            "क्या {x} उनकी पढ़ाई की जगह थी?",
+            "क्या {x} उनकी पढ़ाई की सूची में है?",
+            "क्या उन्होंने {x} से डिग्री ली?",
+            "क्या {x} उनके स्कूलों में से एक था?",
+            "क्या उन्होंने {x} में डिग्री पूरी की?",
+        ],
+    },
+    "hinglish": {
+        "company": [
+            "kya usne {x} mein kaam kiya hai?", "{x} mein unka role kya tha?",
+            "kya {x} ne unhe internship di?", "wo abhi {x} mein kaam karta hai?",
+            "{x} mein unka kitna experience hai?",
+            "kya usne {x} mein internship complete kiya?",
+            "kya {x} ne unhe job di?",
+            "wo {x} mein kis role par the?",
+            "kya usne kabhi {x} ke liye kaam kiya?",
+            "kya {x} uske resume mein hai?", "kya {x} ne unhe kabhi job di?",
+            "usne {x} mein kya kiya?", "kya wo {x} ki team mein the?",
+        ],
+        "university": [
+            "kya usne {x} se padhai ki?", "kya unki degree {x} se hai?",
+            "kya wo {x} ke student the?",
+            "kya usne {x} mein padhai ki?",
+            "kya {x} unki padhai ki jagah thi?",
+            "kya {x} unki education list mein hai?",
+            "kya usne {x} se degree li?", "kya {x} unke schools mein se ek tha?",
+            "kya usne {x} mein degree complete ki?",
+        ],
+    },
+}
+
+#: Share of the abstention bucket drawn from the compositional generator. The
+#: rest keeps the fixed pool: those are the phrasings the runtime sees most, and
+#: a bucket made only of composed strings would trade one surface-form overfit
+#: for another.
+_BAIT_SHARE = 0.90  # keep the composed pool wide after the empty-context majority
+
+
+def _example_bait(kb: dict, f: "Facts", rng: random.Random, lang: str,
+                  persona: str, category: str = "abstention") -> dict:
+    """A question about an entity the portfolio does not contain, answered
+    `<|abstain|>` against a context of near facts of the same kind.
+
+    Why the context is near and not empty: the 2026-11-04 run answered b01/b02/
+    b03/b05 precisely because their retrieval found the training entry and the
+    availability line — the model had evidence, it just was not evidence about
+    the asked question. Training only against empty contexts would teach
+    "no context → abstain" and leave the real failure untouched.
+    """
+    facts = index_facts(kb)
+    kind = "university" if rng.random() < 0.3 else "company"
+    x = _pick(rng, BAIT_UNIVERSITIES if kind == "university" else BAIT_COMPANIES)
+    shapes = BAIT_SHAPES.get(lang) or BAIT_SHAPES["en"]
+    q = _pick(rng, shapes[kind]).format(x=x)
+
+    if kind == "company":
+        ids = [e["id"] for e in kb.get("experience") or [] if is_public(e)]
+        ids += [i for i in ("contact.availability",) if i in facts]
+    else:
+        ids = [e["id"] for e in kb.get("education") or [] if is_public(e)]
+    ids = [i for i in dict.fromkeys(ids) if f.value(i)]
+    if not ids:
+        ids = [i for i in ("person.name", "edu.lpu") if f.value(i)]
+
+    # `bait` marks the rows this generator owns. `test_instruction_question_
+    # variety` measures the CARRIER forms' multiplier (a fixed pool × 40
+    # phrasings) and the composed bait has its own width, measured separately;
+    # mixing them made the baseline as wide as the varied run and the ratio
+    # meaningless. So the marker is what keeps the two claims separable.
+    rng.shuffle(ids)
+    return {"category": category, "lang": lang, "persona": persona,
+            "counterfactual": False, "bait": True,
+            "context": build_context(f, ids),
+            "turns": [(q, ABSTAIN)]}
+
+
+def _example_cert_alias(kb: dict, f: "Facts", rng: random.Random, lang: str,
+                        persona: str, category: str = "factual") -> dict | None:
+    """The Minor-in-AI shape: a certificate asked about by its short alias.
+
+    The context is the whole cert panel, so the answer still has to pick the
+    id the question names; only the NAME the question uses is the alias a
+    visitor types. Falls through when the portfolio has no aliased cert.
+    """
+    facts = index_facts(kb)
+    ids = sorted(fid for fid, e in facts.items()
+                 if e["kind"] == "certification" and f.value(fid))
+    if len(ids) < 2:
+        return None
+    # Pick from the FLAT alias pool, not cert-then-alias: `cert.minor-ai` has
+    # five aliases while each other cert has three, and i04 asks by one of the
+    # short ones, so cert-then-alias drew it only ~1 time in 12. Flat sampling
+    # gives every alias, and therefore every cert, equal question share.
+    pool = []
+    for fid in ids:
+        for a in (facts[fid]["fact"].get("aliases") or []):
+            if not a or a.lower() == str(facts[fid]["fact"].get("name")).lower():
+                continue
+            if lang != "hi" and any(ord(ch) > 127 for ch in a):
+                continue
+            pool.append((fid, a))
+    if not pool:
+        return None
+    target, alias = _pick(rng, pool)
+    # The visitor types the acronym in caps (i04: "Minor in AI"); the alias in
+    # the knowledge base is lower-case. Both spellings have to be seen.
+    if rng.random() < 0.5:
+        alias = alias[:1].upper() + alias[1:]
+        alias = alias.replace(" ai", " AI")
+    if lang == "hi":
+        q = f"{alias} सर्टिफिकेट के बारे में बताइए।"
+        a = f"उनके पास {f.ref(target)} सर्टिफिकेट है।"
+    elif lang == "hinglish":
+        q = _pick(rng, [f"{alias} certificate ke baare mein batao",
+                        f"{alias} kya hai?", f"unhone {alias} kiya hai?"])
+        a = f"Unke paas {f.ref(target)} certificate hai."
+    else:
+        q = _pick(rng, [f"Tell me about the {alias} program.",
+                        f"What is the {alias}?",
+                        f"How did he do in the {alias}?",
+                        f"Tell me more about the {alias}."])
+        first, third = ("I hold the {v} certificate.",
+                        "He holds the {v} certificate.")
+        a = (first if persona == "first" else third).format(v=f.ref(target))
+    rng.shuffle(ids)
+    return {"category": category, "lang": lang, "persona": persona,
+            "counterfactual": False, "context": build_context(f, ids),
+            "turns": [(q, a)]}
+
+
+def _example_embedded_value(kb: dict, f: "Facts", rng: random.Random,
+                            persona: str, category: str = "factual") -> dict | None:
+    """Ask for a value that lives on a DIFFERENT id from its canonical fact.
+
+    The synthetic suite swaps the portfolio but keeps the real fact ids for
+    the line it offers. syn01 asks for the CGPA and offers only the education
+    line; the canonical `ach.lpu-cgpa` is absent. The model has to cite the
+    line it can see, not the id it remembers. English only: syn01 is English
+    and adding a language variable here would train the guard on answers whose
+    value is an English line inside a Hindi frame.
+    """
+    value = f.value("edu.lpu")
+    if not value or "CGPA" not in value:
+        return None
+    q = _pick(rng, ["What's his CGPA?", "What CGPA does he have?",
+                    "Tell me his CGPA.", "How is his CGPA?",
+                    "What is his current CGPA score?"])
+    first, third = ("My CGPA is {v}.", "His CGPA is {v}.")
+    a = (first if persona == "first" else third).format(v=f.ref("edu.lpu"))
+    return {"category": category, "lang": "en", "persona": persona,
+            "counterfactual": False, "context": build_context(f, ["edu.lpu"]),
+            "turns": [(q, a)]}
+
+
+def _empty_context_questions(kb: dict, f: "Facts", rng: random.Random,
+                             lang: str) -> list[str]:
+    """Portfolio questions whose evidence would normally be in the context.
+
+    Used only with an EMPTY context, where the trained answer is `<|abstain|>`.
+    Drawing from every shape that is taught WITH evidence is the point: the
+    model has to read `<|ctx|>` rather than recognise an absent-question pool.
+    """
+    facts = index_facts(kb)
+    out = list(_ABSENT_QUESTIONS.get(lang) or _ABSENT_QUESTIONS["en"])
+    for kind in _LIST_KINDS:
+        out += _list_questions(kind).get(lang) or _list_questions(kind)["en"]
+    for cat in _SUBSET_QUESTIONS:
+        out += _SUBSET_QUESTIONS[cat].get(lang) or _SUBSET_QUESTIONS[cat]["en"]
+    for fid, spec in _COVERAGE_BY_ID.items():
+        if fid in facts and f.value(fid):
+            out += spec["questions"].get(lang) or spec["questions"]["en"]
+    for kind in _COVERAGE_KINDS:
+        ids = [fid for fid, e in facts.items()
+               if e["kind"] == kind and f.value(fid)]
+        if not ids:
+            continue
+        fid = _pick(rng, ids)
+        entry = facts[fid]["fact"]
+        labels = [entry.get("name") or f.value(fid)] + list(entry.get("aliases") or [])
+        label = _pick(rng, [lab for lab in labels if lab])
+        out += [q.format(label=label) for q in
+                (_COVERAGE_QUESTIONS[kind].get(lang)
+                 or _COVERAGE_QUESTIONS[kind]["en"])]
+    # And every SINGLE-fact question a topic can ask. v13 sampled lists,
+    # subsets and coverage here but not `target_pairs`, so "what is his phone
+    # number?" was the only empty-context shape close to a factual single
+    # question — d02 answered it with a frame instead of `<|abstain|>` while
+    # the Hindi d21 abstained. The rule is about the EMPTY CONTEXT, not the
+    # question's shape, so the empty context has to be paired with the question
+    # shapes that are normally taught with evidence.
+    for topic in TOPICS:
+        out += [q for q, _fid in target_pairs(topic.name, lang)]
+        out += list(topic.questions.get(lang) or topic.questions["en"])
+    # The hallucination-bait shapes against an EMPTY context: b01/b02 ask
+    # about an employer/internship with no evidence at all, and v13 answered
+    # them with a frame instead of `<|abstain|>`. Same rule as every other
+    # empty-context row — absence of evidence is the cue.
+    shapes = BAIT_SHAPES.get(lang) or BAIT_SHAPES["en"]
+    out += [s.format(x=x) for x in BAIT_COMPANIES for s in shapes["company"]]
+    out += [s.format(x=x) for x in BAIT_UNIVERSITIES for s in shapes["university"]]
+    return list(dict.fromkeys(out))
 
 
 def make_example(kb: dict, category: str, rng: random.Random,
@@ -1595,11 +2524,33 @@ def make_example(kb: dict, category: str, rng: random.Random,
         # topic path — it fabricates a whole context, and a fabricated label in
         # the question is not a question a visitor could type.
         if not counterfactual:
+            if rng.random() < _CONTACT_PROBE_SHARE:
+                contact_row = _example_contact_probe(kb, f, rng, lang, persona)
+                if contact_row is not None:
+                    return contact_row
+            if rng.random() < _AI_TOOLS_SHARE:
+                ai_row = _example_ai_tools(kb, f, rng, lang, persona)
+                if ai_row is not None:
+                    return ai_row
+            if rng.random() < _EMBEDDED_SHARE:
+                embedded = _example_embedded_value(kb, f, rng, persona,
+                                                   category="factual")
+                if embedded is not None:
+                    return embedded
             roll = rng.random()
-            if roll < _LIST_SHARE:
+            if roll < _ALIAS_SHARE:
+                alias_row = _example_cert_alias(kb, f, rng, lang, persona)
+                if alias_row is not None:
+                    return alias_row
+            if roll < _ALIAS_SHARE + _LIST_SHARE:
                 return _example_list_answer(kb, f, lang, persona, counterfactual,
                                             rng, category="factual")
-            if roll < _LIST_SHARE + _COVERAGE_SHARE:
+            if roll < _ALIAS_SHARE + _LIST_SHARE + _SUBSET_SHARE:
+                subset = _example_skill_subset(kb, f, lang, persona, rng,
+                                               category="factual")
+                if subset is not None:
+                    return subset
+            if roll < _ALIAS_SHARE + _LIST_SHARE + _SUBSET_SHARE + _COVERAGE_SHARE:
                 covered = _example_fact_coverage(kb, f, rng, lang, persona)
                 if covered is not None:
                     return covered
@@ -1607,6 +2558,10 @@ def make_example(kb: dict, category: str, rng: random.Random,
         ids = list(dict.fromkeys(fid for t in chosen for fid in t.context))
         if counterfactual and "person.name" not in ids:
             ids.insert(0, "person.name")
+        # Position must not be the cue: v14 answered the LAST related line
+        # (d12 project instead of location, d07 Minor in AI instead of the two
+        # certs) because topic contexts were serialised in a fixed order.
+        rng.shuffle(ids)
         target = _pick(rng, chosen)
         q, fact_id = _pick(rng, target_pairs(target.name, lang))
         # Every targeted fact belongs to `target`, whose facts are in `ids`
@@ -1623,6 +2578,7 @@ def make_example(kb: dict, category: str, rng: random.Random,
         ids = list(t.context)
         if counterfactual and "person.name" not in ids:
             ids.insert(0, "person.name")
+        rng.shuffle(ids)
         # ONE fact per turn, drawn from this topic. `t.answer()` returned the
         # topic's WHOLE fact list, and those two-fact answers are the second most
         # repeated pattern in the corpus after the recruiter frame — 204 of
@@ -1663,6 +2619,26 @@ def make_example(kb: dict, category: str, rng: random.Random,
                 "turns": [(q1, a1), (follow, a2)]}
 
     if category == "abstention":
+        # Three shapes: the rule (an empty context admits no answer, whatever
+        # the question), the fixed absent pool (the phrasings visitors type),
+        # and the composed bait (an entity the context does not name). Every
+        # abstention row is context-free, counterfactual flag or not: the §14
+        # abstention cases all carry an empty window, and an abstention row
+        # with fabricated context teaches the opposite rule.
+        if rng.random() < _EMPTY_ABSTAIN_SHARE:
+            q = _pick(rng, _empty_context_questions(kb, f, rng, lang))
+            return {"category": category, "lang": lang, "persona": persona,
+                    "counterfactual": False, "absent": True,
+                    "context": build_context(f, []),
+                    "turns": [(q, ABSTAIN)]}
+        if rng.random() < _ABSENT_SHARE:
+            q = _pick(rng, _ABSENT_QUESTIONS.get(lang) or _ABSENT_QUESTIONS["en"])
+            return {"category": category, "lang": lang, "persona": persona,
+                    "counterfactual": False, "absent": True,
+                    "context": build_context(f, []),
+                    "turns": [(q, ABSTAIN)]}
+        if not counterfactual and rng.random() < _BAIT_SHARE:
+            return _example_bait(kb, f, rng, lang, persona, category)
         q = _pick(rng, ABSTENTION_QUESTIONS.get(lang) or ABSTENTION_QUESTIONS["en"])
         # a plausible context that simply does not contain the answer
         t = choose_topic(rng, counterfactual)
@@ -1691,12 +2667,14 @@ def make_example(kb: dict, category: str, rng: random.Random,
         ids = list(dict.fromkeys(t.context + t2.context))
         if counterfactual and "person.name" not in ids:
             ids.insert(0, "person.name")
+        rng.shuffle(ids)
         return {"category": category, "lang": l1, "persona": persona,
                 "counterfactual": counterfactual, "context": build_context(f, ids),
                 "turns": [(q1, a1), (q2, a2)]}
 
     if category == "recruiter":
         ids = ["person.name", "edu.lpu", "project.volunteer", "workflow.how-he-builds"]
+        rng.shuffle(ids)
         q = _pick(rng, [
             "Give me a quick summary of Aashish.",
             "What kind of developer is he?",
@@ -1794,6 +2772,51 @@ ASK_FORMS: dict[str, list[str]] = {
         "From a visitor: {q}", "Just checking — {q}",
         "A friend wants to know: {q}", "Hypothetically, {q}",
         "For my notes: {q}", "Last thing, {q}",
+        "Just to confirm: {q}", "I had a question — {q}",
+        "Could you clarify: {q}", "For the portfolio: {q}",
+        "I'd like to know: {q}", "Please answer this: {q}",
+        "One question: {q}", "I'm curious — {q}",
+        "Could you help with this? {q}", "For a quick check: {q}",
+        "I wanted to ask: {q}", "If you don't mind: {q}",
+        "For clarity: {q}", "While I'm here: {q}",
+        "A quick one: {q}", "I'm trying to find out: {q}",
+        "Can you confirm: {q}", "Please tell me: {q}",
+        "I had a quick question about this: {q}",
+        "Would you be able to tell me: {q}",
+        "I need a bit of information: {q}",
+        "Could you answer something for me? {q}",
+        "I was wondering: {q}", "For a visitor's question: {q}",
+        "Here's what I'd like to check: {q}",
+        "To make sure I have this right: {q}", "Could you explain: {q}",
+        "I'm checking the portfolio: {q}", "Let me ask directly: {q}",
+        "Quick question for the portfolio: {q}", "May I ask: {q}",
+        "Help me understand: {q}", "I've got one more: {q}",
+        "Could you help me verify: {q}", "Just so I know: {q}",
+        "One more thing to check: {q}",
+        "Could I trouble you for one detail? {q}",
+        "While browsing the portfolio, I wondered: {q}",
+        "Something I noticed: {q}", "Let me confirm one thing: {q}",
+        "I have a small question: {q}", "Would you mind clarifying: {q}",
+        "May I get one detail: {q}", "For completeness: {q}",
+        "One detail I missed: {q}",
+        "I'd appreciate an answer to this: {q}",
+        "Can you settle this for me? {q}", "A visitor wants to know: {q}",
+        "Checking one detail: {q}", "I'm unsure about something: {q}",
+        "Could you give me the answer: {q}", "Here's my question: {q}",
+        "I'd like one clarification: {q}", "May I confirm: {q}",
+        "Let's check one thing: {q}", "One last question from me: {q}",
+        "May I ask one detail: {q}", "One small detail: {q}",
+        "A small detail: {q}",
+        "One more detail: {q}",
+        "Could you check this for me? {q}",
+        "I have a quick follow-up: {q}",
+        "Just to be sure: {q}",
+        "For the record: {q}",
+        "One more thought: {q}", "Could I get one more detail? {q}",
+        "I have another question: {q}", "Just following up: {q}",
+        "For a final check: {q}", "One detail I wanted: {q}",
+        "I'm double-checking: {q}", "Could you confirm one detail? {q}",
+        "One last check: {q}", "Could you verify this: {q}",
     ],
     "hi": [
         "{q}", "क्या आप बता सकते हैं — {q}", "एक छोटा सवाल: {q}",
@@ -1801,6 +2824,50 @@ ASK_FORMS: dict[str, list[str]] = {
         "क्या आप इसका जवाब दे सकते हैं? {q}",
         "एक दोस्त ने पूछा: {q}", "जिज्ञासा हुई: {q}",
         "मेरे नोट्स के लिए: {q}",
+        "बस पुष्टि के लिए: {q}", "मेरा एक सवाल है — {q}",
+        "कृपया स्पष्ट करें: {q}", "पोर्टफोलियो के बारे में: {q}",
+        "मैं जानना चाहता हूँ: {q}", "कृपया इसका उत्तर दें: {q}",
+        "एक सवाल: {q}", "मुझे उत्सुकता है — {q}",
+        "क्या आप इसमें मदद कर सकते हैं? {q}", "जल्दी जाँच के लिए: {q}",
+        "मैं पूछना चाहता था: {q}", "अगर आप बुरा न मानें: {q}",
+        "स्पष्टता के लिए: {q}", "मैं यहाँ हूँ तो: {q}",
+        "एक छोटा सा: {q}", "मुझे यह जानना है: {q}",
+        "क्या आप पुष्टि कर सकते हैं: {q}", "कृपया मुझे बताएं: {q}",
+        "मेरा इस बारे में एक छोटा सवाल है: {q}",
+        "क्या आप मुझे बता सकते हैं: {q}",
+        "मुझे थोड़ी जानकारी चाहिए: {q}",
+        "क्या आप मेरे लिए कुछ बता सकते हैं? {q}",
+        "मैं जानना चाहता था: {q}", "एक आगंतुक के सवाल के लिए: {q}",
+        "मैं यह जाँचना चाहता हूँ: {q}", "इसकी पुष्टि के लिए: {q}",
+        "क्या आप समझा सकते हैं: {q}", "मैं पोर्टफोलियो देख रहा हूँ: {q}",
+        "सीधे पूछता हूँ: {q}", "पोर्टफोलियो के बारे में एक छोटा प्रश्न: {q}",
+        "क्या मैं पूछ सकता हूँ: {q}", "मुझे समझने में मदद करें: {q}",
+        "मेरा एक और सवाल है: {q}",
+        "क्या आप इसे सत्यापित करने में मदद करेंगे: {q}",
+        "बस जानकारी के लिए: {q}", "एक और बात जाँचनी है: {q}",
+        "क्या मैं एक बात पूछ सकता हूँ? {q}",
+        "पोर्टफोलियो देखते समय: {q}", "एक बात ध्यान आई: {q}",
+        "मुझे एक बात स्पष्ट करनी है: {q}", "मेरा छोटा सा सवाल है: {q}",
+        "क्या आप इसे स्पष्ट करेंगे: {q}", "एक जानकारी चाहिए: {q}",
+        "पूर्णता के लिए: {q}", "एक बात छूट गई: {q}",
+        "मैं इसका उत्तर चाहता हूँ: {q}",
+        "क्या आप इसे तय कर सकते हैं? {q}",
+        "एक आगंतुक जानना चाहता है: {q}", "एक बात जाँचनी है: {q}",
+        "मुझे एक बात में संदेह है: {q}",
+        "क्या आप उत्तर दे सकते हैं: {q}", "मेरा सवाल यह है: {q}",
+        "मुझे एक स्पष्टीकरण चाहिए: {q}",
+        "क्या मैं पुष्टि कर सकता हूँ: {q}", "चलिए एक बात जाँचते हैं: {q}",
+        "मेरा आखिरी सवाल: {q}",
+        "एक और जानकारी: {q}",
+        "क्या आप इसे जाँच सकते हैं? {q}",
+        "मेरा एक छोटा फ़ॉलो-अप: {q}",
+        "बस निश्चित करने के लिए: {q}",
+        "रिकॉर्ड के लिए: {q}",
+        "एक और बात: {q}", "क्या मुझे एक और जानकारी मिल सकती है? {q}",
+        "मेरा एक और सवाल है: {q}", "बस आगे की पुष्टि: {q}",
+        "आखिरी जाँच के लिए: {q}", "एक बात और पूछनी थी: {q}",
+        "मैं दोबारा जाँच रहा हूँ: {q}", "क्या आप एक बात की पुष्टि करेंगे? {q}",
+        "एक अंतिम जाँच: {q}", "क्या आप इसे सत्यापित कर सकते हैं? {q}",
     ],
     "hinglish": [
         "{q}", " bata sakte ho — {q}", "ek chhota sawaal: {q}",
@@ -1808,6 +2875,49 @@ ASK_FORMS: dict[str, list[str]] = {
         "kya aap iska jawab de sakte ho? {q}",
         "ek dost ne pucha: {q}", "jigwasa hui: {q}",
         "mere notes ke liye: {q}",
+        "bas confirm karne ke liye: {q}", "mera ek sawaal hai — {q}",
+        "please clear karo: {q}", "portfolio ke liye: {q}",
+        "main jaanna chahta hoon: {q}", "please iska jawab do: {q}",
+        "ek question: {q}", "mujhe curiousity hai — {q}",
+        "kya aap isme help kar sakte ho? {q}", "quick check ke liye: {q}",
+        "main poochna chahta tha: {q}", "agar bura na maane: {q}",
+        "clarity ke liye: {q}", "main yahan hoon toh: {q}",
+        "chhota sa sawaal: {q}", "mujhe yeh jaanna hai: {q}",
+        "kya aap confirm kar sakte ho: {q}", "please mujhe batao: {q}",
+        "iska ek chhota sawaal hai: {q}",
+        "kya aap mujhe bata sakte ho: {q}",
+        "mujhe thodi information chahiye: {q}",
+        "kya aap mere liye kuch bata sakte ho? {q}",
+        "main jaanna chahta tha: {q}", "ek visitor ke sawaal ke liye: {q}",
+        "main yeh check karna chahta hoon: {q}", "pakka karne ke liye: {q}",
+        "kya aap samjha sakte ho: {q}", "main portfolio dekh raha hoon: {q}",
+        "seedha poochta hoon: {q}", "ek chhota portfolio sawaal: {q}",
+        "kya main pooch sakta hoon: {q}",
+        "mujhe samajhne mein help karo: {q}", "mera ek aur sawaal hai: {q}",
+        "kya aap ise verify karne mein help karoge: {q}",
+        "bas jaankari ke liye: {q}", "ek aur baat check karni hai: {q}",
+        "kya main ek baat pooch sakta hoon? {q}",
+        "portfolio dekhte waqt: {q}", "ek baat yaad aayi: {q}",
+        "mujhe ek baat clear karni hai: {q}",
+        "mera chhota sa sawaal hai: {q}",
+        "kya aap ise clear karoge: {q}", "ek jaankari chahiye: {q}",
+        "completeness ke liye: {q}", "ek baat reh gayi: {q}",
+        "main iska jawab chahta hoon: {q}",
+        "kya aap ise settle kar sakte ho? {q}",
+        "ek visitor jaanna chahta hai: {q}", "ek baat check karni hai: {q}",
+        "mujhe ek baat mein doubt hai: {q}",
+        "kya aap jawab de sakte ho: {q}", "mera sawaal yeh hai: {q}",
+        "mujhe ek clarification chahiye: {q}",
+        "kya main confirm kar sakta hoon: {q}",
+        "chalo ek baat check karte hain: {q}", "mera aakhri sawaal: {q}",
+        "ek aur detail: {q}", "kya aap ise check kar sakte ho? {q}",
+        "mera ek chhota follow-up: {q}", "bas sure karne ke liye: {q}",
+        "record ke liye: {q}",
+        "ek aur baat: {q}", "kya mujhe ek aur detail mil sakti hai? {q}",
+        "mera ek aur sawaal hai: {q}", "bas aage confirm: {q}",
+        "aakhri check ke liye: {q}", "ek baat aur poochni thi: {q}",
+        "main dobara check kar raha hoon: {q}", "kya aap ek detail confirm karoge? {q}",
+        "ek aakhri check: {q}", "kya aap ise verify kar sakte ho? {q}",
     ],
 }
 
@@ -1861,8 +2971,14 @@ def generate(kb: dict, count: int, seed: int = 1337,
     rng = random.Random(seed)
     plan = category_plan(count)
     rng.shuffle(plan)
-    cf_slots = int(round(count * counterfactual_share))
-    cf_set = set(rng.sample(range(count), cf_slots))
+    # Abstention rows are always context-free, so a counterfactual flag there
+    # would count a fabricated context the row does not have. Draw the slots
+    # from the categories that CAN fabricate instead of dropping them: the
+    # corpus then keeps the requested share, and every flagged row really has
+    # a swapped value.
+    eligible = [i for i in range(count) if plan[i] != "abstention"]
+    cf_slots = min(int(round(count * counterfactual_share)), len(eligible))
+    cf_set = set(rng.sample(eligible, cf_slots))
     examples = [
         make_example(kb, plan[i], rng, counterfactual=(i in cf_set))
         for i in range(count)
@@ -1872,10 +2988,36 @@ def generate(kb: dict, count: int, seed: int = 1337,
         # answer, fact, category count or counterfactual rule is touched. The
         # `rng` is shared with `make_example`, so a given seed still reproduces
         # the whole set exactly.
+        #
+        # Draw carriers WITHOUT replacement for each (language, question). A
+        # plain random draw collides with itself: at the measured 4,000-row
+        # sample the old code produced 3,594 distinct questions, below the
+        # 5× guard, even though the carrier pool was wide. Reusing a shuffled
+        # per-question bag removes that self-collision while still letting the
+        # seed decide the order; after the bag empties it is reshuffled.
+        carrier_bags: dict[tuple[str, str], list[str]] = {}
+
+        def next_carrier(question: str, lang: str) -> str:
+            forms = ASK_FORMS.get(lang) or ASK_FORMS["en"]
+            key = (lang, question)
+            bag = carrier_bags.get(key)
+            if not bag:
+                bag = list(forms)
+                rng.shuffle(bag)
+                carrier_bags[key] = bag
+            return bag.pop().format(q=question)
+
         for ex in examples:
             if ex.get("category") in _UNVARYED or ex.get("vary") is False:
                 continue
-            ex["turns"] = [(vary_question(q, ex.get("lang", "en"), rng), a)
+            # The §14 prompts are BARE. v14 wrapped almost every abstention row
+            # in a carrier ("Someone asked me: …"), so the model learned to
+            # refuse the carrier but not the shipped prompt: d02/u01/u02/b01/
+            # b03 all answered from a framed habit. Keep a bare majority for
+            # the shipped prompts while leaving enough carriers for visitors.
+            if ex.get("category") == "abstention" and rng.random() < 0.55:
+                continue
+            ex["turns"] = [(next_carrier(q, ex.get("lang", "en")), a)
                            for q, a in ex["turns"]]
     return examples
 

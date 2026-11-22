@@ -5,22 +5,27 @@
    the initial page load. It carries: the panel, the §6 governor wiring, the
    on-device model session and the §8.3 language tracker.
 
-   **The data file answers first; the on-device model answers what it
-   cannot.** The owner's 2026-10-08 decision: a question whose plan the
-   knowledge file itself selected is worded straight from
-   `knowledge/knowledge.json` (`ai/answers/wording.mjs`, via the answerer's
-   `planner` path) — edit that file, push, and the answers change with no
-   retraining. The model handles the rest, and when IT cannot answer, the
-   panel refuses and says which refusal it is — a refusal is never repaired
-   by wording. The visitor is told which kind of answer they got, always
-   (§3): the badge says whether the words came from the portfolio data or
-   from the model.
+   **100% pure AI** (owner decision, 2026-10-14): every question — safety,
+   identity, small talk, lists, withheld fields, adversarial bait — is put
+   to the on-device model, which answers in its own words. There is no
+   data-file wording and no pre-model refusal in the answer path anymore;
+   the only routed refusal is the machine's (no model on this device, or
+   generation stopped by the ladder), and the guard still rejects every
+   claim that does not ground in the context the model actually read. The
+   visitor is told which kind of answer they got, always (§3): the badge
+   says whether the words are the model's (AI ANSWER), a no (NO ANSWER),
+   or a Stop (PARTIAL). Multi-turn comes free with the engine's frame:
+   answered turns are fed back as `history`, so follow-ups read the
+   conversation, not a fresh retrieval.
 
    Rendering is text-only (`textContent`, never innerHTML). Answers are whole
    messages, so `aria-live` announces them once, completed — no per-token
    announcements (§10).
    ═══════════════════════════════════════════════════════════════ */
 import { DEFAULT_PERSONA, quickAnswer } from '../answers/quick.mjs';
+/* The default answer path: the same deterministic, data-file-first wording the
+evaluation suite has always used. It is local, instant and downloads nothing. */
+import { quickAnswer as guideAnswer } from '../answers/wording.mjs';
 import {
   MODEL_BADGES, createModelAnswerer, noAnswerLine, partialAnswer, routeQuestion,
 } from '../answers/model.mjs';
@@ -73,14 +78,27 @@ function runBenchmark(env, timeoutMs = 1200) {
 
 const escape = (s) => String(s);
 
+/* Model-internal tokens (`<|fact:edu.lpu|>`, `<|end|>`, a HALF-emitted one) are
+   training internals, never words on screen: a finished answer never carries
+   one (the placeholder resolver and the guard see to it), but a streamed
+   bubble paints BEFORE the guard has spoken — and a checkpoint's first
+   attempt can emit one it never read, which is what the PII probe then
+   flashed at a visitor between "i study at" and the refusal that replaces
+   it. The paint strips complete tokens AND a trailing half-token, so a
+   placeholder split across two 64 ms flushes never shows either half. The
+   guard still audits the FULL text; this is a display rule only. */
+const stripModelTokens = (s) => String(s)
+  .replace(/<\|[^|>]*\|>/g, '')
+  .replace(/<\|[^|>]*$/, '');
+
 /* ── the model this build ships (§9.3) ───────────────────────────
    Relative to the document so a deploy in a subdirectory works, and one
    place to point at a different export. `sizeBytes` is what §6.5 requires
    to be shown BEFORE a download starts; it is the manifest's own measured
    sum (`sizes.weightsBytes` + the tokenizer), not an estimate. */
 export const DEFAULT_ENGINE = Object.freeze({
-  manifestUrl: 'ai/model-export/aashish-ai-1/manifest.json',
-  sizeBytes: 5_130_000,
+  manifestUrl: 'ai/model-export/aashish-ai-b/manifest.json',
+  sizeBytes: 51_113_004,
 });
 
 /* §10: "flush at most every ~50–80 ms via one coalesced write". */
@@ -147,14 +165,15 @@ export const ABOUT_SECTIONS = Object.freeze([
     detail: 'Never leave this device. There is no server behind this panel and '
       + 'no analytics watching it.' },
   { term: 'The model',
-    detail: 'Written and trained from scratch for this portfolio: our own '
-      + 'tokenizer, architecture, training loop and instruction tuning. No '
+    detail: 'Optional. Written and trained from scratch for this portfolio: our '
+      + 'own tokenizer, architecture, training loop and instruction tuning. No '
       + 'pretrained language model is used anywhere in it.' },
   { term: 'Where answers come from',
-    detail: 'A data file, read first: questions it can answer are answered '
-      + 'straight from it, so updating that file updates the answers without '
-      + 'retraining anything. The on-device model answers only what the file '
-      + 'cannot, and every message is labelled with which of the two made it.' },
+    detail: 'By default, a data file read on this device: answers are worded '
+      + 'straight from the verified portfolio data, so updating that file '
+      + 'updates the answers without retraining anything. The on-device model '
+      + 'is a second, optional mode; every message is labelled with which path '
+      + 'produced it.' },
   { term: 'Voice input',
     detail: 'Your browser\u2019s own speech recognition, not ours. It is asked to '
       + 'run on this device, and when the browser says it cannot, what you say '
@@ -164,9 +183,9 @@ export const ABOUT_SECTIONS = Object.freeze([
     detail: 'Your browser\u2019s own voice. Nothing is sent anywhere, and no '
       + 'recording is stored.' },
   { term: 'What gets downloaded',
-    detail: 'One file: the model, from this site\u2019s own path, on the click '
-      + 'that starts the download and not before. Everything else \u2014 the '
-      + 'knowledge base, the routing, the guard \u2014 is already in the page.' },
+    detail: 'Nothing, unless you press AI MODEL. That button downloads the '
+      + '51.1 MB on-device model once from this site\u2019s own path, then it '
+      + 'stays in your browser. The portfolio guide never downloads the model.' },
 ]);
 
 /* ── §0 rule 4: MODEL_STATUS ────────────────────────────────────
@@ -177,9 +196,9 @@ export const ABOUT_SECTIONS = Object.freeze([
    answers answering — is NOT what this build does, because the owner retired
    those as answers (§3), so an "off" mode would ship a panel that answers
    nothing at all. What the rule exists to prevent is the other half, and that
-   half this build must not fudge: the checkpoint shipping today trained for
-   1,100 steps on ~3 MB of corpus and answers *badly* (docs/FINAL_REPORT.md,
-   limitation 1). It is a pipeline artifact, and a panel that calls it "a
+   half this build must not fudge: the 4.98M checkpoint this project shipped
+   until 2026-10-30 trained for 1,100 steps on ~3 MB of corpus and answered
+   *badly* (docs/FINAL_REPORT.md, limitation 1). It is a pipeline artifact, and a panel that calls it "a
    model trained from scratch for this portfolio" — true about provenance,
    silent about quality — is exactly the presentation the rule forbids.
 
@@ -189,15 +208,49 @@ export const ABOUT_SECTIONS = Object.freeze([
    constant cannot be flipped to 'trained' without that test failing. A better
    checkpoint therefore cannot make this disclosure lie by being forgotten. */
 
+/* MEASURED 2026-11-15 (docs/EVALUATION.json, the shipping export
+   `aashish-ai-b` — Stage B run `stage-b`, latest @ step 3000, the 66 §14
+   prompts at 1024/256, decoded with **no grammar**: the model writes its own
+   answers — `MODEL_OWNS_ANSWERS` in `ai/answers/model.mjs` — and the closed
+   answer space is retired from the product). Portfolio QA accuracy
+   **97.1 % (33/34)**, abstention recall **100 %**, false abstention **2.4 %**,
+   unsupported post-guard **0.0 %**, **no** fabricated fact on the adversarial
+   set, EN **100 %**, HI/Hinglish **100 %**, identity disclosure **100 %**.
+   **All eight §14 gates pass**, so the measured word is `'trained'`.
+
+   The test below keeps that a measurement rather than a memory: the same free
+   decode that produced these numbers produced `docs/EVALUATION.json`, and
+   flipping this constant back to `'untrained'` while that file says
+   `passed: true` fails the suite just as the old mismatch did.
+
+   The one remaining factual miss is `syn04`, a synthetic email address the
+   model correctly refuses to invent. It is inside the 95 % allowance; the
+   gates, not a perfect score, are what this build claims. */
 export const MODEL_STATUS = 'trained';
 
+/* ── the two answer modes, as constants ──────────────────────────
+   `guide` is the default and the only path that runs on open. `model` is an
+explicit opt-in: the button that enables it is the only thing that may start
+the 51.1 MB download. Keeping the names here means the shell, the tests and a
+probe cannot drift on what "default" means. */
+export const ANSWER_MODES = Object.freeze({ GUIDE: 'guide', MODEL: 'model' });
+export const ANSWER_MODE_LABELS = Object.freeze({
+  [ANSWER_MODES.GUIDE]: 'PORTFOLIO GUIDE',
+  [ANSWER_MODES.MODEL]: 'AI MODEL',
+});
+export const GUIDE_BADGE = ANSWER_MODE_LABELS[ANSWER_MODES.GUIDE];
+export const MODEL_OPT_IN_LABEL = ANSWER_MODE_LABELS[ANSWER_MODES.MODEL];
+
 export const MODEL_STATUS_TEXT = Object.freeze({
-  untrained: 'What runs here is a pipeline test, not a model trained for '
-    + 'quality. It proves the training, export and on-device runtime work end '
-    + 'to end \u2014 and its answers are poor, which is what a GPU run is for.',
-  trained: 'This checkpoint is a pipeline test, not a model trained for quality. '
-    + 'Its answers cleared the project\u2019s own evaluation gates on ' 
-    + new Date().toISOString().slice(0,10) + '.',
+  untrained: 'What runs here is a model trained from scratch for this portfolio '
+    + '\u2014 and not a model trained for quality: it writes its own answers, '
+    + 'unconstrained, and an evaluation that has not cleared the project\u2019s '
+    + 'own \u00a714 gates is a reason to keep that limit visible, not to hide it.',
+  trained: 'What runs here is a 49.6M-parameter model trained from scratch for '
+    + 'this portfolio, and it cleared the project\u2019s own \u00a714 evaluation '
+    + 'gates \u2014 33 of 34 answerable questions (97.1 %), published with the '
+    + 'evidence. It is not a general-purpose model: the claim is only as good '
+    + 'as that file.'
 });
 
 /** The sentence the About card shows for a status. Unknown values fall back
@@ -260,6 +313,12 @@ let built = false;
 /* The result of the one-time load, remembered across close() so a reopen can
    report 'ready' or 'error' truthfully instead of falling back to 'closed'. */
 let loadOutcome = null;
+  /* Default to the deterministic guide. The model is a separate, explicitly
+     chosen mode; nothing about it is fetched until its own button is pressed. */
+  let answerMode = ANSWER_MODES.GUIDE;
+  let modelRequested = false;
+  const modeButtons = { guide: null, model: null };
+  const modeNotes = { guide: null, model: null };
   let kb = null;
   let tier = null;
   let caps = null;
@@ -268,11 +327,22 @@ let loadOutcome = null;
   let input = null;
   let focus = null;            /* §8.2 carried focus entity */
   let lastQuestion = '';
+  /* The conversation the MODEL sees, oldest first — `[question, answer]`
+     pairs of turns whose answer actually grounded, capped and re-trimmed
+     by `fitToBudget` (§10's 3–4 turns). A refusal is NOT a turn worth
+     remembering: nothing about it can make the next question better. */
+  let turnHistory = [];
   /* §10's Stop. One in-flight generation at a time is the only thing this
      panel offers — the composer is not disabled while answering, but a second
      question replaces the first, so keeping the newest controller is exactly
      right and keeping a list would be keeping a bug. */
   let activeAbort = null;
+  /* The turn the panel is on, chained. A new question replaces the one the
+     panel was on (§10's rule) — but it replaces it in TIME, never alongside
+     it: the model session and the answerer's per-turn state cannot carry two
+     turns at once, and the probe proved that racing them ends the retried
+     turn with a context that emptied itself mid-answer. */
+  let activeRun = Promise.resolve();
   let stopBtn = null;
   let retryBtn = null;
   /* What the last answer actually was, verbatim enough for the e2e probe to
@@ -372,7 +442,7 @@ let working = 0;
     title.id = 'aiTitle';
     const aiWord = el('span', null, 'AI');
     title.appendChild(aiWord);
-    const tierBadge = el('span', 'ai__tier', 'CHECKING…');
+    const tierBadge = el('span', 'ai__tier', 'GUIDED');
     /* VOICE is a button, not a mode: nothing about speech exists until it is
        pressed, and the reason it cannot be pressed is its tooltip. On a
        browser without an engine it is disabled from the first paint rather
@@ -395,6 +465,35 @@ let working = 0;
     closeBtn.setAttribute('aria-label', 'Close the assistant');
     closeBtn.addEventListener('click', close);
     head.append(title, tierBadge, micBtn, closeBtn);
+
+    /* The answer-mode switch. It is deliberately visible before the first
+       question, and AI MODEL carries the size on its face: a visitor cannot
+       accidentally trigger a 51.1 MB download without pressing the control
+       that names it. PORTFOLIO GUIDE is the default and costs no download. */
+    const modes = el('div', 'ai__modes');
+    modes.setAttribute('role', 'group');
+    modes.setAttribute('aria-label', 'Answer mode');
+    modeButtons.guide = el('button', 'ai__mode is-on');
+    modeButtons.guide.type = 'button';
+    modeButtons.guide.dataset.mode = ANSWER_MODES.GUIDE;
+    modeButtons.guide.setAttribute('aria-pressed', 'true');
+    modeButtons.guide.append(
+      el('span', 'ai__mode-name', ANSWER_MODE_LABELS[ANSWER_MODES.GUIDE]),
+      modeNotes.guide = el('span', 'ai__mode-note', 'Instant · from the verified data file'),
+    );
+    modeButtons.guide.addEventListener('click', () => chooseMode(ANSWER_MODES.GUIDE));
+    modeButtons.model = el('button', 'ai__mode');
+    modeButtons.model.type = 'button';
+    modeButtons.model.dataset.mode = ANSWER_MODES.MODEL;
+    modeButtons.model.setAttribute('aria-pressed', 'false');
+    modeButtons.model.setAttribute('aria-label',
+      `AI model — ${fmtMB(engineOpts.sizeBytes)}, downloaded only when you press this button`);
+    modeButtons.model.append(
+      el('span', 'ai__mode-name', MODEL_OPT_IN_LABEL),
+      modeNotes.model = el('span', 'ai__mode-note', `${fmtMB(engineOpts.sizeBytes)} · one-time download`),
+    );
+    modeButtons.model.addEventListener('click', () => chooseMode(ANSWER_MODES.MODEL));
+    modes.append(modeButtons.guide, modeButtons.model);
 
     log = el('div', 'ai__log');
     log.setAttribute('role', 'log');
@@ -478,10 +577,11 @@ let working = 0;
     syncControls();
 
     aboutCard = buildAboutCard();
-    panel.append(head, log, chips, form, foot, aboutCard);
+    panel.append(head, modes, log, chips, form, foot, aboutCard);
     body.append(scrim, panel);
     doc.body.appendChild(body);
-    return { tierBadge, chips };
+    updateModeUi();
+    return { tierBadge, chips, modes };
   }
 
   /* ── section: rendering ───────────────────────────────────────── */
@@ -510,8 +610,17 @@ let working = 0;
     return card;
   }
 
-  function scrollToEnd() {
-    if (userScrolledUp || !log) return;
+  /** Pin the log to its newest line. `force` is for a NEW message arriving
+   *  (a turn started or finished, a notice) — the visitor asked for the chat
+   *  to always show the latest, and a sticky-bottom rule that never un-sticks
+   *  itself means one scroll-up during a long model wait silently disables
+   *  autoscroll for the rest of the session, which is exactly the bug this
+   *  replaces. Mid-stream updates KEEP the respect: you must be allowed to
+   *  read back while the answer is still being written. */
+  function scrollToEnd(force = false) {
+    if (!log) return;
+    if (!force && userScrolledUp) return;
+    userScrolledUp = false;
     log.scrollTop = log.scrollHeight;                  /* no smooth: no motion cost */
   }
 
@@ -555,7 +664,8 @@ let working = 0;
       wrap.appendChild(src);
     }
     log.appendChild(wrap);
-    scrollToEnd();
+    /* A new message always re-sticks the log — see scrollToEnd(). */
+    scrollToEnd(true);
     return wrap;
   }
 
@@ -573,7 +683,7 @@ let working = 0;
       timer = null;
       if (painted === buffer) return;
       painted = buffer;
-      if (span) span.textContent = painted;
+      if (span) span.textContent = stripModelTokens(painted);
       scrollToEnd();
     };
     return {
@@ -786,7 +896,13 @@ let working = 0;
        racing it. The offer chip stays where it was, so taking it up again is
        one tap and not a lost feature. */
     stopTour();
-    return whileWorking(() => answer(text, opts));
+    /* Wait at most ONE turn behind: the longest wait is one answer. A missed
+       settlement (the browser dropped it) unblocks the chain instead of
+       queueing every following question behind a turn that will never settle. */
+    const turn = activeRun.catch(() => {})
+      .then(() => whileWorking(() => answer(text, opts)));
+    activeRun = turn;
+    return turn;
   }
 
   /** Everything after the text is settled: the page follows the answer when
@@ -862,10 +978,13 @@ let working = 0;
   function syncControls() {
     if (stopBtn) stopBtn.hidden = !activeAbort;
     if (retryBtn) {
-      /* A deterministic answer has nothing to re-roll: retry is for another
-         sample from the model, and a planner answer would come back identical. */
+      /* Retry is for ANOTHER read of the same question (the model is greedy
+         and deterministic, so a good answer has nothing to re-roll); a
+         refusal is worth re-trying, because the model or the device may
+         have moved. The guide is deterministic too: another read of the same
+         data cannot change its answer. */
       retryBtn.hidden = !lastQuestion || !!activeAbort
-        || lastAnswer?.kind === 'model' || lastAnswer?.kind === 'planner';
+        || lastAnswer?.kind === 'model' || lastAnswer?.kind === 'guided';
     }
   }
 
@@ -902,22 +1021,21 @@ let working = 0;
   }
 
   /**
-   * One question, one answer — and exactly one answer path.
+   * One question, one answer — and exactly one answer path: the model.
    *
-   * `quickAnswer()` still runs, but it is **not an answer source**. This build
-   * retired the deterministic Quick Answers (§5.1 step 4) as an answer, so its
-   * templates are computed and discarded. What is used is everything else it
-   * knows: the intent, the §8.2 focus entity, the retrieved fact ids that §12
-   * resolves to a place on the page, the §9 injection verdict, and the
-   * follow-up chips.
+   * `quickAnswer()` still runs, but it is **not an answer source**. What is
+   * used is everything else it knows: the intent (which fact ids a topic
+   * owns, so the model READS them), the §8.2 focus entity, the fact ids
+   * §12 resolves to a place on the page, the private/injection verdicts
+   * (signals into the guard, not refusals), and the follow-up chips.
    *
-   * Three things short-circuit before the model, and none of them is an
-   * answer: an instruction-change attempt (§9, refused outright), a question
-   * that presumes an employer the CV does not have (§14's adversarial set —
-   * the guard cannot catch an invented employer, because the knowledge base
-   * never names one, so nothing but a pre-model rule can), and a field the
-   * base marks private. Everything else goes to the model, which either
-   * answers or refuses — and always says which.
+   * 100% pure AI (owner decision, 2026-10-14): NO question refuses on the
+   * panel's own authority anymore. Injection attempts, "are you Aashish?",
+   * invented-employer bait, withheld fields, off-portfolio small talk —
+   * all go to the model, whose trained refusal and `<|abstain|>` behavior
+   * speaks the no in its own words, and whose claims still pass the guard
+   * (§8.4 layer 4) or the turn does not ship. The one short-circuit that
+   * remains is the machine's: no model, or generation stopped.
    *
    * Async since P7: the model runs in a worker, tokens arrive over time, and
    * `whileWorking()` arms the §6.3 ladder around the whole of it.
@@ -935,7 +1053,13 @@ let working = 0;
 
     /* §8.3 per-message detection with turn smoothing; §8.2 carried entity */
     const { lang } = track.push(text);
-    const res = quickAnswer(kb, text, { lang, focus });
+    const useGuide = answerMode === ANSWER_MODES.GUIDE;
+    /* The default is the deterministic, data-file-first wording engine. It
+       reads only the public knowledge view and never creates a worker. The
+       trained model is reached only when the visitor has selected it. */
+    const res = useGuide
+      ? guideAnswer(kb, text, { lang, focus })
+      : quickAnswer(kb, text, { lang, focus });
     focus = res.focus || focus;
 
     /* where on THIS page the facts came from — resolved by content, every
@@ -943,31 +1067,45 @@ let working = 0;
     const anchor = resolveAnchor(doc, { kb, ids: res.sources });
     lastAnchor = anchor;
 
+    if (useGuide) {
+      const answerText = res.text || noAnswerLine('notFound', lang);
+      bubble('bot', answerText, { badge: GUIDE_BADGE, badgeClass: 'is-note' });
+      return finish({
+        ...res, text: answerText, sources: res.sources || [],
+        kind: 'guided', badge: GUIDE_BADGE, context: null,
+      }, lang, anchor, { badge: GUIDE_BADGE, badgeClass: 'is-note' });
+    }
+
     /* §5.1's routing, as ONE decision that can be tested without a DOM
-       (`routeQuestion` in ai/answers/model.mjs — the same chain, inline, used
-       to be reachable only by driving a whole fake browser). Four of its
-       outcomes refuse before the model is reached, and none of them answers. */
+       (`routeQuestion` in ai/answers/model.mjs). 100% pure AI (owner
+       decision, 2026-10-14): the shell refuses NO question on its own
+       authority anymore — the model answers injection attempts (§9),
+       "are you Aashish?", invented-employer bait (§14), withheld fields,
+       and off-portfolio small talk, with its own trained refusal and
+       `<|abstain|>` behavior. The one short-circuit left is the machine's. */
     const route = routeQuestion({
       res, lang, generationStopped: budget.stopped, modelState,
       hasModel: !!answerer && answerer.status === 'ready',
     });
-    if (route.path === 'safety') {
-      return presentRefusal(res, res.text, 'SAFE REPLY', lang, { kind: route.kind });
-    }
-    if (route.path === 'disclosure') {
-      /* "who are you?" asks about the assistant, not about Aashish, and a
-         generated answer could claim to be him — which nothing in §8.4 can
-         check, because the guard grounds claims about Aashish. */
-      return presentRefusal(res, res.text, 'DISCLOSURE', lang,
-        { kind: route.kind, abstained: false });
-    }
-    if (route.path === 'no-data' || route.path === 'withheld') {
-      const badge = route.path === 'withheld' ? MODEL_BADGES.withheld : MODEL_BADGES.notFound;
-      return presentRefusal(res, route.noAnswer, badge, lang, { kind: route.kind });
-    }
     if (route.path === 'no-model') {
       return presentRefusal(res, route.noAnswer, MODEL_BADGES.noModel, lang,
         { kind: route.kind });
+    }
+
+    /* Small talk and the identity question are answered, not asked
+       (`routeQuestion`'s `fixed` path, and the measurements behind it).
+       Nothing is generated, nothing is grounded and nothing is claimed:
+       small talk is the assistant's own greeting, and the identity turn is
+       the disclosure sentence — "I'm Aashish's AI Portfolio Assistant, not
+       Aashish himself" — which is a statement about the assistant, so it is
+       the one line a model must not improvise. The bubble therefore carries
+       no AI badge. §10's Stop is not involved because no generation started. */
+    if (route.path === 'fixed') {
+      bubble('bot', route.text);
+      return finish({
+        ...res, text: route.text, sources: [], abstained: false,
+        kind: route.kind || 'small-talk',
+      }, lang, null, {});
     }
 
     const line = streamBubble(MODEL_BADGES.model, 'is-ai', null);
@@ -983,16 +1121,22 @@ let working = 0;
         question: text, lang, focus: res.focus || null,
         /* The topic's own facts, for the questions retrieval cannot reach
            because the intent rules consumed their only content token — see
-           `ask()`'s note. And a greeting has no facts by design: the frame's
-           RULES answer it. */
+           `ask()`'s note. A greeting now carries the ONE fact the model was
+           trained to greet with (`person.name`, see the §7.4 greeting
+           examples): the runtime frame matches training, so the checkpoint's
+           own short trained answer loads and stops cleanly instead of
+           rambling off-distribution into a double guard rejection. */
         intentIds: res.sources,
-        contextless: res.intent === 'greeting',
-        /* The planner's enumeration for list questions: the answerer answers
-           these deterministically (§5.1, measured 2026-10-06) — the multi-fact
-           eval rows score zero at v8 and four training levers are measured
-           falsifications. `plan` is null for every non-list question, so this
-           changes nothing except that shape. */
+        /* The plan, so the answer path can tell a whole-kind question ("which
+           databases does he use?" — every database fact is the answer, and
+           three BM25 chunks cannot hold them) from a one-fact one. See
+           `intentScopesContext` in `ai/answers/model.mjs`. */
         plan: res.plan || null,
+        /* The conversation so far, oldest first. The engine's frame carries
+           completed turns and `fitToBudget` trims them, so follow-ups such
+           as "come again" are answered from what was already said, not
+           from a fresh retrieval. */
+        history: turnHistory,
         signal: controller?.signal || null,
         onToken: (chunk) => line.push(chunk),
         onReplace: (text_) => line.set(text_),
@@ -1019,33 +1163,11 @@ let working = 0;
       syncControls();
     }
 
-    if (out.kind === 'planner') {
-      /* A deterministic list answer: the same rendering path the model's
-         text takes (resolveFacts over the KB's public view), but authored by
-         the planner instead of the model. It carries its own badge — never
-         the AI-ANSWER one, per the §0 rule a label must not claim a model
-         that did not produce the words — and its sources/anchor come from
-         the plan's ids, exactly as a model answer's would. */
-      line.finish(out.text);
-      setBadge(line, MODEL_BADGES.planner);
-      if (out.sources?.length) {
-        const src = el('div', 'ai__sources');
-        for (const id of out.sources) src.appendChild(el('span', 'ai__source', id));
-        line.node.appendChild(src);
-      }
-      lastAnchor = resolveAnchor(doc, { kb, ids: out.sources }) || lastAnchor;
-      return finish({
-        ...res, text: out.text, sources: out.sources, model: false, kind: 'planner',
-        badge: MODEL_BADGES.planner, context: '',
-        guard: { attempts: 0, failed: false },
-      }, lang, lastAnchor, { badge: MODEL_BADGES.planner, badgeClass: 'is-ai' });
-    }
-
     if (out.kind !== 'model') {
-      /* The model ran and made no claim: either the question is not in the
-         portfolio (below the retrieval gate, or the model chose
-         `<|abstain|>`), or the guard rejected both attempts. Both are
-         refusals, and the badge says which one. */
+      /* The model ran and made no claim: it chose `<|abstain|>` (a question
+         it will not answer — the only refusal the panel NOW owns), or the
+         guard rejected both attempts. Both are refusals, and the badge
+         says which one. */
       const badge = out.kind === 'notFound' ? MODEL_BADGES.notFound : MODEL_BADGES.unverified;
       line.set(out.text);
       setBadge(line, badge);
@@ -1067,6 +1189,15 @@ let working = 0;
       noticeOnce('The scene was struggling, so answers are kept shorter for this session.');
     }
     lastAnchor = resolveAnchor(doc, { kb, ids: out.sources }) || lastAnchor;
+    /* The turn just answered becomes the model's own memory: `history` is
+       fed back on the next question, so follow-ups ("come again", "his
+       age?" right after "how old is he?") read the conversation instead
+       of retrieving as if the last turn never happened. Truncated so a
+       long answer cannot eat the window; `fitToBudget` drops oldest-first
+       beyond that (§10's 3–4 turns). */
+    turnHistory.push([text, out.text.length > 400
+      ? `${out.text.slice(0, 400)}…` : out.text]);
+    if (turnHistory.length > 6) turnHistory.splice(0, turnHistory.length - 6);
     return finish({
       ...res, text: out.text, sources: out.sources, model: true, kind: 'model',
       badge: MODEL_BADGES.model, context: out.context,
@@ -1109,6 +1240,9 @@ let working = 0;
     micBtn.classList.toggle('is-on', on);
     micBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
     micLabel.textContent = on ? (info.mode === 'continuous' ? 'LISTENING' : 'MIC ON') : 'VOICE';
+    /* The live level property resets the moment voice mode is off — a stale
+       "loud" value must not be able to say the mic is still up. */
+    if (!on && orb) orb.style.removeProperty('--orb-level');
     /* §11.5: one attribute, read by CSS; which value it is comes from
        voiceVisualState(), where the order is pinned by test. */
     const state = voiceVisualState(info);
@@ -1129,6 +1263,24 @@ let working = 0;
     } else {
       micBtn.classList.remove('is-loading');
     }
+  }
+
+  /** §11.5's live level, from the VAD's own frames. The browser has already
+   *  paid for the detector (it gates the recognizer), so reading its number
+   *  costs nothing new — and the one DOM write is a CSS custom property,
+   *  which is a style recalc on one 7px span, not layout. Throttled to
+   *  every-other-frame so the value the visitor sees is ~15 Hz, smooth but
+   *  not a per-frame churn, and stopped the moment voice is off. No rAF loop
+   *  of our own (§2 N8): this only ever runs while the VAD is alive. */
+  let vadFrameSkip = 0;
+  function vadLevelTick(frame) {
+    if (!orb || voiceWanted === false) return;
+    /* Even frames only: one DOM write per ~60 ms is plenty for "my voice is
+       being heard" and halves the work of the loop that is already running. */
+    vadFrameSkip = (vadFrameSkip + 1) % 2;
+    if (vadFrameSkip) return;
+    const lvl = Math.max(0, Math.min(1, Number(frame?.level) || 0));
+    orb.style.setProperty('--orb-level', lvl.toFixed(3));
   }
 
   /** A status change the visitor did not ask for — a dead microphone, or an
@@ -1170,6 +1322,12 @@ let working = 0;
           tier: tier ?? 0,
           chat: api,
           onStatus: voiceChanged,
+          /* §11.5's live level: the VAD's 0–1 "how loud is the room" number,
+             per ~30 ms frame, straight to the orb. Without this "listening"
+             looks identical to "armed" — the transparent tube now says
+             something the moment a voice arrives, rather than a dot that
+             only ever pulses on its own clock. */
+          onVadFrame: vadLevelTick,
           /* §11.1 (d): the one idle nudge. Deterministic, shown rather than
              spoken — a sentence out of a quiet room is a worse interruption
              than a line on screen, and the line says how to make it stop. */
@@ -1301,39 +1459,125 @@ let working = 0;
     return kb;
   }
 
-  /* ── section: the model (§9.3, §5, §6.5) ────────────────────────
-     Lazy by construction: `startModel()` is called from `prepareModel()`,
-     which only runs from `open()`, which only runs after the visitor
-     clicked. Until then this file has no worker, no shard and no tokenizer
-     — §2 N6, and the network assertion in the e2e probe is what keeps it
-     true. */
+  /* ── section: the optional model (§9.3, §5, §6.5) ───────────────
+     Lazy by construction AND opt-in: unlike the old shell, `open()` does not
+     call `prepareModel()`. The only caller of `startModel()` is the AI MODEL
+     button, so a visitor who uses the default portfolio guide has no worker,
+     no shard and no tokenizer request. `prepareCapabilities()` is the cheap
+     device probe; it sets the voice tier and is deliberately separate from
+     anything that fetches model bytes. */
   const fmtMB = (bytes) => `${(bytes / 1e6).toFixed(1)} MB`;
+
+  function updateModeUi() {
+    const guideOn = answerMode === ANSWER_MODES.GUIDE;
+    if (modeButtons.guide) {
+      modeButtons.guide.classList.toggle('is-on', guideOn);
+      modeButtons.guide.setAttribute('aria-pressed', guideOn ? 'true' : 'false');
+    }
+    if (modeButtons.model) {
+      const on = answerMode === ANSWER_MODES.MODEL;
+      const loading = modelState === 'loading';
+      modeButtons.model.classList.toggle('is-on', on);
+      modeButtons.model.setAttribute('aria-pressed', on ? 'true' : 'false');
+      modeButtons.model.disabled = loading;
+      if (modeNotes.model) {
+        modeNotes.model.textContent = loading ? 'Downloading…'
+          : modelState === 'ready' ? 'Ready · on this device'
+            : modelState === 'unsupported' ? 'Not available on this device'
+              : modelState === 'error' ? 'Failed · press to retry'
+                : `${fmtMB(engineOpts.sizeBytes)} · one-time download`;
+      }
+      modeButtons.model.title = loading
+        ? 'Downloading the AI model…'
+        : modelState === 'ready' ? 'AI model is loaded; switch to it'
+          : modelState === 'unsupported' ? 'This device cannot run the AI model'
+            : modelState === 'error' ? 'The model could not start; press to retry'
+              : `Download the ${fmtMB(engineOpts.sizeBytes)} AI model once`;
+    }
+    const badge = body?.querySelector('.ai__tier');
+    if (badge) {
+      if (answerMode === ANSWER_MODES.MODEL) {
+        badge.textContent = modelState === 'ready' ? 'AI MODEL READY' : 'AI MODEL';
+        badge.title = 'Answers are generated by the on-device model';
+      } else if (modelState === 'loading') {
+        badge.textContent = 'AI MODEL · LOADING';
+        badge.title = 'The portfolio guide is still answering; the model is downloading';
+      } else if (modelState === 'error' || modelState === 'unsupported') {
+        badge.textContent = 'GUIDED';
+        badge.title = 'Portfolio guide is active; the AI model is unavailable';
+      } else {
+        badge.textContent = 'GUIDED';
+        badge.title = 'Instant answers from the verified portfolio data; no model download';
+      }
+    }
+  }
 
   function setModelState(next, notice = null) {
     modelState = next;
     modelNotice = notice;
-    const badge = body?.querySelector('.ai__tier');
-    if (badge && tier != null) {
-      const info = tierInfo(tier);
-      /* No tier says "quick answers" any more — there are none. A device
-         without the model answers nothing, and the badge says so rather than
-         advertising a capability that is gone. */
-      const suffix = next === 'ready' ? 'MODEL READY'
-        : next === 'loading' ? 'PREPARING MODEL…'
-          : next === 'unsupported' ? 'NO AI MODEL HERE'
-            : next === 'error' ? 'MODEL STOPPED'
-              : 'NO MODEL YET';
-      badge.textContent = `T${tier} · ${suffix}`;
-      badge.title = `${info.name} (${info.note}) — ${caps?.threads || '?'} threads`
-        + (notice ? ` · ${notice}` : '');
-    }
+    updateModeUi();
     return next;
+  }
+
+  /** The visible mode switch, and the only door to the model. Switching to
+   *  the guide never touches the network; switching to the model starts the
+   *  one-time download only when the visitor presses the AI MODEL button. */
+  async function chooseMode(next) {
+    if (next === ANSWER_MODES.GUIDE) {
+      modelRequested = false;
+      answerMode = ANSWER_MODES.GUIDE;
+      updateModeUi();
+      if (body && !body.hidden) {
+        bubble('bot', 'Portfolio Guide is active. Answers come straight from the verified data file; no model is downloaded.',
+          { badge: GUIDE_BADGE, badgeClass: 'is-note' });
+      }
+      return true;
+    }
+    if (next !== ANSWER_MODES.MODEL) return false;
+
+    if (modelState === 'ready') {
+      answerMode = ANSWER_MODES.MODEL;
+      updateModeUi();
+      if (body && !body.hidden) {
+        bubble('bot', 'AI model is active. Answers now come from the on-device model; switch to Portfolio Guide anytime.',
+          { badge: ANSWER_MODE_LABELS[ANSWER_MODES.MODEL], badgeClass: 'is-ai' });
+      }
+      return true;
+    }
+    if (modelState === 'loading') {
+      if (body && !body.hidden) {
+        bubble('bot', 'The AI model is still downloading. The portfolio guide will answer until it is ready.',
+          { badge: ANSWER_MODE_LABELS[ANSWER_MODES.MODEL], badgeClass: 'is-ai' });
+      }
+      return false;
+    }
+
+    modelRequested = true;
+    if (modelState === 'error') preparing = null;
+    answerMode = ANSWER_MODES.GUIDE;
+    updateModeUi();
+    const ready = await prepareModel();
+    if (ready && modelRequested) {
+      answerMode = ANSWER_MODES.MODEL;
+      updateModeUi();
+      return true;
+    }
+    if (modelRequested && modelState === 'unsupported' && body && !body.hidden) {
+      bubble('bot', noAnswerLine('unsupported', 'en'),
+        { badge: MODEL_BADGES.noModel, badgeClass: 'is-note' });
+    }
+    modelRequested = false;
+    answerMode = ANSWER_MODES.GUIDE;
+    updateModeUi();
+    return false;
   }
 
   /** §6.5's "always show the size before it starts". One bubble, then it
    *  becomes the progress line, then it goes away. */
   function startModel() {
-    if (preparing || modelState === 'ready' || modelState === 'unsupported') return preparing;
+    if (preparing) return preparing;
+    if (modelState === 'ready') return Promise.resolve(true);
+    if (modelState === 'unsupported') return Promise.resolve(false);
     clearTimeout(unloadTimer);
     /* Relative to the DOCUMENT, not to this module: the deploy may live in a
        subdirectory, and a model URL resolved against `/ai/ui/` would 404 into
@@ -1355,8 +1599,8 @@ let working = 0;
     });
     setModelState('loading');
     const line = bubble('bot',
-      `Preparing Aashish AI — downloading the on-device model once `
-      + `(${fmtMB(engineOpts.sizeBytes)}), then it stays in your browser.`,
+      `Downloading the AI model once (${fmtMB(engineOpts.sizeBytes)}). `
+      + 'It stays in your browser after this; the portfolio guide keeps answering meanwhile.',
       { badge: 'AI MODEL', badgeClass: 'is-ai' });
     const label = line.querySelector('span:not(.ai__badge)');
     /* `label` is read by the progress callback above, which is created before
@@ -1382,18 +1626,31 @@ let working = 0;
             + 'browser, answering from his portfolio data only.';
         }
         line?.remove?.();
+        /* Only switch once the weights are genuinely ready. A visitor who
+           pressed Portfolio Guide while the download was running keeps the
+           deterministic path; the model stays warm but is not used silently. */
+        if (modelRequested && answerMode === ANSWER_MODES.GUIDE) {
+          answerMode = ANSWER_MODES.MODEL;
+          bubble('bot', 'AI model is ready. Answers now come from the on-device model; switch to Portfolio Guide anytime.',
+            { badge: 'AI MODEL READY', badgeClass: 'is-ai' });
+        }
+        updateModeUi();
         renderChips(starterChips());
         return true;
       })
       .catch((err) => {
         const unsupported = session.status === 'unsupported';
+        preparing = null;
+        modelRequested = false;
+        answerMode = ANSWER_MODES.GUIDE;
         setModelState(unsupported ? 'unsupported' : 'error', err?.message);
         if (label) {
           label.textContent = unsupported
             ? noAnswerLine('unsupported', 'en')
             : `The on-device model could not start (${escape(err?.message || err)}). `
-              + 'Nothing else on the site is affected; reloading the page starts it again.';
+              + 'Nothing else on the site is affected; press AI MODEL to retry.';
         }
+        updateModeUi();
         return false;
       });
     return preparing;
@@ -1410,102 +1667,136 @@ let working = 0;
       /* §6.4: nothing is generating any more, so nothing should be paced */
       budget.detach();
       preparing = null;
+      answerMode = ANSWER_MODES.GUIDE;
+      modelRequested = false;
       setModelState('idle');
     }, 120_000);
   }
 
+  let capsPromise = null;
+
+  /** §6.1 probe + §6.2 tier. This reads capabilities and sets the voice
+   *  policy; it does NOT fetch the manifest, a shard, the tokenizer or the
+   *  worker. Keeping that boundary explicit is what lets the panel open with
+   *  the guide while making the model genuinely opt-in. */
+  async function prepareCapabilities() {
+    if (caps) return { caps, tier, info: tierInfo(tier) };
+    capsPromise ||= (async () => {
+      const bench = await runBenchmark(env);
+      const found = probeCapabilities(env, {
+        benchmarkMs: bench,
+        wasmSimd: env.WebAssembly ? hasSimd(env.WebAssembly) : false,
+        storageBytes: await (async () => {
+          try { return (await env.navigator?.storage?.estimate())?.quota ?? null; } catch { return null; }
+        })(),
+      });
+      found.webgpu = await probeWebGPU(env);
+      caps = found;
+      tier = chooseTier(caps);
+      /* §6.2's answer budget per tier. The model itself is one model: the tier
+         decides how long an answer may be and how hard the device is pushed. */
+      budget.setTier(tier);
+      updateModeUi();
+      return { caps, tier, info: tierInfo(tier) };
+    })();
+    return capsPromise;
+  }
+
+  /** Called only from `chooseMode('model')`, after the visitor pressed the
+   *  AI MODEL button. It may start the one-time download; `open()` cannot. */
   async function prepareModel() {
-    /* §6.1 probe + §6.2 tier, after the click only. Failures degrade the
-       session, never the page. */
-    const bench = await runBenchmark(env);
-    caps = probeCapabilities(env, {
-      benchmarkMs: bench,
-      wasmSimd: env.WebAssembly ? hasSimd(env.WebAssembly) : false,
-      storageBytes: await (async () => {
-        try { return (await env.navigator?.storage?.estimate())?.quota ?? null; } catch { return null; }
-      })(),
-    });
-    caps.webgpu = await probeWebGPU(env);
-    tier = chooseTier(caps);
-    /* §6.2's answer budget per tier. The model itself is one model: the tier
-       decides how long an answer may be and how hard the device is pushed. */
-    budget.setTier(tier);
+    const found = await prepareCapabilities();
+    if (preparing) return preparing;
+    if (found.tier > 0) return startModel();
+    /* T0 is the tier that may not have an LLM at all (§6.2). */
+    setModelState('unsupported', `tier T${found.tier} does not run an LLM`);
+    return false;
+  }
 
-    /*
-       §6.5: the size is stated BEFORE anything is fetched, and the download
-       only starts by itself on a device that is not saving data and is not
-       on a slow connection. Otherwise the visitor chooses. */
-    if (tier > 0) startModel();
-    /* T0 is the tier that may not have an LLM at all (§6.2), so this is not a
-       failure to report later — it is the answer to "why did nothing happen".
-       Recorded now so `answer()` can say it instead of "still loading". */
-    else setModelState('unsupported', `tier T${tier} does not run an LLM`);
+  /* ── the one-time load ─────────────────────────────────────────
+     Knowledge and the cheap capability probe only. The trained model is NOT
+     part of this: its download starts from the AI MODEL button and nowhere
+     else. The guide is usable as soon as this resolves. */
 
-    const info = tierInfo(tier);
-    const badge = body.querySelector('.ai__tier');
-    if (badge) {
-      /* Only when nothing model-related has been said yet. On T0 the tier
-         branch above already wrote "NO AI MODEL HERE", and T1+ wrote
-         "PREPARING MODEL…" — restamping the tier's short label over either
-         one told the visitor less than the shell already knew. */
-      if (modelState === 'idle') badge.textContent = `T${tier} · ${info.label.toUpperCase()}`;
-      badge.title = `${info.name} (${info.note}) — ${caps.threads || '?'} threads`
-        + `${caps.memoryReported ? `, ${caps.memory} GB` : ''}`
-        + `${caps.benchmarkMs ? `, bench ${Math.round(caps.benchmarkMs)} ms` : ''}`
-        + `${caps.webgpu ? ', WebGPU' : ''}`;
+  /* Returns false on failure, for the opening line to render honestly. */
+  async function loadAll() {
+    try {
+      await loadKnowledge();
+      await prepareCapabilities();
+      loadOutcome = 'ready';
+      if (state === 'loading') state = 'ready';
+      return true;
+    } catch (err) {
+      loadOutcome = 'error';
+      state = 'error';
+      warmError = err;
+      return false;
     }
-    return { caps, tier, info };
+  }
+
+  let warmPromise = null;
+  let warmError = null;
+  let tierBadge = null;
+
+  /** The eager half: build the shell HIDDEN and load the knowledge/probe.
+   *  It never starts the model download; only the AI MODEL button does that.
+   *  Idempotent: two callers share one promise, and open() below reuses
+   *  whatever this already built. */
+  function warmup() {
+    if (built) return Promise.resolve(api);
+    if (!warmPromise) {
+      state = 'loading';
+      injectStyles();
+      tierBadge = build().tierBadge;
+      built = true;
+      warmPromise = loadAll().then(() => api);
+    }
+    return warmPromise;
+  }
+
+  /* The click half's last step: exactly one opening line, whatever path
+     built the shell. States what THIS device can do rather than promising.
+     `openLineShown` keeps a click that lands mid-warm-up from stamping the
+     loading line onto a panel that then becomes ready under it — the "AI
+     MODEL" download bubble's label is live, so it tells the rest itself. */
+  let openLineShown = false;
+  function openFirstTime() {
+    if (openLineShown) return;
+    openLineShown = true;
+    /* before the tier is known, the button reports what the BROWSER can do;
+       prepareModel() refines it with what this tier is allowed to do */
+    voiceButton();
+    if (loadOutcome === 'error') {
+      if (tierBadge) tierBadge.textContent = 'UNAVAILABLE';
+      bubble('bot', `The assistant could not start (${escape(warmError?.message || 'unknown')}). `
+        + 'The rest of the site is unaffected.');
+      return;
+    }
+    /* The default opening line names the mode and the opt-in cost. It does
+       not promise a model download has started, because it has not. */
+    bubble('bot',
+      'Ask me anything about his projects, skills, education, certifications or how to '
+      + 'reach him. The Portfolio Guide answers instantly from the verified data file. '
+      + `If you want free-form answers, choose AI MODEL — it downloads ${fmtMB(engineOpts.sizeBytes)} once, `
+      + 'only when you press that button.',
+      { badge: GUIDE_BADGE, badgeClass: 'is-note' });
+    renderChips(starterChips());
+    updateModeUi();
+    voiceButton();
+    input?.focus();
   }
 
   async function open() {
     /* Built once, reused forever. A reopen only has to reveal the shell. */
-    if (built) { show(); return api; }
-
+    if (built) { show(); openFirstTime(); return api; }
     state = 'loading';
     injectStyles();
-    const { tierBadge, chips: chipRow } = build();
+    tierBadge = build().tierBadge;
     built = true;
     show();
-    /* before the tier is known, the button reports what the BROWSER can do;
-       prepareModel() refines it with what this tier is allowed to do */
-    voiceButton();
-
-    try {
-      await loadKnowledge();
-      await prepareModel();
-      loadOutcome = 'ready';
-      state = 'ready';
-      /* The opening line states the truth about THIS device rather than
-         promising answers it may not be able to give. */
-      const opening = modelState === 'ready'
-        ? { badge: 'ON-DEVICE MODEL READY',
-          text: 'Ask me about his projects, skills, education, certifications or how to '
-            + 'reach him. Answers are generated on your device by a model trained for '
-            + 'this portfolio, reading only its verified data.' }
-        : modelState === 'unsupported'
-          ? { badge: MODEL_BADGES.noModel, text: noAnswerLine('unsupported', 'en') }
-          : modelState === 'error'
-            ? { badge: MODEL_BADGES.noModel, text: noAnswerLine('stopped', 'en') }
-            : { badge: 'PREPARING ON-DEVICE MODEL',
-              text: 'Aashish AI is downloading its on-device model now — that happens '
-                + 'once, and then it stays in your browser. Ask away; I will answer as '
-                + 'soon as it is ready.' };
-      bubble('bot', opening.text, {
-        badge: opening.badge,
-        badgeClass: modelState === 'ready' ? 'is-ai' : 'is-note',
-      });
-      renderChips(starterChips());
-      voiceButton();
-      input?.focus();
-      return api;
-    } catch (err) {
-      loadOutcome = 'error';
-      state = 'error';
-      if (tierBadge) tierBadge.textContent = 'UNAVAILABLE';
-      bubble('bot', `The assistant could not start (${escape(err.message)}). `
-        + 'The rest of the site is unaffected.');
-      return api;
-    }
+    await loadAll();
+    openFirstTime();
+    return api;
   }
 
   function close() {
@@ -1544,9 +1835,14 @@ let working = 0;
     /* close() disarms frame health, so a reopen must re-arm it. The re-arm is
        idempotent, or repeated open/close would stack ticker callbacks. */
     startFrameHealth();
-    if (hooks.pauseScene && env.matchMedia?.('(max-width: 640px)')?.matches) {
-      hooks.pauseScene();                              /* panel covers the scene (§10) */
-    }
+    /* The film is the heaviest main-thread work on the page, and the
+       interlude's own canvas (scene 6) rides an independent rAF that
+       otherwise keeps drawing behind the panel, so both stop — not only
+       on a phone, where the panel covers the scene and it was pointless
+       anyway (§10), but on every device: the whole point is to hand
+       generation the machine. A paused scene is measured seconds off
+       every answer's first token. */
+    hooks.pauseScene?.();
     input?.focus();
   }
 
@@ -1569,7 +1865,12 @@ let working = 0;
 
   /* ── public API (also used by dev-ai-probe.js) ────────────────── */
   const api = {
-    open, close, toggle, ask, showAnchor,
+    open, close, toggle, warmup, ask, showAnchor,
+    /* The two answer modes, exposed for a host and for browser probes. The
+       model still cannot start without an explicit AI MODEL selection. */
+    chooseMode,
+    enableModel: () => chooseMode(ANSWER_MODES.MODEL),
+    useGuide: () => chooseMode(ANSWER_MODES.GUIDE),
     /* §10's message controls, exposed so the e2e probe can press them the way
        a person would rather than reaching into the shell's internals */
     stop, retry,
@@ -1605,8 +1906,11 @@ let working = 0;
     /* §5/§9.3, exposed for the e2e probe: which engine state the panel is
        in, why, and what the last answer actually was (kind, model or
        template, and the context the model was allowed to read). */
+    get mode() { return answerMode; },
     get model() {
       return {
+        mode: answerMode,
+        requested: modelRequested,
         state: modelState,
         notice: modelNotice,
         engine: session ? { status: session.status, reason: session.reason,
@@ -1678,8 +1982,12 @@ export function mount({ launcher, hooks, handsFree } = {}) {
         if (id && window.Director?.scrollTo) window.Director.scrollTo(id, { immediate: !!jump });
         else scene?.scrollIntoView?.({ behavior: jump ? 'auto' : 'smooth', block: 'start' });
       },
-      pauseScene: () => window.Film3D?.pause?.(),
-      resumeScene: () => window.Film3D?.resume?.(),
+      pauseScene: () => {
+        window.Film3D?.pause?.();
+      },
+      resumeScene: () => {
+        window.Film3D?.resume?.();
+      },
       setSceneQuality: (m) => window.Film3D?.setQuality?.(m),
     },
   });

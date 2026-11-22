@@ -114,6 +114,14 @@ desktop.ini
 /aashish-ai-portfolio.tgz
 /output.txt
 
+# ── Scratch from the agent sessions ──────────────────────────────────
+# One-off probe scripts, pulled logs and temporary exports. Root-anchored so a
+# future `tests/` fixture is not swallowed, and ignored rather than deleted
+# because each one is evidence behind a number in docs/BENCHMARKS.md.
+# `dist-nomodel/` is the build with the weights left out (size measurements).
+/tmp*
+/dist-nomodel/
+
 # `corpus_cache` names its index CACHE.json, and a run aimed at a relative
 # --out leaves a 2-byte `{}` in the repository root. Found there on 2026-10-02,
 # untracked, from a run before this session; ignored so the next one cannot be

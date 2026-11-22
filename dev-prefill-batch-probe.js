@@ -29,7 +29,7 @@ import { matvecQ8 } from './ai/engine/quant.mjs';
 import { ScratchLlamaEngine } from './ai/engine/index.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const dir = resolve(HERE, process.argv[2] || 'ai/model-export/aashish-ai-1');
+const dir = resolve(HERE, process.argv[2] || 'ai/model-export/aashish-ai-b');
 
 function fileFetch(base) {
   return async (url) => {

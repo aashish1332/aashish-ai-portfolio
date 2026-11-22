@@ -10,9 +10,11 @@
    was about to be answered with "I don't have that".
 
    The property being pinned is the owner's 2026-10-14 decision: **100%
-   pure AI.** EVERY question — greeting, identity, bait, withheld,
-   off-portfolio, lists — is put to the on-device model; there is no
-   wording and no pre-model refusal in the answer path anymore. What
+   pure AI.** Every question ABOUT AASHISH — bait, withheld, off-portfolio,
+   lists — is put to the on-device model; there is no wording and no
+   pre-model refusal in the answer path. The two assistant-voice turns
+   (greeting, identity) are fixed sentences and have been since 2026-10-31 /
+   2026-11-01, each after a measured defect at the shipping checkpoint. What
    makes that safe, and what these tests pin: the intent bucket is the
    model's context when retrieval is empty, a withheld fact never
    reaches that context (§8.1), the guard still rejects fabricated
@@ -34,11 +36,11 @@ import { dirname, join } from 'node:path';
 import {
   createModelAnswerer, routeQuestion, noAnswerLine, NO_ANSWER_KINDS, MODEL_BADGES,
   MAX_INTENT_FACTS, partialAnswer, WHOLE_KIND_PLANS, intentScopesContext,
-  planPinsContext, wantsClosedAnswer,
+  planPinsContext, wantsClosedAnswer, closedAnswerScope, answerIsWholeKindList,
 } from '../ai/answers/model.mjs';
 import { quickAnswer, renderFact } from '../evaluation/answer-text.mjs';
 import { languageMatches } from '../ai/guard/index.mjs';
-import { emptySlotFrame } from '../ai/engine/grammar.mjs';
+import { emptySlotFrame, frameFactMismatch } from '../ai/engine/grammar.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const KB = JSON.parse(readFileSync(join(HERE, '..', 'knowledge', 'knowledge.json'), 'utf8'));
@@ -84,6 +86,32 @@ function stubSession(reply) {
 const answererWith = (session, opts = {}) =>
   createModelAnswerer({ kb: KB, session, maxNewTokens: 48, ...opts });
 
+test('MODEL-16 a plan that abstains hands the decoder no facts', async () => {
+  /* `quickAnswer` marks a hallucination bait and a withheld field with
+     `abstained: true`; the model path used to ignore it, retrieve near facts
+     and answer them (b01–b05, 2026-11-04). The plan's decision is now a
+     context decision: nothing to read, so the model's trained `<|abstain|>` is
+     the only thing that can close the turn. The model is still asked. */
+  const session = stubSession({ abstained: true });
+  const out = await answererWith(session).ask({
+    question: 'Did he intern at Google?', lang: 'en',
+    plan: { kind: 'hallucination_bait', abstained: true, ids: ['exp.mern-bootcamp'] },
+    intentIds: ['exp.mern-bootcamp', 'contact.availability'],
+  });
+  /* Two calls, not one: an empty answer reads as a guard failure, so
+     `guardedAnswer` retries with a shortened context — and BOTH attempts must
+     be fact-free. The count is the guard's own behaviour, the contexts are
+     this fix's contract. */
+  assert.ok(session.calls.length >= 1, 'the model is still asked');
+  for (const call of session.calls) {
+    assert.equal(call.context, '', 'related evidence is not evidence');
+  }
+  assert.equal(out.kind, 'notFound');
+  assert.equal(out.context, '');
+  assert.equal(out.contextFrom, 'plan-abstain');
+  assert.equal(out.text, noAnswerLine('notFound', 'en'));
+});
+
 /* Three questions chosen by MEASUREMENT rather than by taste, each asserting
    its own premise so a change to the knowledge base says why a test broke:
 
@@ -120,14 +148,50 @@ test('MODEL-1 routing is one pure decision with ONE refusal: the machine',
     assert.equal(routeQuestion(base).kind, 'model', 'an answer by the model is the only kind');
 
     /* 2026-10-14: pure AI. Nothing refuses on the panel's authority —
-       injection attempts, identity questions, adversarial bait and withheld
-       fields are all model turns, spoken in the model's own trained words. */
+       injection attempts, adversarial bait and withheld fields are all model
+       turns, spoken in the model's own trained words. The identity turn is
+       the one exception, below. */
     for (const res of [
-      { injection: true }, { intent: 'meta' },
+      { injection: true },
       { intent: 'hallucination_bait' }, { private: true },
     ]) {
       assert.equal(routeQuestion({ ...base, res }).path, 'model', JSON.stringify(res));
     }
+
+    /* 2026-10-31: the ONE turn that is not a model answer and not a refusal —
+       small talk. Its `text` is the fixed, localized, claim-free reply the
+       planner ships, so it needs no model; it is checked BEFORE the machine
+       state, because a device that cannot run a model can still say hello. */
+    const hello = { plan: { kind: 'greeting' }, text: 'Hi! Ask me anything.' };
+    const fixed = routeQuestion({ ...base, res: hello });
+    assert.equal(fixed.path, 'fixed');
+    assert.equal(fixed.kind, 'small-talk');
+    assert.equal(fixed.text, hello.text);
+    assert.equal(routeQuestion({ ...base, res: hello, hasModel: false }).path, 'fixed');
+    assert.equal(routeQuestion({ ...base, res: { plan: { kind: 'greeting' } } }).path, 'model',
+      'no shipped line, no fixed reply — the model is still the answerer');
+
+    /* 2026-11-01: the identity turn is the second fixed reply, and the one a
+       model must not improvise. MEASURED on the shipping export through the
+       built panel: "who are you" → `His name is Aashish Kumar.` — a true
+       sentence about Aashish that answers a question about the ASSISTANT —
+       and "who is aashish kumar" → the Hinglish greeting, in a turn that
+       `detectLanguage` called English. The disclosure is a statement about
+       what is speaking, not a portfolio fact, so there is nothing in it for a
+       49.6M checkpoint to choose between, and the planner already carries the
+       localized sentence it was trained on. */
+    const who = {
+      plan: { kind: 'meta' },
+      text: "I'm Aashish's AI Portfolio Assistant — not Aashish himself.",
+    };
+    const disclosed = routeQuestion({ ...base, res: who });
+    assert.equal(disclosed.path, 'fixed');
+    assert.equal(disclosed.kind, 'disclosure');
+    assert.equal(disclosed.text, who.text);
+    assert.equal(routeQuestion({ ...base, res: who, hasModel: false }).path, 'fixed',
+      'a device that cannot run a model can still say what is speaking');
+    assert.equal(routeQuestion({ ...base, res: { plan: { kind: 'meta' } } }).path, 'model',
+      'no shipped line, no fixed reply — the model is still the answerer');
 
     /* the ONE refusal left is the machine state (§10: the panel never claims
        a visitor's question was unanswerable when the laptop could not run) */
@@ -397,48 +461,89 @@ test('MODEL-10b the intent fallback cannot smuggle a withheld or unknown fact', 
   assert.equal(out.guardFailed, true);
 });
 
-test('MODEL-11 a small-talk question is answered BY the model (2026-10-14)',
-  async () => {
-    /* 2026-10-11 reversed the original, and 2026-10-14 reverses it again: the
-       planner is gone, so a hello goes to the model exactly like every other
-       question. 2026-10-15: the greeting frame also matches TRAINING now —
-       every §7.4 greeting example pairs the question with the
-       `[person.name]` context line, so greetrouting carries that one fact.
-       Empty-context greetings are not a trained shape, and when the runtime
-       asked for one the checkpoint rambled and the guard rejected it twice.
-       What survives all three decisions: the ANSWER is written by the model
-       (claim-free, so the guard checks it and passes it), not by a fallback. */
-    const res = quickAnswer(KB, 'hi', { lang: 'en' });
-    assert.equal(res.intent, 'greeting');
-    /* 2026-10-18: the education facts are gone from the greeting frame.
-       MEASURED against the shipped export: "hi" with `[person.name]` alone
-       already emits ` I study at <|fact:edu.lpu|>. ` — the extra lines never
-       changed the model's words, they only let that recitation pass the
-       guard, so a greeting answered with education. The trained frame has
-       one fact; the frame carries one fact. */
-    assert.deepEqual(res.sources, [KB.person.id],
-      'a greeting trains on the `[person.name]` line, and nothing else');
+test('MODEL-11 small talk is a fixed assistant line, not a generated answer (2026-10-31)',
+  () => {
+    /* Three decisions in a row, each measured: 2026-10-11 the planner worded
+       the greeting (a model hello was a multi-second COULD-NOT-VERIFY), then
+       2026-10-14 every question went to the model, then 2026-10-18 the frame
+       was narrowed to `[person.name]` because the checkpoint recited
+       education at a hello.
 
-    const session = stubSession({ text: 'Hello! Ask me anything about my work.' });
-    const out = await shellAsk(answererWith(session), 'hi');
-    assert.equal(session.calls.length, 1, 'the model is asked a hello now');
-    assert.ok(
-      session.calls[0].context.includes(`[${KB.person.id}]`),
-      'the greeting frame carries the fact training always gave it');
-    assert.equal(out.kind, 'model', 'claim-free small talk passes the grounded guard');
-    assert.ok(out.text.length > 20, 'the greeting said something');
-    assert.deepEqual(out.sources, [KB.person.id],
-      'sources are the facts the model read — the one framing fact');
-
-    /* and the same for the small-talk phrasings that used to fall through to
-       the retrieval gate */
-    for (const q of ['how are you', 'how are u', "what's up", 'kaise ho', 'kese ho', 'bye', 'good morning']) {
-      const session2 = stubSession({ text: 'Fine! What would you like to know?' });
-      const r = await shellAsk(answererWith(session2), q);
-      assert.equal(session2.calls.length, 1, `"${q}" is asked of the model`);
-      assert.equal(r.kind, 'model', `"${q}" is answered by the model`);
-      assert.ok(r.text.length > 20, `"${q}" has something to say`);
+       It is still reciting, and worse: MEASURED 2026-10-31 on the shipping
+       export, an English "hi" (`detectLanguage` says `en`) came back
+       `Namaste! Aashish ke projects, skills, padhai ya contact ke baare mein
+       pucho.` — Hinglish, which the guard's script-shaped language rule
+       cannot reject. The turn claims no fact, so there is nothing for a
+       model to contribute and plenty for it to get wrong: it is the
+       assistant's own sentence, and it ships localized. */
+    for (const q of ['hi', 'hello', 'hey', 'how are you', "what's up",
+      'kaise ho', 'bye', 'take care', 'good morning']) {
+      const res = quickAnswer(KB, q, { lang: 'en' });
+      assert.equal(res.intent, 'greeting', `"${q}" must route as small talk`);
+      /* the trained frame is untouched — a caller that does ask the model
+         (the evaluation harness, MODEL-11's own history) still gets it */
+      assert.deepEqual(res.sources, [KB.person.id],
+        `"${q}" must still carry the trained greeting context`);
+      assert.ok(res.text.length > 20, `"${q}" has no line to answer with`);
+      const route = routeQuestion({ res, hasModel: true, lang: 'en' });
+      assert.equal(route.path, 'fixed', `"${q}" must not wait for a model`);
+      assert.equal(route.text, res.text);
+      assert.doesNotMatch(res.text, /study at/i, `"${q}" recited education`);
     }
+
+    /* the same reply in the other two languages, so a Hindi hello is Hindi */
+    assert.match(quickAnswer(KB, 'hi', { lang: 'en' }).text, /Portfolio Assistant/);
+    assert.match(quickAnswer(KB, 'नमस्ते', { lang: 'hi' }).text, /[\u0900-\u097F]/);
+
+    /* and every question ABOUT him still reaches the model. The fixed path is
+       `greeting` and `meta` and nothing else; the identity turn joined it on
+       2026-11-01, measured on the built bundle: "who are you" was answered
+       `His name is Aashish Kumar.` — a fact about him, not about what is
+       speaking — and "who is aashish kumar" came back as the Hinglish
+       greeting. The disclosure is the sentence that is true, and the planner
+       already ships it localized. */
+    for (const q of ['What is his CGPA?', 'What are his skills?',
+      'Which projects has he built?', 'How can I contact him?']) {
+      const res = quickAnswer(KB, q, { lang: 'en' });
+      assert.equal(routeQuestion({ res, hasModel: true, lang: 'en' }).path, 'model',
+        `"${q}" must still be answered by the model`);
+    }
+    for (const q of ['who are you', 'are you aashish?', 'who is aashish kumar']) {
+      const res = quickAnswer(KB, q, { lang: 'en' });
+      assert.equal(res.plan?.kind, 'meta', `"${q}" must route as the identity turn`);
+      const route = routeQuestion({ res, hasModel: true, lang: 'en' });
+      assert.equal(route.path, 'fixed', `"${q}" must not be improvised`);
+      assert.equal(route.kind, 'disclosure');
+      assert.match(route.text, /not Aashish himself/);
+    }
+  });
+
+test('MODEL-14 a trained frame may only hold a fact of its own kind (2026-10-31)',
+  async () => {
+    /* THE OWNER'S REPORT. "hi" was answered `I study at Aashish Kumar.` — the
+       education frame with the PERSON fact in its slot. The guard could not
+       see it: the value was in the greeting's context and his own name is
+       always allowlisted, so there was no "claim" left to ground. The frame
+       itself is the evidence, and it says the slot holds an education fact. */
+    assert.equal(frameFactMismatch(' I study at <|fact:edu.lpu|>.'), null);
+    assert.deepEqual(frameFactMismatch(' I study at <|fact:person.name|>.'),
+      { frame: 'I study at {v}.', factId: 'person.name' });
+    assert.equal(frameFactMismatch(' His tech stack: <|fact:skill.react|>.'), null,
+      'a kind frame holds any fact of its kind');
+    assert.ok(frameFactMismatch(' His CGPA is <|fact:skill.react|>.'),
+      'a self frame holds only its own fact');
+    assert.equal(frameFactMismatch(' Ask me about his projects.'), null,
+      'free prose is not a frame and is the guard\'s business, not this check');
+
+    /* and through the answer path: the model's sentence never reaches the
+       visitor, because it is refused rather than spoken */
+    const session = stubSession({ text: ' I study at <|fact:person.name|>.' });
+    const out = await shellAsk(answererWith(session), 'hi');
+    assert.equal(out.kind, 'unverified');
+    assert.equal(out.text, noAnswerLine('unverified', 'en'));
+    assert.ok(!/study at|Aashish Kumar/i.test(out.text),
+      'the mismatched sentence must not reach the visitor');
+    assert.equal(session.calls.length, 1, 'refused on the attempt the guard passed');
   });
 
 test('MODEL-13 the intent fallback is capped, and the sources are the facts it read',
@@ -456,15 +561,21 @@ test('MODEL-13 the intent fallback is capped, and the sources are the facts it r
 
     const res = quickAnswer(KB, TOPIC_ONLY, { lang: 'en' });
     const all = res.sources.filter((id) => renderFact(KB, id, 'en'));
-    assert.ok(all.length > MAX_INTENT_FACTS,
-      `the case this cap exists for is gone: ${all.length} facts`);
+    /* 2026-11-04: the cap was 12 because a 12-line context was measured on the
+       T1 window. The checkpoint has 1024 positions and `fitToBudget` enforces
+       the real window, so the cap is now a sanity bound that must COVER the
+       largest kind — otherwise "what are all his skills?" is answered with a
+       twelfth of them and the window does the dropping twice. */
+    assert.ok(MAX_INTENT_FACTS >= all.length,
+      `the cap (${MAX_INTENT_FACTS}) must cover the largest kind (${all.length} facts)`);
 
     const session = stubSession({ text: '' });
     const answerer = answererWith(session);
     await shellAsk(answerer, TOPIC_ONLY);
 
     const read = session.calls[0].context.split('\n').filter(Boolean);
-    assert.equal(read.length, MAX_INTENT_FACTS, 'the cap must be the number of lines sent');
+    assert.equal(read.length, Math.min(all.length, MAX_INTENT_FACTS),
+      'every fact the plan has, up to the sanity bound, is sent');
     assert.deepEqual(read, all.slice(0, MAX_INTENT_FACTS).map((id) => {
       const value = renderFact(KB, id, 'en');
       return `[${id}] ${value}`;
@@ -699,6 +810,65 @@ test('MODEL-15 the closed answer space is chosen by the intent, not by the model
      could refuse a question the portfolio can answer. */
   assert.equal(wantsClosedAnswer(null), false);
   assert.equal(wantsClosedAnswer(undefined), false);
+});
+
+/* ── the one fact a plan has already chosen ─────────────────────
+
+   MEASURED 2026-10-30 (§14 d01): "What is his email?" carried
+   `[contact.email]` plus one retrieved project, and the model answered
+   `His main project is <|fact:project.volunteer|>.` The planner's own
+   `{kind:'contact_field', field:'email', id:'contact.email'}` is the turn's
+   single-fact decision, and `closedAnswerScope` is what passes it to the
+   decoder — so the slot cannot be filled by the distractor. `plan.id` and not
+   `plan.ids` is the whole rule: an `ids` plan asks for the WHOLE list, and
+   narrowing it would delete the answer (MEASURED on d10, an `experience` plan
+   whose list carries both the bootcamp and `contact.availability`). */
+test('MODEL-22 only a plan that names ONE fact scopes the closed answer space', () => {
+  assert.deepEqual(closedAnswerScope({ kind: 'contact_field', field: 'email', id: 'contact.email' }),
+    ['contact.email']);
+  assert.deepEqual(closedAnswerScope({ kind: 'fact', id: 'contact.location' }),
+    ['contact.location']);
+  /* A list plan is not a scope, even when this particular list happens to
+     hold one item: the plan's contract is "all of these". */
+  assert.equal(closedAnswerScope({ kind: 'experience', ids: ['exp.mern-bootcamp'],
+    availabilityId: 'contact.availability' }), null);
+  assert.equal(closedAnswerScope({ kind: 'skills', ids: ['skill.python'] }), null);
+  /* The open-answer kinds keep their free decode (`wantsClosedAnswer`). */
+  assert.equal(closedAnswerScope({ kind: 'greeting', id: 'person.name' }), null);
+  assert.equal(closedAnswerScope({ kind: 'meta', id: 'person.name' }), null);
+  assert.equal(closedAnswerScope(null), null);
+  assert.equal(closedAnswerScope({ kind: 'fact' }), null);
+});
+
+/* ── a whole-kind question is answered by the LIST sentence ────
+
+   MEASURED 2026-11-06, the shipping export, the 66 §14 prompts: `d16`
+   ("uske projects kaun kaun se hain?") and `i02` ("What backend technologies
+   has he worked with?") both carried every expected fact in the context and
+   answered with ONE of them, in the kind frame — `Unhone <project.grocery>
+   banaya.`, `He works with <rest>.` The grammar offered the list frame too;
+   the question had already decided the shape, so `answerIsWholeKindList` is
+   what carries that decision to the decoder. It must stay narrower than
+   `intentScopesContext`: a one-fact kind plan and a kind with no trained list
+   sentence are answered by the ordinary closed space. */
+test('MODEL-24 a multi-fact kind plan asks for the list sentence', () => {
+  const ids = ['project.volunteer', 'project.grocery', 'project.goaltracker'];
+  assert.equal(answerIsWholeKindList({ kind: 'list_projects', ids }), true);
+  assert.equal(answerIsWholeKindList({ kind: 'skills', ids: ['skill.node', 'skill.express'] }), true);
+  assert.equal(answerIsWholeKindList({ kind: 'certifications', ids: ['cert.cpp', 'cert.dbms'] }), true);
+
+  /* One fact is not a list: the single-fact sentence is the right answer. */
+  assert.equal(answerIsWholeKindList({ kind: 'experience', ids: ['exp.mern-bootcamp'] }), false);
+  /* ... and neither is a kind with no trained list sentence (`education` has
+     no `listFrames` entry, so forcing a list shape would invent a sentence). */
+  assert.equal(answerIsWholeKindList({ kind: 'education', ids: ['edu.lpu', 'edu.kv2'] }), false);
+  assert.equal(answerIsWholeKindList({ kind: 'contact_all', ids: ['contact.email', 'contact.location'] }), false);
+
+  /* The plans whose answer is not a fact at all keep their own shapes. */
+  assert.equal(answerIsWholeKindList({ kind: 'hallucination_bait', ids: ['skill.node', 'skill.express'] }), false);
+  assert.equal(answerIsWholeKindList({ kind: 'greeting', ids: ['skill.node', 'skill.express'] }), false);
+  assert.equal(answerIsWholeKindList(null), false);
+  assert.equal(answerIsWholeKindList({ kind: 'skills' }), false);
 });
 
 /* ── a frame with nothing in its slot ─────────────────────────

@@ -359,6 +359,8 @@ def hyperparameters(args) -> dict:
     return {"steps": args.steps, "batch": args.batch, "block": args.block,
             "lr": args.lr, "warmup": args.warmup, "grad_accum": args.grad_accum,
             "clip": args.clip, "weight_decay": args.weight_decay,
+            "stop_weight": getattr(args, "stop_weight", 1.0),
+            "abstain_weight": getattr(args, "abstain_weight", 1.0),
             "amp": bool(args.amp), "device": device_type}
 
 

@@ -67,9 +67,17 @@ export const SHIP_PATHS = [
 /** Where `inference/export_browser.py --out ai/model-export/<version>` leaves
  *  the model. Copied when it exists; a build without it ships Quick Answers
  *  only, which is §6.2's T0 path and not an error — but the build summary
- *  says which of the two it produced. */
+ *  says which of the two it produced.
+ *
+ *  The directory is the RUNTIME'S fetch path, not the checkpoint's name.
+ *  MEASURED 2026-10-27: this constant was 'aashish-ai-b-sft7' while
+ *  `ai/ui/chat.mjs` fetches `ai/model-export/aashish-ai-b/manifest.json`, so
+ *  every build shipped the weights at a path nothing requested — the deployed
+ *  bundle loaded no model at all (T0), and the dev server served whatever
+ *  `aashish-ai-b/` happened to hold (sft5). The checkpoint is named in
+ *  `manifest.json`'s `modelVersion`; the folder is the URL. */
 export const MODEL_EXPORT_DIR = 'ai/model-export';
-export const MODEL_EXPORT_VERSION = 'aashish-ai-1';
+export const MODEL_EXPORT_VERSION = 'aashish-ai-b';
 
 /** The only files a model version directory may contribute to the bundle.
  *
@@ -82,9 +90,10 @@ export const MODEL_EXPORT_VERSION = 'aashish-ai-1';
 export const MODEL_EXPORT_FILES = ['manifest.json', 'tokenizer.json'];
 export const MODEL_EXPORT_SHARD = /^model-\d{5}\.bin$/;
 
-/** Files the *site itself* publishes a withheld value in, on purpose.
- *  Each entry is a decision, not a default — see knowledge/PII_REVIEW.md. */
-export const SITE_PUBLISHED = ['index.html', 'js/terminal.js'];
+/** Files the site is explicitly allowed to publish withheld values in.
+ *  The phone was removed from site content on the owner's instruction, so this
+ *  list is intentionally empty; a new disclosure must fail the build. */
+export const SITE_PUBLISHED = [];
 
 /** A refusal, with the reasons attached.
  *

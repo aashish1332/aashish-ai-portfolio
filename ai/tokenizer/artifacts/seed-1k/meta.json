@@ -1,5 +1,5 @@
 {
-  "tokenizer_version": "portfolio-bpe-1k-45395d2ebc83",
+  "tokenizer_version": "portfolio-bpe-1k-4a7c4e0e3d52",
   "name": "portfolio-bpe",
   "vocab_size": 1024,
   "model_type": "byte-level BPE (our own, trained from scratch)",
@@ -14,8 +14,8 @@
     "<|end|>",
     "<|abstain|>"
   ],
-  "placeholder_count": 63,
-  "spec_hash": "45395d2ebc83",
+  "placeholder_count": 64,
+  "spec_hash": "4a7c4e0e3d52",
   "min_frequency": 2,
   "corpus": {
     "files": [
@@ -44,9 +44,9 @@
   },
   "artifact": {
     "file": "tokenizer.json",
-    "sha256": "90353b2a722f557e80973e3b7e1e1ebea4619a7ec903197eb86f28733bb55d31"
+    "sha256": "f491cc327dd4313b557d80b88b915a637cf47fd694ce49807744f24b586036a7"
   },
-  "built_at": "2026-09-20T06:03:06+00:00",
-  "git_commit": "dae940a",
+  "built_at": "2026-10-24T15:40:54+00:00",
+  "git_commit": "6ee2328",
   "python": "3.13.14"
 }

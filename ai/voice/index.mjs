@@ -172,6 +172,12 @@ export const SPEECH_DISCLOSURE_ON_DEVICE =
    cannot leave the visitor pressing a button that does nothing. */
 export const ON_DEVICE_PROBE_MS = 1500;
 
+/* The greeting's turn must not depend on the platform firing `onend`. A normal
+   browser ends the utterance in a few seconds; this is the well-past-it cap at
+   which the turn opens anyway, so an engine that never reports the end cannot
+   silently leave the visitor with a microphone that drops their first reply. */
+export const GREETING_END_FALLBACK_MS = 12000;
+
 /* ── the wake phrase ───────────────────────────────────────────── */
 
 /** What opens a turn in continuous mode. The bare name is allowed at the
@@ -569,6 +575,15 @@ let sessionAt = null;
 let nudged = false;
 let standby = false;
 let idleTimer = null;
+/* §11.1 (a): the turn the greeting buys. It is opened the moment the greeting
+   STOPS speaking, never while it speaks — the assistant's own sentence about
+   projects, skills and contact is in the room while it plays, and on a
+   speaker without echo cancellation the microphone can transcribe it. An open
+   turn in that state would have the assistant answer itself. So the window
+   waits for the utterance's end, and a timer catches an end event that never
+   fires (an injected speaker, a browser that drops `onend`). */
+let greetedOpen = false;
+let greetTimer = null;
 /* The pending end of a press. A handle, not a flag: a stale timer from a
    finished press must not be able to close the NEXT one — see the test that
    presses, disables, presses again. */
@@ -815,7 +830,11 @@ const tabHidden = () => (typeof env.document?.hidden === 'boolean'
     });
     speaker = speaker || opts.speaker || createSpeaker(env, {
       onStart: () => opts.onStatus?.(status()),
-      onEnd: () => opts.onStatus?.(status()),
+      /* §11.1 (a): the greeting's turn opens when the greeting finishes
+         speaking — the exact moment it is safe to treat the room as the
+         visitor's voice. An answer's onEnd lands here too; `greetedOpen`
+         makes it a no-op for everything that is not the greeting. */
+      onEnd: () => { if (greetedOpen) openGreetWindow(); opts.onStatus?.(status()); },
     });
 
     if (!nick.supported) return status();
@@ -964,16 +983,40 @@ const tabHidden = () => (typeof env.document?.hidden === 'boolean'
    *
    * @returns {boolean} whether anything was spoken
    */
+  /* The greeting's own turn. Consumed by the speaker's onEnd (below), or by
+     the fallback timer; clears itself on disable so it owns nothing else. */
+  function openGreetWindow() {
+    cancel(greetTimer);
+    greetTimer = null;
+    greetedOpen = false;
+    if (!enabled || suspended || mode !== 'continuous') return;
+    /* Now the visitor can just answer the topics they were offered — the own
+       turn is already open, exactly as if they had said the wake phrase. */
+    openSession(now());
+    opts.onStatus?.(status());
+  }
+
   function greet() {
     if (!enabled || suspended || greeted) return false;
     if (mode !== 'continuous' || !policy().speakAnswers) return false;
     greeted = true;
     const greeting = greetingFor(lang);
     const started = speaker?.speak(greeting.hello, { lang }) || false;
-    if (started) opts.onGreeting?.(greeting);
-    /* Being greeted is not a question: the session window is untouched, so a
-       visitor who says nothing after it is nudged on the ordinary clock and
-       not left with a turn they never opened. */
+    if (!started) {
+      /* Nothing was spoken: there is no sentence for the microphone to
+         mistake for the visitor's, so the turn opens at once. */
+      openGreetWindow();
+      return false;
+    }
+    opts.onGreeting?.(greeting);
+    /* The turn opens when the greeting finishes (the speaker's onEnd, wired
+       in `enable()`); the timer is the safety net for an utterance end that
+       never arrives. Before it opens, everything heard is dropped in
+       silence — most importantly the greeting itself, which the microphone
+       can hear through the visitor's speakers. */
+    greetedOpen = true;
+    cancel(greetTimer);
+    greetTimer = after(openGreetWindow, GREETING_END_FALLBACK_MS);
     return started;
   }
 
@@ -981,6 +1024,9 @@ const tabHidden = () => (typeof env.document?.hidden === 'boolean'
     if (!enabled) return status();
     enabled = false;
     greeted = false;
+    cancel(greetTimer);
+    greetTimer = null;
+    greetedOpen = false;
     cancelWindow();
     cancelIdle();
     standby = false;

@@ -40,11 +40,29 @@ export const THRESHOLDS = {
   /* a device needs this much headroom before a download is worth offering */
   minStorageBytes: 80 * 1024 * 1024,
   /* §6.3 frame health */
-  slowFrameMs: 24,          /* "slow" frame */
+  slowFrameMs: 24,          /* "slow" frame — the ABSOLUTE floor, kept as a
+                               fallback for a ladder with no baseline yet */
   sustainMs: 500,           /* slow must persist this long before degrading */
   restoreMs: 2500,          /* fast must persist this long before restoring */
   dwellMs: 1500,            /* minimum gap between ladder moves */
   sampleWindow: 90,
+  /* §6.3 relative strain — MEASURED 2026-10-15 on the R1 dev laptop and
+     tuned because the absolute bar alone was wrong, and measurably so: with
+     the film merely idling on this box, one frame averages 27.5 ms (36 fps)
+     with a p95 of 83 ms — SLOWER than `slowFrameMs` most of the time. So the
+     moment a turn armed the ladder, the rungs read the film's own chronic
+     slowness as the answer's fault and every ask climbed to rung 4, which is
+     NOT TESTED as intended by §6.3 at all: the visitor got "the frames are
+     struggling, I've stopped generating" on every question, with the film
+     no healthier for it. The bar is now relative: a frame is "slow" while
+     the ladder is armed only if it is slower than `strainFactor` × the
+     film's own idle pace (measured while the ladder is idle — the baseline
+     monitor below), with `slowFrameMs` kept as the floor. A film running at
+     25–40 fps is not the answerer's fault, and it must be able to finish
+     its answer; a generation that makes healthy frames ugly still gets
+     caught, at any idle speed. */
+  strainFactor: 1.5,
+  baselineMinSamples: 15,   /* idle frames needed before a baseline is trusted */
   /* frames needed before the ladder trusts its own signal. Kept in the
      threshold set (and clamped to the window) because a hardcoded 30 made
      every other knob a lie: with a smaller window the ladder could never
@@ -185,15 +203,19 @@ export function createFrameMonitor(opts = {}) {
   };
 
   return {
-    /** @param {number} dtMs frame delta from the ticker */
-    push(dtMs) {
+    /** @param {number} dtMs frame delta from the ticker
+     *  @param {number} [slowMs] the "slow" bar for THIS frame. §6.3's relative
+     *  strain passes the armed bar (§`createDegradeLadder`); the default is
+     *  the absolute floor, so every existing caller is unchanged. */
+    push(dtMs, slowMs = t.slowFrameMs) {
       const dt = Number(dtMs);
       if (!(dt > 0) || dt > 1000) return;          /* ignore a paused/backgrounded tab */
+      const bar = Number(slowMs) > 0 ? Number(slowMs) : t.slowFrameMs;
       samples.push(dt);
       sum += dt;
       if (samples.length > win) sum -= samples.shift();
 
-      if (dt > t.slowFrameMs) { over += dt; under = 0; } else { under += dt; over = 0; }
+      if (dt > bar) { over += dt; under = 0; } else { under += dt; over = 0; }
     },
     reset() { samples.length = 0; sum = 0; over = 0; under = 0; },
     get ema() { return samples.length ? sum / samples.length : 0; },
@@ -242,6 +264,16 @@ export const LADDER = [
 export function createDegradeLadder(opts = {}) {
   const t = { ...THRESHOLDS, ...opts };
   const monitor = opts.monitor || createFrameMonitor(opts);
+  /* §6.3 relative strain: a SECOND monitor that runs while the ladder is
+     idle, so arming knows the film's own pace and does not mistake it for
+     the answer's cost. Deliberately a separate object, not `monitor`:
+     "§6.3-GATE — an idle ladder never degrades the scene" is pinned on
+     `monitor.count === 0` while idle, and that pin is correct for the
+     ladder's own judgement signal — the baseline is context the ladder
+     comes in WITH, not evidence it acts on. The baseline is FROZEN while
+     armed: a degradation the ladder has already decided to act on must not
+     teach it that degraded is normal. */
+  const baseline = opts.baselineMonitor || createFrameMonitor(opts);
   const onStep = opts.onStep || (() => {});
   const onRestore = opts.onRestore || (() => {});
   const minSamples = Math.min(t.minSamples, t.sampleWindow);
@@ -249,11 +281,14 @@ export function createDegradeLadder(opts = {}) {
   let lastMoveAt = -Infinity;
   let now = 0;
   let active = opts.active !== false;
+  let strainBar = null;         /* set on arm; null → the absolute floor */
 
   return {
     monitor,
+    baseline,
     get step() { return step; },
     get active() { return active; },
+    get strainBar() { return active ? strainBar : null; },
     /**
      * §6.3 — arm the ladder around the assistant's OWN work, not around the
      * panel being open.
@@ -274,9 +309,26 @@ export function createDegradeLadder(opts = {}) {
       const next = !!on;
       if (next === active) return { changed: false, restored: false };
       active = next;
-      if (active) return { changed: true, restored: false };
+      if (active) {
+        /* Arm: the bar a frame must beat is the film's OWN idle pace, not a
+           number. A film that idles at 27 ms (measured 2026-10-15, R1) is
+           already spending >`slowFrameMs` on every frame; calling those
+           frames "the answer's fault" read the rungs as "stop generating"
+           on every ask, and the film was no healthier for it (THRESHOLDS —
+           the comment that documents the measurement). With too little
+           idle signal on record, `strainBar` stays null and the monitor
+           falls back to the absolute floor: a bare ladder behaves exactly
+           as it did before, which is what every pin below counts on. */
+        strainBar = baseline.count >= t.baselineMinSamples
+          ? Math.max(t.slowFrameMs, Math.ceil(baseline.ema * t.strainFactor))
+          : null;
+        return { changed: true, restored: false, strainBar };
+      }
       /* Idle: drop the accumulated signal (idle frames are not evidence about
-         work) and hand the scene back if the ladder had taken it. */
+         work) and hand the scene back if the ladder had taken it. The
+         baseline keeps ITS frames: that is the point — while nothing is
+         running, the frames are exactly what the next arm needs to know
+         the film's own pace. */
       const restored = step > 0;
       step = 0;
       now = 0;
@@ -285,10 +337,12 @@ export function createDegradeLadder(opts = {}) {
       if (restored) onRestore(0, LADDER[0]);
       return { changed: true, restored };
     },
-    /** drive the clock from the same ticker that feeds the monitor */
+    /** drive the clock from the same ticker that feeds the monitor.
+     *  Idle, the frames teach the BASELINE (the film's own pace, frozen at
+     *  the next arm); armed, they are judged against the armed bar. */
     tick(dtMs) {
-      if (!active) return step;      /* nothing running, nothing to protect */
-      monitor.push(dtMs);
+      if (!active) { baseline.push(dtMs); return step; }
+      monitor.push(dtMs, strainBar ?? undefined);
       now += dtMs || 0;
       if (monitor.count < minSamples) return step;           /* not enough signal yet */
       if (now - lastMoveAt < t.dwellMs) return step;        /* let the last move settle */
@@ -313,11 +367,21 @@ export function createDegradeLadder(opts = {}) {
     reset({ notify = false } = {}) {
       if (!step) return;
       step = 0;
+      strainBar = null;
       monitor.reset();
       if (notify) onRestore(0, LADDER[0]);
     },
     status() {
-      return { active, step, effect: step ? LADDER[step - 1].key : null, ...monitor.status() };
+      /* `strainBar`/`baselineEma` are published so the probes (and the
+         tests) can assert the armed bar is RELATIVE to the film's own pace,
+         not just that the ladder moved. */
+      return {
+        active, step,
+        effect: step ? LADDER[step - 1].key : null,
+        strainBar: active ? strainBar : null,
+        baselineEma: +baseline.ema.toFixed(1),
+        ...monitor.status(),
+      };
     },
   };
 }

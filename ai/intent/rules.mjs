@@ -302,16 +302,29 @@ export function detectIntent(query, kb = null) {
   if (bait) return out('hallucination_bait', { bait: true });
 
   /* 3. ordered dispatch over the real topic buckets. Order matters: the
-     narrow, verbatim-fact topics are checked before the broad ones. */
-  for (const intent of ['meta', 'greeting', 'contact', 'list_projects',
-                        'skills', 'education', 'certifications', 'experience',
-                        'achievements', 'workflow', 'project_detail']) {
-    if (firstMatch(PATTERNS[intent], text)) {
-      return out(intent, {
-        project: intent === 'project_detail' ? detectProject(text, kb) : null,
-      });
-    }
-  }
+     narrow, verbatim-fact topics are checked before the broad ones.
+
+     A GREETING THAT OPENS A REAL QUESTION IS NOT SMALL TALK — MEASURED
+     2026-11-06, the owner's browser session: "hi, keso ho, mujhe uske projects
+     or skills ke bare me batao" was answered with the greeting line ("Aap unke
+     projects, skills ya padhai ke baare mein pooch sakte hain"), and the
+     question the visitor actually asked never reached the model, because
+     `greeting` was dispatched before every content bucket. A message that is
+     nothing but pleasantries still gets the greeting; when a greeting OPENS a
+     content question, the content wins. */
+  const CONTENT = ['contact', 'list_projects', 'skills', 'education',
+                   'certifications', 'experience', 'achievements', 'workflow',
+                   'project_detail'];
+  if (firstMatch(PATTERNS.meta, text)) return out('meta');
+  const contentIntent = CONTENT.find((intent) => firstMatch(PATTERNS[intent], text));
+  const contentPlan = contentIntent
+    ? out(contentIntent, {
+      project: contentIntent === 'project_detail' ? detectProject(text, kb) : null,
+    })
+    : null;
+  if (firstMatch(PATTERNS.greeting, text)) return contentPlan || out('greeting');
+  if (contentPlan) return contentPlan;
+
 
   /* 4. a NAMED project is a project question in any script. The patterns above
      are Latin-only, so "किराना" or "सबसे बड़ा प्रोजेक्ट" would otherwise fall

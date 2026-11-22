@@ -1,7 +1,7 @@
 # 🎬 AASHISH KUMAR — THE FILM
 ### *Scroll is the timeline. The visitor is the projectionist.*
 
-A cinematic portfolio where scrolling flies a **real WebGL camera** (Three.js + bloom) through a neon city that *is the architecture*: an API gateway of glowing rings, service towers with lit windows, particle data-streams flowing between them, a DB monolith, and container stacks being deployed. Fused with live engineering: a 4D tesseract, an interactive terminal (Ctrl+K), and a contact API.
+A cinematic portfolio where scrolling flies a **real WebGL camera** (Three.js + bloom) through a neon city that *is the architecture*: an API gateway of glowing rings, service towers with lit windows, particle data-streams flowing between them, a DB monolith, and container stacks being deployed. Fused with live engineering: an interactive terminal (Ctrl+K) and a contact API.
 
 The metaphor is the pitch: **the city is a system diagram.** Towers = services. Streams = API calls. Monolith = the database. Recruiters don't just read "full-stack" — they fly through it.
 
@@ -16,7 +16,7 @@ npm start               # optional full-stack — Express + Mongo contact API on
 start index.html        # windows
 ```
 
-Then: **scroll** to scrub the film · **drag the tesseract** in the interlude · **P** for render telemetry · **Ctrl+K** for the terminal · try `sudo hire aashish`, `stats`, `quality 0`.
+Then: **scroll** to scrub the film · **P** for render telemetry · **Ctrl+K** for the terminal · try `sudo hire aashish`, `stats`, `quality 0`.
 
 ## 🔍 Sharpness & devices
 - **FXAA anti-aliasing** at the top quality tiers (the post pipeline disables the context's own MSAA — FXAA is what keeps neon edges crisp), auto-stepped off with the governor
@@ -51,7 +51,6 @@ Watch it live: press **P** (or the bottom-left chip), or in the terminal: `stats
 - **Three.js WebGL film** — one fixed full-page canvas; scroll drives a Catmull-Rom camera path through the microservices city (`js/film3d.js`)
 - **Post-processing** — UnrealBloom for the neon kick, ACES filmic tone mapping, fog + sunset key light
 - **GSAP ScrollTrigger + Lenis** — master page trigger → camera; per-scene pins choreograph the DOM layer
-- **4D tesseract** — 16 vertices, double rotation, drag-inertia, zero libraries (`js/tesseract.js`)
 - **WebAudio** — projector hum, UI blips, mute toggle (`js/sound.js`)
 - **Optional backend** — Express + Mongo contact API with rate limiting (`server.js`)
 - **Graceful degradation** — WebGL failure → CSS neon gradient fallback (`html.no-webgl`)
@@ -99,17 +98,17 @@ The demo's procedural world proves the interaction model. To get the full "insan
 | 01 | Opening shot | Camera flies through a procedural neon city; title card |
 | 02 | The story | Pinned: word-mask reveals, stat counters, polaroids |
 | 03 | The work | 3 projects as film takes with animated clapperboard slates |
-| 04 | Intermission | Pre-rendered film cuts to LIVE: drag the 4D tesseract |
-| 05 | Credits | Skills as movie end-credits, rolled by scroll |
-| 06 | Post-credits | Contact console + hidden terminal (`Ctrl+K`, `sudo hire aashish`) |
+| 04 | Credits | Skills as movie end-credits, rolled by scroll |
+| 05 | Post-credits | Contact console + hidden terminal (`Ctrl+K`, `sudo hire aashish`) |
 
 ## 🚀 Deploy
 Static (no backend): **Vercel / Netlify** — drag & drop, done.
 Full-stack: `MONGODB_URI=... node server.js` (Railway/Render) or convert `server.js` to Vercel serverless functions.
 
 ## ✍️ Before you publish
-- Replace `github.com/` and `linkedin.com/` placeholder links in `index.html` with your real profiles.
-- Terminal `contact` command has your real email already.
+- Links are real: `github.com/aashish1332` and `linkedin.com/in/aashishkumar13`.
+- Terminal `contact` command has the real email; the phone number is deliberately
+  not published and the assistant declines that question by name.
 
 ---
 
@@ -119,39 +118,65 @@ A scratch-built assistant that answers questions about this portfolio in
 **English, Hindi or Roman Hinglish** — automatically, with no language
 selector, **no backend, no LLM API and no API key**.
 
-Click the chip bottom-right to open it. Every answer is the **on-device model
-trained from scratch for this portfolio**, reading only the verified facts it
-was given — and where it cannot answer, the panel *refuses* and says which
-refusal it is, rather than substituting a canned sentence. Every answer carries
-a badge saying which of those two happened. There is no backend to call and no
-API key anywhere in the repository.
+Click the chip bottom-right to open it. It starts in **Portfolio Guide**
+mode: answers about Aashish are worded on this device from the verified
+portfolio data, with no model download and no wait. The **AI MODEL** button is
+the second, optional mode — pressing it is the only thing that downloads the
+51.1 MB trained model, and then its answers are free generation from the same
+verified facts. Every answer carries a badge saying which path produced it,
+and where the guide cannot answer it says so rather than substituting a
+sentence. Two turns are fixed, localized sentences in either mode, because
+they are about the *assistant* rather than about him: a greeting (*"Hi! I'm
+Aashish's AI Portfolio Assistant…"*), and the identity question (*"I'm
+Aashish's AI Portfolio Assistant — not Aashish himself"*), which is a
+statement no model should be free to improvise. Neither claims a fact, so
+neither carries an AI badge. There is no backend to call and no API key
+anywhere in the repository.
 
-The model runs **in your browser**, in a web worker, from a quantized copy
-downloaded once and cached: **5.14 MB** raw / **4.74 MB** gzip for the model
-that ships today (5,059,584 B of int8 weights, a 66 KB tokenizer, a 18 KB
-manifest) — 11.5 % of the 40 MB §4 allows for a first visit. The weights are
+When AI MODEL is selected, the model runs **in your browser**, in a web
+worker, from a quantized copy downloaded once and cached: **51.1 MB** raw /
+**46.3 MB** gzip across seven
+shards — the **49,595,328-parameter** Stage-B checkpoint (11 layers, d 576, a
+16,384-token BPE of our own), trained from random init on a GPU. That is
+**88.5 %** of the 50 MB first-visit ceiling this build holds itself to (and
+110.7 % of the 40 MB §4 was written against): the larger checkpoint was chosen
+over the 5 MB one because the small model could not answer. The weights are
 int8 (~4× smaller than fp32), the quantization's cost is measured rather than
-assumed (worst per-row error 0.001146), and the JavaScript engine that runs
+assumed (worst per-row error 0.000797), and the JavaScript engine that runs
 them is checked against an independent numpy implementation of the same
 architecture, which is itself checked against the trained PyTorch graph. All
-three agree on the shipping weights: 138 positions, **identical argmax and
-identical top-16 ordering**, worst absolute logit difference **8.8e-06**.
+three agree on the shipping weights: 107 positions, **identical argmax and
+identical top-16 ordering**, worst absolute logit difference **1.1e-05**.
 `npm run verify:engine` re-runs that gate on whatever is currently exported and
 exits non-zero on any disagreement. A second parity gate runs on every
 `npm test`, against a committed tiny fixture, so a change that breaks the
 forward pass fails the build instead of a visitor's question.
 
-Today's shipped weights are from a **local CPU run** — 4,984,064 params,
-config `local`, 1,100 steps on this laptop — that exists so the whole path
-(train → export → download → worker → stream → guard) is real end to end. It
-runs at **65–74 tok/s decode** on a 2016 ultrabook with no GPU, 8–9× the ≥ 8 tok/s
-floor §4 asks for. The §7.1 shipping target is still config A (37.9M) trained
-on a GPU in P4/P5; nothing about the runtime changes when it lands, only the
-weights. Until then the quality is visibly a small model's, and the panel never
-pretends otherwise — it says so itself: the **ABOUT** card carries the
-checkpoint's status in words ("a pipeline test, not a model trained for
-quality"), and the constant behind it cannot claim otherwise while the project's
-own evaluation reports the quality gates as failed.
+It is slow on this laptop, and this README says so rather than hiding it:
+**5.0 tok/s decode and 5 tok/s prefill** (3.2 s for 16 tokens, 25 MB of KV
+cache), **below §4's ≥ 8 tok/s floor**. A phone will be slower still; the
+panel's tier table shortens answers before it trades away quality.
+
+How good is the optional model, measured? The project grades the shipping
+checkpoint on its own 66-question evaluation, with the same guard and language
+rules the browser uses, and publishes the result (`docs/EVALUATION.json`). In
+AI MODEL mode the path is **100 % the model**: it writes every answer freely,
+with no closed-answer grammar or template shaping the sentence
+(`MODEL_OWNS_ANSWERS`). The default Portfolio Guide is deterministic and is
+not the subject of that model metric. The 2026-11-15 v18 run
+scores **97.1 % factual accuracy** (33 of 34 scorable questions; gate 95 %),
+**100 % abstention recall**, **2.4 % false abstention**, **no unsupported claim
+after the guard**, **no fabricated fact** on the adversarial set, EN **100 %**,
+HI/Hinglish **100 %**, and identity disclosure **100 %**. **All eight §14 gates
+pass.** The one factual miss is `syn04`, a synthetic email address the model
+refuses to invent rather than fabricating it; the gate, not a perfect score, is
+what this build claims. The per-case answers and the run are in
+`docs/EVAL_ANSWERS.json` and `docs/BENCHMARKS.md`.
+The **ABOUT** card says `trained` and bounds it in the same sentence (“not a
+general-purpose model”), and the constant behind it (`MODEL_STATUS`) is coupled
+to the evaluation file: regenerate a failing result into
+`docs/EVALUATION.json` and the suite fails until the card stops claiming what
+was not measured.
 
 The answers are written **about Aashish, in the third person** — "his CGPA",
 not "my CGPA" — which is what the brief asks for ("never pretends to be him").
@@ -197,7 +222,7 @@ the better one. The voice-activity gate (deciding where speech starts and
 stops) is ours, and it ships **no model file at all**. The panel's **ABOUT**
 control states the same thing in the product itself.
 
-Nothing AI-related loads until you click: the launcher is **958 B gz** and
+Nothing AI-related loads until you click: the launcher is **1,154 B gz** and
 the page makes **zero** AI requests before that. Opening and closing the panel
 is measured, not assumed: **0 DOM nodes, 0 listeners and 0 MB per reopen**, and
 an AI session now compiles **no** shader programs — the frame ladder is armed
@@ -219,7 +244,7 @@ idle page cost a measured 1.2 s of blocked main thread (`docs/BENCHMARKS.md` §1
 | [experiments/ternary/README.md](experiments/ternary/README.md) | §13's written go/no-go on the ternary experiment (no-go, and why) |
 
 ```bash
-npm run test:all     # 533 JS + 533 Python tests
+npm run test:all     # 567 JS + 656 Python tests
 node dev-ai-probe.js     # the click → answer gate in a real browser (60 checks, real GPU; SW_GL=1 software GL, THROTTLE=4 weak-device profile)
 npm run probe:firefox # the same gate as a Firefox smoke test (11 checks; WebDriver BiDi, FF_BIN overrides the binary)
 node dev-offline-probe.js # §9.3 cache: a second visit with model-export blocked

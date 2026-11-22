@@ -18,11 +18,13 @@
 
    WHAT IT SAYS IS DECIDED HERE; HOW IT WOULD BE SAID IS NOT. Each path
    returns a **plan** — a small, serializable description of what was selected
-   — and `text` is only filled for the two replies that are not portfolio
-   answers at all: the §9 injection refusal and the identity disclosure. Both
-   are fixed statements about the assistant rather than claims about Aashish,
-   so they are not a template standing in for a model answer; they ship, and
-   the panel renders them.
+   — and `text` is only filled for the replies that are not portfolio answers
+   at all: the §9 injection refusal, the identity disclosure, and small talk.
+   All three are fixed statements about the assistant rather than claims about
+   Aashish, so they are not a template standing in for a model answer; they
+   ship, and the panel renders them. Small talk joined them on 2026-10-31,
+   after the model was measured answering an English "hi" in Hinglish — see
+   `greetingReply` below.
 
    The deterministic *wording* — the greetings, the skill lists, the project
    summaries, the abstention sentences — used to be built on every question and
@@ -273,6 +275,71 @@ export function disclosure(kb, lang, persona = DEFAULT_PERSONA) {
       `Ye main hi hoon — ${fullName(kb)}. Ek baat saaf keh doon: ye mera portfolio assistant hai, meri awaaz mein aur sirf mere portfolio data se jawab deta hai. Mere kaam, skills ya padhai ke baare mein pooch sakte hain.`));
 }
 
+/* ── small talk ──────────────────────────────────────────────────
+
+   A greeting, a goodbye, a thank-you and "how are you" are questions about
+   the ASSISTANT, not about Aashish: their correct answer names no fact, so
+   there is nothing for the guard to ground and nothing for a 49.6M checkpoint
+   to get right. It got them wrong anyway, twice, and both are measured:
+
+   · 2026-10-18, the shipped export: "hi" → ` I study at <|fact:edu.lpu|>. `
+     — the education frame, recited at a hello;
+   · 2026-10-31, the shipping export, this laptop: "hi" (English, per
+     `detectLanguage`) → ` Namaste! Aashish ke projects, skills, padhai ya
+     contact ke baare mein pucho. ` — an English visitor greeted in Hinglish.
+     The guard passed it: Hinglish is Roman script, and §8.4's language rule
+     is script-shaped.
+
+   A wrong first sentence is the most expensive one to get wrong, and the fix
+   is not another model: it is the fixed, localized, claim-free reply the
+   planner has shipped before (owner decision 2026-10-11), which is why
+   `routeQuestion` gives it its own path (`fixed`) instead of the model's.
+
+   The same words live in `ai/answers/wording.mjs` (the evaluation/build twin,
+   which reads this plan) and `QA-12` asserts the two are identical for every
+   shape, language and voice — so this copy cannot drift from the words the
+   tests grade.
+ */
+export function greetingReply(kb, lang, persona = DEFAULT_PERSONA, plan = {}) {
+  return plan.farewell
+    ? tri(lang,
+      pick(persona,
+        'Goodbye! Happy to tell you more about his projects, skills or education anytime.',
+        'Goodbye! Come back anytime to talk about my work, skills or projects.'),
+      pick(persona,
+        'अलविदा! उनके प्रोजेक्ट्स, स्किल्स या पढ़ाई के बारे में कभी भी फिर पूछ सकते हैं।',
+        'अलविदा! मेरे काम, स्किल्स या प्रोजेक्ट्स के बारे में कभी भी बात करने आइए।'),
+      pick(persona,
+        'Alvida! Unke projects, skills ya padhai ke baare mein kabhi bhi phir pooch sakte hain.',
+        'Alvida! Mere kaam, skills ya projects ke baare mein kabhi bhi baat karne aaiye.'))
+    : plan.wellbeing
+    ? tri(lang,
+      pick(persona,
+        `I'm doing well, thanks for asking! Ask me anything about his projects, skills or education.`,
+        `I'm doing well, thanks for asking! Ask me anything about my projects, skills or education.`),
+      pick(persona,
+        'मैं ठीक हूँ, पूछने के लिए धन्यवाद! उनके प्रोजेक्ट्स, स्किल्स या पढ़ाई के बारे में कुछ भी पूछें।',
+        'मैं ठीक हूँ, पूछने के लिए धन्यवाद! मेरे प्रोजेक्ट्स, स्किल्स या पढ़ाई के बारे में कुछ भी पूछें।'),
+      pick(persona,
+        'Main theek hoon, poochne ke liye shukriya! Unke projects, skills ya padhai ke baare mein kuch bhi poochein.',
+        'Main theek hoon, poochne ke liye shukriya! Mere projects, skills ya padhai ke baare mein kuch bhi poochein.'))
+    : plan.thanks
+    ? tri(lang,
+      pick(persona, 'Anytime! Ask me anything else about Aashish.', 'Anytime! Ask me anything else.'),
+      pick(persona, 'खुशी हुई! Aashish के बारे में और कुछ भी पूछ सकते हैं।', 'खुशी हुई! और कुछ भी पूछ सकते हैं।'),
+      pick(persona, 'Khushi hui! Aashish ke baare mein aur kuch bhi pooch sakte hain.', 'Khushi hui! Aur kuch bhi pooch sakte hain.'))
+    : tri(lang,
+      pick(persona,
+        `Hi! I'm ${firstName(kb)}'s AI Portfolio Assistant. Ask me about his projects, skills, education, or how to reach him.`,
+        `Hi — I'm ${fullName(kb)}. Ask me about my projects, skills, education, or how to reach me.`),
+      pick(persona,
+        `नमस्ते! मैं ${firstName(kb)} का AI पोर्टफोलियो असिस्टेंट हूँ। आप उनके प्रोजेक्ट्स, स्किल्स, पढ़ाई या संपर्क के बारे में पूछ सकते हैं।`,
+        `नमस्ते — मैं ${fullName(kb)} हूँ। मेरे प्रोजेक्ट्स, स्किल्स, पढ़ाई या संपर्क के बारे में पूछ सकते हैं।`),
+      pick(persona,
+        `Namaste! Main ${firstName(kb)} ka AI Portfolio Assistant hoon. Aap unke projects, skills, padhai ya contact ke baare mein pooch sakte hain.`,
+        `Namaste — main ${fullName(kb)} hoon. Mere projects, skills, padhai ya contact ke baare mein pooch sakte hain.`));
+}
+
 /* ── selection ───────────────────────────────────────────────────
    One entry per intent bucket, and every one of them returns a PLAN — what
    was selected and nothing about how to say it. The wording lives in
@@ -289,14 +356,14 @@ const experienceIds = (kb) => [...(kb.experience || []).filter((e) => e.public !
 
 /* Category words a visitor actually types, mapped to the schema's keys. */
 export const CATEGORY_WORDS = [
-  [/languages?\b/i, 'language'],
-  [/frontend|front.?end|ui\b/i, 'frontend'],
-  [/backend|back.?end|server/i, 'backend'],
-  [/database|db\b|sql/i, 'database'],
-  [/ai\b|ml\b|machine learning/i, 'ai-ml'],
-  [/security|auth/i, 'security'],
-  [/tools?|tooling|editor/i, 'tooling'],
-  [/soft skills?|working style/i, 'soft'],
+  [/\blanguages?\b/i, 'language'],
+  [/\b(?:frontend|front[-\s]?end|ui)\b/i, 'frontend'],
+  [/\b(?:backend|back[-\s]?end|server)\b/i, 'backend'],
+  [/\b(?:databases?|db|sql)\b/i, 'database'],
+  [/\b(?:ai|ml|machine learning)\b/i, 'ai-ml'],
+  [/\b(?:security|auth)\b/i, 'security'],
+  [/\b(?:tools?|tooling|editor)\b/i, 'tooling'],
+  [/\b(?:soft skills?|working style)\b/i, 'soft'],
 ];
 
 /**
@@ -319,7 +386,22 @@ function contactPlan(kb, question, withheld) {
   const norm = normalize(q);
   const askedWithheld = (withheld || []).some((f) => f.aliases
     .some((a) => { const t = normalize(a); return t && norm.includes(t); }));
-  if (askedWithheld) return { plan: { kind: 'contact_withheld' }, sources: [], private: true };
+  /* Devanagari never survives `normalize()` into a Latin alias, so "उनका फ़ोन
+     नंबर क्या है?" matched no withheld record, fell through to `contact_all`,
+     and was answered from whatever retrieval offered — MEASURED 2026-11-04 as
+     d21, refused only because the guard caught the wrong language. The field
+     is identified by its own id/aliases, so a new scripted spelling is an
+     alias or this table, never a branch in the handler. */
+  const SCRIPT_FIELD = [
+    [/फ़ोन|फोन|मोबाइल|नंबर/, /phone|mobile|फ़ोन|फोन|मोबाइल|नंबर/i],
+    [/ईमेल|इमेल|मेल/, /e-?mail|ईमेल|इमेल/i],
+  ];
+  const askedWithheldInScript = (withheld || []).some((f) => SCRIPT_FIELD.some(
+    ([qre, fre]) => qre.test(q)
+      && (fre.test(String(f.id || '')) || (f.aliases || []).some((a) => fre.test(a)))));
+  if (askedWithheld || askedWithheldInScript) {
+    return { plan: { kind: 'contact_withheld' }, sources: [], private: true };
+  }
 
   const field = (re, name, test) => {
     if (!test.test(q)) return null;
@@ -341,16 +423,77 @@ function contactPlan(kb, question, withheld) {
   };
 }
 
+/* ── school level ────────────────────────────────────────────────
+   A question that NAMES A SCHOOL LEVEL is about one record. "what is his 10th
+   percentage?" answered with the education list hands the model three scores
+   and one slot, and the checkpoint fills that slot with the entry its training
+   saw (`edu.lpu`/`ach.lpu-cgpa`) — right shape, wrong fact. So the marker
+   decides *whether* to narrow, and the knowledge base's own aliases decide
+   *which* record wins, exactly as `detectProject` does: adding a third school
+   record needs an alias, never a code change here. Measured 2026-10-24, the
+   day `edu.kv1` (Class 10, 83 %) was added. */
+const LEVEL_MARKER = /\b(10th|tenth|class ?(10|ten)|matriculation|high ?school|12th|twelfth|class ?(12|twelve)|senior secondary|intermediate|dasvi|dasvin|barhvi)\b/i;
+const LEVEL_SCRIPT = /दसवीं|१०वीं|10वीं|बारहवीं|१२वीं|12वीं/;
+
+/** The education record a level-naming question is about, or `null`. */
+export function levelEducation(kb, question) {
+  const q = ` ${normalize(String(question || ''))} `;
+  if (!LEVEL_MARKER.test(q) && !LEVEL_SCRIPT.test(q)) return null;
+  let best = null;
+  let bestLen = 0;
+  for (const e of kb.education || []) {
+    if (e.public === false) continue;
+    for (const alias of e.aliases || []) {
+      const a = normalize(alias);
+      /* Longest alias wins: "10th percentage" must beat the bare "10th" that
+         the same record also carries, and an alias shared by two records must
+         not decide between them by array order. */
+      if (a && q.includes(` ${a} `) && a.length > bestLen) {
+        best = e;
+        bestLen = a.length;
+      }
+    }
+  }
+  return best;
+}
+
 /** `null` when the intent is not one this layer selects for. */
 function planFor(kb, det, ctx) {
   const q = String(ctx.question || '');
   switch (det.intent) {
-    case 'greeting':
-      /* "thanks" gets an acknowledgement, not the full introduction */
-      return {
-        plan: { kind: 'greeting', thanks: /\b(thanks|thank you|dhanyavad|dhanyawad|shukriya|शुक्रिया|धन्यवाद)/i.test(q) },
-        sources: [],
+    case 'greeting': {
+      /* "thanks" gets an acknowledgement, not the full introduction; "how are
+         you?" gets wellbeing answered (it is small talk about the ASSISTANT),
+         and a goodbye is answered rather than refused. All three shapes are
+         worded by the same fixed reply the plan names — see wording.mjs —
+         which the guard never sees, because none of them claims a fact. */
+      const plan = { kind: 'greeting',
+        thanks: /\b(thanks|thank you|dhanyavad|dhanyawad|shukriya|शुक्रिया|धन्यवाद)/i.test(q),
+        farewell: /\b(bye|good ?bye|see (ya|you)|take care|alvida|night|milte)/i.test(q),
+        wellbeing: /\b(how (are|r|is) (you|u|everything|it going)|how('s| is) (it |life |things |your )?(day|week)|what('s| is) up|kaise|kaisa|kaisi|kese|kesa|kesi|क्या हाल|कैसे)/i.test(q),
       };
+      /* Exactly the frame training gave a greeting: every §7.4 greeting
+         example pairs the question with the one line `build_context(f,
+         ["person.name"])` (ai/data/instruction.py), so that — and only that —
+         is what the model sees here.
+
+         The education lines had been added on 2026-10-17 to make the shipped
+         checkpoint's answer ground. That was the wrong repair: measured
+         2026-10-18 against the shipped export, the checkpoint answers "hi"
+         with `I study at <|fact:edu.lpu|>` with the person line ALONE, so the
+         extra facts never changed the words the visitor saw — they only made
+         a greeting recite education instead of being recognised as the
+         out-of-distribution recitation it is. The greeting that ships once
+         the checkpoint is instruction-tuned is claim-free, so the trained
+         frame needs no education context at all. */
+      /* The answer is the fixed line, here, where the plan is made: small
+         talk claims nothing, so there is nothing to generate and nothing to
+         ground — and `routeQuestion` reads this `text` to decide the turn
+         without a model. */
+      plan.text = greetingReply(kb, ctx.lang, ctx.persona, plan);
+      return { plan,
+        sources: kb.person?.id ? [kb.person.id] : [] };
+    }
     case 'meta':
       return { plan: { kind: 'meta' }, sources: [kb.person?.id || 'person.name'] };
     case 'contact':
@@ -376,13 +519,35 @@ function planFor(kb, det, ctx) {
          each id up by its own kind and skips what it does not know). */
       const q = String(ctx.question || '');
       const scoreQ = /\b(cgpa|gpa|marks?|percentage|grades?|sgpa|सीजीपीए|अंक)\b/i.test(q);
-      const ids = (kb.education || []).filter((e) => e.public !== false).map((e) => e.id);
-      const cgpa = (kb.achievements || []).find((a) => a.public !== false
+      const level = levelEducation(kb, q);
+      let pool = level ? [level] : (kb.education || []).filter((e) => e.public !== false);
+      /* A question that NAMES a metric is about the record that carries it, so
+         "what is his CGPA" does not put the school percentages into the same
+         one-slot answer. Falls back to the whole list when no record carries
+         the metric, rather than selecting nothing. */
+      if (!level && /\b(cgpa|gpa|sgpa)\b|सीजीपीए/i.test(q)) {
+        const carrying = pool.filter((e) => (e.score?.type || '').toLowerCase() === 'cgpa');
+        if (carrying.length) pool = carrying;
+      }
+      const ids = pool.map((e) => e.id);
+      /* EVERY CGPA achievement, not the first one: §14 f05 exists because "and
+         what was the CGPA?" must be told apart from the Minor-in-AI CGPA, and a
+         plan that quietly drops the second one makes the case pass by removing
+         the choice rather than by picking right. */
+      const cgpas = (kb.achievements || []).filter((a) => a.public !== false
         && (a.metric?.type || '').toLowerCase() === 'cgpa');
-      return {
-        plan: { kind: 'education', ids: scoreQ && cgpa ? [...ids, cgpa.id] : ids },
-        sources: scoreQ && cgpa ? [...ids, cgpa.id] : ids,
-      };
+      /* The append exists so "what is his CGPA" cites the achievement that
+         carries the metric instead of the institution entry whose rendered text
+         happens to contain it. It must NOT fire for a level question: "10th
+         percentage" with the CGPA achievements in the plan is two scores and
+         one slot again — the model answers with the B.Tech CGPA and the school
+         result it was shown goes unread.
+         A level record whose own score is a CGPA (the B.Tech entry) still gets
+         it, so "his university cgpa" behaves as before. */
+      const wantCgpa = scoreQ && cgpas.length && (!level
+        || (level.score?.type || '').toLowerCase() === 'cgpa');
+      const all = wantCgpa ? [...ids, ...cgpas.map((a) => a.id)] : ids;
+      return { plan: { kind: 'education', ids: all }, sources: all };
     }
     case 'certifications': {
       const ids = (kb.certifications || []).filter((c) => c.public !== false).map((c) => c.id);
@@ -621,7 +786,10 @@ export function quickAnswer(kb, query, opts = {}) {
 
   /* 2. hallucination bait abstains, then hands over what IS known (C7/C4) */
   if (det.intent === 'hallucination_bait') {
-    const bait = { kind: 'hallucination_bait', ids: (kb.experience || [])
+    /* `abstained` travels ON THE PLAN because the model path reads the plan,
+       not this return value (`planAbstains` in ai/answers/model.mjs). Without
+       it the decoder was handed the near facts and answered them. */
+    const bait = { kind: 'hallucination_bait', abstained: true, ids: (kb.experience || [])
       .filter((e) => e.public !== false).map((e) => e.id) };
     return {
       ...base, handled: true, abstained: true, plan: bait,
@@ -644,10 +812,12 @@ export function quickAnswer(kb, query, opts = {}) {
       : { sources: selected.sources };
     const plan = selected.plan.kind === 'meta'
       ? { ...selected.plan, text: disclosure(kb, lang, persona) }
-      : selected.plan;
+      : (selected.private ? { ...selected.plan, abstained: true } : selected.plan);
     return {
       ...base, handled: true, plan,
-      text: plan.kind === 'meta' ? plan.text : (say ? say(plan, ctx) : ''),
+      /* `plan.text` is the fixed reply the plan carries (the disclosure, and
+         small talk); a caller-supplied `say` still words everything. */
+      text: say ? say(plan, ctx) : (plan.text || ''),
       /* naming a project moves the focus; every other bucket carries it */
       focus: det.project || base.focus,
       ...shape, followups: followupsFor(det.intent, lang, persona),

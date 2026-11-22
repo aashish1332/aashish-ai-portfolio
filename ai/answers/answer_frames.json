@@ -128,16 +128,16 @@
     },
     "link.github": {
       "en": {
-        "first": "My GitHub is {v}.",
-        "third": "His GitHub is {v}."
+        "first": "My code is on {v}.",
+        "third": "His code is on {v}."
       },
       "hi": {
-        "first": "मेरा GitHub {v} है।",
-        "third": "उनका GitHub {v} है।"
+        "first": "मेरा कोड {v} पर है।",
+        "third": "उनका कोड {v} पर है।"
       },
       "hinglish": {
-        "first": "Mera GitHub {v} hai.",
-        "third": "Unka GitHub {v} hai."
+        "first": "Mera code {v} par hai.",
+        "third": "Unka code {v} par hai."
       }
     },
     "person.name": {
@@ -180,6 +180,20 @@
       "hinglish": {
         "first": "Mera main project {v} hai.",
         "third": "Unka main project {v} hai."
+      }
+    },
+    "skill.gemini": {
+      "en": {
+        "first": "For AI, I use {v}.",
+        "third": "For AI, he uses {v}."
+      },
+      "hi": {
+        "first": "AI के लिए मैं {v} उपयोग करता हूँ।",
+        "third": "AI के लिए वे {v} उपयोग करते हैं।"
+      },
+      "hinglish": {
+        "first": "AI ke liye main {v} use karta hoon.",
+        "third": "AI ke liye wo {v} use karte hain."
       }
     },
     "skill.mysql": {

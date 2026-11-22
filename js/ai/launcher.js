@@ -1,14 +1,20 @@
 /* ═══════════════════════════════════════════════════════════════
-   js/ai/launcher.js — the ONLY AI code on the initial page load (§4, §5)
+   js/ai/launcher.js — the only AI code on the initial page load
 
-   Budget: ≤ ~2 KB gzipped. It answers one question — "did the visitor
-   click?" — and does nothing else until they do. No worker, no wasm, no
-   model, no knowledge base, no request: the entire assistant arrives via
-   the dynamic import below, which is why opening the panel is the first
-   moment any of it exists.
+   Budget: ≤ ~2 KB gzipped. One trigger, and only one: the click.
 
-   Hover-prefetch (optional per §10) warms the UI chunk only, on a fine
-   pointer, after 120 ms of hover intent — never the model, never on touch.
+   §2 N6 is literal — "nothing AI-related loads or initialises before the
+   click" — and this file is where that promise is kept or broken. An earlier
+   revision warmed the shell 1.2 s after `load` so the model would be ready by
+   the time a visitor reached for the microphone; with the shipping 49.6M
+   checkpoint that meant a 46 MB download, a worker and a parse on every visit
+   whether or not anyone wanted the assistant, which is the behaviour N6
+   forbids and the browser probe flags. The eager path was removed on
+   2026-10-30. Hover and focus used to prefetch the chunk too; both are gone,
+   because a pointer crossing a button is not a click.
+
+   This file contains no fetch, no worker, no network API of its own; all of
+   the work happens inside the chunk it imports, on the click.
    ═══════════════════════════════════════════════════════════════ */
 (function () {
   var btn = document.getElementById('askAI');
@@ -36,8 +42,14 @@
     busy = true;
     btn.classList.add('is-loading');
     load().then(function (m) {
-      /* mount() wires the button for every later click */
-      var chat = window.PortfolioAI || m.mount({ launcher: btn });
+      var made = false;
+      /* mount() wires the button with its own toggle() listener for every
+         later click. Once IT owns #askAI this launcher's own handler must be
+         removed, or the first click runs open() AND toggle() — the panel
+         shows itself and instantly closes again, and the button reads dead. */
+      var existing = window.PortfolioAI;
+      var chat = existing || (made = true, m.mount({ launcher: btn }));
+      if (made) btn.removeEventListener('click', open);
       btn.classList.remove('is-loading');
       busy = false;
       return chat.open();
@@ -45,14 +57,4 @@
   }
 
   btn.addEventListener('click', open);
-
-  /* hover intent: fetch the UI chunk, nothing heavier */
-  if (window.matchMedia && window.matchMedia('(hover: hover)').matches) {
-    var t = 0;
-    btn.addEventListener('pointerenter', function () {
-      t = setTimeout(function () { load().catch(function () {}); }, 120);
-    });
-    btn.addEventListener('pointerleave', function () { clearTimeout(t); });
-    btn.addEventListener('focus', function () { load().catch(function () {}); });
-  }
 }());

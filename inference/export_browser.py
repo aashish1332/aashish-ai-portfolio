@@ -163,12 +163,49 @@ def write_export(state: dict, cfg: ModelConfig, out_dir: Path,
         block, meta, err = quantize_tensor(name, weights[name])
         worst_error = max(worst_error, err)
         block = pad(block)
-        if current and len(current) + len(block) > MAX_SHARD_BYTES:
-            buffers.append(bytes(current))
-            current = bytearray()
-        meta.update({"shard": len(buffers), "offset": len(current), "bytes": len(block)})
-        current += block
-        tensors.append(meta)
+        # A tensor larger than a shard (the 16k-vocab embedding at 16384×256
+        # q8 ≈ 9.5 MB) is emitted as CONSECUTIVE ROW PARTS — `name#0`, `name#1`,
+        # … — each within the shard cap and 4-byte aligned (rows×cols bytes per
+        # part, so the float32 scale half stays aligned). The engine joins the
+        # parts by base name on load; `#0` carries the logical shape.
+        parts: list[tuple[str, bytes, dict, float]] = [(name, block, meta, err)]
+        if len(block) > MAX_SHARD_BYTES:
+            parts = []
+            codes_len = meta["rows"] * meta["cols"]
+            if meta["dtype"] != "q8":
+                raise ValueError(f"{name}: only q8 tensors can be split")
+            # Split on ROWS, so each part keeps whole (codes, scale) pairs.
+            # A row costs `cols` code bytes + 4 scale bytes and pads to 4
+            # (cols % 4 == 0 keeps the whole block aligned), so rows_per_part
+            # = floor(MAX / (cols+4)).
+            rows_per_part = MAX_SHARD_BYTES // (meta["cols"] + 4)
+            if rows_per_part <= 0:
+                raise ValueError(f"{name}: cannot fit even one row in a shard")
+            codes = block[:codes_len]
+            scales_start = codes_len
+            scales = block[scales_start:scales_start + meta["rows"] * 4]
+            for part_index, row0 in enumerate(range(0, meta["rows"], rows_per_part)):
+                row1 = min(row0 + rows_per_part, meta["rows"])
+                pc = codes[row0 * meta["cols"]:row1 * meta["cols"]]
+                ps = scales[row0 * 4:row1 * 4]
+                pmeta = dict(meta)
+                pmeta["name"] = f"{name}#{part_index}"
+                pmeta["rows"] = row1 - row0
+                pmeta["partRows"] = [row0, row1]
+                pmeta["splitOf"] = name
+                pmeta["splitShape"] = [meta["rows"], meta["cols"]]
+                pmeta["bytes"] = len(pc) + len(ps)
+                parts.append((pmeta["name"], pad(pc + ps), pmeta, err))
+        for part_name, pblock, pmeta, perr in parts:
+            pblock = pad(pblock)
+            if len(pblock) > MAX_SHARD_BYTES:
+                raise ValueError(f"{part_name} is {len(pblock)} B, over the {MAX_SHARD_BYTES} B shard cap")
+            if current and len(current) + len(pblock) > MAX_SHARD_BYTES:
+                buffers.append(bytes(current))
+                current = bytearray()
+            pmeta.update({"shard": len(buffers), "offset": len(current), "bytes": len(pblock)})
+            current += pblock
+            tensors.append(pmeta)
     if current:
         buffers.append(bytes(current))
 
@@ -280,6 +317,7 @@ def load_exported_weights(export_dir: Path, manifest: dict) -> dict[str, np.ndar
         raw_by_name[shard["name"]] = raw
 
     weights: dict[str, np.ndarray] = {}
+    splits: dict[str, list[tuple[int, int, int, np.ndarray, np.ndarray]]] = {}
     for tensor in manifest["tensors"]:
         raw = raw_by_name[manifest["shards"][tensor["shard"]]["name"]]
         start = int(tensor["offset"])
@@ -289,13 +327,52 @@ def load_exported_weights(export_dir: Path, manifest: dict) -> dict[str, np.ndar
                                   offset=start).reshape(rows, cols)
             scales = np.frombuffer(raw, dtype="<f4", count=rows,
                                    offset=start + rows * cols)
-            weights[tensor["name"]] = reference.q8_dequantise(codes, scales)
+            if tensor.get("splitOf") is not None:
+                # A row-part of an oversized tensor (see write_export). Rejoin
+                # by row range so the reference sees the logical tensor.
+                row0, row1 = tensor["partRows"]
+                splits.setdefault(tensor["splitOf"], []).append(
+                    (row0, row1, cols, codes, scales))
+            else:
+                weights[tensor["name"]] = reference.q8_dequantise(codes, scales)
         elif tensor["dtype"] == "f32":
             weights[tensor["name"]] = np.frombuffer(
                 raw, dtype="<f4", count=cols, offset=start).copy()
         else:
             raise ValueError(f"{tensor['name']}: unreadable dtype {tensor['dtype']}")
+
+    # Rejoin the split tensors: concatenate rows in part order, then dequantise
+    # per part and stack — float([a; b]) rows are exactly the parts' rows.
+    for name, plist in splits.items():
+        plist.sort(key=lambda p: p[0])
+        row0_expected = 0
+        codes_list, scales_list = [], []
+        for row0, row1, cols, codes, scales in plist:
+            if row0 != row0_expected:
+                raise ValueError(f"{name}: part starts at row {row0}, expected {row0_expected}")
+            row0_expected = row1
+            codes_list.append(codes)
+            scales_list.append(scales)
+        weights[name] = reference.q8_dequantise(
+            np.concatenate(codes_list, axis=0), np.concatenate(scales_list, axis=0))
     return weights
+
+
+def _rel(path: Path) -> str:
+    """A path as the fixture should spell it: repo-relative when it can.
+
+    MEASURED 2026-10-18: the export ran with `--out /kaggle/working/export-browser`,
+    which is OUTSIDE the checkout, and `relative_to(ROOT)` raised
+    `ValueError: ... is not in the subpath of ...` after every shard had been
+    written — the parity fixture (and its torch cross-check) was lost while the
+    export itself looked finished. An out-of-tree destination is a supported
+    way to run this script, so the spelling falls back to the absolute path
+    instead of aborting the step.
+    """
+    try:
+        return str(path.relative_to(ROOT)).replace("\\", "/")
+    except ValueError:
+        return str(path).replace("\\", "/")
 
 
 def reference_fixture(state: dict, cfg: ModelConfig, tokenizer_dir: Path,
@@ -325,7 +402,7 @@ def reference_fixture(state: dict, cfg: ModelConfig, tokenizer_dir: Path,
         })
 
     return {
-        "modelDir": str(export_dir.relative_to(ROOT)).replace("\\", "/"),
+        "modelDir": _rel(export_dir),
         "format": FORMAT,
         "quantized": True,
         "referenceWeights": "exported q8 shards (dequantised)",
@@ -504,7 +581,7 @@ def main(argv: list[str] | None = None) -> int:
         check = fixture["torchCheck"]
         print(f"  torch↔numpy cross-check: {check['status']}"
               + (f" (max |Δ| {check['maxAbsDiff']:.2e})" if check["status"] != "NOT TESTED" else ""))
-        print(f"  parity fixture: {ref_path.relative_to(ROOT)} "
+        print(f"  parity fixture: {_rel(ref_path)} "
               f"({len(fixture['cases'])} prompts)")
 
     if args.json_out:

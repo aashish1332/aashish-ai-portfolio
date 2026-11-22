@@ -108,6 +108,10 @@ export async function loadWeights(manifest, opts = {}) {
     baseUrl = '', fetchImpl = fetch, verify = true, onProgress,
   } = opts;
   const weights = new Map();
+  /* Tensors the exporter split across shards (a tensor can be larger than the
+     8 MB shard cap — the 16k-vocab embedding is ~9.5 MB q8). Collected by base
+     name and joined below, once every shard is in. */
+  const parts = new Map();
   let loaded = 0;
   const totalBytes = manifest.shards.reduce((n, s) => n + s.bytes, 0);
   let verified = verify;
@@ -137,13 +141,61 @@ export async function loadWeights(manifest, opts = {}) {
 
     for (const [name, meta] of manifest.tensors) {
       if (meta.shard !== manifest.shards.indexOf(shard)) continue;
+      const base = String(name).split('#')[0];
       if (weights.has(name)) throw new Error(`duplicate tensor ${name}`);
-      weights.set(name, tensorFromBlock(bytes, meta.offset, meta));
+      const piece = tensorFromBlock(bytes, meta.offset, meta);
+      if (meta.splitOf !== undefined) {
+        /* A row-part of a tensor too large for one shard
+           (inference/export_browser.py splits on whole rows). Collect every
+           part, then join them below — the model reads the result exactly as
+           if it had never been split. */
+        const list = parts.get(base) || [];
+        list.push({ piece, meta });
+        parts.set(base, list);
+      } else {
+        weights.set(name, piece);
+      }
     }
   }
 
   for (const name of manifest.tensors.keys()) {
+    const base = String(name).split('#')[0];
+    if (parts.has(base)) continue;
     if (!weights.has(name)) throw new Error(`tensor ${name} is in the manifest but was not decoded`);
+  }
+
+  /* Join split tensors in row order. A gap, an overlap or a part set that
+     does not cover the declared shape fails here, loudly: an embedding built
+     from half its rows would answer *subtly* wrong, and this is the one
+     failure mode a clear error pre-empts. */
+  for (const [base, list] of parts) {
+    const head = manifest.tensors.get(`${base}#0`);
+    if (!head) throw new Error(`${base}: its parts are in the manifest but #0 is not`);
+    const [totalRows, cols] = head.splitShape;
+    list.sort((a, b) => (a.meta.partRows?.[0] ?? 0) - (b.meta.partRows?.[0] ?? 0));
+    let covered = 0;
+    for (const { piece, meta } of list) {
+      const [row0, row1] = meta.partRows ?? [0, 0];
+      if (row0 !== covered) {
+        throw new Error(`${base}: part ${meta.name} starts at row ${row0}, expected ${covered}`);
+      }
+      if (piece.rows !== row1 - row0) {
+        throw new Error(`${base}: part ${meta.name} holds ${piece.rows} rows, expected ${row1 - row0}`);
+      }
+      covered = row1;
+    }
+    if (covered !== totalRows) {
+      throw new Error(`${base}: its ${list.length} parts cover ${covered} of ${totalRows} rows`);
+    }
+    const codes = new Int8Array(covered * cols);
+    const scales = new Float32Array(covered);
+    let rowAt = 0;
+    for (const { piece, meta } of list) {
+      codes.set(piece.codes, rowAt * cols);
+      scales.set(piece.scales, rowAt);
+      rowAt += meta.rows;
+    }
+    weights.set(base, { codes, scales, rows: covered, cols });
   }
   return { weights, bytes: loaded, verified };
 }

@@ -20,6 +20,18 @@
            here, rung by rung.
      GOV-4 the per-tier answer budget was computed in two places and only one
            of them remembered T0 — see `tierMaxNew`.
+     GOV-5 the ladder judged every armed frame against one absolute bar
+           (24 ms). MEASURED 2026-10-15 on the R1 dev laptop: with the film
+           merely IDLING, one frame averaged 27.5 ms (36 fps, p95 83 ms) —
+           over the bar most of the time. So every arming read the film's
+           own chronic slowness as the answer's fault, and every ask
+           climbed rung 1→4 in one turn and refused everything after that
+           with "the frames are struggling, I've stopped generating". The
+           armed bar is now relative: `strainFactor` × the film's own idle
+           pace, measured by a baseline monitor that runs while the ladder
+           is idle and is frozen while it is armed. A no-baseline ladder
+           falls back to the absolute floor, which is why every GOV-2 pin
+           above is unchanged.
 
    THRESHOLDS is a documented "starting heuristic" (§6.2), not a measured
    constant — these tests pin the DECISION RULES, not the tuning.
@@ -352,12 +364,26 @@ test('§6.3-GATE: an idle ladder never degrades the scene, however slow the page
   assert.deepEqual(steps, [], 'rung 3 must not fire just because the page is slow');
   assert.equal(l.status().active, false);
   assert.equal(l.monitor.count, 0, 'nothing accumulated while idle');
+  /* GOV-5: those idle frames DID reach the baseline monitor — that is its
+     purpose (a measured idle pace at arm time) without being evidence the
+     ladder can act on. */
+  assert.ok(l.baseline.count >= THRESHOLDS.baselineMinSamples,
+    'the idle frames must reach the baseline (they are the pace the armed bar is measured against)');
 
   /* …and the same ladder still works when it IS armed, so the gate cannot be
-     what makes the ladder look healthy */
+     what makes the ladder look healthy. Armed frames at the FILM'S OWN IDLE
+     PACE (33 ms) are no longer degradation — that is exactly GOV-5 — so the
+     pin now degrades on frames that genuinely outrun the idle pace (60 ms,
+     slower than 1.5 × 33). An armed ladder that could not degrade on REAL
+     degradation would make the gate a dead switch; this line is what keeps
+     it live. */
   l.setActive(true);
-  slow(l, 2000);
-  assert.ok(l.step >= 1, 'armed, it still degrades');
+  assert.ok(l.strainBar >= THRESHOLDS.slowFrameMs,
+    `arming after a measured idle must produce a bar, got ${l.strainBar}`);
+  slow(l, 30);                                     /* 33 ms: the film's own pace */
+  assert.equal(l.step, 0, 'idle-pace frames while armed are still not degradation');
+  slow(l, 2000, 60);                               /* 60 ms: genuinely degraded */
+  assert.ok(l.step >= 1, 'armed, it still degrades on real degradation');
   assert.ok(steps.length >= 1);
 });
 
@@ -402,6 +428,84 @@ test('§6.3: reset returns to full quality and reports it', () => {
   assert.equal(l.step, 0);
   assert.equal(l.status().effect, null);
   assert.deepEqual(restored, [0]);
+});
+
+test('GOV-5: the armed bar is the film\'s own idle pace, not the absolute floor', () => {
+  const steps = [];
+  /* the shell creates the ladder IDLE (chat.mjs: `active: false`) — the idle
+     phase happens in real life, so the test starts there too */
+  const l = createDegradeLadder({ active: false, onStep: (s) => steps.push(s) });
+  /* Idle: the film runs at ~28 ms/frame — the 2026-10-15 R1 idle measurement,
+     which is ALREADY slower than `slowFrameMs`. */
+  for (let i = 0; i < 20; i++) l.tick(28);
+  assert.equal(l.step, 0, 'idle never climbs (and GOV-5 does not change that)');
+  assert.ok(l.baseline.count >= THRESHOLDS.baselineMinSamples,
+    'the idle frames must have reached the baseline monitor');
+
+  l.setActive(true);                                   /* a turn arms the ladder */
+  assert.ok(l.strainBar >= Math.ceil(28 * THRESHOLDS.strainFactor),
+    `the armed bar must include the measured idle pace, got ${l.strainBar}`);
+
+  /* The answer changes nothing the film can feel: frames at the same pace as
+     idle. The old bar would have called these "slow" and climbed. */
+  for (let i = 0; i < 60; i++) l.tick(30);
+  assert.equal(l.step, 0, 'frames at the film\'s own idle pace must not climb');
+
+  /* …but a frame 2× the film's own pace is the answer's fault at any idle
+     speed, and the ladder still does its §6.3 job. */
+  for (let i = 0; i < 60; i++) l.tick(60);
+  assert.ok(l.step >= 1, 'real degradation while armed must still climb');
+  assert.ok(steps.length >= 1);
+});
+
+test('GOV-5: nothing idle on record → the armed bar falls back to the absolute floor', () => {
+  /* A ladder created armed (the tests' default) has no baseline, so it must
+     behave exactly as it did before GOV-5 — which is the pin GOV-2 counts on
+     when it feeds 33 ms frames. */
+  const l = createDegradeLadder({});
+  assert.equal(l.strainBar, null, 'never armed idle → no relative bar');
+  slow(l, 30);
+  assert.ok(l.step >= 1, 'the pre-GOV-5 behaviour is intact without a baseline');
+  assert.equal(l.baseline.count, 0, 'an armed ladder does not teach the baseline');
+});
+
+test('GOV-5: the baseline is frozen while armed — degradation cannot become normal', () => {
+  const l = createDegradeLadder({ active: false });
+  for (let i = 0; i < 20; i++) l.tick(28);            /* idle: ~28 ms film */
+  l.setActive(true);
+  const emaAtArm = l.baseline.ema;
+  slow(l, 200);                                       /* a long, genuinely slow turn */
+  assert.equal(l.baseline.ema, emaAtArm,
+    'frames the ladder has already decided are degradation must not re-define the film\'s idle pace');
+  /* going idle hands the clock back to the baseline on the next arm. The
+     90-sample window is deliberately NOT cleared going idle: the first arm
+     after a real measurement blends old and new pace, and it keeps blending
+     until the new frames have filled the window entirely — so push past the
+     window before re-arming and the new pace is measured alone. */
+  l.setActive(false);
+  const firstBar = (() => { l.setActive(true); const b = l.strainBar; l.setActive(false); return b; })();
+  for (let i = 0; i < THRESHOLDS.sampleWindow; i++) l.tick(40);   /* the film recovered */
+  l.setActive(true);
+  assert.ok(l.strainBar >= Math.ceil(40 * THRESHOLDS.strainFactor),
+    `the re-armed bar must measure the NEW pace with the window flushed, got ${l.strainBar}`);
+  assert.ok(l.strainBar > firstBar,
+    `a slower-recovering film must raise the bar: ${firstBar} → ${l.strainBar}`);
+});
+
+test('GOV-5: the monitor takes a per-frame bar and keeps its default', () => {
+  const m = createFrameMonitor({ sampleWindow: 4, minSamples: 1 });
+  m.push(50);                                         /* default bar: slow */
+  assert.ok(m.slowFor >= 50);
+  m.push(50, 64);                                     /* relative bar: healthy */
+  assert.equal(m.slowFor, 0, 'a 50 ms frame is grey under a 64 ms bar');
+  m.push(70, 64);                                     /* over the relative bar: slow */
+  assert.ok(m.slowFor >= 70);
+});
+
+test('GOV-5: the strain knobs are tunable thresholds too', () => {
+  for (const k of ['strainFactor', 'baselineMinSamples']) {
+    assert.equal(typeof THRESHOLDS[k], 'number', `${k} must be tunable`);
+  }
 });
 
 test('thresholds are exported heuristics, not magic numbers in the code', () => {

@@ -16,7 +16,7 @@ a description of one. The host itself is an **open owner decision** — see §6.
 | **No `COOP`/`COEP` needed** | threaded wasm needs `SharedArrayBuffer`, which needs cross-origin isolation — the brief says **do not** add those headers just for AI (§9.1) | the app is single-threaded by design; nothing requests isolation |
 | **No service worker required** | one is only registered if the site already had one — it does not | AUDIT |
 | **Immutable caching for hashed assets** | the model manifest keys files by content hash (§9.3) | served with long-lived cache headers; the hashed name carries the versioning |
-| **Ability to serve ~5 MB in shards ≤ 8 MB** | §4 download budget | **measured** — the current export is **5,059,584 B in one shard**; `npm run build` prints the real figure on every run, and the budget is asserted by `npm test` |
+| **Ability to serve ~50 MB in shards ≤ 8 MB** | §4 download budget | **measured** — the current export is **49,937,152 B across 7 shards, largest 8,388,540 B**; `npm run build` prints the real figure on every run, and both the shard cap and the first-use budget are asserted by `npm test` |
 
 **No host-specific configuration has been written**, because no host has been
 chosen and writing a config for a host that is then not used is cruft. The
@@ -39,19 +39,22 @@ npm run preview        # build, then serve dist/ on :5580 — exactly what ships
 2. copies only allow-listed paths, file by file;
 3. **fails** if a withheld value appears in any shipped file, in any format,
    or if a dev-only reference reaches a shipped file;
-4. reports the deliberate exceptions as **notes** (this is where
-   `index.html` and `js/terminal.js` publishing the phone number is recorded
-   as a decision rather than discovered later);
+4. reports non-blocking mentions as **notes**. The publication allow-list
+   (`SITE_PUBLISHED`) is now **empty**: the phone number was removed from the
+   site on 2026-10-29 at the owner's instruction, so any file that starts
+   publishing a withheld value is a failure rather than a note;
 5. copies the model export when one exists, **file by file from an
    allow-list** (`manifest.json`, `tokenizer.json`, `model-\d{5}.bin`) and
    reports anything else it found in there. Copying the directory instead is
    how a 257 KB parity fixture reached `dist/` and every visitor.
 
-Today's measured bundle (2026-09-29): **46 files / 5,600,036 B** with the model
-export, **43 files / 455,682 B** without one (the export is git-ignored build
-output, so a clean checkout builds the second; measured by moving
-`ai/model-export/` aside for one build). Leak scan clean in both cases. A build
-with no model is legitimate and ships fine, but it is not a working assistant:
+Today's measured bundle (2026-10-30, after the sft7 export was put at the path
+the runtime fetches): **55 files / 51,657,940 B** with the model export. The
+export is git-ignored build output, so a clean checkout builds the site alone
+(**46 files / 513,707 B**, measured 2026-10-30 by moving `ai/model-export/`
+aside). Leak scan clean in both cases. A
+build with no model is legitimate and ships fine, but it is not a working
+assistant:
 the answer path *is* the model (§6.2's T0 path says so plainly rather than
 substituting a template), and the summary says which of the two it produced.
 
@@ -111,8 +114,8 @@ Nothing here is verified until it is verified against the live site:
    is a small job once the host exists.
 3. **The model has landed; the host work has not.** The export now satisfies
    most of §9.3 on its own:
-   - shards ≤ 8 MB — **one 5,059,584 B shard**, `model-00000.bin`, immutable
-     name;
+   - shards ≤ 8 MB — **7 shards, largest 8,388,540 B**
+     (`model-00000.bin` … `model-00006.bin`), immutable names;
    - a per-file `sha256` in `manifest.json`, and the browser **verifies every
      hash on load** (`engine.verified`);
    - `modelVersion` and the tokenizer's version + hash in the manifest;

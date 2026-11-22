@@ -77,8 +77,41 @@ function privateReply(kb, lang, persona) {
 
 /* ── the wording, one entry per plan kind ──────────────────────── */
 const SAY = {
+  /* The greeting is one of the two fixed assistant-voice replies (see the
+     header of `ai/answers/quick.mjs`): it ships with the planner, so it needs
+     no model, no download and no wait — which is the whole point of a hello.
+     Measured 2026-10-11: the on-device model at 7.6 tok/s turned "hi" into a
+     multi-second wait that often ended in COULD-NOT-VERIFY, because an empty
+     context is exactly what the guard grounds nothing on.
+
+     Four shapes, picked in priority order farewell → wellbeing → thanks →
+     intro. Both voices stay whole (QA-10 runs this entry on both, so every
+     branch picks with `pick(persona, …)`) and every third-person branch names
+     him, so the persona tests cannot fail on the new line. */
   greeting: (kb, lang, ctx) => ({
-    text: ctx.plan.thanks
+    text: ctx.plan.farewell
+      ? tri(lang,
+        pick(ctx.persona,
+          'Goodbye! Happy to tell you more about his projects, skills or education anytime.',
+          'Goodbye! Come back anytime to talk about my work, skills or projects.'),
+        pick(ctx.persona,
+          'अलविदा! उनके प्रोजेक्ट्स, स्किल्स या पढ़ाई के बारे में कभी भी फिर पूछ सकते हैं।',
+          'अलविदा! मेरे काम, स्किल्स या प्रोजेक्ट्स के बारे में कभी भी बात करने आइए।'),
+        pick(ctx.persona,
+          'Alvida! Unke projects, skills ya padhai ke baare mein kabhi bhi phir pooch sakte hain.',
+          'Alvida! Mere kaam, skills ya projects ke baare mein kabhi bhi baat karne aaiye.'))
+      : ctx.plan.wellbeing
+      ? tri(lang,
+        pick(ctx.persona,
+          `I'm doing well, thanks for asking! Ask me anything about his projects, skills or education.`,
+          `I'm doing well, thanks for asking! Ask me anything about my projects, skills or education.`),
+        pick(ctx.persona,
+          'मैं ठीक हूँ, पूछने के लिए धन्यवाद! उनके प्रोजेक्ट्स, स्किल्स या पढ़ाई के बारे में कुछ भी पूछें।',
+          'मैं ठीक हूँ, पूछने के लिए धन्यवाद! मेरे प्रोजेक्ट्स, स्किल्स या पढ़ाई के बारे में कुछ भी पूछें।'),
+        pick(ctx.persona,
+          'Main theek hoon, poochne ke liye shukriya! Unke projects, skills ya padhai ke baare mein kuch bhi poochein.',
+          'Main theek hoon, poochne ke liye shukriya! Mere projects, skills ya padhai ke baare mein kuch bhi poochein.'))
+      : ctx.plan.thanks
       ? tri(lang,
         pick(ctx.persona, 'Anytime! Ask me anything else about Aashish.', 'Anytime! Ask me anything else.'),
         pick(ctx.persona, 'खुशी हुई! Aashish के बारे में और कुछ भी पूछ सकते हैं।', 'खुशी हुई! और कुछ भी पूछ सकते हैं।'),

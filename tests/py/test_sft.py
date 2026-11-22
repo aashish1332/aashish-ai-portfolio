@@ -395,6 +395,29 @@ class InitIsNotAResume(unittest.TestCase):
                 train_stage_b.load_init_weights(_Recorder(), path, wider)
             self.assertIn("vocab_size", str(ctx.exception))
 
+    def test_a_tokenizer_mismatch_is_refused_before_loading_weights(self):
+        from ai.model.config import CONFIGS
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._weights_only(tmp, tokenizer_version="old-vocabulary")
+            model = _Recorder()
+            with self.assertRaises(SystemExit) as ctx:
+                train_stage_b.load_init_weights(
+                    model, path, CONFIGS["A"], expected_tokenizer_version="new-vocabulary")
+            self.assertIn("different vocabulary", str(ctx.exception))
+            self.assertIsNone(model.loaded)
+
+    def test_a_matching_tokenizer_can_be_initialised_from(self):
+        from ai.model.config import CONFIGS
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._weights_only(tmp, tokenizer_version="same-vocabulary")
+            model = _Recorder()
+            info = train_stage_b.load_init_weights(
+                model, path, CONFIGS["A"], expected_tokenizer_version="same-vocabulary")
+            self.assertEqual(info["tokenizer_version"], "same-vocabulary")
+            self.assertEqual(model.loaded, {"w": 1})
+
 
 class StageBEntryPoint(unittest.TestCase):
     def test_defaults_differ_from_stage_a_where_they_must(self):

@@ -51,8 +51,13 @@ test('§8.1 — every fact has a stable id, a source and a public flag', () => {
   assert.ok(facts.length >= 50, `expected >=50 facts, got ${facts.length}`);
   for (const f of facts) {
     assert.ok(f.id, `fact without id: ${JSON.stringify(f).slice(0, 80)}`);
-    assert.ok(['cv', 'portfolio'].includes(f.source),
-      `${f.id}: source must be cv|portfolio, got ${f.source}`);
+    /* `owner` is the third legitimate provenance and it means exactly what it
+       says: the owner stated the fact directly, with no CV or portfolio line
+       behind it. Added 2026-10-24 with edu.kv1 (the Class 10 result, which the
+       CV and the site do not carry). It is NOT a way to skip the public flag:
+       every fact — owner-stated or sourced — still has to be marked. */
+    assert.ok(['cv', 'portfolio', 'owner'].includes(f.source),
+      `${f.id}: source must be cv|portfolio|owner, got ${f.source}`);
     assert.equal(typeof f.public, 'boolean', `${f.id}: public must be boolean`);
   }
 });

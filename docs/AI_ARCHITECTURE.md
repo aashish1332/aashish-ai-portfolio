@@ -50,9 +50,10 @@ anywhere, and no secret-shaped string in any shipped file
 | Retrieval | `ai/retrieval/index.mjs` | yes |
 | Language detection | `ai/language/detect.mjs`, `ai/language/lexicons.json` | yes |
 | Intent routing | `ai/intent/rules.mjs` | yes |
-| Answers | `ai/answers/model.mjs` (the only answer path) | yes |
+| Default answers | `ai/answers/wording.mjs` — deterministic wording over the public knowledge view | yes |
+| Optional AI answers | `ai/answers/model.mjs` — the guarded on-device generation path, reached only after AI MODEL is selected | yes |
 | Routing, the §8.4 gate and the follow-up graph | `ai/answers/quick.mjs` — a **planner**: it decides, it does not word | yes |
-| The retired deterministic answers | `evaluation/answer-text.mjs` — the §5.1 step-4 wording the evaluation set reads | **never** (not in `SHIP_PATHS`) |
+| Evaluation re-export | `evaluation/answer-text.mjs` — re-exports the shipped wording for the evaluation suite | **never** (not in `SHIP_PATHS`) |
 | Placeholder grammar | `ai/knowledge/placeholders.mjs` | yes |
 | Chat shell + governor | `ai/ui/*.mjs`, `ai/governor/index.mjs`, `js/ai/launcher.js` | lazily, on click |
 | Tokenizer | `ai/tokenizer/*` | not yet (P7) |
@@ -177,15 +178,118 @@ from the tail with the real tokenizer rather than hoping an estimate was
 conservative. `generate()` reports the context it actually read, and the guard
 and the sources follow that. Numbers: `docs/BENCHMARKS.md`.
 
-**There is one answer path: the on-device model.** The deterministic Quick
-Answers were retired as *answers* — a template in the same bubble as a
-generated sentence teaches a reader nothing about which one they are reading.
-The intent router and the retrieval gate survive because decisions have to be
-made before a token exists: which topic this is, whether it is bait that must
-abstain (§14), whether it is an instruction-change attempt (§9), and whether
-retrieval produced anything to read at all. Where the model cannot answer, the
-panel refuses and says which refusal it is; it never substitutes a sentence.
-See `ai/answers/model.mjs` and `docs/PROGRESS.md`.
+**The product has two labelled answer modes.** The default **Portfolio
+Guide** words the same public facts deterministically, with no model download;
+the **AI MODEL** button is an explicit second mode whose 51.1 MB download
+starts only when it is pressed. Both paths use the intent router and the §8.4
+gate because decisions have to be made before an answer exists: which topic
+this is, whether it is bait that must abstain (§14), whether it is an
+instruction-change attempt (§9), and whether retrieval produced anything to
+read at all. In AI MODEL mode the guarded on-device path generates the
+sentence; where it cannot answer, the panel refuses and says which refusal it
+is. Every bubble says which path produced it. See `ai/answers/wording.mjs`,
+`ai/answers/model.mjs` and `docs/PROGRESS.md`.
+
+**The one exception is small talk, and it is measured (2026-10-31).** A
+greeting states no fact, so the model has nothing to contribute and plenty to
+get wrong: on the shipping export an English `hi` came back in Hinglish
+(`Namaste! Aashish ke projects …`) — and before that, reciting the education
+frame. `routeQuestion` therefore returns `fixed` for the `greeting` plan and
+the panel renders the shipped, localized, claim-free line from
+`ai/answers/quick.mjs` (the plan is worded by the shared
+`ai/answers/wording.mjs`, and pinned so by QA-12). No model, no download, no
+wait. The Portfolio Guide answers every question ABOUT Aashish this way by
+default; selecting AI MODEL sends those turns through the guarded generation
+path. The other fixed sentences in the panel are refusals, which claim nothing
+at all.
+
+**The identity turn is fixed for the same reason, and it was measured the same
+way (2026-11-01).** On the shipping export through the built panel, `who are
+you` → `His name is Aashish Kumar.` — a true sentence about Aashish answering a
+question about the *assistant* — and `who is aashish kumar` → the Hinglish
+greeting, in a turn `detectLanguage` called English. The `meta` plan already
+carries the localized disclosure (`I'm Aashish's AI Portfolio Assistant — not
+Aashish himself…`), so `routeQuestion` now returns `fixed` for it and the panel
+renders that sentence. §14's identity metric grades whatever answers that turn
+in the evaluation, and it read 66.7 % while the harness was writing EMPTY
+answers for the six fixed rows (fixed 2026-11-02); with the emitter carrying
+the text it is **100 % of 6** in `docs/EVALUATION.json`. What the visitor is
+shown on that turn is deterministic either way.
+
+**What the 2026-11-02 research pass found about the four failing gates.** Three
+of them are the same defect seen from different rows — the model picks a
+*legal* fact and the wrong one — and the literature is consistent about where
+that lives:
+
+* **Knowledge overshadowing.** Popular or context-dominant facts interfere with
+  recall of less obvious ones (Corradini et al., *Big Data Cogn. Comput.*
+  9(7):189, 2025). The §14 misses are exactly that shape: `d09` answers
+  `His GitHub is …` where the case wants the email, `d07` names the
+  Minor-in-AI certificate and not the two that were asked for, and the
+  three-project list stops after two. The fix is conditioning — more rows where
+  the question names the less obvious fact, and more list rows — not a decoder
+  mask, which cannot know which of several legal facts is wanted.
+* **Constrained decoding distorts the distribution.** Grammar-Aligned Decoding
+  (Park et al., NeurIPS 2024, arXiv:2405.21047) shows that filtering tokens to a
+  grammar moves probability mass onto strings the model would not have chosen.
+  That is the bounded cost of `ai/engine/grammar.mjs`, and the reason it is
+  switched ON only for fact questions (`wantsClosedAnswer`): the measured effect
+  on the 2026-10-26 A/B was +2.9 points of factual accuracy, one language gate
+  flipped to PASS, two fewer guard failures, and one answer made wrong (`d01`).
+* **Abstention is a trained behaviour, and a token helps.** AbstentionBench
+  (Kirichenko et al., NeurIPS 2025) finds unanswerable-question refusal is a
+  distinct skill that does not follow from reasoning quality, and the
+  single-`ABSTAIN`-token result (Kanber, 2025) reports the cheapest effective
+  intervention: an explicit token plus corruption-trained examples. This project
+  already has the token (`<|abstain|>`, checked before the guard) and 15 % of the
+  corpus in the `abstention` category. The 2026-11-04 recursion is worth
+  recording: the bait class was at 61.5 % recall and a thousand new bait rows
+  moved it by zero, because the model does abstain when it has nothing to read
+  — the app was handing it near facts of the wrong kind. `quickAnswer` had
+  always returned `abstained: true` for a bait and for a withheld field, and
+  nothing on the model path read it. `planAbstains` now withholds the evidence
+  instead, which is what brought recall to **100 %** without a retrain and
+  without a refusal written before the model: the model still chooses its own
+  tokens, and `<|abstain|>` is one of them.
+
+So the 2026-11-02 code changes are the harness fixes above, and the data change
+is `_LIST_SHARE` 10 % → 18 % in `ai/data/instruction.py` with its rationale
+recorded there. Both are for the NEXT training run; the shipped checkpoint is
+unchanged by them. The gates now read **7 of 8**, and the one that fails is
+factual accuracy — see the abstention note above, which is a runtime fix rather
+than a training one.
+
+**What the research says about the two open failures — and what it does not
+buy (consulted 2026-11-01).** Neither of the remaining defects is fixable by a
+mask, and saying so is part of the design:
+
+* *A list that stops early.* `what are his skills` cites three of the twelve
+  facts it was offered. Grammar-constrained decoding guarantees that an output
+  *matches* a grammar; it does not make the content complete, and the
+  constrained-decoding literature is explicit that masking distorts the model's
+  own distribution — validity and fidelity are different properties
+  ("Grammar-Aligned Decoding", NeurIPS 2024, arXiv:2405.21047; the same point
+  is made about rigid masks in the 2026 bias-correction work, and NVIDIA's own
+  write-up calls grammar constraints "one layer", not a substitute for the
+  model). The only grammar that would force twelve items is one that writes
+  the list itself — the retired template, not the model's answer (§2 N5). So
+  the incompleteness is reported (§14), not masked.
+* *The below-floor decode rate.* WebGPU is usually described as the faster
+  path (≈3–10× over WebAssembly in vendor and blog comparisons), but the
+  crossover is not free: transformers.js issue #1750 measured WebAssembly
+  **~9.6× faster** than WebGPU on a small embedding model, because per-token
+  dispatch overhead dominates at this scale. No kernel is written here and
+  this box's GPU is integrated, so the honest state stays *not implemented,
+  not measured*: a rewrite is a measurement to make, not a claim to publish.
+
+**A trained frame may only hold a fact of its own kind.** The frames in
+`ai/answers/answer_frames.json` define their slot: `I study at {v}.` is the
+education sentence. `frameFactMismatch` in `ai/engine/grammar.mjs` refuses an
+answer that puts a `<|fact:id|>` into a frame that does not admit it, because
+the guard cannot catch that class on its own — the owner's report was
+`I study at Aashish Kumar`, where the value was in the context and his own name
+is always allowlisted, so there was no ungrounded *claim* to reject. It runs on
+the model's raw text, before placeholders resolve, in `ask()`.
 
 **Voice (§10).** The answers speak about Aashish in the **third person** —
 "his CGPA", not "my CGPA" — because §5 says so in as many words ("it speaks
@@ -524,28 +628,32 @@ rather than letting a deploy discover it at runtime.
 
 ## 7. Dev vs prod — the build (§9.3/§17)
 
-`npm run build` → `dist/` (**46 files, 5,600,036 B** with the exported model;
-**43 files, 455,682 B** without one — the model is git-ignored build output, so
-a clean checkout measures the second number; both re-measured 2026-09-29, the
-second by moving `ai/model-export/` aside for one build). Earlier: 28 files /
-429,808 B before the engine, voice, guard and model answer path landed.
+`npm run build` → `dist/` (**55 files, 51,657,940 B** with the exported model —
+re-measured 2026-10-30 after the sft7 export was placed at the path the runtime
+fetches, `ai/model-export/aashish-ai-b`; **46 files, 513,707 B** without one —
+the model is git-ignored build output, so a clean checkout measures the second
+number, measured 2026-10-30 by moving `ai/model-export/` aside for one build).
+Earlier: 28 files / 429,808 B before the engine, voice, guard and model answer
+path landed.
 `npm run preview` serves it on `:5580` through the same dev server with
 `ROOT=dist`.
 
 | Rule | How |
 |---|---|
 | `knowledge.json` ships as `publicView()` only | `tools/build.mjs` strips every `public:false` fact and keeps **ids + aliases only** in `meta.withheld_facts`, so a phone question still gets the specific decline |
-| A withheld value must not appear anywhere in the bundle | the build scans every shipped file, comparing numbers digit-wise (`+91 62802875` in any format); a hit fails the build unless the file is an allow-listed *decision* |
+| A withheld value must not appear anywhere in the bundle | the build scans every shipped file, comparing numbers digit-wise; any hit fails the build. The phone was removed from site content by owner instruction on 2026-10-29, so the publication allowlist is empty |
 | No dev tooling ships | executable references to `dev-*.js`, `shots/`, `training/checkpoints`, `data/raw|processed`, `localhost:5577` fail the build; a mention inside a comment is reported as a note instead. The code/comment split consumes **regex literals** as code, because a character class containing an apostrophe otherwise opened a phantom string and mis-classified every comment after it |
 | Every module in the bundle resolves | relative imports and `<script src>` targets are checked against the file list |
 | Nothing training-side ships | the allow-list is per-path: no `ai/tokenizer`, `ai/model/`, `ai/data/`, no `knowledge/*.md`, no `tests/`, `data/`, `docs/`. The trailing slash matters — `ai/model-export/` is the browser artifact and *must* ship |
 | A model version directory ships **only** §9.3 files | `manifest.json`, `tokenizer.json`, `model-\d{5}.bin`; anything else in there is reported and left out. `--reference-out` used to default into this directory, which shipped a 257 KB parity fixture to every visitor |
 | A model manifest without a shard is a refusal | a manifest that ships alone would serve a loader that 404s |
 
-Known, deliberate, and reported on every build: `index.html` and
-`js/terminal.js` publish the phone number because the *portfolio* publishes it
-(§1 decided the assistant must not state it, not that the site must hide it).
-That is an allow-list entry with a reason, not a default.
+The publication allow-list (`SITE_PUBLISHED`) is **empty** and that is the
+current decision: the owner removed the phone number from site content on
+2026-10-29 (`index.html` footer, `js/terminal.js` contact block). A shipped file
+that starts publishing the value now fails the build instead of being reported
+as a deliberate exception — `tests/build-bundle.test.mjs` asserts the list is
+empty, so re-adding an entry needs a written decision, not a quiet edit.
 
 ## 8. What is deliberately not claimed
 
@@ -567,21 +675,21 @@ That is an allow-list entry with a reason, not a default.
 | Hindi/Hinglish answer quality | **not measurable yet** — no model, and the seed fixture is synthetic |
 | The §8.4 retrieval gate is calibrated rather than assumed | **bounded, one half measured** — ceiling 4.647 recomputed from the data by test; the floor is **NOT MEASURED** (`docs/CALIBRATION.json`) |
 | Numbers and declared aliases are retrievable | **verified** — "8.28" → `ach.lpu-cgpa`, "who is he" → `person.name`, both regression-tested |
-| Browser inference and quantisation | **built, and run on trained weights** — a module worker runs the graph on int8 weights, shards are SHA-256 verified on load, and three implementations of the same architecture are cross-checked (torch ↔ numpy ↔ JavaScript). Measured on the `local` checkpoint's export: 138 positions, argmax **100 %**, top-16 order **100 %**, worst abs Δ logit **8.82e-06**, load 57–63 ms, prefill 68–71 tok/s, decode **65–74 tok/s** (8–9× §4's floor) on R1's CPU |
-| §4's budgets, with the model in the bundle | **measured** — chat code chunk **75,181 B gz (48.9 %, ≈77 KB of headroom)** of a 150 KB budget, of which §4's chat-UI chunk proper is 50,951 B (33.2 %) and the voice add-ons (9,475 B) and the LLM runtime + tokenizer (14,755 B) are §4 rows of their own; what the **click** actually fetches is 45,194 B gz (the static reach of `ai/ui/chat.mjs`, 14 files — recomputed 2026-09-29) and the arithmetic it does **not** parse is 13,382 B gz (9 files, worker-only); model payload 4,741,050 B gz, first visit 4,816,231 B gz = **11.5 %** of §4's 40 MB (step-1100 export). It was 138,896 B (90.4 %) until shipped `ai/**` stopped carrying comments — half the chunk's gzip — which the build now strips at copy time while the repository keeps them (`stripComments`, and a dist-vs-source answer comparison in `tests/build-bundle.test.mjs`). Asserted on every `npm test`; the weight budgets are NOT TESTED (loudly skipped) without an export |
+| Browser inference and quantisation | **built, and run on trained weights** — a module worker runs the graph on int8 weights, shards are SHA-256 verified on load, and three implementations of the same architecture are cross-checked (torch ↔ numpy ↔ JavaScript). Measured on the `local` (4.98M) export: 138 positions, argmax **100 %**, top-16 order **100 %**, worst abs Δ logit **8.82e-06**, load 57–63 ms, prefill 68–71 tok/s, decode **65–74 tok/s** (8–9× §4's floor) on R1's CPU. The **shipping** 49.6M export passes the same gate — argmax 100 %, worst abs Δ logit **1.1e-05** — and its own load/prefill/decode figures are in the 2026-10-30 lane of `docs/BENCHMARKS.md` |
+| §4's budgets, with the model in the bundle | **measured 2026-10-30 on the shipping sft7 export** — chat code chunk **87.9 KB gz (58.6 %, ≈62 KB of headroom)** of a 150 KB budget, of which §4's chat-UI chunk proper is 60.8 KB, the voice add-ons **9.4 KB** and the LLM runtime + tokenizer **17.8 KB** are §4 rows of their own; model payload **45,234.4 KB gz** (7 shards + tokenizer + manifest), first visit **45,322.4 KB gz**. That is **88.5 %** of the 50 MB ceiling the project now holds itself to, and 110.7 % of the original 40 MB figure §4 was written against — the owner chose the 49.6M Stage-B checkpoint over the 5M pipeline-test export knowing the download grew. `npm run bundle` prints both, and its verdict now fails on either budget. The chunk was 138,896 B (90.4 %) before shipped `ai/**` stopped carrying comments — half its gzip — which the build strips at copy time while the repository keeps them (`stripComments`, and a dist-vs-source answer comparison in `tests/build-bundle.test.mjs`). Asserted on every `npm test`; the weight budgets are NOT TESTED (loudly skipped) without an export |
 | §2 N8: the AI draws nothing and starts no loop | **verified statically over the shipped code** — the whole `ai/` tree contains no `getContext`, no canvas element, no `WebGLRenderer`/`WEBGL_` access, no `new THREE.` and no `setInterval`, and `requestAnimationFrame` appears **exactly once** (`env.requestAnimationFrame?.(() => …classList.add('is-open'))`, a one-shot reveal, not a loop). §6.3's frame monitor rides the film's GSAP ticker and the test requires both `.ticker.add` and `.ticker.remove`, because a ticker callback that cannot be removed turns `close()` into a leak |
 | The model's arithmetic is parsed only inside the worker | **verified by import graph** — `tests/build-bundle.test.mjs` requires `ai/engine/index.mjs`, `llama.mjs`, `bpe.mjs`, `quant.mjs` and `cache.mjs` to be reachable from `ai/engine/worker.mjs` and **not** from `ai/ui/chat.mjs`, which holds the worker by URL (`session.mjs`) instead of importing it. **13,382 B gz across nine files** is deferred this way, and it is the structural reason §4's 50 ms main-thread rule survives at all |
 | §2 N6: nothing AI exists before the click | **verified twice** — the browser half is `dev-ai-probe.js`'s network assertion (0 AI requests pre-click); the deterministic half is `tests/launcher.test.mjs`, which holds `js/ai/launcher.js` to its **2 KB gz** budget (**MEASURED: 945 B**), requires it to be inert (no fetch, XHR, Worker, WebSocket, sendBeacon, wasm, knowledge base), pins its single `import(CHUNK)` to the chat shell, and requires `index.html` to name nothing under `ai/` — no script, link, import-map entry or preload — in the source *and* in `dist/` |
 | §2 N6: voice assets arrive on a tap, not on the click | **verified in a browser** — `dev-ai-probe.js` fetches `ai/voice/caps.mjs` with the shell and the engine modules only after the microphone button is pressed; `tests/build-bundle.test.mjs` follows the shipped import graph and fails if `ai/voice/index.mjs`, `vad.mjs` or `phantoms.mjs` become statically reachable from `ai/ui/chat.mjs` again |
-| §9.3's cache: a later visit costs no network | **measured** — `dev-offline-probe.js` reloads with `*model-export*` blocked at the CDP level and the model still reaches ready from `aashish-ai-model:aashish-ai-1` (`hits: 3`, `misses: 0`, 0 network responses). What is NOT TESTED is the page's own HTML offline: no service worker is registered (§9.3), so the document is the browser's business |
+| §9.3's cache: a later visit costs no network | **measured on the retired 4.98M export** — `dev-offline-probe.js` reloaded with `*model-export*` blocked at the CDP level and the model still reached ready from `aashish-ai-model:aashish-ai-1` (`hits: 3`, `misses: 0`, 0 network responses). The key is the version directory, so the shipping artifact is cached as `aashish-ai-model:aashish-ai-b`; that run is **NOT re-made** since the artifact changed on 2026-10-30. What is NOT TESTED is the page's own HTML offline: no service worker is registered (§9.3), so the document is the browser's business |
 | No answer template ships to a visitor | **verified** — §5.1 step 4's wording is in `evaluation/answer-text.mjs`, which the build does not copy, and `tests/build-bundle.test.mjs` asserts it twice: no built text file contains a template phrase, and the shipped planner returns `text: ''` for every portfolio question (only the §9 refusal and the identity disclosure, which are fixed statements about the *assistant*, still ship) |
 | §6.3's rungs actually reach the session | **verified in Node** — the wiring is `createSessionBudget` in `ai/governor/index.mjs`, dependencies injected, so every rung is *run* against a fake answerer and a fake scene (GOV-3/GOV-3b/GOV-4). It replaces a source-text grep that passed while rungs 1 and 2 were dead — see `docs/PROGRESS.md` |
 | §10's message controls: Stop, Retry, Clear | **verified in a browser** — `dev-ai-probe.js` presses them: Stop is offered only while answering (1 ms after the ask), takes effect, and leaves the bubble badged `PARTIAL ANSWER · STOPPED BY YOU` with no placeholder in it; Retry starts a fresh generation. The stop's text rules are unit-tested on the real knowledge base (`partialAnswer`, MODEL-17). Stop now **interrupts the worker too** (`ai/engine/index.mjs`'s `COOP_EVERY`/`breathe()` and an abort check inside the prefill): until 2026-09-28 the abort was a `postMessage` that a microtask-only await-chain never let the worker receive, so the abandoned generation ran to the end and the visitor's **next** question queued behind it — the P2 probe found it as a Retry that took minutes (`docs/PROGRESS.md`) |
 | The export carries no dev path and no test fixture | **verified** — provenance is step/commit/SHA-256, not a directory (the build refused the path); a model version directory ships only its manifest, tokenizer and shards, so the 257 KB parity fixture no longer reaches `dist/` |
-| The same model is not two different sizes | **verified** — 4,984,064 params, and the 5,246,208 a naive `state_dict` sum reads is the **tied** `lm_head.weight` counted twice (`data_ptr()` equal, `tieGap` 0), pinned by test |
-| The model answering from **its own generation**, not a template | **built, and answered in a real browser** — `ai/answers/model.mjs` retrieves context, asks the worker, guards the result and resolves placeholders. MEASURED on R1 headless Chrome: `dev-ai-probe.js` 31/31, panel ready 20.0 s, first answer 91.6 s, `AI ANSWER · ON-DEVICE MODEL` with 2 sources, "what is his phone number?" → `NO ANSWER · NOT PUBLISHED`, and the intent-fallback question ("what are your skills?") reading **12 capped facts**. What its answers *SAY* is still **NOT TESTED as quality** — the 4.98M `local` checkpoint is an export exercise, and it answers with garbage |
+| The same model is not two different sizes | **verified** — the shipped export is **49,595,328 params** (11 layers · d 576 · vocab 16,384), and the 59,032,512 a naive `state_dict` sum reads is the **tied** `lm_head.weight` counted twice (9,437,184 = vocab × d; `data_ptr()` equal, `tieGap` 0), pinned by test. The earlier 4,984,064 / 5,246,208 pair was the pipeline-test export |
+| The model answering from **its own generation**, not a template | **built, and answered in a real browser** — `ai/answers/model.mjs` retrieves context, asks the worker, guards the result and resolves placeholders. MEASURED on R1 headless Chrome (2026-10-30, shipping 49.6M export): panel ready **29.3 s**, first answer **62.4 s**, `AI ANSWER · ON-DEVICE MODEL` with 3 sources, no phone number anywhere in the panel, and the skills question reading **12 capped facts**. `npm run eval:report` on 66 decoded answers, **decoded with no grammar** (2026-11-15, `MODEL_OWNS_ANSWERS`, v18-latest step 3000, 1024/256): **97.1 % factual** (33/34), **100 % abstention recall**, **0** fabricated facts, **0.0 %** post-guard unsupported, EN 100 %, HI/Hinglish 100 %, 100 % identity disclosure — **all eight §14 gates pass**. The one factual miss is `syn04`, a synthetic email the model refuses to invent (`docs/BENCHMARKS.md`, `docs/EVALUATION.json`) |
 | An always-open microphone that still only transcribes speech | **built, unit-tested** — `ai/voice/vad.mjs` (energy VAD, adaptive floor, hysteresis, max segment, post-cut cooldown) opens a gate the recognizer is switched by. Whether it survives a real room is **NOT TESTED** |
-| **Voice**: microphone, wake phrase, speech output | **built, adapter-first, and browser-verified** — 0 AI requests before the tap, the audio disclosure in the DOM before any result can be handled, a wake phrase in continuous mode, the answer spoken in its own language, and a dead microphone turned off with a stated reason and the scene handed back (`dev-ai-probe.js`: 26/26 when this row was written, **46/46** on the 2026-09-27 re-run, **54/54** on 2026-09-28 after §2 N4's disclosure added eight checks, **58/58** on 2026-09-28 after §11.1 (c)'s tour added four, **60/60** on 2026-09-29 after §0 rule 4's status line added two — the probe prints its own tally, and the tallies are not comparable across revisions. Since 2026-09-29 it also **pins** the count (`EXPECTED_CHECKS`), so a green run means all 60 expected checks ran, not merely that everything which ran passed — the failure mode that let the stale 54/54 and 43/43 above survive two revisions) |
+| **Voice**: microphone, wake phrase, speech output | **built, adapter-first, and browser-verified** — 0 AI requests before the tap, the audio disclosure in the DOM before any result can be handled, a wake phrase in continuous mode, the answer spoken in its own language, and a dead microphone turned off with a stated reason and the scene handed back (`dev-ai-probe.js`: 26/26 when this row was written, **46/46** on the 2026-09-27 re-run, **54/54** on 2026-09-28 after §2 N4's disclosure added eight checks, **58/58** on 2026-09-28 after §11.1 (c)'s tour added four, **60/60** on 2026-09-29 after §0 rule 4's status line added two — the probe prints its own tally, and the tallies are not comparable across revisions. Since 2026-09-29 it also **pins** the count (`EXPECTED_CHECKS`), so a green run means all 60 expected checks ran, not merely that everything which ran passed — the failure mode that let the stale 54/54 and 43/43 above survive two revisions; the pinned base is now **58** — the frame-health pair and the mobile pair are conditional and counted only when they run — and the built bundle reports **58/58** on 2026-10-30, with `dev-degrade-probe.js` **20/20** on the same bytes) |
 | §11.1 (a): a short spoken greeting that names projects, skills and contact | **built, unit-tested** — `GREETINGS`/`greetingFor(lang)` are frozen data in `ai/voice/index.mjs` (each line names the three topics rather than saying "hi"), and `voice.greet()` speaks one through the single guarded `voice.speak()`. Once per session (`greeted`, reset in `enable()` **and** `disable()`), **only** in continuous mode with spoken answers and a live gate, and it never opens a session window — a greeting must not make the visitor's next sentence count as an answer. `tests/voice.test.mjs` VOICE-16 (5 cases, including "Tap & Speak is never greeted" and "a hidden tab is not greeted"). **NOT TESTED** with a live microphone: no host has run the recogniser yet |
 | §11.1 (c): a guided tour of the portfolio, when asked | **built, and driven in a browser** — `TOUR_STOPS` walks about → projects → skills → contact, 7 s apart; each stop resolves its target through `resolveTopicAnchor()` (the element's own `data-ai-topics`, shallowest wins, so a stop can never scroll to a section that merely mentions the topic), bubbles `TOUR · <TOPIC>`, speaks its line, and moves the page with `Director.scrollTo(anchor, { immediate: reducedMotion() })`. A question, a close, or the chip itself stops the walk; undeclared stops are skipped. The "Take the tour" chip only exists in Proactive mode. `tests/tour.test.mjs` (9) + `dev-ai-probe.js` (4 checks: it starts, the page lands on the declaring section, the stop is badged TOUR, a question stops the walk). What the spoken part sounds like is **NOT TESTED** — same missing microphone |
 | §11.1's auto-downgrade, and the headphones tip | **built, unit-tested** — §6.3's rung is **pushed** into the voice layer (`setPressure`) rather than measured a second time, and at `DOWNGRADE_STEP` (3) a live hands-free session becomes Tap & Speak with the recognizer released and the detector stopped — a “downgrade” that keeps the microphone open has given up nothing, since the always-open microphone is the cost being protected against. `enable()` refuses `continuous` while the rung is high, so a voice off/on cycle cannot restore the shape the device refused, and a recovered rung gives hands-free back automatically. `DOWNGRADE_NOTICE` says so rather than letting the button change behaviour unexplained, and `HEADPHONES_NOTICE` is said once per page in continuous mode only, because the answer being read aloud is the one barge-in failure the visitor can prevent. `tests/voice.test.mjs` VOICE-17 (5) plus the pure `degradedVoice(step, tier)`, which also records that **T1 is exempt** — `voicePolicy` already pins T1 to push-to-talk. **NOT TESTED** on a device that actually reaches rung 3 |

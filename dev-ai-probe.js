@@ -348,14 +348,39 @@ const say = (label, ok, detail) => {
     `${answered.sources} chips (badge="${answered.badge}")`);
   say('no markup in answers', answered.hasMarkup === false, '');
 
-  /* the PII decision must hold in the shipping UI, not only in tests */
+  /* the PII decision must hold in the shipping UI, not only in tests.
+
+     AWAITED, and that is not tidiness: this used to fire `ask()` and read the
+     bubble 200 ms later, which left a second generation running. `ask()`
+     queues turns one behind the other, so the NEXT answer's Stop button was
+     offered while that orphan was still decoding — and the §10 checks below
+     read `stop.hidden === false` twenty seconds after a finished answer and
+     called a working control broken (4 red checks, 2026-10-30). One ask, one
+     awaited turn: the panel is idle when the controls are read. */
   const pii = await page.evaluate(async () => {
-    window.PortfolioAI.ask('what is his phone number?');
-    await new Promise((r) => setTimeout(r, 200));
-    const bots = [...document.querySelectorAll('.ai__msg.is-bot')];
-    return bots[bots.length - 1].textContent;
+    const r = await window.PortfolioAI.ask('what is his phone number?');
+    const bots = [...document.querySelectorAll('.ai__msg.is-bot')]
+      .filter((el) => el.querySelector('.ai__badge')?.textContent !== 'NOTICE');
+    const last = bots[bots.length - 1];
+    return {
+      text: (last?.querySelector('span:not(.ai__badge)')?.textContent || '')
+        || last?.textContent || '',
+      kind: r?.kind || null,
+    };
   });
-  say('phone withheld in UI', !/6280/.test(pii), pii.slice(0, 60));
+  /* two ways to leak it: the digits, or a sentence that names the field as
+     something it could give. Neither may appear, whatever the model chose to
+     say, and the turn must still be one the panel is willing to stand behind. */
+  say('phone withheld in UI', !/(\d{4}|phone number is|number is \+)/i.test(pii.text),
+    `${pii.kind}: ${pii.text.slice(0, 60)}`);
+
+  /* the panel must be IDLE before the controls are judged — belt and braces
+     for anything above that ever forgets to await its own ask */
+  await page.waitForFunction(() => {
+    const stop = [...document.querySelectorAll('.ai__controls .ai__link')]
+      .find((b) => b.textContent.trim() === 'STOP');
+    return !!stop && stop.hidden === true;
+  }, { timeout: 20000, polling: 100 }).catch(() => {});
 
   /* ── 4b. §10's Stop and Retry, on the question that broke the window ──
      "What are your skills?" has NO retrieval hits at all — `skills` is in the
@@ -443,6 +468,18 @@ const say = (label, ok, detail) => {
   }, ms);
 
   if (modelPhase === 'ready') {
+    /* Wait for the panel to be IDLE before reading the control state. The
+       first answer's `model.last` is published by `finish()` one statement
+       before `finally` clears the abort controller and re-syncs the buttons,
+       so reading immediately can catch Stop still visible for a tick — and on
+       the 49.6M checkpoint a tick is easy to lose. Bounded, because a Stop
+       that never goes away is exactly what this check exists to catch. */
+    const wentIdle = await page.waitForFunction(() => {
+      const stop = [...document.querySelectorAll('.ai__controls .ai__link')]
+        .find((b) => b.textContent.trim() === 'STOP');
+      return !!stop && stop.hidden === true;
+    }, { timeout: 20000, polling: 100 }).then(() => true).catch(() => false);
+    if (!wentIdle) console.log('  note                          Stop never returned to hidden after the first answer');
     const idle = await chatControls();
     say('§10 message controls exist',
       idle.stop.present && idle.retry.present && idle.clear.present,
@@ -473,7 +510,17 @@ const say = (label, ok, detail) => {
     say('Stop is offered while answering', stopped.offered === true,
       `offered after ${stopped.ms} ms`);
     say('Stop takes effect', stopped.ok === true, `stop()=${stopped.ok}`);
-    await new Promise((r) => setTimeout(r, 800));
+    /* The abort is checked by the engine between prefill chunks and tokens,
+       so on the 49.6M checkpoint it can take seconds to surface — a fixed
+       800 ms read caught the still-streaming bubble (badge AI ANSWER, empty
+       text) and called a working Stop broken. Wait for the shell's own
+       signal, bounded so a Stop that truly does nothing still fails. */
+    await page.waitForFunction(() => {
+      const bots = [...document.querySelectorAll('.ai__msg.is-bot')];
+      const last = bots[bots.length - 1];
+      const badge = last?.querySelector('.ai__badge')?.textContent || '';
+      return /PARTIAL ANSWER/.test(badge);
+    }, { timeout: 30000, polling: 100 }).catch(() => {});
     const partial = await page.evaluate(() => {
       const bots = [...document.querySelectorAll('.ai__msg.is-bot')];
       const last = bots[bots.length - 1];
@@ -746,7 +793,7 @@ const say = (label, ok, detail) => {
   /* ── 6b. §11.2 — the transcript of a question that was HEARD ─────
      This is not a mock. `ask(text, { source: 'voice' })` is the exact call
      `ai/voice/index.mjs` makes when a recognizer returns a final result; the
-     question used here refuses before the model is reached (it asks about the
+     question used here is answered without the model (it asks about the
      assistant, not about Aashish), so the check costs no generation and
      nothing has to be waited for. */
   const heard = await page.evaluate(async () => {
@@ -829,11 +876,16 @@ const say = (label, ok, detail) => {
     };
   });
   say('§0 rule 4: the panel states the checkpoint\u2019s status',
-    statusNote.exists && statusNote.visible && /pipeline test/i.test(statusNote.text),
+    statusNote.exists && statusNote.visible && /trained from scratch/i.test(statusNote.text),
     `"${statusNote.text.slice(0, 74)}…"`);
-  say('§0 rule 4: it denies the quality claim in words',
-    /not a model trained for quality/i.test(statusNote.text),
-    'omitting the claim is not the same as stating that it is not true');
+  /* The denial follows the measurement, exactly as tests/disclosure.test.mjs
+     does: while the §14 gates fail, the sentence must refuse the quality claim;
+     with the gates passing, the claim it may not make is generality. Either way
+     the card must bound its own claim in words — a panel that just says "trained"
+     is the misleading version. */
+  say('§0 rule 4: it bounds its own claim in words',
+    /not a model trained for quality|not a general-purpose model/i.test(statusNote.text),
+    'omitting the bound is not the same as stating what is not true');
 
   /* Escape must close the CARD first; the panel underneath stays open, which
      is why section 7's press below is a second, separate Escape. */
@@ -882,7 +934,10 @@ const say = (label, ok, detail) => {
   say('§11.1 c: the stop is a tour stop, not a narration', tourMoved.badges > 0,
     `${tourMoved.badges} TOUR bubble(s)`);
   const tourStopped = await page.evaluate(async () => {
-    window.PortfolioAI.ask('who are you');   /* refuses before the model is reached */
+    /* An identity turn is a fixed disclosure since 2026-11-01, so it no longer
+       waits for the model — either way it is a real turn, which is what has to
+       stop the walk. */
+    window.PortfolioAI.ask('who are you');
     await new Promise((r) => setTimeout(r, 300));
     return { running: window.PortfolioAI.isTouring() };
   });

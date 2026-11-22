@@ -1,5 +1,5 @@
 {
-  "tokenizer_version": "portfolio-bpe-16k-45395d2ebc83",
+  "tokenizer_version": "portfolio-bpe-16k-4a7c4e0e3d52",
   "name": "portfolio-bpe",
   "vocab_size": 16384,
   "model_type": "byte-level BPE (our own, trained from scratch)",
@@ -14,23 +14,23 @@
     "<|end|>",
     "<|abstain|>"
   ],
-  "placeholder_count": 63,
-  "spec_hash": "45395d2ebc83",
+  "placeholder_count": 64,
+  "spec_hash": "4a7c4e0e3d52",
   "min_frequency": 2,
   "corpus": {
     "files": [
       "data/processed/stage_a/corpus.txt"
     ],
-    "bytes": 671243801,
+    "bytes": 672527640,
     "sha256": {
-      "corpus.txt": "5ab13f15a4400b18a70668c0ba27288768d8ec3f41021aa0b3f35075a8fdb3fc"
+      "corpus.txt": "c8cf3bfc383d830853ff97bf53045ef6d9683e8c2af9866e27d49975ad73dd0d"
     }
   },
   "artifact": {
     "file": "tokenizer.json",
-    "sha256": "a6668f7f5b2f863dd681e9d37d15c62b7df28513f836cda78082c843573076da"
+    "sha256": "2e7c99974843040bcfcfde4b0b6d3cb05dcb3f9a008e5805a12b9c02e584ca68"
   },
-  "built_at": "2026-10-01T17:08:36+00:00",
+  "built_at": "2026-10-24T17:12:16+00:00",
   "git_commit": null,
-  "python": "3.12.13"
+  "python": "3.13.15"
 }

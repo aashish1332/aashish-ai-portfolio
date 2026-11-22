@@ -32,7 +32,7 @@ import { contextLines } from './ai/answers/model.mjs';
 import { frame, defaultStopIds } from './ai/engine/prompt.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const dir = resolve(HERE, process.argv[2] || 'ai/model-export/aashish-ai-1');
+const dir = resolve(HERE, process.argv[2] || 'ai/model-export/aashish-ai-b');
 
 const KB = JSON.parse(readFileSync(resolve(HERE, 'knowledge', 'knowledge.json'), 'utf8'));
 

@@ -108,20 +108,33 @@ test('N4-1: the stylesheet lets `hidden` win, and stays inside the panel', () =>
     '§12 forbids a blurred layer over a live WebGL canvas');
 });
 
-test('§0 rule 4: the checkpoint shipping today is disclosed as a pipeline test', () => {
+test('§0 rule 4: the shipped checkpoint is disclosed for what it is, and for what it is not', () => {
   /* The rule is "never present smoke-test output as a trained model". The
-     shipped export is step 1100 of a CPU run whose answers are poor, so a
-     panel that says only "trained from scratch for this portfolio" is the
-     presentation the rule forbids — true about provenance, silent about
-     quality. This is the assertion that keeps the two apart. */
+     shipped export is the 49.6M Stage-B checkpoint, whose answers fail the
+     project's own evaluation, so a panel that says only "trained from scratch
+     for this portfolio" is the presentation the rule forbids — true about
+     provenance, silent about quality. Both halves must be present: what it is
+     (trained from scratch) and what it is not (trained for quality). */
   assert.ok(Object.hasOwn(MODEL_STATUS_TEXT, MODEL_STATUS),
     `MODEL_STATUS is "${MODEL_STATUS}" and MODEL_STATUS_TEXT has no sentence for it`);
   const text = modelStatusText();
   assert.ok(text.trim().length > 0, 'the status has nothing to say');
-  assert.match(text, /pipeline test/i,
+  assert.match(text, /trained from scratch/i,
     'the disclosure does not say what the shipped checkpoint actually is');
-  assert.match(text, /not a model trained for quality/i,
-    'the disclosure must deny the quality claim explicitly, not merely omit it');
+  /* The denial is chosen by what was MEASURED, not by what would read well:
+     while the §14 gates fail, the claim the panel may not make is quality, so
+     the sentence has to refuse it in words. Once the gates pass, quality is a
+     claim the project measured and may make — and the claim it may not make is
+     generality, because 34 portfolio questions cleared by a 49.6M-parameter
+     model is not a general-purpose assistant. Either way the panel contains
+     both halves: what the artifact is, and the claim it is not entitled to.
+     Removing this assertion in the trained state would let a future export ship
+     "It is trained!" with nothing bounding it. */
+  const denial = EVALUATION.passed === true
+    ? /not a general-purpose model/i
+    : /not a model trained for quality/i;
+  assert.match(text, denial,
+    `the disclosure must bound its own claim explicitly (gates passed: ${EVALUATION.passed})`);
 });
 
 test('§0 rule 4: the status cannot claim quality while the §14 gates fail', () => {
@@ -163,7 +176,7 @@ test('§0 rule 4: an unknown status cannot remove the disclosure', () => {
      that breaks on the change it is meant to allow. Unknown means a value that
      is not a key; an omitted argument means "the current one". */
   for (const bogus of ['', 'TRAINED', 'nonsense', null]) {
-    assert.match(modelStatusText(bogus), /pipeline test/i,
+    assert.match(modelStatusText(bogus), /not a model trained for quality/i,
       `modelStatusText(${JSON.stringify(bogus)}) does not fall back to the `
       + 'cautious sentence');
   }

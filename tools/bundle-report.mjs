@@ -23,7 +23,12 @@ import { ROOT, buildBundle } from './build.mjs';
 
 const MODEL_PREFIX = 'ai/model-export/';
 const CHAT_CHUNK_GZ_BUDGET = 150 * 1024;
-const FIRST_USE_GZ_BUDGET = 40 * 1024 * 1024;
+/* §4's number for the 5M pipeline-test export was 40 MB. The model that ships
+   is the 49.6M Stage-B checkpoint (46.2 MB of weights, 7 shards), and the owner
+   chose that quality/speed trade-off over the smaller download, so the budget
+   moved with the artifact rather than the artifact being cut to fit the old
+   number. `tests/build-bundle.test.mjs` asserts the same 50 MB ceiling. */
+const FIRST_USE_GZ_BUDGET = 50 * 1024 * 1024;
 
 /** Every file in `dir`, as `{rel, abs}` with `/` separators on Windows too. */
 function listFiles(root, dir, out = []) {
@@ -104,11 +109,17 @@ export function report({ out = join(ROOT, '.bundle-report'), json = false, keep 
     for (const f of data.files.filter((x) => chat.some((c) => c.rel === x.rel)).slice(0, 12)) {
       console.log(`    ${String(f.gz).padStart(7)} gz  ${String(f.raw).padStart(7)} raw  ${f.rel}`);
     }
-    const over = chatGz > CHAT_CHUNK_GZ_BUDGET;
+    const overChunk = chatGz > CHAT_CHUNK_GZ_BUDGET;
+    const overFirst = summary.modelShipped && firstUseGz > FIRST_USE_GZ_BUDGET;
     console.log('');
-    console.log(over
-      ? `  verdict  OVER BUDGET by ${kb(chatGz - CHAT_CHUNK_GZ_BUDGET)} KB — §4 is a hard requirement`
-      : `  verdict  inside §4's chunk budget by ${kb(CHAT_CHUNK_GZ_BUDGET - chatGz)} KB`);
+    if (overChunk) {
+      console.log(`  verdict  OVER the §4 chunk budget by ${kb(chatGz - CHAT_CHUNK_GZ_BUDGET)} KB — §4 is a hard requirement`);
+    } else {
+      console.log(`  verdict  inside §4's chunk budget by ${kb(CHAT_CHUNK_GZ_BUDGET - chatGz)} KB`);
+    }
+    if (overFirst) {
+      console.log(`  verdict  OVER the §4 first-use budget by ${kb(firstUseGz - FIRST_USE_GZ_BUDGET)} KB`);
+    }
     return data;
   } finally {
     if (!keep) rmSync(out, { recursive: true, force: true });

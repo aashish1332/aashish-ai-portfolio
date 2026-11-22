@@ -141,15 +141,64 @@ class EveryTargetedAnswerIsSupportedByItsContext(unittest.TestCase):
                 f"carries {sorted(present)}; the model would be taught to "
                 f"answer from something it was never shown")
 
-    def test_the_targeted_fact_is_the_only_one_asked_about(self):
-        # An answer that dumps several facts is the old canned answer wearing a
-        # new question, and it would reintroduce the ambiguity this removes.
+    def test_a_factual_answer_names_one_fact_or_its_whole_kind(self):
+        # Two shapes, and the QUESTION picks which. A targeted question names
+        # one fact and the answer cites it; a plural question names a kind and
+        # the answer cites every fact of that kind in the context.
+        #
+        # The second shape is not optional. MEASURED 2026-10-23: it was ~1 % of
+        # the corpus while 1,458 rows did the opposite — a plural question
+        # answered by one fact — which is exactly the d05/d06 failure ("What
+        # are his skills?" -> "I use MySQL for relational data.") written into
+        # the data. This assertion used to demand a single fact for every
+        # factual row, so it passed while that contradiction was in the corpus.
+        pools = {kind: [q for strings in inst._list_questions(kind).values()
+                        for q in strings]
+                 for kind in inst._LIST_KINDS}
+        # A subset question ("Which backend tools does he use?") is also a
+        # plural shape, but its correct answer is the named category inside a
+        # context that deliberately carries distractors. It cannot satisfy the
+        # whole-context assertion below, so it is checked as its own shape
+        # instead of being mistaken for a single-fact answer.
+        subset_pools = [q for strings in inst._SUBSET_QUESTIONS.values()
+                        for q in strings.values() for q in q]
+        plural_rows = 0
+        subset_rows = 0
         for example in _factual(_kb(), count=4000):
             asked = set(_answer_facts(example))
-            self.assertLessEqual(
-                len(asked), 1,
-                f"one answer carries {sorted(asked)}; a targeted question "
-                f"should name exactly one fact")
+            present = set(_context_facts(example))
+            question = example["turns"][0][0]
+            if any(base in question for base in subset_pools):
+                subset_rows += 1
+                self.assertGreaterEqual(
+                    len(asked), 2,
+                    f'"{question}" asks for a category and the answer names '
+                    f'{sorted(asked)}; one fact is not an enumeration')
+                self.assertTrue(
+                    asked <= present,
+                    f'"{question}" cites {sorted(asked)} but its context carries '
+                    f'{sorted(present)}; a subset answer must stay inside it')
+                continue
+            if any(base in question for pool in pools.values() for base in pool):
+                plural_rows += 1
+                self.assertGreaterEqual(
+                    len(asked), 2,
+                    f'"{question}" asks for a kind and the answer names '
+                    f'{sorted(asked)}; one fact is not an enumeration')
+                self.assertEqual(
+                    asked, present,
+                    f'"{question}" cites {sorted(asked)} but its context carries '
+                    f'{sorted(present)}; a list answer is exactly the context\'s '
+                    f'facts of that kind')
+            else:
+                self.assertLessEqual(
+                    len(asked), 1,
+                    f"one answer carries {sorted(asked)}; a targeted question "
+                    f"should name exactly one fact")
+        self.assertGreater(plural_rows, 30,
+                           "no plural question reached the factual share")
+        self.assertGreater(subset_rows, 0,
+                           "no subset question reached the factual share")
 
 
 class TheMeasurementItselfIsHonest(unittest.TestCase):
@@ -190,10 +239,20 @@ class TheMeasurementItselfIsHonest(unittest.TestCase):
             "a run that measured nothing returned success, so a broken filter "
             "would be reported as evidence that the question is load-bearing")
 
-    def test_it_exits_non_zero_when_the_question_is_ignored(self):
-        # The same verdict logic has to be able to fail, or a green exit code
-        # says nothing.
-        rc = measure_tool.main(["--count", "2000"])
+    def test_it_exits_zero_on_the_real_corpus(self):
+        # The verdict has to be able to PASS as well as fail, or a red exit
+        # code says nothing.
+        #
+        # 8000, not 2000. The statistic is "how many distinct answers has this
+        # context been seen with", so a context that appears k times can show at
+        # most k answers and the single-answer share is biased UP at small
+        # counts. MEASURED 2026-10-24 over the same corpus: 2000 examples gives
+        # 8.8 % / 10.4 % / 14.3 % on seeds 7 / 99 / 1337, while 4000 gives
+        # 4.3-8.4 % and 8000 and 16000 both settle at 3.1-4.1 %. The tool's own
+        # default count is 8000 for that reason; asserting at 2000 was measuring
+        # the resampling, not the corpus (it passed at 9.1 % before the
+        # third-person questions moved the draw and failed at 14.3 % after).
+        rc = measure_tool.main(["--count", "8000"])
         self.assertEqual(rc, 0)
 
 

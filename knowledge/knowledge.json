@@ -1,6 +1,6 @@
 {
   "meta": {
-    "version": "1.0.0",
+    "version": "1.1.0",
     "schema": "Aashish_AI_Agent_Prompt_v2.md §8.1",
     "built_from": {
       "cv": "Aashish_Kumar_CV_ATS_Optimized_FINAL_v3.docx",
@@ -9,10 +9,15 @@
     },
     "built_at": "2026-09-19",
     "language_notes": "aliases[] carry Hindi (Devanagari) and Roman-Hinglish spellings for §8.2 retrieval and §8.3 detection.",
-    "public_rule": "public:true only where the CV or the live portfolio already publishes the fact AND the owner approved it (§1). Everything else defaults to public:false and is excluded from the shipped bundle.",
+    "public_rule": "public:true only where the CV or the live portfolio already publishes the fact AND the owner approved it (§1), or where the owner stated the fact directly (source:'owner'). Everything else defaults to public:false and is excluded from the shipped bundle.",
+    "revisions": [
+      { "version": "1.1.0", "date": "2026-10-24", "change": "education: added edu.kv1 (Class 10, 83%, Kendriya Vidyalaya No. 2 RCF Hussainpur — the same school as Class 12). Owner-stated, so source:'owner'. The fact id set changed, so the tokenizer and every checkpoint built on it predate this entry; `python -m ai.tokenizer.spec` reported a new version hash (45395d2e → 4a7c4e0e) until the vocabulary was rebuilt (docs/TRAINING.md, §7.2)." },
+      { "version": "1.1.0", "date": "2026-10-25", "change": "same version, refresh COMPLETE — the 64-placeholder tokenizer portfolio-bpe-16k-4a7c4e0e3d52 was rebuilt, Stage A was retrained from scratch on it (50,471 steps, loss 9.7991 → 3.079, gate PASS) and Stage B was instruction-tuned on the regenerated §7.4 data (2022 steps, 1,753 edu.kv1 targets). MEASURED on the new browser export: 'What is his 10th percentage?' → 'His Class 10: <|fact:edu.kv1|>.' → 'Kendriya Vidyalaya No. 2, RCF, Hussainpur — Secondary (Class 10), CBSE (2021–2022) · 83%'. The previous checkpoint could not emit the token at all (it answered 'His CGPA is <|fact:ach.lpu-cgpa|>')." },
+      { "version": "1.1.0", "date": "2026-10-29", "change": "Owner-directed privacy update: removed the phone number from the public portfolio footer and interactive terminal; the private knowledge entry remains withheld from the model and shipped bundle." }
+    ],
     "pii_decisions": {
       "decided_at": "2026-09-20",
-      "phone": "DENIED — contact.phone.public = false (index.html still prints it; the assistant will not state it).",
+      "phone": "DENIED — contact.phone.public = false; removed from published portfolio content per owner's instruction on 2026-10-29.",
       "project_live_urls": "APPROVED — project[].links[] ship as public:true so a recruiter can open the live demos."
     }
   },
@@ -44,17 +49,17 @@
       "id": "contact.phone",
       "value": "+91 6280287425",
       "source": "cv",
-      "source_ref": "index.html:447 (the portfolio publishes it as '+91 62802 87425')",
+      "source_ref": "CV; removed from portfolio content per owner instruction (2026-10-29)",
       "public": false,
       "decided": "2026-09-20",
-      "decision": "Aashish declined: the assistant must not state the phone number. Chosen to slow scraping/telemarketing even though the portfolio itself prints it. The assistant redirects to the email instead of abstaining, so the answer is useful rather than broken (knowledge/PII_REVIEW.md, question 1b).",
+      "decision": "Aashish declined publication of the phone number to slow scraping/telemarketing. It is withheld from the assistant and removed from public portfolio content by owner instruction on 2026-10-29. The assistant redirects to the email instead of abstaining (knowledge/PII_REVIEW.md).",
       "aliases": ["phone", "mobile", "number", "contact number", "फोन", "फ़ोन", "फोन नंबर", "फ़ोन नंबर", "मोबाइल", "मोबाइल नंबर"]
     },
     "location": {
       "id": "contact.location",
       "value": "Phagwara, Punjab, India",
       "source": "portfolio",
-      "source_ref": "index.html:447",
+      "source_ref": "index.html:447 (location only; phone removed 2026-10-29)",
       "public": true,
       "aliases": ["location", "city", "where does he live", "पता", "कहाँ रहता है"]
     },
@@ -62,7 +67,7 @@
       "id": "contact.availability",
       "value": "Open to internships and full-time roles",
       "source": "portfolio",
-      "source_ref": "index.html:447 ('OPEN TO INTERNSHIPS & ROLES')",
+      "source_ref": "index.html:447 ('OPEN TO INTERNSHIPS & ROLES'; phone removed 2026-10-29)",
       "public": true,
       "aliases": ["available", "hiring", "internship", "open to work", "नौकरी"]
     }
@@ -122,6 +127,21 @@
       "source_ref": "index.html:132",
       "public": true,
       "aliases": ["kendriya vidyalaya", "kv", "class 12", "12th", "senior secondary", "school", "cbse", "स्कूल"]
+    },
+    {
+      "id": "edu.kv1",
+      "institution": "Kendriya Vidyalaya No. 2, RCF, Hussainpur",
+      "location": "Punjab",
+      "degree": "Secondary (Class 10)",
+      "field": "CBSE",
+      "start": "2021",
+      "end": "2022",
+      "score": { "type": "percentage", "value": 83 },
+      "source": "owner",
+      "source_ref": "owner, 2026-10-24 — the same school as Class 12 (edu.kv2)",
+      "public": true,
+      "aliases": ["class 10", "10th", "10th marks", "10th percentage", "10th result", "10th standard", "tenth class", "tenth standard", "10th grade", "class 10th", "matriculation", "high school", "83", "83%", "दसवीं", "10वीं", "dasvi"],
+      "alias_note": "Added 2026-10-24 at the owner's request. Kept OUT of edu.kv2's record on purpose: a Class 10 question answered from the Class 12 entry returns the right school with the wrong score (87.6%, not 83%), which is the f05 failure exactly. A distinct id is what lets the answer cite the entry it actually read."
     }
   ],
 
@@ -296,10 +316,10 @@
   ],
 
   "achievements": [
-    { "id": "ach.lpu-cgpa", "text": "CGPA 8.28 in B.Tech CSE (Full Stack) at Lovely Professional University", "metric": { "type": "CGPA", "value": 8.28, "scale": 10 }, "source": "cv", "source_ref": "index.html:132,142", "public": true, "aliases": ["cgpa", "gpa", "marks", "8.28", "सीजीपीए"] },
+    { "id": "ach.lpu-cgpa", "text": "8.28 / 10 in B.Tech CSE (Full Stack) at Lovely Professional University", "metric": { "type": "CGPA", "value": 8.28, "scale": 10 }, "source": "cv", "source_ref": "index.html:132,142", "public": true, "aliases": ["cgpa", "gpa", "marks", "8.28", "सीजीपीए"] },
     { "id": "ach.class12", "text": "87.6 % in Senior Secondary (CBSE), Kendriya Vidyalaya No. 2 RCF Hussainpur", "metric": { "type": "percentage", "value": 87.6 }, "source": "cv", "source_ref": "index.html:132", "public": true, "aliases": ["12th percentage", "class 12 marks", "87.6"] },
     { "id": "ach.bootcamp-grade", "text": "Grade A in the AI-Driven MERN Stack Bootcamp", "metric": { "type": "grade", "value": "A" }, "source": "cv", "source_ref": "index.html:150", "public": true, "aliases": ["grade a", "bootcamp grade", "grade"] },
-    { "id": "ach.minor-ai-cgpa", "text": "CGPA 6.93 in the Minor in Artificial Intelligence (Masai School × IIT Ropar)", "metric": { "type": "CGPA", "value": 6.93, "scale": 10 }, "source": "cv", "source_ref": "index.html:149", "public": true, "aliases": ["minor cgpa", "6.93"] },
+    { "id": "ach.minor-ai-cgpa", "text": "6.93 / 10 in the Minor in Artificial Intelligence (Masai School × IIT Ropar)", "metric": { "type": "CGPA", "value": 6.93, "scale": 10 }, "source": "cv", "source_ref": "index.html:149", "public": true, "aliases": ["minor cgpa", "6.93"] },
     { "id": "ach.portfolio-scale", "text": "Three shipped full-stack products live on Vercel, including one enterprise monorepo with 90+ backend endpoints and 40+ database tables", "source": "portfolio", "source_ref": "index.html:139-141,179-180", "public": true, "aliases": ["what has he built", "biggest project", "portfolio strength", "achievement"] }
   ],
 

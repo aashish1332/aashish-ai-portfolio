@@ -13,6 +13,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -68,6 +69,13 @@ class EvalPromptsAreNotTrainingData(unittest.TestCase):
         for kind in inst._LIST_FRAMES:
             for lang in ("en", "hi", "hinglish"):
                 questions.update(inst._list_questions(kind).get(lang) or [])
+        for pool in inst._COVERAGE_QUESTIONS.values():
+            for strings in pool.values():
+                questions.update(strings)
+                questions.update(q.format(label="MongoDB") for q in strings)
+        for spec in inst._COVERAGE_BY_ID.values():
+            for strings in spec["questions"].values():
+                questions.update(strings)
 
         offenders = [(cid, q) for cid, q in self._eval_questions()
                      if q in questions]
@@ -161,11 +169,149 @@ class Counterfactual(unittest.TestCase):
         for fid in fake:
             self.assertNotIn(fid, ("contact.email", "link.github", "link.linkedin"))
 
+    def test_every_single_fact_frame_interpolates_its_value(self):
+        """A frame that spells the real value out cannot follow a fabricated one.
+
+        MEASURED reason this exists (2026-10-23). The three `skill.*` frames
+        were literals — `("I write Python.", …)` — so a counterfactual row
+        with `[skill.python] Fortran` in its context still answered "He
+        writes Python.": 396 of the 40,000 sft rows contained that pair, and
+        they taught exactly what §7.4's counterfactual share exists to
+        prevent. The sft5 export answered "Where does he live?" (its context
+        naming the city on line 1) with "He writes Python.", and named a
+        training-only fake ("His name is Tara Deshpande.") on a backend
+        question whose context never mentioned a person.
+
+        The property is structural, not a list of the three ids: any fact
+        whose answer is about a value must interpolate `{v}`, so a new frame
+        cannot reintroduce the bug.
+        """
+        for fid, frames in inst._FRAMES.items():
+            for lang, (first, third) in frames.items():
+                self.assertIn("{v}", first, f"{fid}/{lang} first-person frame")
+                self.assertIn("{v}", third, f"{fid}/{lang} third-person frame")
+
+    def test_a_fabricated_skill_reaches_the_answer(self):
+        """Rendered, not just structural: the swapped value is what the
+        sentence says, and the real one is gone."""
+        fake = {"skill.python": "Fortran", "skill.react": "Django",
+                "skill.mysql": "Prolog"}
+        f = inst.Facts(KB, fake)
+        answer = inst._answer_about("skill.python", f, "en", "third")
+        self.assertIn("Fortran", answer)
+        self.assertNotIn("Python", answer)
+        # …and a real fact still renders the sentence a visitor saw before:
+        real = inst._answer_about("skill.python", inst.Facts(KB), "en", "first")
+        self.assertEqual(real, "I write <|fact:skill.python|>.")
+
+    def test_no_counterfactual_answer_names_a_value_its_context_swapped(self):
+        """End to end over generated rows, for the facts whose real value is a
+        single word — a fabricated context must not leave the real one in the
+        answer.
+
+        Restricted to `skill.*` on purpose: `person.name`'s real value
+        ("Aashish") legitimately appears in third-person greetings, and the
+        long values (a university, a project blurb) would make a substring
+        check a spelling test rather than a label test.
+        """
+        ex = inst.generate(KB, 400, seed=21, counterfactual_share=0.4)
+        offenders = []
+        for e in ex:
+            if not e["counterfactual"]:
+                continue
+            swapped = {}
+            for line in e["context"].splitlines():
+                if not line.startswith("["):
+                    continue
+                fid = line[1:line.index("]")]
+                value = line[line.index("]") + 1:].strip()
+                if fid.startswith("skill.") and value != inst.render_fact(KB, fid):
+                    swapped[fid] = inst.render_fact(KB, fid)
+            if not swapped:
+                continue
+            answer = "\n".join(a for _q, a in e["turns"])
+            for fid, real in swapped.items():
+                if re.search(r"\b" + re.escape(real) + r"\b", answer):
+                    offenders.append((fid, real, answer))
+        self.assertEqual(offenders, [],
+                         f"{len(offenders)} counterfactual answer(s) recite the real "
+                         "value of a fact the context swapped")
+
     def test_factual_examples_use_placeholders_not_literal_values(self):
         ex = inst.generate(KB, 400, seed=4, counterfactual_share=0.0)
         joined = "\n".join(inst.format_example(e) for e in ex)
         self.assertIn("<|fact:person.name|>", joined)
         self.assertNotIn("aashish@example", joined)
+
+
+class FactCoverage(unittest.TestCase):
+    """The 13-id ceiling, and the branch that lifts it.
+
+    MEASURED before this branch existed: across all 40,000 sft rows only 13
+    distinct fact ids were ever an answer, while the §14 suite asks about 29
+    distinct ids. A case about `skill.mongodb` could not be answered by any
+    checkpoint, however well trained, because that id never appeared as an
+    answer in the data. These tests pin the property, not the wording: every
+    public fact of the covered kinds must be reachable, and every generated
+    coverage answer must cite an id its own context carries.
+    """
+
+    def _coverage_rows(self, n=3000, seed=31):
+        ex = inst.generate(KB, n, seed=seed)
+        facts = inst.index_facts(KB)
+        rows = []
+        for e in ex:
+            pairs = [(q, a) for q, a in e["turns"]]
+            q, a = pairs[0]
+            ids = []
+            for line in e["context"].splitlines():
+                if line.startswith("["):
+                    ids.append(line[1:line.index("]")])
+            cited = [fid for fid in ids if f"<|fact:{fid}|>" in a]
+            if not cited:
+                continue
+            # a coverage row: one cited fact, and the question names it
+            if len(cited) != 1:
+                continue
+            label = facts[cited[0]]["fact"].get("name")
+            if label and label in q:
+                rows.append((e, q, a, cited[0]))
+        return rows
+
+    def test_untargeted_facts_are_reachable(self):
+        # 8,000 rather than the 3,000 this used when the pool held 13 ids: the
+        # guarantee is "every untargeted fact is asked about at least once",
+        # and the sample has to be big enough for the rarest one to be drawn.
+        # MEASURED 2026-10-24 (the day `edu.kv1` added a tenth topic, which
+        # shifts every draw): at 3,000 rows `skill.github` was never drawn and
+        # the test failed on a property the generator still had; at 6,000 it
+        # was drawn 11 times. The sampled count is a lower bound on
+        # reachability, so the fix is a bigger sample, not a weaker assertion.
+        rows = self._coverage_rows(n=8000)
+        self.assertGreater(len(rows), 120, "coverage branch produced almost nothing")
+        reachable = {fid for _e, _q, _a, fid in rows}
+        facts = inst.index_facts(KB)
+        wanted = {fid for fid, e in facts.items()
+                  if e["kind"] in inst._COVERAGE_KINDS and fid not in inst._FRAMES}
+        missing = sorted(wanted - reachable)
+        self.assertEqual(missing, [],
+                         f"{len(missing)} public fact(s) still have no question")
+
+    def test_every_coverage_answer_cites_a_fact_in_its_own_context(self):
+        for e, q, a, fid in self._coverage_rows(n=600, seed=32):
+            self.assertIn(fid, e["context"], (q, a))
+
+    def test_coverage_rows_are_still_factual_examples(self):
+        """The §7.4 mix must not move: the branch lives inside `factual`, and
+        the serialised example still ends the turn."""
+        ex = inst.generate(KB, 400, seed=33)
+        counted = sum(1 for e in ex if e["category"] == "factual")
+        self.assertGreater(counted / len(ex), 0.30)
+        for e in ex:
+            self.assertTrue(inst.format_example(e).endswith(inst.END + "\n")
+                            or inst.format_example(e).endswith(inst.END),
+                            inst.format_example(e)[-40:])
+            self.assertNotEqual(e["turns"][0][0], "")
 
 
 class Privacy(unittest.TestCase):
@@ -265,6 +411,64 @@ class Content(unittest.TestCase):
             q1, a1 = e["turns"][0]
             q2, a2 = e["turns"][1]
             self.assertNotEqual(q1, q2)
+
+
+class TheQuestionSelectsItsFact(unittest.TestCase):
+    """A question asks for a fact (or a kind), and the answer must deliver
+    exactly that — not a neighbouring fact of the same topic.
+
+    **MEASURED 2026-10-23, before this fix:** 1,458 of the 40,000 rows took a
+    topic's PLURAL question ("What are your skills?") and answered it with ONE
+    fact from the context, because `multi_turn` drew the question from
+    `t.questions` and the fact from the context independently. That is the
+    d05/d06 failure written into the data: sft5 answers `What are his skills?`
+    with a single skill because it was taught to. `TARGETS` is the table where
+    every question names its own fact, so these two categories draw the pair
+    from there.
+    """
+
+    ASKED = {q: fid for topic in inst.TARGETS.values()
+             for pairs in topic.values() for q, fid in pairs}
+
+    def test_multi_turn_and_language_switch_ask_the_fact_they_answer(self):
+        seen = 0
+        # `vary_questions=False`: the carrier forms (`"Sorry to bother you, but …"`)
+        # are applied later, and this property is about the question the example
+        # chose, not the wrapper around it.
+        for e in inst.generate(KB, 500, seed=41, vary_questions=False):
+            if e["counterfactual"] or e["category"] not in ("multi_turn", "language_switch"):
+                continue
+            q, a = e["turns"][0]
+            fid = self.ASKED.get(q)
+            if fid is None:
+                continue
+            m = re.search(r"<\|fact:([^|]+)\|>", a)
+            self.assertIsNotNone(m, f"first answer has no fact slot: {a}")
+            self.assertEqual(m.group(1), fid, f'"{q}" is answered with {m.group(1)}')
+            seen += 1
+        self.assertGreater(seen, 20, "no multi-turn row asked a fact-naming question")
+
+    def test_a_plural_question_gets_the_whole_kind(self):
+        pools = {kind: [q for strings in inst._list_questions(kind).values()
+                        for q in strings]
+                 for kind in inst._LIST_KINDS}
+        seen = 0
+        for e in inst.generate(KB, 3000, seed=42):
+            if e["category"] != "factual" or e["counterfactual"]:
+                continue
+            q, a = e["turns"][0]
+            kind = next((k for k, pool in pools.items()
+                         if any(base in q for base in pool)), None)
+            if kind is None:
+                continue
+            cited = re.findall(r"<\|fact:([^|]+)\|>", a)
+            ctx_ids = [line[1:line.index("]")] for line in e["context"].splitlines()
+                       if line.startswith("[")]
+            self.assertGreaterEqual(len(cited), 2, f'"{q}" answered with {a}')
+            self.assertEqual(sorted(set(cited)), sorted(set(ctx_ids)),
+                             f'"{q}" cites {cited} against context {ctx_ids}')
+            seen += 1
+        self.assertGreater(seen, 30, "no plural question reached the factual share")
 
 
 class Determinism(unittest.TestCase):

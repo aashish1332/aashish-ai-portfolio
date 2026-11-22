@@ -25,6 +25,11 @@ import { loadWithCacheRecovery, modelCacheName } from './cache.mjs';
 let engine = null;
 let busy = null;      /* the AbortController of the generation in flight */
 let prepared = false;
+/* The post-load prefix prefill. Handlers are independent async callbacks, so
+   a generate message arrives while the prefill is still awaiting: without
+   this join the two prefills would interleave forwards in ONE KV cache of
+   positions — the answer would be written on top of a prompt half-read. */
+let priming = null;
 
 const post = (message) => self.postMessage(message);
 
@@ -49,6 +54,14 @@ self.onmessage = async (event) => {
       });
       engine = result;
       prepared = true;
+      /* The first question of a session must not pay the specials + rules
+         block cold (~46% of a typical prompt; docs/BENCHMARKS.md). The
+         worker prefills it now, while the visitor is on the page behind
+         this worker, and every later generate() reuses it through
+         `LlamaEngine.reusePrefix`. The chat's persona is DEFAULT_PERSONA
+         ('third') on every turn, so that is the block to warm. */
+      priming = engine.prime().catch(() => {});
+      await priming;
       const info = engine.memoryEstimate;
       post({ id, type: 'ready', config: engine.config,
              verified: engine.verified, bytes: engine.bytes, memory: info,
@@ -58,11 +71,18 @@ self.onmessage = async (event) => {
 
     if (type === 'generate') {
       if (!engine) throw new Error('generate before prepare');
+      if (priming) await priming;           /* never interleave the two prefills */
       if (busy) busy.abort();
       busy = new AbortController();
-      const { question, context, history, rules, maxNewTokens, paceMs } = event.data;
+      /* `answerGrammar` is the answer layer's decision (a fact question is
+         decoded against the trained answer frames, ai/engine/grammar.mjs); it
+         travels with the turn like every other part of the request rather than
+         being re-derived here, where the intent is not known. Unknown fields
+         are dropped on purpose, so this list IS the worker's contract. */
+      const { question, context, history, rules, maxNewTokens, paceMs, answerGrammar, answerIds }
+        = event.data;
       const iterator = engine.generate({
-        question, context, history, rules, maxNewTokens, paceMs,
+        question, context, history, rules, maxNewTokens, paceMs, answerGrammar, answerIds,
         signal: busy.signal,
       });
       let index = 0;

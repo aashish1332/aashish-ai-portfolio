@@ -40,7 +40,7 @@ import { contextLines } from './ai/answers/model.mjs';
 import { quickAnswer, renderFact } from './evaluation/answer-text.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const EXPORT_DIR = resolve(HERE, 'ai/model-export/aashish-ai-1');
+const EXPORT_DIR = resolve(HERE, 'ai/model-export/aashish-ai-b');
 const KB = JSON.parse(readFileSync(resolve(HERE, 'knowledge/knowledge.json'), 'utf8'));
 const CASES = JSON.parse(readFileSync(resolve(HERE, 'evaluation/portfolio_tests.json'), 'utf8'));
 

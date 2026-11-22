@@ -35,11 +35,11 @@
     "sample:answers": "python inference/sample_answers.py",
     "eval:export": "python -m inference.export_browser --run-dir training/checkpoints/sft-local --out tmp-eval-export --reference-out tmp-eval-export/reference.json",
     "eval:prompts": "node tools/model-eval.mjs --emit-prompts docs/EVAL_PROMPTS.json",
-    "eval:decode": "node tools/eval-decode.mjs --export tmp-eval-export --prompts docs/EVAL_PROMPTS.json --out docs/EVAL_ANSWERS.json",
+    "eval:decode": "node tools/eval-decode.mjs --export ai/model-export/aashish-ai-b --prompts docs/EVAL_PROMPTS.json --out docs/EVAL_ANSWERS.json",
     "eval:decode:reference": "python inference/grade_answers.py --prompts docs/EVAL_PROMPTS.json --out docs/EVAL_ANSWERS.json --checkpoint training/checkpoints/sft-local --max-tokens 16",
     "eval:report": "node tools/model-eval.mjs --grade docs/EVAL_ANSWERS.json --json docs/EVALUATION.json",
     "export:model": "python inference/export_browser.py --run-dir training/checkpoints/local --out ai/model-export/aashish-ai-1 --reference-out ai/model-export/reference/aashish-ai-1.json",
-    "verify:engine": "node tools/verify-engine.mjs ai/model-export/aashish-ai-1 ai/model-export/reference/aashish-ai-1.json",
+    "verify:engine": "node tools/verify-engine.mjs ai/model-export/aashish-ai-b ai/model-export/aashish-ai-b-sft7.reference.json",
     "fixture:engine": "python inference/export_browser.py --random-init --out tests/fixtures/tiny-model --reference-out tests/fixtures/engine_reference.json",
     "contract:prompt": "python inference/export_prompt_contract.py"
   },

@@ -49,7 +49,7 @@ SEC       JWT Argon2 bcrypt CORS rate-limit
 TOOLS     Git GitHub VS Code Postman Vercel`,
     contact:
 `email     aashishkumarrajut1345@gmail.com
-phone     +91 62802 87425
+phone     not published — email preferred
 github    github.com/aashish1332
 linkedin  linkedin.com/in/aashishkumar13`,
     'sudo hire aashish':

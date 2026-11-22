@@ -286,13 +286,37 @@ export class LlamaEngine {
 
   /** Argmax, greedy — §5.1: no sampling, so a visitor cannot get a
    *  different answer to the same question on a second visit. */
-  argmax(logits) {
+  /** Greedy choice over the logits, skipping any id in `blocked`.
+   *
+   *  `blocked` is the decode grammar's exclusion set (see `grammar.mjs`) —
+   *  fact tokens this turn was not offered. It is `null` for every caller that
+   *  wants the model's raw preference (the parity checks in
+   *  `tests/engine.test.mjs` do, and so does the latency probe). */
+  argmax(logits, blocked = null) {
     let best = 0;
     let bestValue = -Infinity;
     for (let i = 0; i < logits.length; i++) {
+      if (blocked !== null && blocked.has(i)) continue;
       if (logits[i] > bestValue) {
         bestValue = logits[i];
         best = i;
+      }
+    }
+    return best;
+  }
+
+  /** Greedy choice over an explicit allow-list (the answer grammar's live
+   *  tokens). Iterating the list rather than masking the 16k logits is
+   *  deliberate: a grammar state admits a handful of tokens at each step, so
+   *  this is cheaper than the full scan it replaces, and it cannot pick a
+   *  token the grammar never offered. */
+  argmaxOf(logits, ids) {
+    let best = -1;
+    let bestValue = -Infinity;
+    for (const id of ids) {
+      if (logits[id] > bestValue) {
+        bestValue = logits[id];
+        best = id;
       }
     }
     return best;

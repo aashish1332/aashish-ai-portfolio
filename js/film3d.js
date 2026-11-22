@@ -1101,7 +1101,7 @@ const Film3D = (() => {
 
   /* ---------- loop ---------- */
   function animate() {
-    if (raf || !ready) return;
+    if (raf || !ready || paused) return;
     raf = requestAnimationFrame(tick);
   }
 
@@ -1221,7 +1221,11 @@ const Film3D = (() => {
     },
     quality: () => (lowQuality ? 'low' : 'normal'),
     pause: () => {
-      if (paused || !ready) return;
+      /* `!ready` must NOT opt out: the panel can open during the film's
+         own load (a visitor reaches for the AI while the site is still
+         booting), and a pause asked for then must hold until the model
+         has the machine. animate() honors an armed pause on its way up. */
+      if (paused) return;
       paused = true;
       pausedAt = clock.getElapsedTime();
       if (raf) { cancelAnimationFrame(raf); raf = 0; }

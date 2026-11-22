@@ -25,29 +25,36 @@ rather than implying an experiment exists.
 
 ## What the baseline actually is (MEASURED)
 
+Numbers re-taken **2026-10-30** against the artifact that actually ships. This
+section used to describe the 4.98M CPU export, which has been retired.
+
 | | Value | Source |
 |---|---|---|
-| Params | **4,984,064** | `ai/model/config.py` (`CONFIG_LOCAL`), printed by `inference/count_parameters.py --gate` |
-| Shipping export | 1 shard, **5,059,584 B** raw q8-row | `ai/model-export/aashish-ai-1/manifest.json` |
-| …gzipped | **4,732,964 B** | same manifest (`sizes.gzipBytes`) |
-| …brotli | 4,713,956 B | same manifest (`brotliMeasured: true`) |
-| fp32 equivalent | 19,936,256 B | same manifest |
-| Tokenizer | 66,667 B | same manifest |
-| First visit, everything | **4,815,416 B gz** = 11.5 % of §4's 40 MB | `docs/AI_ARCHITECTURE.md` (recomputed 2026-09-28) |
-| Quality | **untrained for quality** — see `docs/FINAL_REPORT.md` | R1 CPU pipeline run, 800 steps |
+| Params | **49,595,328** | `kout-sft7/checkpoints/stage-b/RUN_MANIFEST.json`, printed by `inference/count_parameters.py --gate` |
+| Shipping export | **7 shards**, **49,937,152 B** raw q8-row | `ai/model-export/aashish-ai-b/manifest.json` |
+| …gzipped | **46,152,126 B** (weights only) | same manifest (`sizes.gzipBytes`) |
+| …brotli | 45,951,490 B | same manifest (`brotliMeasured: true`) |
+| fp32 equivalent | 198,381,312 B | same manifest |
+| Tokenizer | 1,175,852 B (vocab 16,384) | same manifest |
+| First visit, everything | **46,410,084 B gz** = **88.5 %** of the 50 MB ceiling (110.7 % of §4's original 40 MB) | `npm run bundle`, 2026-10-30 |
+| Quality | **fails §14** — 58.8 % factual against a 95 % gate | `docs/EVALUATION.json` |
 
 ## What ternary would and would not buy (ESTIMATED, arithmetic only)
 
-**Size.** 4,984,064 params at ~1.58 bits is ~984 KB of packed weights; with
-per-group absmean scales the real figure lands near **1.2–1.4 MB raw** against
-5,060 KB today, i.e. **3.6–3.9 MB saved**. Gzip's leverage on already-near-random
-ternary codes is small (it only buys ~6 % on q8 today), so thecompressed saving is roughly the same order — call it **~3 MB gz off a 4.82 MB first visit, ≈ 6 %
-of the §4 first-use budget of 40 MB**.
+**Size.** 49,595,328 params at ~1.58 bits is ~9.8 MB of packed weights; with
+per-group absmean scales the real figure lands near **11–13 MB raw** against
+51,146 KB today, i.e. **~38–40 MB saved**. Gzip's leverage on already-near-random
+ternary codes is small (it buys ~7 % on q8 today), so the compressed saving is
+roughly the same order — call it **~35 MB gz off a 46.3 MB first visit, ≈ 70 %
+of the 50 MB first-use ceiling**. That is a different sentence from the one this
+file carried when the baseline was 5 MB, and it is the honest one now.
 
-That saving is real and it is at the *bottom* of the specification's own
-priority order: §2 ranks download/RAM size **below** latency, language handling
-and useful answers. Nothing in the budgets is currently under pressure —
-4.82 MB of a 40 MB allowance is not a reason to open a research direction.
+The saving is real, and it is now the largest lever the size budget has. It is
+still at the *bottom* of the specification's own priority order: §2 ranks
+download/RAM size **below** latency, language handling and useful answers — and
+the model that would benefit from it is the one that currently fails §14.
+Spending a second full training run on a smaller copy of a model that does not
+answer well enough is the wrong order of work.
 
 **Speed.** §13's speed benefit lives in dedicated kernels, and there is no
 browser-reachable one to adopt: `bitnet.cpp` is the CPU-native reference
@@ -65,16 +72,14 @@ cannot adjudicate a kernel speedup.
 ## The costs, stated honestly
 
 1. **A second full training run.** QAT is not a post-processing step; the model
-   must be trained with the estimator in the loop. On R1 that is a CPU run of
-   tens of hours for the local config, and for the shipping config A (~37.9M
-   params) it is a GPU job — the same owner-side GPU that Stage A and Stage B
-   are already waiting on. It would compete with the two runs that actually
-   decide whether the assistant is any good.
+   must be trained with the estimator in the loop, on a GPU, competing with the
+   data/recipe work that is the actual quality blocker (§14: 58.8 %).
 2. **A quality risk that is worst exactly where we are.** §13's own expectation
    is that the size win is what matters at ~40M params, and the literature's
-   ternary results are at billions of params and trillions of tokens. At 5M
-   params the model has no redundancy to spend on a 1.58-bit weight grid; the
-   plausible outcome is a measurable quality loss for ~3 MB.
+   ternary results are at billions of params and trillions of tokens. At 49.6M
+   params the model has little redundancy to spend on a 1.58-bit weight grid; the
+   plausible outcome is a measurable quality loss on a checkpoint that is
+   already below the bar.
 3. **Our export path is quantizer-specific and audited.** `verify:engine` is a
    parity gate against a reference `argmax` and `|Δlogit|`; a new numeric format
    means a new reference, a new parity test and a new engine path — real work
@@ -82,12 +87,14 @@ cannot adjudicate a kernel speedup.
 
 ## Conditions that would re-open this (and the order to do them in)
 
-1. **The baseline must pass its own gates first** — §13's own precondition. That
-   means a trained-for-quality checkpoint at config A with the §14 evaluation
-   results behind it, and Stage A + Stage B done. Neither exists yet.
-2. **Download size becomes a constraint** — if the first-use total ever
-   approaches §4's budget (measured today at 11.5 % of it), ternary moves from
-   "interesting" to "the obvious lever".
+1. **The baseline must pass its own gates first** — §13's own precondition. The
+   GPU Stage A + Stage B pair now exists (49.6M, step 2000), but it **fails**
+   §14 (58.8 % factual, 61.5 % abstention recall). So the precondition is still
+   unmet, for a different reason than when this file was written.
+2. **Download size becomes a constraint** — **met as of 2026-10-30**: the first
+   visit is 88.5 % of the 50 MB ceiling, up from 11.5 % of 40 MB when this file
+   was written. Condition 2 now argues *for* the experiment; condition 1 still
+   argues against it, and §13 orders them.
 3. **A browser ternary kernel becomes available off the shelf** — a maintained
    WGSL implementation that we can run through our own parity gate rather than
    write. Until then, speed is not a claim ternary can make here.
@@ -98,7 +105,8 @@ cannot adjudicate a kernel speedup.
 
 ## What would change the verdict today
 
-Nothing available on this machine. The blocker is not belief about ternary — it
-is that the decision belongs *after* the baseline proves itself, and the two
-input measurements it depends on (a trained checkpoint, and size pressure) are
-both still absent.
+One of the two inputs is now present, and it does not flip the verdict. Size
+pressure is real (88.5 % of the ceiling) and ternary is the largest lever on it;
+the baseline still does not answer well enough to justify spending a training
+run shrinking it. The order §13 prescribes is evaluation first, compression
+second, and that is the order this file keeps.

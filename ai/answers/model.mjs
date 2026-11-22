@@ -33,7 +33,7 @@
 import { clipToGroundedSentences, guardedAnswer } from '../guard/index.mjs';
 import { buildIndex, search, MIN_TOP_SCORE } from '../retrieval/index.mjs';
 import { abstainFor } from '../intent/rules.mjs';
-import { emptySlotFrame } from '../engine/grammar.mjs';
+import { emptySlotFrame, frameFactMismatch } from '../engine/grammar.mjs';
 import { contextSizer, DEFAULT_PERSONA, resolveFacts, renderFact } from './quick.mjs';
 
 /* ── how many facts the intent fallback may paste ────────────────
@@ -45,10 +45,21 @@ import { contextSizer, DEFAULT_PERSONA, resolveFacts, renderFact } from './quick
 
    MEASURED with the shipping tokenizer (`npm run probe:tokens`): 18 skill
    lines fit in the window alongside the frame, a typical question and 96 new
-   tokens. 12 is that measurement with headroom, because a conversation turn
+   tokens. 12 was that measurement with headroom, because a conversation turn
    or two (`history`) also lives in the prompt and a budget that only just
-   fits is a budget that fails the moment anything is added. */
-export const MAX_INTENT_FACTS = 12;
+   fits is a budget that fails the moment anything is added.
+
+   MEASURED AGAIN 2026-11-04, and 12 was measured on the T1 window: the shipped
+   checkpoint's `max_position_embeddings` is **1024** (manifest config; the
+   governor already ships a 1024/256 T3 tier), and `fitToBudget` enforces the
+   real window and drops the weakest tail lines itself. So a hard cap of 12 was
+   doing the window's job twice and answering "what are all his skills?" with
+   12 of 38 — `d06` asks for `skill.gsap`, the 38th, and all 38 lines cost 564
+   tokens, which fits 1024 and not 512. The cap is now a sanity bound far above
+   any kind in the knowledge base (38 skills is the largest), and the window is
+   the only budget: on a T1 device the extra lines are trimmed, and `sources`
+   follows what was actually read. */
+export const MAX_INTENT_FACTS = 48;
 
 /* ── the plans whose answer is a WHOLE KIND, not one fact ────────
    §8.2's budget is top-3 chunks, and a plural question's correct answer is
@@ -120,10 +131,134 @@ export function planPinsContext(plan) {
    question is about a fact, and `contact_withheld` stays closed because its
    context is empty — the grammar then admits nothing but `<|abstain|>`, which is
    exactly what a withheld field must produce (§8.1). */
+/* ── who writes the answer ───────────────────────────────────────
+
+   THE CHAT IS THE MODEL'S OWN GENERATION (owner decision, 2026-11-06: "chat
+   must be 100% ai model with very few guards"). No intent plan decides the
+   sentence and no closed grammar narrows the decode: the model reads the
+   retrieved lines and writes, in whatever words and language it chooses.
+
+   What still stands between the model and the visitor is the small set the
+   owner kept, and nothing more:
+     · the GROUNDING GUARD — a claim the context does not support is refused
+       (§8.4), which is the only reason a 49.6M checkpoint may be quoted at all;
+     · the WITHHELD-FIELD refusal — a public:false fact is never retrieved and
+       a question aimed at one is declined before the model reads anything
+       (§8.1 privacy);
+     · PLACEHOLDER RESOLUTION — a <|fact:id|> the model did write becomes its
+       public value, and the guard checks the answer a visitor would read.
+
+   The plan is still computed, because retrieval and those two refusals need it:
+   the topic's facts when BM25 has nothing (the skills stop-set), the whole kind
+   for a "which projects" question, and the entity a pronoun follow-up resolves
+   against. It no longer dictates the answer's SHAPE.
+
+   ONE constant, because the evaluation must mirror the app: an evaluation that
+   decoded a different way from the one that ships would grade a product nobody
+   runs (tools/model-eval.mjs imports this). */
+export const MODEL_OWNS_ANSWERS = true;
+
+/** CTRL repetition penalty applied to every model turn. 1.0 is off. */
+export const FREE_REPETITION_PENALTY = 1.3;
+
 const OPEN_ANSWER_PLANS = new Set(['greeting', 'meta', 'abstain', 'hallucination_bait']);
 
 export function wantsClosedAnswer(plan) {
   return Boolean(plan) && !OPEN_ANSWER_PLANS.has(plan.kind);
+}
+
+/* ── the one fact a plan has already chosen ───────────────────────
+   Some plans ARE a single fact: `contact_field` (`{field:'email',
+   id:'contact.email'}`) and `fact` (`{id:'ach.lpu-cgpa'}`) are decided by the
+   intent rules from the question itself, before any retrieval. Their answer is
+   that fact or no answer.
+
+   MEASURED (the 2026-10-30 §14 run): `d01` "What is his email?" carried
+   `[contact.email]` plus one retrieved project, and the model wrote
+   `His main project is <|fact:project.volunteer|>.` — both frames legal, both
+   facts offered, the sentence about the wrong one. `d12` "Where does he live?"
+   did the same to `contact.location`. The scope below is what the planner
+   already knew passed down to the decoder (`ai/engine/grammar.mjs`), so the
+   slot cannot be filled with the distractor. It is NOT a wording rule: the
+   model still chooses the frame, the language and the words of the sentence.
+
+   `plan.id` and not `plan.ids`: the two fields are the plan saying different
+   things. `id` is "this ONE fact is the answer" (`contact_field`, `fact`,
+   `project_detail`); `ids` is "the answer is all of these" (`skills`,
+   `education`, `experience`, `list_projects`). Narrowing an `ids` plan would
+   delete the very thing the visitor asked for, and MEASURED on the 2026-11-01
+   re-emit it also breaks a correct row: `d10` "Is he open to internships?" is
+   an `experience` plan whose list holds the bootcamp AND `contact.availability`
+   — scoping it to the bootcamp alone would answer a question about
+   availability with a training programme. `meta` is excluded by
+   `wantsClosedAnswer` already. */
+export function closedAnswerScope(plan) {
+  if (!plan || !wantsClosedAnswer(plan)) return null;
+  return plan.id ? [plan.id] : null;
+}
+
+/** The kinds whose answer is a LIST sentence the training data teaches.
+ *  `answer_frames.json`'s `listFrames` is the authority (`_LIST_FRAMES` in
+ *  `ai/data/instruction.py`); a kind without one falls back to the ordinary
+ *  closed space rather than to `null`. */
+export const LIST_ANSWER_KINDS = Object.freeze(['skill', 'cert', 'ach', 'exp', 'project']);
+
+/**
+ * Is this turn a whole-kind list question — "which projects", "uske projects
+ * kaun kaun se hain", "what backend technologies"?
+ *
+ * `plan.ids` (not `plan.id`) is the planner saying "the answer is all of
+ * these", and more than one id is the case where the single-fact sentence can
+ * only answer half the question. MEASURED on the 2026-11-06 sweep of the
+ * shipping export: `d16` and `i02` both had all three expected facts in the
+ * context and answered with ONE of them, in the kind frame ("Unhone … banaya",
+ * "He works with …") instead of the list frame. The grammar offered both
+ * shapes; the question had already chosen one.
+ *
+ * A one-id kind plan is NOT a list: `education` with a single line is answered
+ * by `He studies at {v}.`, and forcing the list shape on it would answer a
+ * question nobody asked. Kinds without a trained list sentence are excluded for
+ * the same reason — the constraint may only remove a wrong shape, never invent
+ * one.
+ */
+export function answerIsWholeKindList(plan) {
+  if (!plan || !wantsClosedAnswer(plan) || !intentScopesContext(plan)) return false;
+  if (!Array.isArray(plan.ids) || plan.ids.length < 2) return false;
+  return plan.ids.some((id) => LIST_ANSWER_KINDS.includes(String(id).split('.')[0]));
+}
+
+/* ── the turns whose PLAN has decided there is nothing to answer ──
+   `quickAnswer` has always known this: a hallucination bait is returned with
+   `abstained: true` (the CV lists a training programme and no employer, C7)
+   and so is a question aimed at a `public:false` field (§8.1). Nothing read
+   that flag on the model path, so `ask()` retrieved near facts anyway and
+   handed them to the decoder.
+
+   MEASURED 2026-11-04 (the §14 sweep of the shipping export), all five
+   abstention misses are this one bug:
+     · b01 "Did he intern at Google?" — read `[skill.gemini] Google Gemini AI`
+       and `[contact.availability] Open to internships…`, and answered that he
+       is open to internships. Every word grounded. The question was not
+       answered.
+     · b02 / b05 (companies) — read the bootcamp + availability, answered
+       availability.
+     · b03 (years at Google) — read the education line and answered a degree.
+     · d21 (Hindi phone) — the withheld field is an English alias, so the
+       Devanagari question never matched it and retrieval offered a workflow
+       fact it answered in the wrong language.
+   The model was doing what it was trained to do: with evidence in the context,
+   cite it. The evidence was the defect.
+
+   So the plan's decision is made a CONTEXT decision: a turn that has already
+   been ruled answerable by nothing gets nothing to read. The model still runs,
+   still chooses its own tokens, and its trained `<|abstain|>` is what closes
+   the turn — the sentence a visitor sees is the same `abstainFor(lang)` that
+   every model abstention produces. No template is written here and no answer
+   is decided here; evidence is withheld, exactly as §8.2 withholds it for a
+   withheld field. If the model asserts anything anyway, the guard has no
+   context to ground it in and refuses. */
+export function planAbstains(plan) {
+  return Boolean(plan) && plan.abstained === true;
 }
 
 /** The fact ids a context actually names, in order. The engine may DROP lines
@@ -300,8 +435,32 @@ export function contextLines(kb, hits, lang = 'en') {
  * @returns {{path:'no-model'|'model', kind:string, noAnswer?:string}}
  */
 export function routeQuestion({
-  hasModel, modelState = 'idle', generationStopped = false, lang = 'en',
+  hasModel, modelState = 'idle', generationStopped = false, lang = 'en', res = null,
 } = {}) {
+  /* Small talk first, and BEFORE the machine check: a greeting's correct
+     answer is a fixed sentence about the assistant, so it needs no model, no
+     download and no context — a device that cannot run a model can still say
+     hello.
+
+     MEASURED 2026-10-31, the owner's own report: on the shipping export, an
+     English "hi" (detectLanguage says `en`) was answered
+     `Namaste! Aashish ke projects, skills, padhai ya contact ke baare mein
+     pucho.` — Hinglish, and the §8.4 language rule is script-shaped, so the
+     guard passed it. The same turn was measured on 2026-10-18 reciting
+     ` I study at <|fact:edu.lpu|>. `. A 49.6M checkpoint's small-talk habit
+     is not the thing to gamble the first sentence of the conversation on,
+     and this reply claims nothing so there is nothing to ground.
+
+     Everything else still goes to the model, 100% pure AI (owner decision,
+     2026-10-14) — this is the one turn whose answer is not a portfolio
+     answer at all, and it ships from `wording.mjs`. */
+  if ((res?.plan?.kind === 'greeting' || res?.plan?.kind === 'meta') && res.text) {
+    return {
+      path: 'fixed',
+      kind: res.plan.kind === 'meta' ? 'disclosure' : 'small-talk',
+      text: res.text,
+    };
+  }
   if (generationStopped || !hasModel) {
     const why = generationStopped ? 'strained'
       : modelState === 'unsupported' ? 'unsupported'
@@ -429,6 +588,17 @@ export function createModelAnswerer(opts = {}) {
         }
       }
 
+      /* The plan's own abstention, LAST so it outranks both paths above: a
+         bait or a withheld field is no longer handed the near facts that made
+         b01–b05 answer (see `planAbstains`). The model is still asked — an
+         empty context is a trained shape for exactly this turn — and its
+         `<|abstain|>` is read below as `notFound`. */
+      if (planAbstains(plan)) {
+        hits = [];
+        context = '';
+        how = 'plan-abstain';
+      }
+
       /* The gate (§8.4 layer 1) is GONE. The model is asked even when the
          retrieval found nothing to read — a 100%-AI panel does not "decide
          before a token exists" (owner decision, 2026-10-14). The guard is
@@ -441,14 +611,30 @@ export function createModelAnswerer(opts = {}) {
 
       asks += 1;
       let streamed = false;
+      /* the last attempt's RAW text — placeholders intact, because the frame
+         check below compares fact IDS and resolution erases them */
+      let lastRaw = '';
       const generate = async (ctx, { greedy } = {}) => {
         const summary = await session.generate({
           question, context: ctx, history: turns, rules: persona,
           maxNewTokens, paceMs: greedy ? 0 : paceMs,
-          /* Decided once per turn, from the intent — see `wantsClosedAnswer`.
-             The engine reads the CONTEXT for which facts are on offer; this
-             only says whether the closed space applies at all. */
-          answerGrammar: wantsClosedAnswer(plan),
+          /* Forced off: the model owns the sentence (`MODEL_OWNS_ANSWERS`).
+             The predicate is kept because the evaluation mirrors this call
+             and the A/B arm is still measurable. */
+          answerGrammar: !MODEL_OWNS_ANSWERS && wantsClosedAnswer(plan),
+          /* Off with the rest of the grammar; `closedAnswerScope` remains for
+             the A/B arm the evaluation can still measure. */
+          answerIds: MODEL_OWNS_ANSWERS ? null : closedAnswerScope(plan),
+          /* Off: a whole-kind question now gets whatever shape the model
+             chooses, which is why `d16`/`i02` are back to 1 of 3 in the
+             2026-11-07 measurement (`docs/BENCHMARKS.md`). */
+          answerLists: !MODEL_OWNS_ANSWERS && answerIsWholeKindList(plan),
+          /* MEASURED 2026-11-07: with the grammar off, greedy decoding repeated
+             the same cited fact — `d05` named mongoose twice and `d06` repeated
+             python for 30 tokens until the cap. A standard CTRL penalty removes
+             that without deciding the sentence; the evaluation passes the same
+             value so it measures the product's decode. */
+          repetitionPenalty: FREE_REPETITION_PENALTY,
         }, {
           signal,
           // Streaming only happens for the FIRST attempt. A guard failure
@@ -476,6 +662,7 @@ export function createModelAnswerer(opts = {}) {
            its public value — and was still refused because nobody resolved
            before the check. What the guard sees after this line is the same
            answer the visitor will read. */
+        lastRaw = summary.text ?? '';
         const resolvedText = resolveFacts(kb, summary.text ?? '').text;
         return { text: resolvedText, context: summary.context };
       };
@@ -497,7 +684,11 @@ export function createModelAnswerer(opts = {}) {
         const text = noAnswerLine('notFound', lang);
         if (streamed && onReplace) onReplace(text);
         return {
-          kind: 'notFound', text, sources: [], context,
+          /* `contextFrom` travels with the refusal too: a caller (and the §14
+             grader) has to be able to tell a turn that was given no evidence
+             by its plan (`plan-abstain`) from one where retrieval came back
+             empty. They are different statements about why nothing was said. */
+          kind: 'notFound', text, sources: [], context, contextFrom: how,
           attempts: guarded.attempts, guardFailed: false, abstained: true,
           reason: 'the model chose <|abstain|>', ms: Date.now() - started,
         };
@@ -548,6 +739,27 @@ export function createModelAnswerer(opts = {}) {
          because their fictional ids are not vocabulary tokens at all. So the
          turn is refused instead of shown, which is what §15.5 asks for: a
          sentence the app cannot check is not an answer. */
+      /* A trained FRAME holding a fact of another kind — MEASURED 2026-10-31,
+         the owner's report: "hi" answered `I study at Aashish Kumar.` The
+         education frame's slot held the person fact. The guard could not see
+         it (the value WAS in the context, and his own name is always
+         allowlisted), so the sentence table is the check — see
+         `frameFactMismatch` in ai/engine/grammar.mjs. Refused rather than
+         shown, for the same reason as an empty slot: a sentence that says the
+         wrong thing about a fact is not an answer. */
+      const mismatched = frameFactMismatch(lastRaw);
+      if (mismatched) {
+        onNotice?.(`the model put ${mismatched.factId} into the frame "${mismatched.frame}"`);
+        const text = noAnswerLine('unverified', lang);
+        if (streamed && onReplace) onReplace(text);
+        return {
+          kind: 'unverified', text, sources: [], context,
+          attempts: guarded.attempts, guardFailed: true, abstained: true,
+          reason: `a frame may only hold a fact of its own kind: ${mismatched.frame}`,
+          ms: Date.now() - started,
+        };
+      }
+
       const hollow = emptySlotFrame(clip.clipped ? clip.text : guarded.text);
       if (hollow) {
         onNotice?.(`the model wrote a frame with no fact in it: ${hollow}`);
